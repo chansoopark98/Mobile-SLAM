@@ -1,3 +1,15 @@
+build/
+
+.omc/
+CLAUDE.md
+WORKS.md
+ARCHITECTURE_ANALYSIS.md
+
+assets/datasets/
+assets/references/
+
+
+
 # Prerequisites
 *.d
 
