@@ -27,19 +27,14 @@ Visualizer::Visualizer()
 Visualizer::~Visualizer() {
     stop();
 
-    // Clean up UI variables
-    if (show_grid_)
-        delete show_grid_;
-    if (show_trajectory_)
-        delete show_trajectory_;
-    if (show_points_)
-        delete show_points_;
-    if (status_)
-        delete status_;
-    if (view_top_down_)
-        delete view_top_down_;
-    if (view_follow_camera_)
-        delete view_follow_camera_;
+    // Clean up any remaining resources (normally freed in pangolinViewerThread)
+    delete g_s_cam_; g_s_cam_ = nullptr;
+    delete show_grid_; show_grid_ = nullptr;
+    delete show_trajectory_; show_trajectory_ = nullptr;
+    delete show_points_; show_points_ = nullptr;
+    delete status_; status_ = nullptr;
+    delete view_top_down_; view_top_down_ = nullptr;
+    delete view_follow_camera_; view_follow_camera_ = nullptr;
 }
 
 bool Visualizer::initialize() {
@@ -220,8 +215,19 @@ void Visualizer::pangolinViewerThread() {
         std::cout << "=== Visualizer render loop ended ===" << std::endl;
         std::cout << "Final frame count: " << frame_count << std::endl;
         std::cout << "Final pose count: " << camera_poses_.size() << std::endl;
-        std::cout << "Exit reason - running_: " << (running_ ? "true" : "false") << std::endl;
-        std::cout << "Exit reason - ShouldQuit(): " << (pangolin::ShouldQuit() ? "true" : "false") << std::endl;
+
+        // Clean up Pangolin resources before context becomes invalid
+        running_ = false;
+        delete g_s_cam_; g_s_cam_ = nullptr;
+        g_d_cam_ = nullptr;  // Owned by Pangolin, don't delete
+        delete show_grid_; show_grid_ = nullptr;
+        delete show_trajectory_; show_trajectory_ = nullptr;
+        delete show_points_; show_points_ = nullptr;
+        delete status_; status_ = nullptr;
+        delete view_top_down_; view_top_down_ = nullptr;
+        delete view_follow_camera_; view_follow_camera_ = nullptr;
+
+        pangolin::DestroyWindow("Tiny VINS Mono - 3D Trajectory Viewer");
 
     } catch (const std::exception& e) {
         std::cerr << "Visualizer render error: " << e.what() << std::endl;

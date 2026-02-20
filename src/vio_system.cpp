@@ -46,6 +46,11 @@ void VIOSystem::processSequence() {
         vio_process_thread_->join();
     }
 
+    // Stop IMU graph visualizer before destruction
+    if (imu_graph_visualizer_) {
+        imu_graph_visualizer_->stop();
+    }
+
     LOG_INFO("Process thread joined");
 }
 
