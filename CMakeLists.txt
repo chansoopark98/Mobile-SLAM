@@ -160,6 +160,11 @@ add_library(config_manager
 )
 target_link_libraries(config_manager utility)
 
+# Trajectory evaluator
+add_library(trajectory_evaluator src/utility/trajectory_evaluator.cpp)
+target_link_libraries(trajectory_evaluator ${EIGEN3_LIBRARIES})
+target_include_directories(trajectory_evaluator PRIVATE include)
+
 # Executable
 add_executable(tiny_vins_mono 
     src/tiny_vins_mono.cpp 
@@ -177,6 +182,7 @@ target_link_libraries(tiny_vins_mono
     feature_tracker
     utility
     config_manager
+    trajectory_evaluator
     ${Pangolin_LIBRARIES}
     stdc++fs
 )
@@ -203,3 +209,32 @@ target_link_libraries(test_sliding_window
 )
 target_include_directories(test_sliding_window PRIVATE include)
 add_test(NAME SlidingWindowTest COMMAND test_sliding_window)
+
+add_executable(test_trajectory_evaluator tests/test_trajectory_evaluator.cpp)
+target_link_libraries(test_trajectory_evaluator
+    gtest gtest_main
+    trajectory_evaluator
+)
+target_include_directories(test_trajectory_evaluator PRIVATE include)
+add_test(NAME TrajectoryEvaluatorTest COMMAND test_trajectory_evaluator)
+
+add_executable(test_config_validation tests/test_config_validation.cpp)
+target_link_libraries(test_config_validation
+    gtest gtest_main
+    config_manager
+    utility
+)
+target_include_directories(test_config_validation PRIVATE include)
+add_test(NAME ConfigValidationTest COMMAND test_config_validation)
+
+add_executable(test_measurement_robustness tests/test_measurement_robustness.cpp
+    src/utility/measurement_processor.cpp
+)
+target_link_libraries(test_measurement_robustness
+    gtest gtest_main
+    utility
+    feature_tracker
+    ${OpenCV_LIBS}
+)
+target_include_directories(test_measurement_robustness PRIVATE include)
+add_test(NAME MeasurementRobustnessTest COMMAND test_measurement_robustness)

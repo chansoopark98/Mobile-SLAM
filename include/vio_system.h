@@ -10,6 +10,7 @@
 #include "utility/config.h"
 #include "utility/measurement_processor.h"
 #include "utility/test_result_logger.h"
+#include "utility/trajectory_evaluator.h"
 #include "utility/visualizer.h"
 #include "utility/imu_graph_visualizer.h"
 

@@ -1,4 +1,5 @@
 #include "vio_system.h"
+#include "utility/logging.h"
 #include <iostream>
 #include <iomanip>
 #include <cmath>
@@ -21,7 +22,7 @@ VIOSystem::~VIOSystem() {
 
 bool VIOSystem::initialize() {
     if (!config_) {
-        std::cerr << "Error: Configuration not provided" << std::endl;
+        LOG_ERROR("Configuration not provided");
         return false;
     }
     
@@ -37,15 +38,15 @@ void VIOSystem::processSequence() {
     // Wait for visualizer to be initialized
     std::this_thread::sleep_for(std::chrono::milliseconds(500));
 
-    std::cout << "Starting Visualizer in main thread..." << std::endl;
+    LOG_INFO("Starting Visualizer in main thread...");
     visualizer_->pangolinViewerThread();
 
-    std::cout << "\n✅ All measurement files processed!" << std::endl;
+    LOG_INFO("All measurement files processed!");
     if (vio_process_thread_ && vio_process_thread_->joinable()) {
         vio_process_thread_->join();
     }
 
-    std::cout << "Process thread joined" << std::endl;
+    LOG_INFO("Process thread joined");
 }
 
 void VIOSystem::shutdown() {
@@ -63,10 +64,10 @@ void VIOSystem::vioInitialize() {
     const std::string image_dirpath = config_->dataset_path + "/mav0/cam0/data";
     const std::string config_filepath = config_->config_filepath;
 
-    std::cout << "IMU file: " << imu_filepath << std::endl;
-    std::cout << "Image CSV file: " << image_csv_filepath << std::endl;
-    std::cout << "Image directory: " << image_dirpath << std::endl;
-    std::cout << "Config file: " << config_filepath << std::endl;
+    LOG_INFO("IMU file: " << imu_filepath);
+    LOG_INFO("Image CSV file: " << image_csv_filepath);
+    LOG_INFO("Image directory: " << image_dirpath);
+    LOG_INFO("Config file: " << config_filepath);
 
     measurement_processor_->initialize(imu_filepath, image_csv_filepath, image_dirpath, config_filepath);
     vio_estimator_->setParameter();
@@ -92,8 +93,23 @@ void VIOSystem::onFrameProcessed(const utility::MeasurementMsg& measurement, dou
 }
 
 void VIOSystem::onSequenceComplete() {
-    std::cout << "\n🎯 Saving final complete trajectory..." << std::endl;
+    LOG_INFO("Saving final complete trajectory...");
     result_logger_->saveTrajectoryToFile();
+
+    // Auto-evaluate if ground truth exists
+    std::string gt_path = config_->dataset_path + "/mav0/mocap0/data.csv";
+    std::string traj_path = result_logger_->getLogDirectory() + "/trajectory_pose.txt";
+
+    utility::TrajectoryEvaluator evaluator;
+    if (evaluator.loadVioTrajectory(traj_path) && evaluator.loadGroundTruth(gt_path)) {
+        evaluator.transformVioToBodyFrame(vio_estimator_->r_ic_, vio_estimator_->t_ic_);
+        evaluator.associateTrajectories(0.01);
+        evaluator.alignTrajectories();
+        auto ate = evaluator.computeATE();
+        auto rpe = evaluator.computeRPE(1.0);
+        evaluator.printResults(ate, rpe);
+        evaluator.saveResults(result_logger_->getLogDirectory() + "/evaluation.txt", ate, rpe);
+    }
 }
 
 void VIOSystem::vioProcess() {
@@ -109,18 +125,18 @@ void VIOSystem::vioProcess() {
     // Validate frame range parameters
     if (start_frame < 0) {
         start_frame = 0;
-        std::cout << "Warning: start_frame < 0, setting to 0" << std::endl;
+        LOG_WARN("start_frame < 0, setting to 0");
     }
     if (end_frame < 0 || end_frame >= total_frames) {
         end_frame = total_frames - 1;
-        std::cout << "Info: end_frame set to " << end_frame << " (total frames: " << total_frames << ")" << std::endl;
+        LOG_INFO("end_frame set to " << end_frame << " (total frames: " << total_frames << ")");
     }
     if (start_frame > end_frame) {
-        std::cerr << "Error: start_frame (" << start_frame << ") > end_frame (" << end_frame << ")" << std::endl;
+        LOG_ERROR("start_frame (" << start_frame << ") > end_frame (" << end_frame << ")");
         return;
     }
     
-    std::cout << "Processing frames " << start_frame << " to " << end_frame << " (total: " << (end_frame - start_frame + 1) << " frames)" << std::endl;
+    LOG_INFO("Processing frames " << start_frame << " to " << end_frame << " (total: " << (end_frame - start_frame + 1) << " frames)");
     
     for (int frame_idx = 0; frame_idx < total_frames; ++frame_idx) {
         // Skip frames outside the specified range
@@ -129,10 +145,10 @@ void VIOSystem::vioProcess() {
         }
         
         const auto& image_file_data_item = image_file_data[frame_idx];
-        std::cout << "\nProcessing file: " << image_file_data_item.filename << " (frame " << frame_idx << "/" << total_frames - 1 << ")" << std::endl;
+        LOG_DEBUG("Processing file: " << image_file_data_item.filename << " (frame " << frame_idx << "/" << total_frames - 1 << ")");
         
         if (measurement_id++ % (config_->frame_skip + 1) != 0) {
-            std::cout << "skip frame " << (measurement_id - 1) << std::endl;
+            LOG_DEBUG("skip frame " << (measurement_id - 1));
             continue;
         }
 
@@ -205,7 +221,7 @@ void VIOSystem::processImageData(const utility::ImageFeatureMsg& image_msg) {
     if (!image_data.empty()) {
         vio_estimator_->processImage(image_data, image_msg.timestamp);
     } else {
-        std::cerr << "Warning: Empty image_data" << std::endl;
+        LOG_WARN("Empty image_data");
     }
 }
 
@@ -220,7 +236,7 @@ void VIOSystem::updateCameraPose(double timestamp) {
         Eigen::Vector3d body_position = vio_estimator_->sliding_window_[window_size].P;
         Eigen::Matrix3d body_rotation = vio_estimator_->sliding_window_[window_size].R;
         if (!body_position.allFinite() || !body_rotation.allFinite()) {
-            std::cerr << "Invalid pose data detected, skipping..." << std::endl;
+            LOG_WARN("Invalid pose data detected, skipping...");
             return;
         }
         
@@ -243,9 +259,9 @@ void VIOSystem::updateCameraPose(double timestamp) {
         static std::vector<Eigen::Vector3d> temp_poses;
         temp_poses.push_back(camera_position);
         if (temp_poses.size() > last_printed_count && temp_poses.size() % 5 == 0) {
-            std::cout << "🎯 Frame " << temp_poses.size() << " | Time: " << std::fixed << std::setprecision(3)
+            LOG_INFO("Frame " << temp_poses.size() << " | Time: " << std::fixed << std::setprecision(3)
                       << timestamp << " | Cam Pos: [" << std::fixed << std::setprecision(2) << camera_position.x()
-                      << ", " << camera_position.y() << ", " << camera_position.z() << "]" << std::endl;
+                      << ", " << camera_position.y() << ", " << camera_position.z() << "]");
             last_printed_count = temp_poses.size();
         }
         static size_t last_saved_count = 0;
@@ -269,6 +285,11 @@ void VIOSystem::interpolateIMUData(const Vector3d& prev_acc, const Vector3d& pre
                                    double dt1, double dt2, 
                                    Vector3d& interp_acc, Vector3d& interp_gyro) {
     const double total_dt = dt1 + dt2;
+    if (total_dt < 1e-12) {
+        interp_acc = extractAcceleration(current_imu);
+        interp_gyro = extractAngularVelocity(current_imu);
+        return;
+    }
     const double w1 = dt2 / total_dt;
     const double w2 = dt1 / total_dt;
     

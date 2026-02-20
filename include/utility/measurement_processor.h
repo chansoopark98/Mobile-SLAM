@@ -72,6 +72,9 @@ public:
     void printDataRange() const;
     void printTimeInfo(double timestamp) const;
 
+    // Filename sanitization (public static for testability)
+    static std::string cleanFilename(const std::string& filename);
+
 private:
     // Member variables
     std::vector<IMUMsg> imu_data_;
@@ -87,9 +90,6 @@ private:
 
     // Extract image features
     ImageFeatureMsg extractImageFeatures(const ImageFileData& image_data);
-
-    // Clean filename (remove whitespace and newlines)
-    std::string cleanFilename(const std::string& filename);
 };
 
 }  // namespace utility

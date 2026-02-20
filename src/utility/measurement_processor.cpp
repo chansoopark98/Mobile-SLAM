@@ -7,6 +7,7 @@
 #include <sstream>
 
 #include "utility/config.h"
+#include "utility/logging.h"
 #include "utility/measurement_processor.h"
 
 namespace utility {
@@ -17,11 +18,11 @@ MeasurementProcessor::~MeasurementProcessor() {}
 
 bool MeasurementProcessor::initialize(const std::string& imu_filepath, const std::string& image_csv_filepath,
                                       const std::string& image_dir, const std::string& config_filepath) {
-    std::cout << "=== MeasurementProcessor Initialization ===" << std::endl;
+    LOG_INFO("=== MeasurementProcessor Initialization ===");
 
     // Load configuration
     if (!g_config.loadFromYaml(config_filepath)) {
-        std::cout << "Failed to load config from " << config_filepath << std::endl;
+        LOG_ERROR("Failed to load config from " << config_filepath);
         return false;
     }
 
@@ -34,12 +35,12 @@ bool MeasurementProcessor::initialize(const std::string& imu_filepath, const std
 
     // Load data
     if (!loadImuData(imu_filepath)) {
-        std::cerr << "Failed to load IMU data" << std::endl;
+        LOG_ERROR("Failed to load IMU data");
         return false;
     }
 
     if (!loadImageFileData(image_csv_filepath, image_dir)) {
-        std::cerr << "Failed to load image data" << std::endl;
+        LOG_ERROR("Failed to load image data");
         return false;
     }
 
@@ -50,11 +51,11 @@ bool MeasurementProcessor::initialize(const std::string& imu_filepath, const std
 }
 
 bool MeasurementProcessor::loadImuData(const std::string& filepath) {
-    std::cout << "\n1. Loading IMU data..." << std::endl;
+    LOG_INFO("1. Loading IMU data...");
 
     std::ifstream file(filepath);
     if (!file.is_open()) {
-        std::cerr << "Cannot open IMU file: " << filepath << std::endl;
+        LOG_ERROR("Cannot open IMU file: " << filepath);
         return false;
     }
 
@@ -66,45 +67,50 @@ bool MeasurementProcessor::loadImuData(const std::string& filepath) {
         if (line.empty())
             continue;
 
-        std::istringstream iss(line);
-        std::string token;
-        IMUMsg data;
+        try {
+            std::istringstream iss(line);
+            std::string token;
+            IMUMsg data;
 
-        // Convert timestamp [ns] to seconds
-        if (std::getline(iss, token, ',')) {
-            data.timestamp = std::stod(token) / 1e9;  // Convert ns to seconds
+            // Convert timestamp [ns] to seconds
+            if (std::getline(iss, token, ',')) {
+                data.timestamp = std::stod(token) / 1e9;  // Convert ns to seconds
+            }
+
+            // angular velocity (rad/s)
+            if (std::getline(iss, token, ','))
+                data.angular_vel_x = std::stod(token);
+            if (std::getline(iss, token, ','))
+                data.angular_vel_y = std::stod(token);
+            if (std::getline(iss, token, ','))
+                data.angular_vel_z = std::stod(token);
+
+            // linear acceleration (m/s^2)
+            if (std::getline(iss, token, ','))
+                data.linear_acc_x = std::stod(token);
+            if (std::getline(iss, token, ','))
+                data.linear_acc_y = std::stod(token);
+            if (std::getline(iss, token))
+                data.linear_acc_z = std::stod(token);
+
+            imu_data_.push_back(data);
+        } catch (const std::exception& e) {
+            LOG_WARN("Skipping malformed IMU line: " << e.what());
+            continue;
         }
-
-        // angular velocity (rad/s)
-        if (std::getline(iss, token, ','))
-            data.angular_vel_x = std::stod(token);
-        if (std::getline(iss, token, ','))
-            data.angular_vel_y = std::stod(token);
-        if (std::getline(iss, token, ','))
-            data.angular_vel_z = std::stod(token);
-
-        // linear acceleration (m/s^2)
-        if (std::getline(iss, token, ','))
-            data.linear_acc_x = std::stod(token);
-        if (std::getline(iss, token, ','))
-            data.linear_acc_y = std::stod(token);
-        if (std::getline(iss, token))
-            data.linear_acc_z = std::stod(token);
-
-        imu_data_.push_back(data);
     }
 
     file.close();
-    std::cout << "Loaded " << imu_data_.size() << " IMU data entries" << std::endl;
+    LOG_INFO("Loaded " << imu_data_.size() << " IMU data entries");
     return true;
 }
 
 bool MeasurementProcessor::loadImageFileData(const std::string& csv_filepath, const std::string& image_dir) {
-    std::cout << "\n2. Loading image data..." << std::endl;
+    LOG_INFO("2. Loading image data...");
 
     std::ifstream file(csv_filepath);
     if (!file.is_open()) {
-        std::cerr << "Cannot open image CSV file: " << csv_filepath << std::endl;
+        LOG_ERROR("Cannot open image CSV file: " << csv_filepath);
         return false;
     }
 
@@ -116,26 +122,35 @@ bool MeasurementProcessor::loadImageFileData(const std::string& csv_filepath, co
         if (line.empty())
             continue;
 
-        std::istringstream iss(line);
-        std::string token;
-        ImageFileData data;
+        try {
+            std::istringstream iss(line);
+            std::string token;
+            ImageFileData data;
 
-        // Convert timestamp [ns] to seconds
-        if (std::getline(iss, token, ',')) {
-            data.timestamp = std::stod(token) / 1e9;  // Convert ns to seconds
+            // Convert timestamp [ns] to seconds
+            if (std::getline(iss, token, ',')) {
+                data.timestamp = std::stod(token) / 1e9;  // Convert ns to seconds
+            }
+
+            // filename
+            if (std::getline(iss, token)) {
+                data.filename = cleanFilename(token);
+                if (data.filename.empty()) {
+                    LOG_WARN("Skipping image entry with invalid filename");
+                    continue;
+                }
+                data.full_path = image_dir + "/" + data.filename;
+            }
+
+            image_file_data_.push_back(data);
+        } catch (const std::exception& e) {
+            LOG_WARN("Skipping malformed image line: " << e.what());
+            continue;
         }
-
-        // filename
-        if (std::getline(iss, token)) {
-            data.filename = cleanFilename(token);
-            data.full_path = image_dir + "/" + data.filename;
-        }
-
-        image_file_data_.push_back(data);
     }
 
     file.close();
-    std::cout << "Loaded " << image_file_data_.size() << " image data entries" << std::endl;
+    LOG_INFO("Loaded " << image_file_data_.size() << " image data entries");
     return true;
 }
 
@@ -144,6 +159,19 @@ std::string MeasurementProcessor::cleanFilename(const std::string& filename) {
     // Remove leading and trailing whitespace and newlines
     cleaned.erase(cleaned.find_last_not_of(" \n\r\t") + 1);
     cleaned.erase(0, cleaned.find_first_not_of(" \n\r\t"));
+
+    // Reject path traversal sequences
+    if (cleaned.find("..") != std::string::npos) {
+        LOG_WARN("Path traversal detected in filename: " << filename);
+        return "";
+    }
+
+    // Reject absolute paths
+    if (!cleaned.empty() && cleaned[0] == '/') {
+        LOG_WARN("Absolute path rejected in filename: " << filename);
+        return "";
+    }
+
     return cleaned;
 }
 
@@ -156,7 +184,7 @@ ImageFeatureMsg MeasurementProcessor::extractImageFeatures(const ImageFileData& 
 
     cv::Mat show_img = cv::imread(image_data.full_path, cv::IMREAD_GRAYSCALE);
     if (show_img.empty()) {
-        std::cerr << "Cannot load image: " << image_data.full_path << std::endl;
+        LOG_ERROR("Cannot load image: " << image_data.full_path);
         return image_feature_msg;
     }
 

@@ -3,6 +3,7 @@
 
 #include "vio_system.h"
 #include "config/config_manager.h"
+#include "utility/logging.h"
 
 
 int main(int argc, char* argv[]) {
@@ -17,17 +18,22 @@ int main(int argc, char* argv[]) {
     auto& config_manager = config::ConfigManager::getInstance();
     
     if (!config_manager.loadConfiguration(config_file)) {
-        std::cout << "Failed to load config from " << config_file << std::endl;
+        LOG_ERROR("Failed to load config from " << config_file);
         return 1;
     }
-    
+
+    if (!config_manager.validateConfiguration()) {
+        LOG_ERROR("Configuration validation failed");
+        return 1;
+    }
+
     config_manager.printConfiguration();
 
     // Create VIO system with dependency injection
     VIOSystem vio_system(config_manager.getConfig());
     
     if (!vio_system.initialize()) {
-        std::cout << "Failed to initialize VIO system" << std::endl;
+        LOG_ERROR("Failed to initialize VIO system");
         return 1;
     }
 
