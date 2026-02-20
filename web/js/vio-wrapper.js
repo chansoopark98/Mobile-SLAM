@@ -132,7 +132,7 @@ export class VIOWrapper {
      * @param {Array<Object>} imuReadings - Array of {timestamp, acc_x, acc_y, acc_z, gyro_x, gyro_y, gyro_z}
      * @returns {{pose: Float64Array|null, initialized: boolean, featureCount: number}}
      */
-    processFrame(grayImage, imuReadings = []) {
+    processFrame(grayImage, imuReadings = [], imageTimestamp = 0) {
         if (!this.configured) {
             throw new Error('VIO not configured. Call configure() first.');
         }
@@ -157,13 +157,14 @@ export class VIOWrapper {
             this.memIMU.write(imuData);
         }
 
-        // Call WASM processFrame
+        // Call WASM processFrame with explicit image timestamp
         const hasPose = this.engine.processFrame(
             this.memImage.byteOffset,
             this.imageWidth,
             this.imageHeight,
             this.memIMU.byteOffset,
             imuCount,
+            imageTimestamp,
             this.memPose.byteOffset
         );
 

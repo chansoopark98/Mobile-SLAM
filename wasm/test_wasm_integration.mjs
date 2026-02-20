@@ -101,7 +101,8 @@ async function main() {
         }
 
         const t0 = performance.now();
-        const hasPose = engine.processFrame(img_ptr, WIDTH, HEIGHT, imu_ptr, numIMU, pose_ptr);
+        const imageTimestamp = frame * 0.033;  // ~30fps
+        const hasPose = engine.processFrame(img_ptr, WIDTH, HEIGHT, imu_ptr, numIMU, imageTimestamp, pose_ptr);
         totalTime += performance.now() - t0;
 
         if (frame === 0) {

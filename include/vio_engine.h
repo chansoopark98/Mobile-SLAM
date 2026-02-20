@@ -46,6 +46,7 @@ public:
     // Returns true if pose was computed (VIO initialized and running).
     bool processFrame(const uint8_t* gray_image, int width, int height,
                       const IMUReading* imu_readings, int imu_count,
+                      double image_timestamp,
                       double* pose_output);
 
     // Check if VIO has initialized (solver in NON_LINEAR mode).

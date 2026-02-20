@@ -140,10 +140,11 @@ class App {
     processLoop() {
         if (!this.running) return;
 
+        const frameTimestamp = performance.now() / 1000.0;
         const gray = this.camera.captureGrayscale();
         if (gray) {
             const imuReadings = this.imu.flush();
-            const result = this.vio.processFrame(gray, imuReadings);
+            const result = this.vio.processFrame(gray, imuReadings, frameTimestamp);
 
             this.frameCount++;
 

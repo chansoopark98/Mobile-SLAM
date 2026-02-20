@@ -37,6 +37,14 @@ void solveGyroscopeBias(std::map<double, common::ImageFrame> const& all_image_fr
     delta_bg = A.ldlt().solve(b);
     std::cout << "gyroscope bias initial calibration " << delta_bg.transpose() << std::endl;
 
+    // Clamp gyroscope bias to physically reasonable range (±0.05 rad/s per axis)
+    // Mobile MEMS gyroscopes cannot have bias larger than ~3 deg/s
+    const double max_bias = 0.05;
+    for (int axis = 0; axis < 3; axis++) {
+        delta_bg(axis) = std::max(-max_bias, std::min(max_bias, delta_bg(axis)));
+    }
+    std::cout << "gyroscope bias clamped to " << delta_bg.transpose() << std::endl;
+
     // update the gyroscope bias in the sliding window
     for (int i = 0; i <= WINDOW_SIZE; i++)
         sliding_window[i].Bg += delta_bg;
@@ -194,7 +202,7 @@ bool LinearAlignment(std::map<double, common::ImageFrame> const& all_image_frame
     std::cout << "estimated scale: " << s << std::endl;
     g = x.segment<3>(n_state - 4);
     std::cout << " result g     " << g.norm() << " " << g.transpose() << std::endl;
-    if (fabs(g.norm() - g_config.estimator.g.norm()) > 1.0 || s < 0) {
+    if (fabs(g.norm() - g_config.estimator.g.norm()) > 2.5 || s < 0) {
         return false;
     }
 

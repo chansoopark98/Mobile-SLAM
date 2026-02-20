@@ -153,8 +153,8 @@ void VIOEngine::processIMUData(const IMUReading* readings, int count,
                 current_time_ = imu_time;
             }
             double dt = imu_time - current_time_;
-            // Skip invalid dt: negative (out-of-order) or too large (sensor gap)
-            if (dt < 0.0 || dt > 0.5) {
+            // Skip invalid dt: near-zero, negative (out-of-order), or too large (sensor gap)
+            if (dt < 1e-6 || dt > 0.5) {
                 current_time_ = imu_time;
                 prev_acc_ = acc;
                 prev_gyro_ = gyro;
@@ -166,7 +166,7 @@ void VIOEngine::processIMUData(const IMUReading* readings, int count,
             // Interpolate at image timestamp
             double dt_to_image = image_timestamp - current_time_;
             // Skip invalid interpolation interval
-            if (dt_to_image < 0.0 || dt_to_image > 0.5) {
+            if (dt_to_image < 1e-6 || dt_to_image > 0.5) {
                 current_time_ = image_timestamp;
                 prev_acc_ = acc;
                 prev_gyro_ = gyro;
@@ -194,6 +194,7 @@ void VIOEngine::processIMUData(const IMUReading* readings, int count,
 
 bool VIOEngine::processFrame(const uint8_t* gray_image, int width, int height,
                               const IMUReading* imu_readings, int imu_count,
+                              double image_timestamp,
                               double* pose_output) {
     if (!configured_ || !estimator_ || !feature_tracker_) {
         return false;
@@ -201,17 +202,6 @@ bool VIOEngine::processFrame(const uint8_t* gray_image, int width, int height,
 
     // Create cv::Mat from raw data (no copy)
     cv::Mat img(height, width, CV_8UC1, const_cast<uint8_t*>(gray_image));
-
-    // Use the last IMU timestamp as image timestamp, or derive from IMU
-    double image_timestamp;
-    if (imu_count > 0) {
-        image_timestamp = imu_readings[imu_count - 1].timestamp;
-    } else {
-        // Fallback: increment by ~33ms
-        image_timestamp = (prev_image_timestamp_ > 0)
-                              ? prev_image_timestamp_ + 0.033
-                              : 0.0;
-    }
 
     // Process IMU data
     if (imu_count > 0) {

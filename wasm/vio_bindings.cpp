@@ -27,11 +27,13 @@ bool configure_wrapper(VIOEngine& self,
 bool processFrame_wrapper(VIOEngine& self,
                           uintptr_t gray_image_ptr, int width, int height,
                           uintptr_t imu_readings_ptr, int imu_count,
+                          double image_timestamp,
                           uintptr_t pose_output_ptr) {
     return self.processFrame(reinterpret_cast<const uint8_t*>(gray_image_ptr),
                              width, height,
                              reinterpret_cast<const IMUReading*>(imu_readings_ptr),
                              imu_count,
+                             image_timestamp,
                              reinterpret_cast<double*>(pose_output_ptr));
 }
 

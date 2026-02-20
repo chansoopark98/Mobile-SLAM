@@ -79,7 +79,7 @@ async function main() {
     const imuData = new Float64Array(wasm.HEAPF64.buffer, imu_ptr, 7);
     imuData.set([0.001, 0, 0, 9.81, 0, 0, 0]); // timestamp, acc_xyz, gyro_xyz
 
-    const hasPose = engine.processFrame(img_ptr, 640, 480, imu_ptr, 1, pose_ptr);
+    const hasPose = engine.processFrame(img_ptr, 640, 480, imu_ptr, 1, 0.001, pose_ptr);
     console.log('    processFrame result:', hasPose === false ? 'OK (false, not initialized yet)' : `unexpected: ${hasPose}`);
     console.log('    isInitialized after 1 frame:', engine.isInitialized() === false ? 'OK (false)' : 'unexpected');
 
