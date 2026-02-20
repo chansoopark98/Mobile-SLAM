@@ -182,7 +182,6 @@ bool Initializer::relativePose(Matrix3d& relative_R, Vector3d& relative_T, int& 
 
         if (corres.size() > 20) {
             double sum_parallax = 0;
-            double average_parallax;
             for (int j = 0; j < int(corres.size()); j++) {
                 Vector2d pts_0(corres[j].first(0), corres[j].first(1));
                 Vector2d pts_1(corres[j].second(0), corres[j].second(1));
@@ -190,8 +189,9 @@ bool Initializer::relativePose(Matrix3d& relative_R, Vector3d& relative_T, int& 
                 sum_parallax = sum_parallax + parallax;
             }
 
-            average_parallax = 1.0 * sum_parallax / int(corres.size());
-            if (motion_estimator_->solveRelativeRT(corres, relative_R, relative_T)) {
+            double average_parallax = 1.0 * sum_parallax / int(corres.size());
+            if (average_parallax * 460 > 30 &&
+                motion_estimator_->solveRelativeRT(corres, relative_R, relative_T)) {
                 l = i;
                 std::cout << "average_parallax " << average_parallax * 460 << " choose index " << l
                           << " and newest frame to triangulate "

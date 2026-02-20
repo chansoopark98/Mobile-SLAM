@@ -157,7 +157,6 @@ void FeatureTracker::rejectWithFundamentalMatrix() {
         vector<uchar> status;
         cv::findFundamentalMat(undistorted_cur_pts, undistorted_next_pts, cv::FM_RANSAC,
                                g_config.feature_tracker.f_threshold, 0.99, status);
-        int size_a = cur_pts.size();
         filterByStatus(prev_pts, status);
         filterByStatus(cur_pts, status);
         filterByStatus(next_pts, status);
