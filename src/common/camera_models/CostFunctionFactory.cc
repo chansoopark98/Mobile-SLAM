@@ -422,11 +422,11 @@ public:
     Eigen::Matrix2d m_sqrtPrecisionMat;
 };
 
-boost::shared_ptr<CostFunctionFactory> CostFunctionFactory::m_instance;
+std::shared_ptr<CostFunctionFactory> CostFunctionFactory::m_instance;
 
 CostFunctionFactory::CostFunctionFactory() {}
 
-boost::shared_ptr<CostFunctionFactory> CostFunctionFactory::instance(void) {
+std::shared_ptr<CostFunctionFactory> CostFunctionFactory::instance(void) {
     if (m_instance.get() == 0) {
         m_instance.reset(new CostFunctionFactory);
     }

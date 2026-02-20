@@ -135,8 +135,8 @@ private:
     double m_inv_K11, m_inv_K13, m_inv_K22, m_inv_K23;
 };
 
-typedef boost::shared_ptr<EquidistantCamera> EquidistantCameraPtr;
-typedef boost::shared_ptr<const EquidistantCamera> EquidistantCameraConstPtr;
+typedef std::shared_ptr<EquidistantCamera> EquidistantCameraPtr;
+typedef std::shared_ptr<const EquidistantCamera> EquidistantCameraConstPtr;
 
 template <typename T>
 T EquidistantCamera::r(T k2, T k3, T k4, T k5, T theta) {

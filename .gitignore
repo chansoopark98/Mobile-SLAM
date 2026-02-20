@@ -1,12 +1,20 @@
 build/
+data/
+logs/
 
 .omc/
-CLAUDE.md
 WORKS.md
 ARCHITECTURE_ANALYSIS.md
+CLAUDE.md
 
 assets/datasets/
 assets/references/
+
+# Dataset files (large)
+data/EuRoC/MH_*/
+data/EuRoC/V1_*/
+data/EuRoC/V2_*/
+data/KITTI360/*/
 
 
 

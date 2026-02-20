@@ -1,4 +1,4 @@
-cmake_minimum_required(VERSION 2.8)
+cmake_minimum_required(VERSION 3.14)
 project(tiny_vins_mono)
 
 # Enable ccache for faster rebuilds
@@ -27,17 +27,54 @@ add_compile_definitions(
 
 # Force strict IEEE 754 compliance
 if(CMAKE_BUILD_TYPE STREQUAL "Release")
-    set(CMAKE_CXX_FLAGS_RELEASE "-O2 -DNDEBUG")    
+    set(CMAKE_CXX_FLAGS_RELEASE "-O2 -DNDEBUG")
 elseif(CMAKE_BUILD_TYPE STREQUAL "Debug")
     set(CMAKE_CXX_FLAGS_DEBUG "${CMAKE_CXX_FLAGS_DEBUG} -O0 -g -DDEBUG")
 endif()
 
 find_package(Eigen3 REQUIRED)
 find_package(OpenCV REQUIRED)
-find_package(Ceres REQUIRED)
 find_package(Pangolin REQUIRED)
 find_package(PkgConfig REQUIRED)
 pkg_check_modules(YAML_CPP REQUIRED yaml-cpp)
+
+# ── Ceres Solver (FetchContent) ─────────────────────────
+include(FetchContent)
+
+# Configure Ceres for lightweight build (Eigen-only, no SuiteSparse)
+set(MINIGLOG ON CACHE BOOL "Use miniglog instead of glog" FORCE)
+set(GFLAGS OFF CACHE BOOL "Disable gflags" FORCE)
+set(SUITESPARSE OFF CACHE BOOL "Disable SuiteSparse" FORCE)
+set(CXSPARSE OFF CACHE BOOL "Disable CXSparse" FORCE)
+set(LAPACK OFF CACHE BOOL "Disable LAPACK" FORCE)
+set(EIGENSPARSE ON CACHE BOOL "Use Eigen sparse solver" FORCE)
+set(SCHUR_SPECIALIZATIONS OFF CACHE BOOL "Disable Schur specializations for faster build" FORCE)
+set(BUILD_TESTING OFF CACHE BOOL "Disable Ceres tests" FORCE)
+set(BUILD_EXAMPLES OFF CACHE BOOL "Disable Ceres examples" FORCE)
+set(BUILD_BENCHMARKS OFF CACHE BOOL "Disable Ceres benchmarks" FORCE)
+set(BUILD_SHARED_LIBS OFF CACHE BOOL "Build Ceres as static lib" FORCE)
+set(PROVIDE_UNINSTALL_TARGET OFF CACHE BOOL "" FORCE)
+
+FetchContent_Declare(
+    ceres-solver
+    GIT_REPOSITORY https://github.com/ceres-solver/ceres-solver.git
+    GIT_TAG        2.2.0
+    GIT_SHALLOW    TRUE
+    GIT_PROGRESS   TRUE
+)
+FetchContent_MakeAvailable(ceres-solver)
+message(STATUS "Ceres: 2.2.0 (FetchContent)")
+
+# ── Google Test (FetchContent) ──────────────────────────
+FetchContent_Declare(
+    googletest
+    GIT_REPOSITORY https://github.com/google/googletest.git
+    GIT_TAG        v1.14.0
+    GIT_SHALLOW    TRUE
+)
+set(gtest_force_shared_crt ON CACHE BOOL "" FORCE)
+FetchContent_MakeAvailable(googletest)
+message(STATUS "GoogleTest: 1.14.0 (FetchContent)")
 
 include_directories(include
     ${EIGEN3_INCLUDE_DIR}
@@ -63,6 +100,7 @@ add_library(optimizer src/backend/optimizer.cpp)
 target_link_libraries(optimizer ceres marginalization_factor pose_local_parameterization)
 
 add_library(failure_detector src/frontend/failure_detector.cpp)
+target_link_libraries(failure_detector ceres)
 
 add_library(initializer
     src/frontend/initialization/initializer.cpp
@@ -131,10 +169,10 @@ add_executable(tiny_vins_mono
     src/utility/imu_graph_visualizer.cpp
     src/utility/test_result_logger.cpp
 )
-target_link_libraries(tiny_vins_mono 
-    ${OpenCV_LIBS} 
-    ${YAML_CPP_LIBRARIES} 
-    ${EIGEN3_LIBRARIES} 
+target_link_libraries(tiny_vins_mono
+    ${OpenCV_LIBS}
+    ${YAML_CPP_LIBRARIES}
+    ${EIGEN3_LIBRARIES}
     estimator
     feature_tracker
     utility
@@ -142,3 +180,26 @@ target_link_libraries(tiny_vins_mono
     ${Pangolin_LIBRARIES}
     stdc++fs
 )
+
+# ── Tests ────────────────────────────────────────────────
+enable_testing()
+
+add_executable(test_integration_base tests/test_integration_base.cpp)
+target_link_libraries(test_integration_base
+    gtest gtest_main
+    estimator
+    utility
+    ceres
+)
+target_include_directories(test_integration_base PRIVATE include)
+add_test(NAME IntegrationBaseTest COMMAND test_integration_base)
+
+add_executable(test_sliding_window tests/test_sliding_window.cpp)
+target_link_libraries(test_sliding_window
+    gtest gtest_main
+    estimator
+    utility
+    ceres
+)
+target_include_directories(test_sliding_window PRIVATE include)
+add_test(NAME SlidingWindowTest COMMAND test_sliding_window)

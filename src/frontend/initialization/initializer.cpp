@@ -180,6 +180,9 @@ bool Initializer::relativePose(Matrix3d& relative_R, Vector3d& relative_T, int& 
         frontend::Correspondences corres;
         corres = feature_manager_->getCorresponding(i, WINDOW_SIZE);
 
+        std::cout << "[relativePose] frame " << i << " <-> " << WINDOW_SIZE
+                  << " correspondences: " << corres.size() << std::endl;
+
         if (corres.size() > 20) {
             double sum_parallax = 0;
             double average_parallax;
@@ -191,6 +194,8 @@ bool Initializer::relativePose(Matrix3d& relative_R, Vector3d& relative_T, int& 
             }
 
             average_parallax = 1.0 * sum_parallax / int(corres.size());
+            std::cout << "[relativePose] avg_parallax(norm)=" << average_parallax
+                      << " avg_parallax(px)=" << average_parallax * 460 << std::endl;
             if (motion_estimator_->solveRelativeRT(corres, relative_R, relative_T)) {
                 l = i;
                 std::cout << "average_parallax " << average_parallax * 460 << " choose index " << l
@@ -198,6 +203,8 @@ bool Initializer::relativePose(Matrix3d& relative_R, Vector3d& relative_T, int& 
                              "the whole structure"
                           << std::endl;
                 return true;
+            } else {
+                std::cout << "[relativePose] solveRelativeRT failed for frame " << i << std::endl;
             }
         }
     }

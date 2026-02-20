@@ -192,12 +192,17 @@ bool MotionEstimator::solveRelativeRT(const Correspondences& corres, Matrix3d& R
             ll.push_back(cv::Point2f(corres[i].first(0), corres[i].first(1)));
             rr.push_back(cv::Point2f(corres[i].second(0), corres[i].second(1)));
         }
+        // Use OpenCV's findEssentialMat for normalized coordinates (K=I, focal=1, pp=(0,0))
         cv::Mat mask;
-        cv::Mat E = cv::findFundamentalMat(ll, rr, cv::FM_RANSAC, 0.3 / 460, 0.99, mask);
-        cv::Mat cameraMatrix = (cv::Mat_<double>(3, 3) << 1, 0, 0, 0, 1, 0, 0, 0, 1);
+        cv::Mat E = cv::findEssentialMat(ll, rr, 1.0, cv::Point2d(0, 0), cv::RANSAC, 0.99, 0.003, mask);
+        if (E.empty()) {
+            std::cout << "[solveRelativeRT] findEssentialMat returned empty" << std::endl;
+            return false;
+        }
         cv::Mat rot, trans;
+        cv::Mat cameraMatrix = (cv::Mat_<double>(3, 3) << 1, 0, 0, 0, 1, 0, 0, 0, 1);
         int inlier_cnt = cv::recoverPose(E, ll, rr, cameraMatrix, rot, trans, mask);
-        // cout << "inlier_cnt " << inlier_cnt << endl;
+        std::cout << "[solveRelativeRT] points=" << corres.size() << " inlier_cnt=" << inlier_cnt << std::endl;
 
         Eigen::Matrix3d R;
         Eigen::Vector3d T;

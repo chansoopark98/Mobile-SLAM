@@ -1,7 +1,7 @@
 #ifndef COMMON__CAMERA_MODELS__CAMERA_H
 #define COMMON__CAMERA_MODELS__CAMERA_H
 
-#include <boost/shared_ptr.hpp>
+#include <memory>
 #include <eigen3/Eigen/Dense>
 #include <opencv2/core/core.hpp>
 #include <vector>
@@ -118,8 +118,8 @@ protected:
     cv::Mat m_mask;
 };
 
-typedef boost::shared_ptr<Camera> CameraPtr;
-typedef boost::shared_ptr<const Camera> CameraConstPtr;
+typedef std::shared_ptr<Camera> CameraPtr;
+typedef std::shared_ptr<const Camera> CameraConstPtr;
 
 }  // namespace camera_models
 }  // namespace common

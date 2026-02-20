@@ -1,7 +1,7 @@
 #ifndef COMMON__CAMERA_MODELS__COST_FUNCTION_FACTORY_H
 #define COMMON__CAMERA_MODELS__COST_FUNCTION_FACTORY_H
 
-#include <boost/shared_ptr.hpp>
+#include <memory>
 #include <opencv2/core/core.hpp>
 
 #include "common/camera_models/Camera.h"
@@ -28,7 +28,7 @@ public:
     EIGEN_MAKE_ALIGNED_OPERATOR_NEW
     CostFunctionFactory();
 
-    static boost::shared_ptr<CostFunctionFactory> instance(void);
+    static std::shared_ptr<CostFunctionFactory> instance(void);
 
     ceres::CostFunction* generateCostFunction(const CameraConstPtr& camera, const Eigen::Vector3d& observed_P,
                                               const Eigen::Vector2d& observed_p, int flags) const;
@@ -58,7 +58,7 @@ public:
                                               const Eigen::Vector2d& observed_p_right) const;
 
 private:
-    static boost::shared_ptr<CostFunctionFactory> m_instance;
+    static std::shared_ptr<CostFunctionFactory> m_instance;
 };
 
 }  // namespace camera_models

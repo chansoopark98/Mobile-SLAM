@@ -1,8 +1,21 @@
 #include "common/camera_models/ScaramuzzaCamera.h"
 #include "common/gpl/gpl.h"
 
-#include <boost/algorithm/string.hpp>
-#include <boost/lexical_cast.hpp>
+#include <algorithm>
+#include <cctype>
+#include <string>
+
+namespace {
+bool iequals(const std::string& a, const std::string& b) {
+    if (a.size() != b.size()) return false;
+    for (size_t i = 0; i < a.size(); ++i) {
+        if (std::tolower(static_cast<unsigned char>(a[i])) !=
+            std::tolower(static_cast<unsigned char>(b[i])))
+            return false;
+    }
+    return true;
+}
+}  // namespace
 #include <cmath>
 #include <cstdio>
 #include <eigen3/Eigen/Dense>
@@ -63,7 +76,7 @@ bool OCAMCamera::Parameters::readFromYamlFile(const std::string& filename) {
         std::string sModelType;
         fs["model_type"] >> sModelType;
 
-        if (!boost::iequals(sModelType, "scaramuzza")) {
+        if (!iequals(sModelType, "scaramuzza")) {
             return false;
         }
     }
@@ -75,11 +88,11 @@ bool OCAMCamera::Parameters::readFromYamlFile(const std::string& filename) {
 
     cv::FileNode n = fs["poly_parameters"];
     for (int i = 0; i < SCARAMUZZA_POLY_SIZE; i++)
-        m_poly[i] = static_cast<double>(n[std::string("p") + boost::lexical_cast<std::string>(i)]);
+        m_poly[i] = static_cast<double>(n[std::string("p") + std::to_string(i)]);
 
     n = fs["inv_poly_parameters"];
     for (int i = 0; i < SCARAMUZZA_INV_POLY_SIZE; i++)
-        m_inv_poly[i] = static_cast<double>(n[std::string("p") + boost::lexical_cast<std::string>(i)]);
+        m_inv_poly[i] = static_cast<double>(n[std::string("p") + std::to_string(i)]);
 
     n = fs["affine_parameters"];
     m_C = static_cast<double>(n["ac"]);
@@ -104,13 +117,13 @@ void OCAMCamera::Parameters::writeToYamlFile(const std::string& filename) const 
     fs << "poly_parameters";
     fs << "{";
     for (int i = 0; i < SCARAMUZZA_POLY_SIZE; i++)
-        fs << std::string("p") + boost::lexical_cast<std::string>(i) << m_poly[i];
+        fs << std::string("p") + std::to_string(i) << m_poly[i];
     fs << "}";
 
     fs << "inv_poly_parameters";
     fs << "{";
     for (int i = 0; i < SCARAMUZZA_INV_POLY_SIZE; i++)
-        fs << std::string("p") + boost::lexical_cast<std::string>(i) << m_inv_poly[i];
+        fs << std::string("p") + std::to_string(i) << m_inv_poly[i];
     fs << "}";
 
     fs << "affine_parameters";
@@ -151,11 +164,11 @@ std::ostream& operator<<(std::ostream& out, const OCAMCamera::Parameters& params
 
     out << "Poly Parameters" << std::endl;
     for (int i = 0; i < SCARAMUZZA_POLY_SIZE; i++)
-        out << std::string("p") + boost::lexical_cast<std::string>(i) << ": " << params.m_poly[i] << std::endl;
+        out << std::string("p") + std::to_string(i) << ": " << params.m_poly[i] << std::endl;
 
     out << "Inverse Poly Parameters" << std::endl;
     for (int i = 0; i < SCARAMUZZA_INV_POLY_SIZE; i++)
-        out << std::string("p") + boost::lexical_cast<std::string>(i) << ": " << params.m_inv_poly[i] << std::endl;
+        out << std::string("p") + std::to_string(i) << ": " << params.m_inv_poly[i] << std::endl;
 
     out << "Affine Parameters" << std::endl;
     out << "            ac " << params.m_C << std::endl

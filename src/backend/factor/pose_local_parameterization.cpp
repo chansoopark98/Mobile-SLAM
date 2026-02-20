@@ -19,10 +19,43 @@ bool PoseLocalParameterization::Plus(const double* x, const double* delta, doubl
 
     return true;
 }
-bool PoseLocalParameterization::ComputeJacobian(const double* x, double* jacobian) const {
+
+bool PoseLocalParameterization::PlusJacobian(const double* x, double* jacobian) const {
     Eigen::Map<Eigen::Matrix<double, 7, 6, Eigen::RowMajor>> j(jacobian);
     j.topRows<6>().setIdentity();
     j.bottomRows<1>().setZero();
+
+    return true;
+}
+
+bool PoseLocalParameterization::Minus(const double* y, const double* x, double* y_minus_x) const {
+    Eigen::Map<const Eigen::Vector3d> p_y(y);
+    Eigen::Map<const Eigen::Quaterniond> q_y(y + 3);
+    Eigen::Map<const Eigen::Vector3d> p_x(x);
+    Eigen::Map<const Eigen::Quaterniond> q_x(x + 3);
+
+    Eigen::Map<Eigen::Vector3d> dp(y_minus_x);
+    dp = p_y - p_x;
+
+    // Quaternion difference: delta_q = q_x^{-1} * q_y
+    Eigen::Quaterniond dq = q_x.inverse() * q_y;
+    // Convert to axis-angle (small angle: 2 * vec(dq))
+    y_minus_x[3] = 2.0 * dq.x();
+    y_minus_x[4] = 2.0 * dq.y();
+    y_minus_x[5] = 2.0 * dq.z();
+
+    return true;
+}
+
+bool PoseLocalParameterization::MinusJacobian(const double* x, double* jacobian) const {
+    Eigen::Map<Eigen::Matrix<double, 6, 7, Eigen::RowMajor>> j(jacobian);
+    j.setZero();
+    j.topLeftCorner<3, 3>().setIdentity();
+    // For the quaternion part, the MinusJacobian at identity is [0 0 0 | 2I]
+    // mapped from Eigen quaternion storage (x,y,z,w)
+    j(3, 3) = 2.0;  // d/dqx
+    j(4, 4) = 2.0;  // d/dqy
+    j(5, 5) = 2.0;  // d/dqz
 
     return true;
 }

@@ -198,7 +198,7 @@ bool InitialSFM::construct(int frame_num, Quaterniond* q, Vector3d* T, int refer
 
     // full BA
     ceres::Problem problem;
-    ceres::LocalParameterization* local_parameterization = new ceres::QuaternionParameterization();
+    ceres::Manifold* quaternion_manifold = new ceres::QuaternionManifold();
     // cout << " begin full BA " << endl;
     for (int i = 0; i < frame_num; i++) {
         // double array for ceres
@@ -209,7 +209,7 @@ bool InitialSFM::construct(int frame_num, Quaterniond* q, Vector3d* T, int refer
         c_rotation[i][1] = c_Quat[i].x();
         c_rotation[i][2] = c_Quat[i].y();
         c_rotation[i][3] = c_Quat[i].z();
-        problem.AddParameterBlock(c_rotation[i], 4, local_parameterization);
+        problem.AddParameterBlock(c_rotation[i], 4, quaternion_manifold);
         problem.AddParameterBlock(c_translation[i], 3);
         if (i == reference_frame_id) {
             problem.SetParameterBlockConstant(c_rotation[i]);

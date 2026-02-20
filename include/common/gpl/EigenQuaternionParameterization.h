@@ -1,22 +1,22 @@
 #ifndef COMMON__GPL__EIGEN_QUATERNION_PARAMETERIZATION_H
 #define COMMON__GPL__EIGEN_QUATERNION_PARAMETERIZATION_H
 
-#include "ceres/local_parameterization.h"
+#include <ceres/ceres.h>
 
 namespace common {
 namespace gpl {
 
-class EigenQuaternionParameterization : public ceres::LocalParameterization {
+class EigenQuaternionParameterization : public ceres::Manifold {
 public:
     virtual ~EigenQuaternionParameterization() {}
-    virtual bool Plus(const double* x, const double* delta, double* x_plus_delta) const;
-    virtual bool ComputeJacobian(const double* x, double* jacobian) const;
-    virtual int GlobalSize() const {
-        return 4;
-    }
-    virtual int LocalSize() const {
-        return 3;
-    }
+
+    bool Plus(const double* x, const double* delta, double* x_plus_delta) const override;
+    bool PlusJacobian(const double* x, double* jacobian) const override;
+    bool Minus(const double* y, const double* x, double* y_minus_x) const override;
+    bool MinusJacobian(const double* x, double* jacobian) const override;
+
+    int AmbientSize() const override { return 4; }
+    int TangentSize() const override { return 3; }
 
 private:
     template <typename T>

@@ -178,6 +178,11 @@ bool FeatureTracker::updateID(unsigned int i) {
 
 void FeatureTracker::readIntrinsicParameter(const string& calib_file) {
     m_camera = common::camera_models::CameraFactory::instance()->generateCameraFromYamlFile(calib_file);
+    if (m_camera) {
+        std::cout << "[FeatureTracker] Camera model loaded: " << m_camera->parametersToString() << std::endl;
+    } else {
+        std::cerr << "[FeatureTracker] ERROR: Failed to load camera model from " << calib_file << std::endl;
+    }
 }
 
 void FeatureTracker::undistortedPoints() {

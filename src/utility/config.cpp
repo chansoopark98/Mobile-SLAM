@@ -22,16 +22,25 @@ bool Config::loadFromYaml(const std::string& yaml_path) {
             camera.row = config["image_height"].as<double>();
 
         // Load projection parameters
+        // Supports both standard (fx,fy,cx,cy) and VINS-Mono equidistant (mu,mv,u0,v0) naming
         if (config["projection_parameters"]) {
             auto proj = config["projection_parameters"];
             if (proj["fx"])
                 camera.fx = proj["fx"].as<double>();
+            else if (proj["mu"])
+                camera.fx = proj["mu"].as<double>();
             if (proj["fy"])
                 camera.fy = proj["fy"].as<double>();
+            else if (proj["mv"])
+                camera.fy = proj["mv"].as<double>();
             if (proj["cx"])
                 camera.cx = proj["cx"].as<double>();
+            else if (proj["u0"])
+                camera.cx = proj["u0"].as<double>();
             if (proj["cy"])
                 camera.cy = proj["cy"].as<double>();
+            else if (proj["v0"])
+                camera.cy = proj["v0"].as<double>();
 
             // Set focal_length as average of fx and fy
             camera.focal_length = (camera.fx + camera.fy) / 2.0;

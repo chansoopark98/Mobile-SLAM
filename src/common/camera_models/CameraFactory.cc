@@ -1,8 +1,22 @@
 #include "common/camera_models/CameraFactory.h"
 
-#include <boost/algorithm/string.hpp>
+#include <algorithm>
+#include <cctype>
+#include <string>
 
 #include "ceres/ceres.h"
+
+namespace {
+bool iequals(const std::string& a, const std::string& b) {
+    if (a.size() != b.size()) return false;
+    for (size_t i = 0; i < a.size(); ++i) {
+        if (std::tolower(static_cast<unsigned char>(a[i])) !=
+            std::tolower(static_cast<unsigned char>(b[i])))
+            return false;
+    }
+    return true;
+}
+}  // namespace
 #include "common/camera_models/CataCamera.h"
 #include "common/camera_models/EquidistantCamera.h"
 #include "common/camera_models/PinholeCamera.h"
@@ -11,11 +25,11 @@
 namespace common {
 namespace camera_models {
 
-boost::shared_ptr<CameraFactory> CameraFactory::m_instance;
+std::shared_ptr<CameraFactory> CameraFactory::m_instance;
 
 CameraFactory::CameraFactory() {}
 
-boost::shared_ptr<CameraFactory> CameraFactory::instance(void) {
+std::shared_ptr<CameraFactory> CameraFactory::instance(void) {
     if (m_instance.get() == 0) {
         m_instance.reset(new CameraFactory);
     }
@@ -82,13 +96,13 @@ CameraPtr CameraFactory::generateCameraFromYamlFile(const std::string& filename)
         std::string sModelType;
         fs["model_type"] >> sModelType;
 
-        if (boost::iequals(sModelType, "kannala_brandt")) {
+        if (iequals(sModelType, "kannala_brandt")) {
             modelType = Camera::KANNALA_BRANDT;
-        } else if (boost::iequals(sModelType, "mei")) {
+        } else if (iequals(sModelType, "mei")) {
             modelType = Camera::MEI;
-        } else if (boost::iequals(sModelType, "scaramuzza")) {
+        } else if (iequals(sModelType, "scaramuzza")) {
             modelType = Camera::SCARAMUZZA;
-        } else if (boost::iequals(sModelType, "pinhole")) {
+        } else if (iequals(sModelType, "pinhole")) {
             modelType = Camera::PINHOLE;
         } else {
             std::cerr << "# ERROR: Unknown camera model: " << sModelType << std::endl;
