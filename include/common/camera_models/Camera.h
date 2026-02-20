@@ -2,7 +2,7 @@
 #define COMMON__CAMERA_MODELS__CAMERA_H
 
 #include <memory>
-#include <eigen3/Eigen/Dense>
+#include <Eigen/Dense>
 #include <opencv2/core/core.hpp>
 #include <vector>
 

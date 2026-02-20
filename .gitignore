@@ -9,6 +9,7 @@ CLAUDE.md
 
 assets/datasets/
 assets/references/
+assets/keys/
 
 # Dataset files (large)
 data/EuRoC/MH_*/

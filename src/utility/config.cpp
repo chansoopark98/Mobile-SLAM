@@ -1,6 +1,8 @@
 #include "utility/config.h"
 
+#ifndef __EMSCRIPTEN__
 #include <yaml-cpp/yaml.h>
+#endif
 
 #include <fstream>
 #include <iostream>
@@ -9,6 +11,7 @@ namespace utility {
 // Global configuration instance
 Config g_config;
 
+#ifndef __EMSCRIPTEN__
 bool Config::loadFromYaml(const std::string& yaml_path) {
     try {
         YAML::Node config = YAML::LoadFile(yaml_path);
@@ -131,6 +134,12 @@ bool Config::loadFromYaml(const std::string& yaml_path) {
         return false;
     }
 }
+#else
+bool Config::loadFromYaml(const std::string& yaml_path) {
+    std::cerr << "loadFromYaml not available in WASM build. Use setFromParameters()." << std::endl;
+    return false;
+}
+#endif
 
 void Config::print() const {
     std::cout << "=== Configuration ===" << std::endl;

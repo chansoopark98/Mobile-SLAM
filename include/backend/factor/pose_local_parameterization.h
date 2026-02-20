@@ -2,7 +2,7 @@
 #define BACKEND__FACTOR__POSE_LOCAL_PARAMETERIZATION_H
 
 #include <ceres/ceres.h>
-#include <eigen3/Eigen/Dense>
+#include <Eigen/Dense>
 
 #include "utility/utility.h"
 

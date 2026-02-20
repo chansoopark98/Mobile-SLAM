@@ -1,0 +1,11 @@
+{
+  "rootdir": "/home/park-ubuntu/park/SOLUTION/Mobile-SLAM/assets/references/AlvaAR/src/libs/opencv",
+  
+  "modules": [
+    { "name": "core", "location": "modules/core" },
+    { "name": "imgproc", "location": "modules/imgproc" },
+    { "name": "features2d", "location": "modules/features2d" },
+    { "name": "calib3d", "location": "modules/calib3d" },
+    { "name": "video", "location": "modules/video" }
+  ]
+}

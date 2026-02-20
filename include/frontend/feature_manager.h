@@ -2,7 +2,7 @@
 #define FRONTEND__FEATURE_MANAGER_H
 
 #include <algorithm>
-#include <eigen3/Eigen/Dense>
+#include <Eigen/Dense>
 #include <list>
 #include <numeric>
 #include <vector>

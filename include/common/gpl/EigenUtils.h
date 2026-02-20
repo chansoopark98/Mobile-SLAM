@@ -1,7 +1,7 @@
 #ifndef COMMON__GPL__EIGEN_UTILS_H
 #define COMMON__GPL__EIGEN_UTILS_H
 
-#include <eigen3/Eigen/Dense>
+#include <Eigen/Dense>
 
 #include "common/gpl/gpl.h"
 #include "ceres/rotation.h"

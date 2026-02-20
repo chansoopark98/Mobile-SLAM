@@ -11,8 +11,10 @@
 #include "utility/measurement_processor.h"
 #include "utility/test_result_logger.h"
 #include "utility/trajectory_evaluator.h"
+#ifndef __EMSCRIPTEN__
 #include "utility/visualizer.h"
 #include "utility/imu_graph_visualizer.h"
+#endif
 
 class VIOSystem {
 public:
@@ -28,8 +30,10 @@ private:
     std::shared_ptr<utility::Config> config_;
     std::unique_ptr<MeasurementProcessor> measurement_processor_;
     std::unique_ptr<backend::Estimator> vio_estimator_;
+#ifndef __EMSCRIPTEN__
     std::unique_ptr<Visualizer> visualizer_;
     std::unique_ptr<utility::IMUGraphVisualizer> imu_graph_visualizer_;
+#endif
     std::unique_ptr<utility::TestResultLogger> result_logger_;
 
     // Processing thread

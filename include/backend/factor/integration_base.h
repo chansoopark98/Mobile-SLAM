@@ -1,7 +1,7 @@
 #ifndef BACKEND__FACTOR__INTEGRATION_BASE_H
 #define BACKEND__FACTOR__INTEGRATION_BASE_H
 
-#include <eigen3/Eigen/Dense>
+#include <Eigen/Dense>
 #include <iostream>
 
 #include "utility/config.h"

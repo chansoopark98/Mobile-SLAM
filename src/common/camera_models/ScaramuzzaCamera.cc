@@ -18,8 +18,8 @@ bool iequals(const std::string& a, const std::string& b) {
 }  // namespace
 #include <cmath>
 #include <cstdio>
-#include <eigen3/Eigen/Dense>
-#include <eigen3/Eigen/SVD>
+#include <Eigen/Dense>
+#include <Eigen/SVD>
 #include <iomanip>
 #include <iostream>
 #include <opencv2/calib3d/calib3d.hpp>

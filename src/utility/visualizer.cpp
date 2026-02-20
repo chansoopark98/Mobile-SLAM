@@ -1,6 +1,6 @@
 #include <algorithm>
 #include <chrono>
-#include <experimental/filesystem>
+#include <filesystem>
 #include <fstream>
 #include <iomanip>
 #include <iostream>
@@ -10,7 +10,7 @@
 #include "utility/visualizer.h"
 
 namespace utility {
-namespace fs = std::experimental::filesystem;
+namespace fs = std::filesystem;
 
 Visualizer::Visualizer()
     : running_(false),

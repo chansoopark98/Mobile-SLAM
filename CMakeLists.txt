@@ -154,6 +154,16 @@ target_link_libraries(estimator
     ${OpenCV_LIBS}
 )
 
+# VIO Engine (headless wrapper for WASM and programmatic use)
+add_library(vio_engine src/vio_engine.cpp)
+target_link_libraries(vio_engine
+    estimator
+    feature_tracker
+    utility
+    camera_models
+    ${OpenCV_LIBS}
+)
+
 # Configuration management library
 add_library(config_manager
     src/config/config_manager.cpp

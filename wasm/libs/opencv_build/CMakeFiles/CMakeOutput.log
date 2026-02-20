@@ -1,0 +1,201 @@
+The target system is: Emscripten - 1 - x86
+The host system is: Linux - 6.8.0-90-generic - x86_64
+Determining if the include file pthread.h exists passed with the following output:
+Change Dir: /home/park-ubuntu/park/SOLUTION/Mobile-SLAM/wasm/libs/opencv_build/CMakeFiles/CMakeTmp
+
+Run Build Command(s):/usr/bin/gmake -f Makefile cmTC_b9372/fast && /usr/bin/gmake  -f CMakeFiles/cmTC_b9372.dir/build.make CMakeFiles/cmTC_b9372.dir/build
+gmake[1]: Entering directory '/home/park-ubuntu/park/SOLUTION/Mobile-SLAM/wasm/libs/opencv_build/CMakeFiles/CMakeTmp'
+Building C object CMakeFiles/cmTC_b9372.dir/CheckIncludeFile.c.o
+/home/park-ubuntu/emsdk/upstream/emscripten/emcc   -O3   -fsigned-char -W -Wall -Werror=return-type -Werror=non-virtual-dtor -Werror=address -Werror=sequence-point -Wformat -Werror=format-security -Wmissing-declarations -Wmissing-prototypes -Wstrict-prototypes -Wundef -Winit-self -Wpointer-arith -Wshadow -Wsign-promo -Wuninitialized -Winconsistent-missing-override -Wno-delete-non-virtual-dtor -Wno-unnamed-type-template-args -Wno-comment -Wno-deprecated-enum-enum-conversion -Wno-deprecated-anon-enum-enum-conversion -fdiagnostics-show-option -Qunused-arguments -ffunction-sections -fdata-sections  -fvisibility=hidden -fvisibility-inlines-hidden  -O3 -DNDEBUG  -DNDEBUG -MD -MT CMakeFiles/cmTC_b9372.dir/CheckIncludeFile.c.o -MF CMakeFiles/cmTC_b9372.dir/CheckIncludeFile.c.o.d -o CMakeFiles/cmTC_b9372.dir/CheckIncludeFile.c.o -c /home/park-ubuntu/park/SOLUTION/Mobile-SLAM/wasm/libs/opencv_build/CMakeFiles/CMakeTmp/CheckIncludeFile.c
+Linking C executable cmTC_b9372.js
+/usr/bin/cmake -E cmake_link_script CMakeFiles/cmTC_b9372.dir/link.txt --verbose=1
+/home/park-ubuntu/emsdk/upstream/emscripten/emcc -O3   -fsigned-char -W -Wall -Werror=return-type -Werror=non-virtual-dtor -Werror=address -Werror=sequence-point -Wformat -Werror=format-security -Wmissing-declarations -Wmissing-prototypes -Wstrict-prototypes -Wundef -Winit-self -Wpointer-arith -Wshadow -Wsign-promo -Wuninitialized -Winconsistent-missing-override -Wno-delete-non-virtual-dtor -Wno-unnamed-type-template-args -Wno-comment -Wno-deprecated-enum-enum-conversion -Wno-deprecated-anon-enum-enum-conversion -fdiagnostics-show-option -Qunused-arguments -ffunction-sections -fdata-sections  -fvisibility=hidden -fvisibility-inlines-hidden  -O3 -DNDEBUG  -DNDEBUG   -Wl,--gc-sections  @CMakeFiles/cmTC_b9372.dir/objects1.rsp -o cmTC_b9372.js 
+clang: warning: future releases of the clang compiler will prefer GCC installations containing libstdc++ include directories; '/usr/lib/gcc/x86_64-linux-gnu/11' would be chosen over '/usr/lib/gcc/x86_64-linux-gnu/12' [-Wgcc-install-dir-libstdcxx]
+gmake[1]: Leaving directory '/home/park-ubuntu/park/SOLUTION/Mobile-SLAM/wasm/libs/opencv_build/CMakeFiles/CMakeTmp'
+
+
+
+Determining if the posix_memalign exist passed with the following output:
+Change Dir: /home/park-ubuntu/park/SOLUTION/Mobile-SLAM/wasm/libs/opencv_build/CMakeFiles/CMakeTmp
+
+Run Build Command(s):/usr/bin/gmake -f Makefile cmTC_0e96e/fast && /usr/bin/gmake  -f CMakeFiles/cmTC_0e96e.dir/build.make CMakeFiles/cmTC_0e96e.dir/build
+gmake[1]: Entering directory '/home/park-ubuntu/park/SOLUTION/Mobile-SLAM/wasm/libs/opencv_build/CMakeFiles/CMakeTmp'
+Building C object CMakeFiles/cmTC_0e96e.dir/CheckSymbolExists.c.o
+/home/park-ubuntu/emsdk/upstream/emscripten/emcc   -O3   -fsigned-char -W -Wall    -Wformat -Wmissing-declarations -Wmissing-prototypes -Wstrict-prototypes -Wundef -Winit-self -Wpointer-arith -Wshadow -Wsign-promo -Wuninitialized -Winconsistent-missing-override -Wno-delete-non-virtual-dtor -Wno-unnamed-type-template-args -Wno-comment -Wno-deprecated-enum-enum-conversion -Wno-deprecated-anon-enum-enum-conversion -fdiagnostics-show-option -Qunused-arguments -ffunction-sections -fdata-sections  -fvisibility=hidden -fvisibility-inlines-hidden  -O3 -DNDEBUG  -DNDEBUG -MD -MT CMakeFiles/cmTC_0e96e.dir/CheckSymbolExists.c.o -MF CMakeFiles/cmTC_0e96e.dir/CheckSymbolExists.c.o.d -o CMakeFiles/cmTC_0e96e.dir/CheckSymbolExists.c.o -c /home/park-ubuntu/park/SOLUTION/Mobile-SLAM/wasm/libs/opencv_build/CMakeFiles/CMakeTmp/CheckSymbolExists.c
+Linking C executable cmTC_0e96e.js
+/usr/bin/cmake -E cmake_link_script CMakeFiles/cmTC_0e96e.dir/link.txt --verbose=1
+/home/park-ubuntu/emsdk/upstream/emscripten/emcc -O3   -fsigned-char -W -Wall    -Wformat -Wmissing-declarations -Wmissing-prototypes -Wstrict-prototypes -Wundef -Winit-self -Wpointer-arith -Wshadow -Wsign-promo -Wuninitialized -Winconsistent-missing-override -Wno-delete-non-virtual-dtor -Wno-unnamed-type-template-args -Wno-comment -Wno-deprecated-enum-enum-conversion -Wno-deprecated-anon-enum-enum-conversion -fdiagnostics-show-option -Qunused-arguments -ffunction-sections -fdata-sections  -fvisibility=hidden -fvisibility-inlines-hidden  -O3 -DNDEBUG  -DNDEBUG   -Wl,--gc-sections  @CMakeFiles/cmTC_0e96e.dir/objects1.rsp -o cmTC_0e96e.js 
+clang: warning: future releases of the clang compiler will prefer GCC installations containing libstdc++ include directories; '/usr/lib/gcc/x86_64-linux-gnu/11' would be chosen over '/usr/lib/gcc/x86_64-linux-gnu/12' [-Wgcc-install-dir-libstdcxx]
+gmake[1]: Leaving directory '/home/park-ubuntu/park/SOLUTION/Mobile-SLAM/wasm/libs/opencv_build/CMakeFiles/CMakeTmp'
+
+
+File /home/park-ubuntu/park/SOLUTION/Mobile-SLAM/wasm/libs/opencv_build/CMakeFiles/CMakeTmp/CheckSymbolExists.c:
+/* */
+#include <stdlib.h>
+
+int main(int argc, char** argv)
+{
+  (void)argv;
+#ifndef posix_memalign
+  return ((int*)(&posix_memalign))[argc];
+#else
+  (void)argc;
+  return 0;
+#endif
+}
+Determining if the include file malloc.h exists passed with the following output:
+Change Dir: /home/park-ubuntu/park/SOLUTION/Mobile-SLAM/wasm/libs/opencv_build/CMakeFiles/CMakeTmp
+
+Run Build Command(s):/usr/bin/gmake -f Makefile cmTC_54827/fast && /usr/bin/gmake  -f CMakeFiles/cmTC_54827.dir/build.make CMakeFiles/cmTC_54827.dir/build
+gmake[1]: Entering directory '/home/park-ubuntu/park/SOLUTION/Mobile-SLAM/wasm/libs/opencv_build/CMakeFiles/CMakeTmp'
+Building C object CMakeFiles/cmTC_54827.dir/CheckIncludeFile.c.o
+/home/park-ubuntu/emsdk/upstream/emscripten/emcc   -O3   -fsigned-char -W -Wall -Werror=return-type -Werror=non-virtual-dtor -Werror=address -Werror=sequence-point -Wformat -Werror=format-security -Wmissing-declarations -Wmissing-prototypes -Wstrict-prototypes -Wundef -Winit-self -Wpointer-arith -Wshadow -Wsign-promo -Wuninitialized -Winconsistent-missing-override -Wno-delete-non-virtual-dtor -Wno-unnamed-type-template-args -Wno-comment -Wno-deprecated-enum-enum-conversion -Wno-deprecated-anon-enum-enum-conversion -fdiagnostics-show-option -Qunused-arguments -ffunction-sections -fdata-sections  -fvisibility=hidden -fvisibility-inlines-hidden  -O3 -DNDEBUG  -DNDEBUG -MD -MT CMakeFiles/cmTC_54827.dir/CheckIncludeFile.c.o -MF CMakeFiles/cmTC_54827.dir/CheckIncludeFile.c.o.d -o CMakeFiles/cmTC_54827.dir/CheckIncludeFile.c.o -c /home/park-ubuntu/park/SOLUTION/Mobile-SLAM/wasm/libs/opencv_build/CMakeFiles/CMakeTmp/CheckIncludeFile.c
+Linking C executable cmTC_54827.js
+/usr/bin/cmake -E cmake_link_script CMakeFiles/cmTC_54827.dir/link.txt --verbose=1
+/home/park-ubuntu/emsdk/upstream/emscripten/emcc -O3   -fsigned-char -W -Wall -Werror=return-type -Werror=non-virtual-dtor -Werror=address -Werror=sequence-point -Wformat -Werror=format-security -Wmissing-declarations -Wmissing-prototypes -Wstrict-prototypes -Wundef -Winit-self -Wpointer-arith -Wshadow -Wsign-promo -Wuninitialized -Winconsistent-missing-override -Wno-delete-non-virtual-dtor -Wno-unnamed-type-template-args -Wno-comment -Wno-deprecated-enum-enum-conversion -Wno-deprecated-anon-enum-enum-conversion -fdiagnostics-show-option -Qunused-arguments -ffunction-sections -fdata-sections  -fvisibility=hidden -fvisibility-inlines-hidden  -O3 -DNDEBUG  -DNDEBUG   -Wl,--gc-sections  @CMakeFiles/cmTC_54827.dir/objects1.rsp -o cmTC_54827.js 
+clang: warning: future releases of the clang compiler will prefer GCC installations containing libstdc++ include directories; '/usr/lib/gcc/x86_64-linux-gnu/11' would be chosen over '/usr/lib/gcc/x86_64-linux-gnu/12' [-Wgcc-install-dir-libstdcxx]
+gmake[1]: Leaving directory '/home/park-ubuntu/park/SOLUTION/Mobile-SLAM/wasm/libs/opencv_build/CMakeFiles/CMakeTmp'
+
+
+
+Determining if the memalign exist passed with the following output:
+Change Dir: /home/park-ubuntu/park/SOLUTION/Mobile-SLAM/wasm/libs/opencv_build/CMakeFiles/CMakeTmp
+
+Run Build Command(s):/usr/bin/gmake -f Makefile cmTC_8fb1c/fast && /usr/bin/gmake  -f CMakeFiles/cmTC_8fb1c.dir/build.make CMakeFiles/cmTC_8fb1c.dir/build
+gmake[1]: Entering directory '/home/park-ubuntu/park/SOLUTION/Mobile-SLAM/wasm/libs/opencv_build/CMakeFiles/CMakeTmp'
+Building C object CMakeFiles/cmTC_8fb1c.dir/CheckSymbolExists.c.o
+/home/park-ubuntu/emsdk/upstream/emscripten/emcc   -O3   -fsigned-char -W -Wall    -Wformat -Wmissing-declarations -Wmissing-prototypes -Wstrict-prototypes -Wundef -Winit-self -Wpointer-arith -Wshadow -Wsign-promo -Wuninitialized -Winconsistent-missing-override -Wno-delete-non-virtual-dtor -Wno-unnamed-type-template-args -Wno-comment -Wno-deprecated-enum-enum-conversion -Wno-deprecated-anon-enum-enum-conversion -fdiagnostics-show-option -Qunused-arguments -ffunction-sections -fdata-sections  -fvisibility=hidden -fvisibility-inlines-hidden  -O3 -DNDEBUG  -DNDEBUG -MD -MT CMakeFiles/cmTC_8fb1c.dir/CheckSymbolExists.c.o -MF CMakeFiles/cmTC_8fb1c.dir/CheckSymbolExists.c.o.d -o CMakeFiles/cmTC_8fb1c.dir/CheckSymbolExists.c.o -c /home/park-ubuntu/park/SOLUTION/Mobile-SLAM/wasm/libs/opencv_build/CMakeFiles/CMakeTmp/CheckSymbolExists.c
+Linking C executable cmTC_8fb1c.js
+/usr/bin/cmake -E cmake_link_script CMakeFiles/cmTC_8fb1c.dir/link.txt --verbose=1
+/home/park-ubuntu/emsdk/upstream/emscripten/emcc -O3   -fsigned-char -W -Wall    -Wformat -Wmissing-declarations -Wmissing-prototypes -Wstrict-prototypes -Wundef -Winit-self -Wpointer-arith -Wshadow -Wsign-promo -Wuninitialized -Winconsistent-missing-override -Wno-delete-non-virtual-dtor -Wno-unnamed-type-template-args -Wno-comment -Wno-deprecated-enum-enum-conversion -Wno-deprecated-anon-enum-enum-conversion -fdiagnostics-show-option -Qunused-arguments -ffunction-sections -fdata-sections  -fvisibility=hidden -fvisibility-inlines-hidden  -O3 -DNDEBUG  -DNDEBUG   -Wl,--gc-sections  @CMakeFiles/cmTC_8fb1c.dir/objects1.rsp -o cmTC_8fb1c.js 
+clang: warning: future releases of the clang compiler will prefer GCC installations containing libstdc++ include directories; '/usr/lib/gcc/x86_64-linux-gnu/11' would be chosen over '/usr/lib/gcc/x86_64-linux-gnu/12' [-Wgcc-install-dir-libstdcxx]
+gmake[1]: Leaving directory '/home/park-ubuntu/park/SOLUTION/Mobile-SLAM/wasm/libs/opencv_build/CMakeFiles/CMakeTmp'
+
+
+File /home/park-ubuntu/park/SOLUTION/Mobile-SLAM/wasm/libs/opencv_build/CMakeFiles/CMakeTmp/CheckSymbolExists.c:
+/* */
+#include <malloc.h>
+
+int main(int argc, char** argv)
+{
+  (void)argv;
+#ifndef memalign
+  return ((int*)(&memalign))[argc];
+#else
+  (void)argc;
+  return 0;
+#endif
+}
+Determining if the function fseeko exists passed with the following output:
+Change Dir: /home/park-ubuntu/park/SOLUTION/Mobile-SLAM/wasm/libs/opencv_build/CMakeFiles/CMakeTmp
+
+Run Build Command(s):/usr/bin/gmake -f Makefile cmTC_f10f2/fast && /usr/bin/gmake  -f CMakeFiles/cmTC_f10f2.dir/build.make CMakeFiles/cmTC_f10f2.dir/build
+gmake[1]: Entering directory '/home/park-ubuntu/park/SOLUTION/Mobile-SLAM/wasm/libs/opencv_build/CMakeFiles/CMakeTmp'
+Building C object CMakeFiles/cmTC_f10f2.dir/CheckFunctionExists.c.o
+/home/park-ubuntu/emsdk/upstream/emscripten/emcc   -O3   -fsigned-char -W -Wall -Werror=return-type -Werror=non-virtual-dtor -Werror=address -Werror=sequence-point -Wformat -Werror=format-security -Wmissing-declarations -Wmissing-prototypes -Wstrict-prototypes -Wundef -Winit-self -Wpointer-arith -Wshadow -Wsign-promo -Wuninitialized -Winconsistent-missing-override -Wno-delete-non-virtual-dtor -Wno-unnamed-type-template-args -Wno-comment -Wno-deprecated-enum-enum-conversion -Wno-deprecated-anon-enum-enum-conversion -fdiagnostics-show-option -Qunused-arguments -ffunction-sections -fdata-sections  -fvisibility=hidden -fvisibility-inlines-hidden -DCHECK_FUNCTION_EXISTS=fseeko -O3 -DNDEBUG  -DNDEBUG -MD -MT CMakeFiles/cmTC_f10f2.dir/CheckFunctionExists.c.o -MF CMakeFiles/cmTC_f10f2.dir/CheckFunctionExists.c.o.d -o CMakeFiles/cmTC_f10f2.dir/CheckFunctionExists.c.o -c /usr/share/cmake-3.22/Modules/CheckFunctionExists.c
+Linking C executable cmTC_f10f2.js
+/usr/bin/cmake -E cmake_link_script CMakeFiles/cmTC_f10f2.dir/link.txt --verbose=1
+/home/park-ubuntu/emsdk/upstream/emscripten/emcc -O3   -fsigned-char -W -Wall -Werror=return-type -Werror=non-virtual-dtor -Werror=address -Werror=sequence-point -Wformat -Werror=format-security -Wmissing-declarations -Wmissing-prototypes -Wstrict-prototypes -Wundef -Winit-self -Wpointer-arith -Wshadow -Wsign-promo -Wuninitialized -Winconsistent-missing-override -Wno-delete-non-virtual-dtor -Wno-unnamed-type-template-args -Wno-comment -Wno-deprecated-enum-enum-conversion -Wno-deprecated-anon-enum-enum-conversion -fdiagnostics-show-option -Qunused-arguments -ffunction-sections -fdata-sections  -fvisibility=hidden -fvisibility-inlines-hidden -DCHECK_FUNCTION_EXISTS=fseeko -O3 -DNDEBUG  -DNDEBUG   -Wl,--gc-sections  @CMakeFiles/cmTC_f10f2.dir/objects1.rsp -o cmTC_f10f2.js 
+clang: warning: future releases of the clang compiler will prefer GCC installations containing libstdc++ include directories; '/usr/lib/gcc/x86_64-linux-gnu/11' would be chosen over '/usr/lib/gcc/x86_64-linux-gnu/12' [-Wgcc-install-dir-libstdcxx]
+wasm-ld: warning: function signature mismatch: fseeko
+>>> defined as () -> i32 in CMakeFiles/cmTC_f10f2.dir/CheckFunctionExists.c.o
+>>> defined as (i32, i64, i32) -> i32 in /home/park-ubuntu/emsdk/upstream/emscripten/cache/sysroot/lib/wasm32-emscripten/libc.a(fseek.o)
+gmake[1]: Leaving directory '/home/park-ubuntu/park/SOLUTION/Mobile-SLAM/wasm/libs/opencv_build/CMakeFiles/CMakeTmp'
+
+
+
+Determining if the include file unistd.h exists passed with the following output:
+Change Dir: /home/park-ubuntu/park/SOLUTION/Mobile-SLAM/wasm/libs/opencv_build/CMakeFiles/CMakeTmp
+
+Run Build Command(s):/usr/bin/gmake -f Makefile cmTC_a4331/fast && /usr/bin/gmake  -f CMakeFiles/cmTC_a4331.dir/build.make CMakeFiles/cmTC_a4331.dir/build
+gmake[1]: Entering directory '/home/park-ubuntu/park/SOLUTION/Mobile-SLAM/wasm/libs/opencv_build/CMakeFiles/CMakeTmp'
+Building C object CMakeFiles/cmTC_a4331.dir/CheckIncludeFile.c.o
+/home/park-ubuntu/emsdk/upstream/emscripten/emcc   -O3   -fsigned-char -W -Wall -Werror=return-type -Werror=non-virtual-dtor -Werror=address -Werror=sequence-point -Wformat -Werror=format-security -Wmissing-declarations -Wmissing-prototypes -Wstrict-prototypes -Wundef -Winit-self -Wpointer-arith -Wshadow -Wsign-promo -Wuninitialized -Winconsistent-missing-override -Wno-delete-non-virtual-dtor -Wno-unnamed-type-template-args -Wno-comment -Wno-deprecated-enum-enum-conversion -Wno-deprecated-anon-enum-enum-conversion -fdiagnostics-show-option -Qunused-arguments -ffunction-sections -fdata-sections  -fvisibility=hidden -fvisibility-inlines-hidden  -O3 -DNDEBUG  -DNDEBUG -MD -MT CMakeFiles/cmTC_a4331.dir/CheckIncludeFile.c.o -MF CMakeFiles/cmTC_a4331.dir/CheckIncludeFile.c.o.d -o CMakeFiles/cmTC_a4331.dir/CheckIncludeFile.c.o -c /home/park-ubuntu/park/SOLUTION/Mobile-SLAM/wasm/libs/opencv_build/CMakeFiles/CMakeTmp/CheckIncludeFile.c
+Linking C executable cmTC_a4331.js
+/usr/bin/cmake -E cmake_link_script CMakeFiles/cmTC_a4331.dir/link.txt --verbose=1
+/home/park-ubuntu/emsdk/upstream/emscripten/emcc -O3   -fsigned-char -W -Wall -Werror=return-type -Werror=non-virtual-dtor -Werror=address -Werror=sequence-point -Wformat -Werror=format-security -Wmissing-declarations -Wmissing-prototypes -Wstrict-prototypes -Wundef -Winit-self -Wpointer-arith -Wshadow -Wsign-promo -Wuninitialized -Winconsistent-missing-override -Wno-delete-non-virtual-dtor -Wno-unnamed-type-template-args -Wno-comment -Wno-deprecated-enum-enum-conversion -Wno-deprecated-anon-enum-enum-conversion -fdiagnostics-show-option -Qunused-arguments -ffunction-sections -fdata-sections  -fvisibility=hidden -fvisibility-inlines-hidden  -O3 -DNDEBUG  -DNDEBUG   -Wl,--gc-sections  @CMakeFiles/cmTC_a4331.dir/objects1.rsp -o cmTC_a4331.js 
+clang: warning: future releases of the clang compiler will prefer GCC installations containing libstdc++ include directories; '/usr/lib/gcc/x86_64-linux-gnu/11' would be chosen over '/usr/lib/gcc/x86_64-linux-gnu/12' [-Wgcc-install-dir-libstdcxx]
+gmake[1]: Leaving directory '/home/park-ubuntu/park/SOLUTION/Mobile-SLAM/wasm/libs/opencv_build/CMakeFiles/CMakeTmp'
+
+
+
+Determining if the include file sys/types.h exists passed with the following output:
+Change Dir: /home/park-ubuntu/park/SOLUTION/Mobile-SLAM/wasm/libs/opencv_build/CMakeFiles/CMakeTmp
+
+Run Build Command(s):/usr/bin/gmake -f Makefile cmTC_10c61/fast && /usr/bin/gmake  -f CMakeFiles/cmTC_10c61.dir/build.make CMakeFiles/cmTC_10c61.dir/build
+gmake[1]: Entering directory '/home/park-ubuntu/park/SOLUTION/Mobile-SLAM/wasm/libs/opencv_build/CMakeFiles/CMakeTmp'
+Building C object CMakeFiles/cmTC_10c61.dir/CheckIncludeFile.c.o
+/home/park-ubuntu/emsdk/upstream/emscripten/emcc   -O3   -fsigned-char -W -Wall -Werror=return-type -Werror=non-virtual-dtor -Werror=address -Werror=sequence-point -Wformat -Werror=format-security -Wmissing-declarations -Wmissing-prototypes -Wstrict-prototypes -Wundef -Winit-self -Wpointer-arith -Wshadow -Wsign-promo -Wuninitialized -Winconsistent-missing-override -Wno-delete-non-virtual-dtor -Wno-unnamed-type-template-args -Wno-comment -Wno-deprecated-enum-enum-conversion -Wno-deprecated-anon-enum-enum-conversion -fdiagnostics-show-option -Qunused-arguments -ffunction-sections -fdata-sections  -fvisibility=hidden -fvisibility-inlines-hidden  -O3 -DNDEBUG  -DNDEBUG -MD -MT CMakeFiles/cmTC_10c61.dir/CheckIncludeFile.c.o -MF CMakeFiles/cmTC_10c61.dir/CheckIncludeFile.c.o.d -o CMakeFiles/cmTC_10c61.dir/CheckIncludeFile.c.o -c /home/park-ubuntu/park/SOLUTION/Mobile-SLAM/wasm/libs/opencv_build/CMakeFiles/CMakeTmp/CheckIncludeFile.c
+Linking C executable cmTC_10c61.js
+/usr/bin/cmake -E cmake_link_script CMakeFiles/cmTC_10c61.dir/link.txt --verbose=1
+/home/park-ubuntu/emsdk/upstream/emscripten/emcc -O3   -fsigned-char -W -Wall -Werror=return-type -Werror=non-virtual-dtor -Werror=address -Werror=sequence-point -Wformat -Werror=format-security -Wmissing-declarations -Wmissing-prototypes -Wstrict-prototypes -Wundef -Winit-self -Wpointer-arith -Wshadow -Wsign-promo -Wuninitialized -Winconsistent-missing-override -Wno-delete-non-virtual-dtor -Wno-unnamed-type-template-args -Wno-comment -Wno-deprecated-enum-enum-conversion -Wno-deprecated-anon-enum-enum-conversion -fdiagnostics-show-option -Qunused-arguments -ffunction-sections -fdata-sections  -fvisibility=hidden -fvisibility-inlines-hidden  -O3 -DNDEBUG  -DNDEBUG   -Wl,--gc-sections  @CMakeFiles/cmTC_10c61.dir/objects1.rsp -o cmTC_10c61.js 
+clang: warning: future releases of the clang compiler will prefer GCC installations containing libstdc++ include directories; '/usr/lib/gcc/x86_64-linux-gnu/11' would be chosen over '/usr/lib/gcc/x86_64-linux-gnu/12' [-Wgcc-install-dir-libstdcxx]
+gmake[1]: Leaving directory '/home/park-ubuntu/park/SOLUTION/Mobile-SLAM/wasm/libs/opencv_build/CMakeFiles/CMakeTmp'
+
+
+
+Determining if the include file stdint.h exists passed with the following output:
+Change Dir: /home/park-ubuntu/park/SOLUTION/Mobile-SLAM/wasm/libs/opencv_build/CMakeFiles/CMakeTmp
+
+Run Build Command(s):/usr/bin/gmake -f Makefile cmTC_4b096/fast && /usr/bin/gmake  -f CMakeFiles/cmTC_4b096.dir/build.make CMakeFiles/cmTC_4b096.dir/build
+gmake[1]: Entering directory '/home/park-ubuntu/park/SOLUTION/Mobile-SLAM/wasm/libs/opencv_build/CMakeFiles/CMakeTmp'
+Building C object CMakeFiles/cmTC_4b096.dir/CheckIncludeFile.c.o
+/home/park-ubuntu/emsdk/upstream/emscripten/emcc   -O3   -fsigned-char -W -Wall -Werror=return-type -Werror=non-virtual-dtor -Werror=address -Werror=sequence-point -Wformat -Werror=format-security -Wmissing-declarations -Wmissing-prototypes -Wstrict-prototypes -Wundef -Winit-self -Wpointer-arith -Wshadow -Wsign-promo -Wuninitialized -Winconsistent-missing-override -Wno-delete-non-virtual-dtor -Wno-unnamed-type-template-args -Wno-comment -Wno-deprecated-enum-enum-conversion -Wno-deprecated-anon-enum-enum-conversion -fdiagnostics-show-option -Qunused-arguments -ffunction-sections -fdata-sections  -fvisibility=hidden -fvisibility-inlines-hidden  -O3 -DNDEBUG  -DNDEBUG -MD -MT CMakeFiles/cmTC_4b096.dir/CheckIncludeFile.c.o -MF CMakeFiles/cmTC_4b096.dir/CheckIncludeFile.c.o.d -o CMakeFiles/cmTC_4b096.dir/CheckIncludeFile.c.o -c /home/park-ubuntu/park/SOLUTION/Mobile-SLAM/wasm/libs/opencv_build/CMakeFiles/CMakeTmp/CheckIncludeFile.c
+Linking C executable cmTC_4b096.js
+/usr/bin/cmake -E cmake_link_script CMakeFiles/cmTC_4b096.dir/link.txt --verbose=1
+/home/park-ubuntu/emsdk/upstream/emscripten/emcc -O3   -fsigned-char -W -Wall -Werror=return-type -Werror=non-virtual-dtor -Werror=address -Werror=sequence-point -Wformat -Werror=format-security -Wmissing-declarations -Wmissing-prototypes -Wstrict-prototypes -Wundef -Winit-self -Wpointer-arith -Wshadow -Wsign-promo -Wuninitialized -Winconsistent-missing-override -Wno-delete-non-virtual-dtor -Wno-unnamed-type-template-args -Wno-comment -Wno-deprecated-enum-enum-conversion -Wno-deprecated-anon-enum-enum-conversion -fdiagnostics-show-option -Qunused-arguments -ffunction-sections -fdata-sections  -fvisibility=hidden -fvisibility-inlines-hidden  -O3 -DNDEBUG  -DNDEBUG   -Wl,--gc-sections  @CMakeFiles/cmTC_4b096.dir/objects1.rsp -o cmTC_4b096.js 
+clang: warning: future releases of the clang compiler will prefer GCC installations containing libstdc++ include directories; '/usr/lib/gcc/x86_64-linux-gnu/11' would be chosen over '/usr/lib/gcc/x86_64-linux-gnu/12' [-Wgcc-install-dir-libstdcxx]
+gmake[1]: Leaving directory '/home/park-ubuntu/park/SOLUTION/Mobile-SLAM/wasm/libs/opencv_build/CMakeFiles/CMakeTmp'
+
+
+
+Determining if the include file stddef.h exists passed with the following output:
+Change Dir: /home/park-ubuntu/park/SOLUTION/Mobile-SLAM/wasm/libs/opencv_build/CMakeFiles/CMakeTmp
+
+Run Build Command(s):/usr/bin/gmake -f Makefile cmTC_136c0/fast && /usr/bin/gmake  -f CMakeFiles/cmTC_136c0.dir/build.make CMakeFiles/cmTC_136c0.dir/build
+gmake[1]: Entering directory '/home/park-ubuntu/park/SOLUTION/Mobile-SLAM/wasm/libs/opencv_build/CMakeFiles/CMakeTmp'
+Building C object CMakeFiles/cmTC_136c0.dir/CheckIncludeFile.c.o
+/home/park-ubuntu/emsdk/upstream/emscripten/emcc   -O3   -fsigned-char -W -Wall -Werror=return-type -Werror=non-virtual-dtor -Werror=address -Werror=sequence-point -Wformat -Werror=format-security -Wmissing-declarations -Wmissing-prototypes -Wstrict-prototypes -Wundef -Winit-self -Wpointer-arith -Wshadow -Wsign-promo -Wuninitialized -Winconsistent-missing-override -Wno-delete-non-virtual-dtor -Wno-unnamed-type-template-args -Wno-comment -Wno-deprecated-enum-enum-conversion -Wno-deprecated-anon-enum-enum-conversion -fdiagnostics-show-option -Qunused-arguments -ffunction-sections -fdata-sections  -fvisibility=hidden -fvisibility-inlines-hidden  -O3 -DNDEBUG  -DNDEBUG -MD -MT CMakeFiles/cmTC_136c0.dir/CheckIncludeFile.c.o -MF CMakeFiles/cmTC_136c0.dir/CheckIncludeFile.c.o.d -o CMakeFiles/cmTC_136c0.dir/CheckIncludeFile.c.o -c /home/park-ubuntu/park/SOLUTION/Mobile-SLAM/wasm/libs/opencv_build/CMakeFiles/CMakeTmp/CheckIncludeFile.c
+Linking C executable cmTC_136c0.js
+/usr/bin/cmake -E cmake_link_script CMakeFiles/cmTC_136c0.dir/link.txt --verbose=1
+/home/park-ubuntu/emsdk/upstream/emscripten/emcc -O3   -fsigned-char -W -Wall -Werror=return-type -Werror=non-virtual-dtor -Werror=address -Werror=sequence-point -Wformat -Werror=format-security -Wmissing-declarations -Wmissing-prototypes -Wstrict-prototypes -Wundef -Winit-self -Wpointer-arith -Wshadow -Wsign-promo -Wuninitialized -Winconsistent-missing-override -Wno-delete-non-virtual-dtor -Wno-unnamed-type-template-args -Wno-comment -Wno-deprecated-enum-enum-conversion -Wno-deprecated-anon-enum-enum-conversion -fdiagnostics-show-option -Qunused-arguments -ffunction-sections -fdata-sections  -fvisibility=hidden -fvisibility-inlines-hidden  -O3 -DNDEBUG  -DNDEBUG   -Wl,--gc-sections  @CMakeFiles/cmTC_136c0.dir/objects1.rsp -o cmTC_136c0.js 
+clang: warning: future releases of the clang compiler will prefer GCC installations containing libstdc++ include directories; '/usr/lib/gcc/x86_64-linux-gnu/11' would be chosen over '/usr/lib/gcc/x86_64-linux-gnu/12' [-Wgcc-install-dir-libstdcxx]
+gmake[1]: Leaving directory '/home/park-ubuntu/park/SOLUTION/Mobile-SLAM/wasm/libs/opencv_build/CMakeFiles/CMakeTmp'
+
+
+
+Performing C SOURCE FILE Test CMAKE_HAVE_LIBC_PTHREAD succeeded with the following output:
+Change Dir: /home/park-ubuntu/park/SOLUTION/Mobile-SLAM/wasm/libs/opencv_build/CMakeFiles/CMakeTmp
+
+Run Build Command(s):/usr/bin/gmake -f Makefile cmTC_bbd6a/fast && /usr/bin/gmake  -f CMakeFiles/cmTC_bbd6a.dir/build.make CMakeFiles/cmTC_bbd6a.dir/build
+gmake[1]: Entering directory '/home/park-ubuntu/park/SOLUTION/Mobile-SLAM/wasm/libs/opencv_build/CMakeFiles/CMakeTmp'
+Building C object CMakeFiles/cmTC_bbd6a.dir/src.c.o
+/home/park-ubuntu/emsdk/upstream/emscripten/emcc -DCMAKE_HAVE_LIBC_PTHREAD  -O3   -fsigned-char -W -Wall -Werror=return-type -Werror=non-virtual-dtor -Werror=address -Werror=sequence-point -Wformat -Werror=format-security -Wmissing-declarations -Wmissing-prototypes -Wstrict-prototypes -Wundef -Winit-self -Wpointer-arith -Wshadow -Wsign-promo -Wuninitialized -Winconsistent-missing-override -Wno-delete-non-virtual-dtor -Wno-unnamed-type-template-args -Wno-comment -Wno-deprecated-enum-enum-conversion -Wno-deprecated-anon-enum-enum-conversion -fdiagnostics-show-option -Qunused-arguments -ffunction-sections -fdata-sections  -fvisibility=hidden -fvisibility-inlines-hidden  -O3 -DNDEBUG  -DNDEBUG -MD -MT CMakeFiles/cmTC_bbd6a.dir/src.c.o -MF CMakeFiles/cmTC_bbd6a.dir/src.c.o.d -o CMakeFiles/cmTC_bbd6a.dir/src.c.o -c /home/park-ubuntu/park/SOLUTION/Mobile-SLAM/wasm/libs/opencv_build/CMakeFiles/CMakeTmp/src.c
+Linking C executable cmTC_bbd6a.js
+/usr/bin/cmake -E cmake_link_script CMakeFiles/cmTC_bbd6a.dir/link.txt --verbose=1
+/home/park-ubuntu/emsdk/upstream/emscripten/emcc -O3   -fsigned-char -W -Wall -Werror=return-type -Werror=non-virtual-dtor -Werror=address -Werror=sequence-point -Wformat -Werror=format-security -Wmissing-declarations -Wmissing-prototypes -Wstrict-prototypes -Wundef -Winit-self -Wpointer-arith -Wshadow -Wsign-promo -Wuninitialized -Winconsistent-missing-override -Wno-delete-non-virtual-dtor -Wno-unnamed-type-template-args -Wno-comment -Wno-deprecated-enum-enum-conversion -Wno-deprecated-anon-enum-enum-conversion -fdiagnostics-show-option -Qunused-arguments -ffunction-sections -fdata-sections  -fvisibility=hidden -fvisibility-inlines-hidden  -O3 -DNDEBUG  -DNDEBUG   -Wl,--gc-sections  @CMakeFiles/cmTC_bbd6a.dir/objects1.rsp -o cmTC_bbd6a.js 
+clang: warning: future releases of the clang compiler will prefer GCC installations containing libstdc++ include directories; '/usr/lib/gcc/x86_64-linux-gnu/11' would be chosen over '/usr/lib/gcc/x86_64-linux-gnu/12' [-Wgcc-install-dir-libstdcxx]
+gmake[1]: Leaving directory '/home/park-ubuntu/park/SOLUTION/Mobile-SLAM/wasm/libs/opencv_build/CMakeFiles/CMakeTmp'
+
+
+Source file was:
+#include <pthread.h>
+
+static void* test_func(void* data)
+{
+  return data;
+}
+
+int main(void)
+{
+  pthread_t thread;
+  pthread_create(&thread, NULL, test_func, NULL);
+  pthread_detach(thread);
+  pthread_cancel(thread);
+  pthread_join(thread, NULL);
+  pthread_atfork(NULL, NULL, NULL);
+  pthread_exit(NULL);
+
+  return 0;
+}
+

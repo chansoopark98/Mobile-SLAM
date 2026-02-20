@@ -1,0 +1,1 @@
+-I/home/park-ubuntu/park/SOLUTION/Mobile-SLAM/wasm/libs/ceres-solver-src/internal/ceres/miniglog -I/home/park-ubuntu/park/SOLUTION/Mobile-SLAM/wasm/libs/ceres-solver-src/include -I/home/park-ubuntu/park/SOLUTION/Mobile-SLAM/wasm/libs/ceres-solver-src/internal -I/home/park-ubuntu/park/SOLUTION/Mobile-SLAM/wasm/libs/ceres_build/include -I/usr/include/eigen3

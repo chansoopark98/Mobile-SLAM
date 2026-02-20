@@ -1,7 +1,7 @@
 #ifndef FRONTEND__INITIALIZATION__SOLVE_5PTS_H
 #define FRONTEND__INITIALIZATION__SOLVE_5PTS_H
 
-#include <eigen3/Eigen/Dense>
+#include <Eigen/Dense>
 #include <opencv2/opencv.hpp>
 #include <vector>
 

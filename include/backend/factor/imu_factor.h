@@ -2,7 +2,7 @@
 #define BACKEND__FACTOR__IMU_FACTOR_H
 
 #include <ceres/ceres.h>
-#include <eigen3/Eigen/Dense>
+#include <Eigen/Dense>
 #include <iostream>
 
 #include "integration_base.h"

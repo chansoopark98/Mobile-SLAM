@@ -160,6 +160,20 @@ void MarginalizationInfo::marginalize() {
     A.setZero();
     b.setZero();
 
+#ifdef __EMSCRIPTEN__
+    // Single-threaded: run all factors sequentially
+    ThreadsStruct threadsstruct_single;
+    threadsstruct_single.A = Eigen::MatrixXd::Zero(pos, pos);
+    threadsstruct_single.b = Eigen::VectorXd::Zero(pos);
+    threadsstruct_single.parameter_block_size = parameter_block_size;
+    threadsstruct_single.parameter_block_idx = parameter_block_idx;
+    for (auto it : factors) {
+        threadsstruct_single.sub_factors.push_back(it);
+    }
+    ThreadsConstructA((void*)&threadsstruct_single);
+    A += threadsstruct_single.A;
+    b += threadsstruct_single.b;
+#else
     pthread_t tids[NUM_THREADS];
     ThreadsStruct threadsstruct[NUM_THREADS];
     int i = 0;
@@ -184,6 +198,7 @@ void MarginalizationInfo::marginalize() {
         A += threadsstruct[i].A;
         b += threadsstruct[i].b;
     }
+#endif
 
     // TODO
     Eigen::MatrixXd Amm = 0.5 * (A.block(0, 0, m, m) + A.block(0, 0, m, m).transpose());

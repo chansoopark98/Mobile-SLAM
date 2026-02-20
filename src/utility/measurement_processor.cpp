@@ -230,6 +230,7 @@ ImageFeatureMsg MeasurementProcessor::extractImageFeatures(const ImageFileData& 
     image_feature_msg.channel_data[3] = ChannelData(velocity_x_of_point.begin(), velocity_x_of_point.end());
     image_feature_msg.channel_data[4] = ChannelData(velocity_y_of_point.begin(), velocity_y_of_point.end());
 
+#ifndef __EMSCRIPTEN__
     if (g_config.feature_tracker.show_track) {
         cv::Mat tmp_img = show_img.rowRange(0, g_config.camera.row);
         cv::cvtColor(show_img, tmp_img, cv::COLOR_GRAY2RGB);
@@ -242,6 +243,7 @@ ImageFeatureMsg MeasurementProcessor::extractImageFeatures(const ImageFileData& 
         cv::imshow("tracking image", tmp_img);
         cv::waitKey(1);
     }
+#endif
 
     return image_feature_msg;
 }

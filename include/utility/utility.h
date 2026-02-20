@@ -1,16 +1,18 @@
 #ifndef UTILITY__UTILITY_H
 #define UTILITY__UTILITY_H
 
-#include <libgen.h>
 #include <stdio.h>
 #include <stdlib.h>
+#ifndef __EMSCRIPTEN__
+#include <libgen.h>
 #include <sys/stat.h>
 #include <sys/types.h>
+#endif
 
 #include <cassert>
 #include <cmath>
 #include <cstring>
-#include <eigen3/Eigen/Dense>
+#include <Eigen/Dense>
 #include <iostream>
 #include <string>
 #include <vector>
@@ -138,6 +140,7 @@ public:
     };
 };
 
+#ifndef __EMSCRIPTEN__
 class FileSystemHelper {
 public:
     /******************************************************************************
@@ -170,6 +173,7 @@ public:
 };
 
 std::vector<std::string> getImageFilesFromDirectory(const std::string& directory_path);
+#endif  // !__EMSCRIPTEN__
 
 }  // namespace utility
 

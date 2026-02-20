@@ -1,14 +1,15 @@
 # Mobile-SLAM
 
 VINS-Mono 기반 Visual-Inertial Odometry(VIO) 엔진.
-Native C++ 검증 후 WASM+WebGPU 브라우저 이식을 목표로 합니다.
+Native C++ 검증 후 WASM 브라우저 이식을 통한 모바일 웹 Visual SLAM.
 
 ## Architecture
 
 ```
 src/
-  tiny_vins_mono.cpp          # Entry point
+  tiny_vins_mono.cpp          # Native entry point
   vio_system.cpp              # VIO pipeline orchestration
+  vio_engine.cpp              # Headless VIO engine (WASM/programmatic API)
   frontend/
     feature_tracker.cpp        # KLT optical flow feature tracking
     feature_manager.cpp        # Feature lifecycle management
@@ -29,7 +30,7 @@ src/
       marginalization_factor.cpp # Schur complement marginalization
       pose_local_parameterization.cpp
   common/
-    camera_models/             # Multi-model camera support (Pinhole, Equidistant, Cata, Scaramuzza)
+    camera_models/             # Multi-model camera (Pinhole, Equidistant, Cata, Scaramuzza)
     gpl/                       # Geometry utility (quaternion parameterization)
     frame.cpp                  # Frame data structure
   config/
@@ -44,13 +45,39 @@ src/
     logging.h                  # Header-only macro logging
 
 include/                       # Header files (mirrors src/ structure)
-tests/                         # Google Test suites
+tests/                         # Google Test suites (5 suites, 23 tests)
 config/                        # YAML configuration files
-assets/datasets/               # Test datasets (TUM-VI, EuRoC)
-assets/references/             # Reference implementations (VINS-Mono, DPVO, AlvaAR)
+
+wasm/
+  CMakeLists.txt               # WASM build configuration (Emscripten)
+  vio_bindings.cpp             # embind C++ <-> JavaScript bindings
+  build_opencv.sh              # OpenCV WASM static library build script
+  build_ceres.sh               # Ceres Solver WASM static library build script
+  test_wasm_module.mjs         # WASM module load test
+  test_wasm_integration.mjs    # Multi-frame integration test
+  dist/                        # Built WASM module output (vio_engine.js)
+
+web/
+  index.html                   # Mobile VIO web application
+  server.js                    # HTTPS dev server (real cert + self-signed fallback)
+  vio_engine.js                # WASM module (copied from wasm/dist/)
+  js/
+    app.js                     # Main application (Camera+IMU+VIO+Renderer)
+    vio-wrapper.js             # High-level JS API wrapping WASM VIOEngine
+    shared-memory.js           # WASM heap memory management (malloc/free)
+    camera.js                  # getUserMedia camera capture + grayscale
+    imu.js                     # DeviceMotion IMU capture (iOS 13+ permission)
+    renderer.js                # Three.js trajectory + map point renderer
+
+assets/
+  datasets/                    # Test datasets (TUM-VI)
+  references/                  # Reference implementations (VINS-Mono, DPVO, AlvaAR)
+  keys/                        # SSL certificates for HTTPS
 ```
 
 ## Dependencies
+
+### Native Build
 
 | Library | Version | Purpose |
 |---------|---------|---------|
@@ -61,14 +88,23 @@ assets/references/             # Reference implementations (VINS-Mono, DPVO, Alv
 | yaml-cpp | - | Configuration parsing |
 | Google Test | 1.14.0 | Unit testing (FetchContent) |
 
-## Build
+### WASM Build
+
+| Library | Version | Purpose |
+|---------|---------|---------|
+| Emscripten | 5.0.0 | C++ to WASM compiler toolchain |
+| OpenCV (WASM) | 4.5.4 | Feature tracking (static, no GUI/I/O) |
+| Ceres Solver (WASM) | 2.2.0 | Optimization (NO_THREADS, miniglog, EIGENSPARSE) |
+| Eigen3 | 3.3+ | Header-only, shared with native |
+
+## Native Build
 
 ```bash
 cmake -B build -DCMAKE_BUILD_TYPE=Release
 cmake --build build -j$(nproc)
 ```
 
-## Run
+## Native Run
 
 ```bash
 # TUM-VI room1 dataset
@@ -79,7 +115,16 @@ cmake --build build -j$(nproc)
 - `trajectory_pose.txt` - VIO 궤적 (TUM format: timestamp tx ty tz qx qy qz qw)
 - `evaluation.txt` - ATE/RPE 정량 평가 결과 (Ground Truth 존재 시 자동 생성)
 
-## Test
+### Benchmark (TUM-VI room1)
+
+| Metric | Value |
+|--------|-------|
+| Poses | 2787 / 2821 |
+| ATE RMSE | 0.8951 m |
+| ATE Median | 0.7876 m |
+| RPE Trans RMSE | 0.7346 m |
+
+## Native Test
 
 ```bash
 cd build && ctest --output-on-failure
@@ -92,6 +137,88 @@ cd build && ctest --output-on-failure
 | TrajectoryEvaluatorTest | 7 | ATE/RPE 계산, SE(3) alignment, frame 변환 |
 | ConfigValidationTest | 4 | Config 파라미터 유효성 검증 |
 | MeasurementRobustnessTest | 5 | Malformed 입력 처리, path traversal 방어 |
+
+## WASM Build
+
+### 1. Prerequisites
+
+```bash
+# Emscripten SDK
+cd ~/emsdk && ./emsdk activate latest
+source ~/emsdk/emsdk_env.sh
+```
+
+### 2. Build WASM Dependencies
+
+```bash
+# OpenCV (core, imgproc, calib3d, features2d, video, flann)
+cd wasm && bash build_opencv.sh
+
+# Ceres Solver (NO_THREADS, miniglog, EIGENSPARSE)
+bash build_ceres.sh
+```
+
+### 3. Build VIO WASM Module
+
+```bash
+cd wasm
+mkdir -p build && cd build
+emcmake cmake ..
+emmake make -j$(nproc)
+```
+
+Output: `wasm/build/vio_engine.js` (3.4MB, SINGLE_FILE with embedded WASM)
+
+### 4. WASM Module Test
+
+```bash
+cd wasm
+node test_wasm_module.mjs        # Module load + API test
+node test_wasm_integration.mjs   # Multi-frame processing test
+```
+
+## Web Client
+
+### Start Dev Server
+
+```bash
+cd web
+node server.js [port]
+```
+
+- 기본 포트: 8444
+- `assets/keys/`에 실제 SSL 인증서가 있으면 자동 사용, 없으면 자체 서명 인증서 생성
+- 모바일 브라우저에서 접속: `https://<server-ip>:8444`
+
+### VIOEngine JavaScript API
+
+```javascript
+import VIOWasm from './vio_engine.js';
+
+// 1. Initialize
+const wasm = await VIOWasm();
+const engine = new wasm.VIOEngine();
+
+// 2. Configure
+engine.configure(width, height, fx, fy, cx, cy,
+                 modelType, k2, k3, k4, k5,
+                 r_ic_ptr, t_ic_ptr,
+                 acc_n, acc_w, gyr_n, gyr_w, g_norm);
+
+// 3. Process frames
+const hasPose = engine.processFrame(
+    imagePtr, width, height,
+    imuPtr, imuCount,
+    poseOutputPtr);
+
+// 4. Query state
+engine.isInitialized();
+engine.getFeaturePointCount();
+engine.getMapPoints(outputPtr, maxCount);
+engine.reset();
+```
+
+메모리 관리는 `SharedMemory` 클래스를 통해 WASM heap에서 `_malloc`/`_free`로 수행합니다.
 
 ## Configuration
 

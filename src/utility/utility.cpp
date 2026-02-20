@@ -1,4 +1,6 @@
+#ifndef __EMSCRIPTEN__
 #include <dirent.h>
+#endif
 #include <algorithm>
 #include <cstring>
 
@@ -17,6 +19,7 @@ Eigen::Matrix3d Utility::g2R(const Eigen::Vector3d& g) {
     return R0;
 }
 
+#ifndef __EMSCRIPTEN__
 std::vector<std::string> getImageFilesFromDirectory(const std::string& directory_path) {
     std::vector<std::string> image_files;
 
@@ -56,5 +59,6 @@ std::vector<std::string> getImageFilesFromDirectory(const std::string& directory
 
     return image_files;
 }
+#endif  // !__EMSCRIPTEN__
 
 }  // namespace utility

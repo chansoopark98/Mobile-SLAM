@@ -1,0 +1,5 @@
+#use_cache "/home/park-ubuntu/park/SOLUTION/Mobile-SLAM/assets/references/AlvaAR/src/libs/opencv/.cache"
+#do_unpack "v0.1.1f.zip" "b624b995ec9c439cbc2e9e6ee940d3a2" "https://github.com/opencv/ade/archive/v0.1.1f.zip" "/home/park-ubuntu/park/SOLUTION/Mobile-SLAM/wasm/libs/opencv_build/3rdparty/ade"
+#check_md5 "/home/park-ubuntu/park/SOLUTION/Mobile-SLAM/assets/references/AlvaAR/src/libs/opencv/.cache/ade/b624b995ec9c439cbc2e9e6ee940d3a2-v0.1.1f.zip"
+#mkdir "/home/park-ubuntu/park/SOLUTION/Mobile-SLAM/wasm/libs/opencv_build/3rdparty/ade"
+#unpack "/home/park-ubuntu/park/SOLUTION/Mobile-SLAM/wasm/libs/opencv_build/3rdparty/ade" "/home/park-ubuntu/park/SOLUTION/Mobile-SLAM/assets/references/AlvaAR/src/libs/opencv/.cache/ade/b624b995ec9c439cbc2e9e6ee940d3a2-v0.1.1f.zip"

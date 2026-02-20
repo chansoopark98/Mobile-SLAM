@@ -1,0 +1,15 @@
+{
+  "rootdir": "/home/park-ubuntu/park/SOLUTION/Mobile-SLAM/assets/references/AlvaAR/src/libs/opencv",
+  "modules": [
+    { "name": "core", "location": "modules/core" },
+    { "name": "imgproc", "location": "modules/imgproc" },
+    { "name": "features2d", "location": "modules/features2d" },
+    { "name": "calib3d", "location": "modules/calib3d" },
+    { "name": "video", "location": "modules/video" }
+  ],
+  "files_remap": [
+    { "src": "modules/java/generator/android/java/org/opencv/android/OpenCVLoader.java.in", "target": "/home/park-ubuntu/park/SOLUTION/Mobile-SLAM/wasm/libs/opencv_build/configured/modules/java/generator/android/java/org/opencv/android/OpenCVLoader.java" },
+    { "src": "modules/java/generator/src/java/org/opencv/osgi/OpenCVNativeLoader.java.in", "target": "/home/park-ubuntu/park/SOLUTION/Mobile-SLAM/wasm/libs/opencv_build/configured/modules/java/generator/src/java/org/opencv/osgi/OpenCVNativeLoader.java" },
+    { "src": "modules/core/misc/java/src/java/core+Core.jcode.in", "target": "/home/park-ubuntu/park/SOLUTION/Mobile-SLAM/wasm/libs/opencv_build/configured/modules/core/misc/java/src/java/core+Core.jcode" }
+  ]
+}

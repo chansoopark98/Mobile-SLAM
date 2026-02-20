@@ -27,19 +27,23 @@ bool IMUGraphVisualizer::initialize(int window_width, int window_height, int max
 }
 
 void IMUGraphVisualizer::start() {
+#ifndef __EMSCRIPTEN__
     if (!running_.load()) {
         running_ = true;
         visualization_thread_ = std::thread(&IMUGraphVisualizer::visualizationThread, this);
     }
+#endif
 }
 
 void IMUGraphVisualizer::stop() {
     if (running_.load()) {
         running_ = false;
+#ifndef __EMSCRIPTEN__
         if (visualization_thread_.joinable()) {
             visualization_thread_.join();
         }
         cv::destroyWindow(window_name_);
+#endif
     }
 }
 
@@ -102,17 +106,19 @@ void IMUGraphVisualizer::updateDataRange() {
 }
 
 void IMUGraphVisualizer::visualizationThread() {
+#ifndef __EMSCRIPTEN__
     cv::namedWindow(window_name_, cv::WINDOW_AUTOSIZE);
     cv::moveWindow(window_name_, 100, 1000);
-    
+
     while (running_.load()) {
         drawGraph();
         cv::imshow(window_name_, graph_image_);
-        
+
         if (cv::waitKey(30) == 27) { // ESC key
             running_ = false;
         }
     }
+#endif
 }
 
 void IMUGraphVisualizer::drawGraph() {

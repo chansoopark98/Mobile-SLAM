@@ -1,7 +1,7 @@
 #ifndef FRONTEND__INITIALIZATION__INITIAL_ALIGNMENT_H
 #define FRONTEND__INITIALIZATION__INITIAL_ALIGNMENT_H
 
-#include <eigen3/Eigen/Dense>
+#include <Eigen/Dense>
 #include <iostream>
 #include <map>
 

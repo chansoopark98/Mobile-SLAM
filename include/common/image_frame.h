@@ -1,7 +1,7 @@
 #ifndef COMMON__IMAGE_FRAME_H
 #define COMMON__IMAGE_FRAME_H
 
-#include <eigen3/Eigen/Dense>
+#include <Eigen/Dense>
 #include <map>
 #include <memory>
 #include <utility>

@@ -7,12 +7,14 @@
 
 using namespace Eigen;
 
-VIOSystem::VIOSystem(std::shared_ptr<utility::Config> config) 
+VIOSystem::VIOSystem(std::shared_ptr<utility::Config> config)
     : config_(config) {
     measurement_processor_ = std::make_unique<MeasurementProcessor>();
     vio_estimator_ = std::make_unique<backend::Estimator>();
+#ifndef __EMSCRIPTEN__
     visualizer_ = std::make_unique<Visualizer>();
     imu_graph_visualizer_ = std::make_unique<utility::IMUGraphVisualizer>();
+#endif
     result_logger_ = std::make_unique<utility::TestResultLogger>();
 }
 
@@ -31,6 +33,7 @@ bool VIOSystem::initialize() {
 }
 
 void VIOSystem::processSequence() {
+#ifndef __EMSCRIPTEN__
     vio_process_thread_ = std::make_unique<std::thread>([this]() {
         this->vioProcess();
     });
@@ -52,15 +55,21 @@ void VIOSystem::processSequence() {
     }
 
     LOG_INFO("Process thread joined");
+#else
+    // WASM: single-threaded execution
+    vioProcess();
+#endif
 }
 
 void VIOSystem::shutdown() {
+#ifndef __EMSCRIPTEN__
     if (imu_graph_visualizer_) {
         imu_graph_visualizer_->stop();
     }
     if (vio_process_thread_ && vio_process_thread_->joinable()) {
         vio_process_thread_->join();
     }
+#endif
 }
 
 void VIOSystem::vioInitialize() {
@@ -76,9 +85,11 @@ void VIOSystem::vioInitialize() {
 
     measurement_processor_->initialize(imu_filepath, image_csv_filepath, image_dirpath, config_filepath);
     vio_estimator_->setParameter();
+#ifndef __EMSCRIPTEN__
     visualizer_->initialize();
     imu_graph_visualizer_->initialize(1024, 768, 300);
     imu_graph_visualizer_->start();
+#endif
     result_logger_->initialize(config_filepath);
 }
 
@@ -183,10 +194,12 @@ void VIOSystem::processIMUData(const std::vector<utility::IMUMsg>& imu_msg, cons
             curr_acc = extractAcceleration(imu_data);
             curr_gyro = extractAngularVelocity(imu_data);
 
+#ifndef __EMSCRIPTEN__
             // Update IMU graph visualization
             if (imu_graph_visualizer_ && imu_graph_visualizer_->isRunning()) {
                 imu_graph_visualizer_->addIMUData(imu_time, curr_acc, curr_gyro);
             }
+#endif
             
             vio_estimator_->processIMU(dt, curr_acc, curr_gyro);
         } else {
@@ -195,10 +208,12 @@ void VIOSystem::processIMUData(const std::vector<utility::IMUMsg>& imu_msg, cons
             
             interpolateIMUData(prev_acc, prev_gyro, imu_data, dt_to_image, imu_time - image_time, curr_acc, curr_gyro);
 
+#ifndef __EMSCRIPTEN__
             // Update IMU graph visualization with interpolated data
             if (imu_graph_visualizer_ && imu_graph_visualizer_->isRunning()) {
                 imu_graph_visualizer_->addIMUData(image_time, curr_acc, curr_gyro);
             }
+#endif
             
             vio_estimator_->processIMU(dt_to_image, curr_acc, curr_gyro);
         }
@@ -253,10 +268,12 @@ void VIOSystem::updateCameraPose(double timestamp) {
         Eigen::Vector3d imu_position = body_position;
         Eigen::Matrix3d imu_rotation = body_rotation;
 
+#ifndef __EMSCRIPTEN__
         if (visualizer_->isRunning()) {
             visualizer_->updateCameraPose(camera_position, camera_rotation, timestamp);
             visualizer_->updateIMUPose(imu_position, imu_rotation, timestamp);
         }
+#endif
 
         result_logger_->addPose(camera_position, camera_rotation, timestamp);
 
@@ -316,7 +333,9 @@ void VIOSystem::updateFeaturePoints3D() {
             valid_points.push_back(pt);
         }
     }
+#ifndef __EMSCRIPTEN__
     if (visualizer_->isRunning()) {
         visualizer_->updateFeaturePoints3D(valid_points);
     }
+#endif
 }

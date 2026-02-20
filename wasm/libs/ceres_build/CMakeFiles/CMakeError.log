@@ -1,0 +1,15 @@
+Performing C++ SOURCE FILE Test HAVE_BIGOBJ failed with the following output:
+Change Dir: /home/park-ubuntu/park/SOLUTION/Mobile-SLAM/wasm/libs/ceres_build/CMakeFiles/CMakeTmp
+
+Run Build Command(s):/usr/bin/gmake -f Makefile cmTC_6d54e/fast && /usr/bin/gmake  -f CMakeFiles/cmTC_6d54e.dir/build.make CMakeFiles/cmTC_6d54e.dir/build
+gmake[1]: Entering directory '/home/park-ubuntu/park/SOLUTION/Mobile-SLAM/wasm/libs/ceres_build/CMakeFiles/CMakeTmp'
+Building CXX object CMakeFiles/cmTC_6d54e.dir/src.cxx.o
+/home/park-ubuntu/emsdk/upstream/emscripten/em++ -DHAVE_BIGOBJ  -O3 -msimd128  -fPIE   /bigobj -std=gnu++17 -MD -MT CMakeFiles/cmTC_6d54e.dir/src.cxx.o -MF CMakeFiles/cmTC_6d54e.dir/src.cxx.o.d -o CMakeFiles/cmTC_6d54e.dir/src.cxx.o -c /home/park-ubuntu/park/SOLUTION/Mobile-SLAM/wasm/libs/ceres_build/CMakeFiles/CMakeTmp/src.cxx
+clang++: error: no such file or directory: '/bigobj'
+gmake[1]: *** [CMakeFiles/cmTC_6d54e.dir/build.make:79: CMakeFiles/cmTC_6d54e.dir/src.cxx.o] Error 1
+gmake[1]: Leaving directory '/home/park-ubuntu/park/SOLUTION/Mobile-SLAM/wasm/libs/ceres_build/CMakeFiles/CMakeTmp'
+gmake: *** [Makefile:127: cmTC_6d54e/fast] Error 2
+
+
+Source file was:
+int main() { return 0; }

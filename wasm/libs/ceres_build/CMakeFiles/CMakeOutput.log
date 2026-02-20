@@ -1,0 +1,234 @@
+The target system is: Emscripten - 1 - x86
+The host system is: Linux - 6.8.0-90-generic - x86_64
+Determining if the function pow exists in the m passed with the following output:
+Change Dir: /home/park-ubuntu/park/SOLUTION/Mobile-SLAM/wasm/libs/ceres_build/CMakeFiles/CMakeTmp
+
+Run Build Command(s):/usr/bin/gmake -f Makefile cmTC_3ffc0/fast && /usr/bin/gmake  -f CMakeFiles/cmTC_3ffc0.dir/build.make CMakeFiles/cmTC_3ffc0.dir/build
+gmake[1]: Entering directory '/home/park-ubuntu/park/SOLUTION/Mobile-SLAM/wasm/libs/ceres_build/CMakeFiles/CMakeTmp'
+Building C object CMakeFiles/cmTC_3ffc0.dir/CheckFunctionExists.c.o
+/home/park-ubuntu/emsdk/upstream/emscripten/emcc   -O3 -msimd128 -DCHECK_FUNCTION_EXISTS=pow -fPIE -MD -MT CMakeFiles/cmTC_3ffc0.dir/CheckFunctionExists.c.o -MF CMakeFiles/cmTC_3ffc0.dir/CheckFunctionExists.c.o.d -o CMakeFiles/cmTC_3ffc0.dir/CheckFunctionExists.c.o -c /usr/share/cmake-3.22/Modules/CheckFunctionExists.c
+/usr/share/cmake-3.22/Modules/CheckFunctionExists.c:7:3: warning: incompatible redeclaration of library function 'pow' [-Wincompatible-library-redeclaration]
+    7 |   CHECK_FUNCTION_EXISTS(void);
+      |   ^
+<command line>:2:31: note: expanded from macro 'CHECK_FUNCTION_EXISTS'
+    2 | #define CHECK_FUNCTION_EXISTS pow
+      |                               ^
+/usr/share/cmake-3.22/Modules/CheckFunctionExists.c:7:3: note: 'pow' is a builtin with type 'double (double, double)'
+<command line>:2:31: note: expanded from macro 'CHECK_FUNCTION_EXISTS'
+    2 | #define CHECK_FUNCTION_EXISTS pow
+      |                               ^
+1 warning generated.
+Linking C executable cmTC_3ffc0.js
+/usr/bin/cmake -E cmake_link_script CMakeFiles/cmTC_3ffc0.dir/link.txt --verbose=1
+/home/park-ubuntu/emsdk/upstream/emscripten/emcc -O3 -msimd128 -DCHECK_FUNCTION_EXISTS=pow @CMakeFiles/cmTC_3ffc0.dir/objects1.rsp -o cmTC_3ffc0.js @CMakeFiles/cmTC_3ffc0.dir/linklibs.rsp
+clang: warning: future releases of the clang compiler will prefer GCC installations containing libstdc++ include directories; '/usr/lib/gcc/x86_64-linux-gnu/11' would be chosen over '/usr/lib/gcc/x86_64-linux-gnu/12' [-Wgcc-install-dir-libstdcxx]
+wasm-ld: warning: function signature mismatch: pow
+>>> defined as () -> i32 in CMakeFiles/cmTC_3ffc0.dir/CheckFunctionExists.c.o
+>>> defined as (f64, f64) -> f64 in /home/park-ubuntu/emsdk/upstream/emscripten/cache/sysroot/lib/wasm32-emscripten/libc.a(pow.o)
+gmake[1]: Leaving directory '/home/park-ubuntu/park/SOLUTION/Mobile-SLAM/wasm/libs/ceres_build/CMakeFiles/CMakeTmp'
+
+
+
+Performing C++ SOURCE FILE Test CHECK_CXX_FLAG_Wmissing_declarations succeeded with the following output:
+Change Dir: /home/park-ubuntu/park/SOLUTION/Mobile-SLAM/wasm/libs/ceres_build/CMakeFiles/CMakeTmp
+
+Run Build Command(s):/usr/bin/gmake -f Makefile cmTC_fe65e/fast && /usr/bin/gmake  -f CMakeFiles/cmTC_fe65e.dir/build.make CMakeFiles/cmTC_fe65e.dir/build
+gmake[1]: Entering directory '/home/park-ubuntu/park/SOLUTION/Mobile-SLAM/wasm/libs/ceres_build/CMakeFiles/CMakeTmp'
+Building CXX object CMakeFiles/cmTC_fe65e.dir/src.cxx.o
+/home/park-ubuntu/emsdk/upstream/emscripten/em++ -DCHECK_CXX_FLAG_Wmissing_declarations  -O3 -msimd128  -fPIE   -Wmissing-declarations -std=gnu++17 -MD -MT CMakeFiles/cmTC_fe65e.dir/src.cxx.o -MF CMakeFiles/cmTC_fe65e.dir/src.cxx.o.d -o CMakeFiles/cmTC_fe65e.dir/src.cxx.o -c /home/park-ubuntu/park/SOLUTION/Mobile-SLAM/wasm/libs/ceres_build/CMakeFiles/CMakeTmp/src.cxx
+Linking CXX executable cmTC_fe65e.js
+/usr/bin/cmake -E cmake_link_script CMakeFiles/cmTC_fe65e.dir/link.txt --verbose=1
+/home/park-ubuntu/emsdk/upstream/emscripten/em++ -O3 -msimd128  @CMakeFiles/cmTC_fe65e.dir/objects1.rsp -o cmTC_fe65e.js 
+clang: warning: future releases of the clang compiler will prefer GCC installations containing libstdc++ include directories; '/usr/lib/gcc/x86_64-linux-gnu/11' would be chosen over '/usr/lib/gcc/x86_64-linux-gnu/12' [-Wgcc-install-dir-libstdcxx]
+gmake[1]: Leaving directory '/home/park-ubuntu/park/SOLUTION/Mobile-SLAM/wasm/libs/ceres_build/CMakeFiles/CMakeTmp'
+
+
+Source file was:
+int main() { return 0; }
+Performing C++ SOURCE FILE Test CHECK_CXX_FLAG_Wno_unknown_pragmas succeeded with the following output:
+Change Dir: /home/park-ubuntu/park/SOLUTION/Mobile-SLAM/wasm/libs/ceres_build/CMakeFiles/CMakeTmp
+
+Run Build Command(s):/usr/bin/gmake -f Makefile cmTC_134e0/fast && /usr/bin/gmake  -f CMakeFiles/cmTC_134e0.dir/build.make CMakeFiles/cmTC_134e0.dir/build
+gmake[1]: Entering directory '/home/park-ubuntu/park/SOLUTION/Mobile-SLAM/wasm/libs/ceres_build/CMakeFiles/CMakeTmp'
+Building CXX object CMakeFiles/cmTC_134e0.dir/src.cxx.o
+/home/park-ubuntu/emsdk/upstream/emscripten/em++ -DCHECK_CXX_FLAG_Wno_unknown_pragmas  -O3 -msimd128  -fPIE   -Wno-unknown-pragmas -std=gnu++17 -MD -MT CMakeFiles/cmTC_134e0.dir/src.cxx.o -MF CMakeFiles/cmTC_134e0.dir/src.cxx.o.d -o CMakeFiles/cmTC_134e0.dir/src.cxx.o -c /home/park-ubuntu/park/SOLUTION/Mobile-SLAM/wasm/libs/ceres_build/CMakeFiles/CMakeTmp/src.cxx
+Linking CXX executable cmTC_134e0.js
+/usr/bin/cmake -E cmake_link_script CMakeFiles/cmTC_134e0.dir/link.txt --verbose=1
+/home/park-ubuntu/emsdk/upstream/emscripten/em++ -O3 -msimd128  @CMakeFiles/cmTC_134e0.dir/objects1.rsp -o cmTC_134e0.js 
+clang: warning: future releases of the clang compiler will prefer GCC installations containing libstdc++ include directories; '/usr/lib/gcc/x86_64-linux-gnu/11' would be chosen over '/usr/lib/gcc/x86_64-linux-gnu/12' [-Wgcc-install-dir-libstdcxx]
+gmake[1]: Leaving directory '/home/park-ubuntu/park/SOLUTION/Mobile-SLAM/wasm/libs/ceres_build/CMakeFiles/CMakeTmp'
+
+
+Source file was:
+int main() { return 0; }
+Performing C++ SOURCE FILE Test CHECK_CXX_FLAG_Wno_sign_compare succeeded with the following output:
+Change Dir: /home/park-ubuntu/park/SOLUTION/Mobile-SLAM/wasm/libs/ceres_build/CMakeFiles/CMakeTmp
+
+Run Build Command(s):/usr/bin/gmake -f Makefile cmTC_77d3e/fast && /usr/bin/gmake  -f CMakeFiles/cmTC_77d3e.dir/build.make CMakeFiles/cmTC_77d3e.dir/build
+gmake[1]: Entering directory '/home/park-ubuntu/park/SOLUTION/Mobile-SLAM/wasm/libs/ceres_build/CMakeFiles/CMakeTmp'
+Building CXX object CMakeFiles/cmTC_77d3e.dir/src.cxx.o
+/home/park-ubuntu/emsdk/upstream/emscripten/em++ -DCHECK_CXX_FLAG_Wno_sign_compare  -O3 -msimd128  -fPIE   -Wno-sign-compare -std=gnu++17 -MD -MT CMakeFiles/cmTC_77d3e.dir/src.cxx.o -MF CMakeFiles/cmTC_77d3e.dir/src.cxx.o.d -o CMakeFiles/cmTC_77d3e.dir/src.cxx.o -c /home/park-ubuntu/park/SOLUTION/Mobile-SLAM/wasm/libs/ceres_build/CMakeFiles/CMakeTmp/src.cxx
+Linking CXX executable cmTC_77d3e.js
+/usr/bin/cmake -E cmake_link_script CMakeFiles/cmTC_77d3e.dir/link.txt --verbose=1
+/home/park-ubuntu/emsdk/upstream/emscripten/em++ -O3 -msimd128  @CMakeFiles/cmTC_77d3e.dir/objects1.rsp -o cmTC_77d3e.js 
+clang: warning: future releases of the clang compiler will prefer GCC installations containing libstdc++ include directories; '/usr/lib/gcc/x86_64-linux-gnu/11' would be chosen over '/usr/lib/gcc/x86_64-linux-gnu/12' [-Wgcc-install-dir-libstdcxx]
+gmake[1]: Leaving directory '/home/park-ubuntu/park/SOLUTION/Mobile-SLAM/wasm/libs/ceres_build/CMakeFiles/CMakeTmp'
+
+
+Source file was:
+int main() { return 0; }
+Performing C++ SOURCE FILE Test CHECK_CXX_FLAG_Wno_unused_parameter succeeded with the following output:
+Change Dir: /home/park-ubuntu/park/SOLUTION/Mobile-SLAM/wasm/libs/ceres_build/CMakeFiles/CMakeTmp
+
+Run Build Command(s):/usr/bin/gmake -f Makefile cmTC_ce462/fast && /usr/bin/gmake  -f CMakeFiles/cmTC_ce462.dir/build.make CMakeFiles/cmTC_ce462.dir/build
+gmake[1]: Entering directory '/home/park-ubuntu/park/SOLUTION/Mobile-SLAM/wasm/libs/ceres_build/CMakeFiles/CMakeTmp'
+Building CXX object CMakeFiles/cmTC_ce462.dir/src.cxx.o
+/home/park-ubuntu/emsdk/upstream/emscripten/em++ -DCHECK_CXX_FLAG_Wno_unused_parameter  -O3 -msimd128  -fPIE   -Wno-unused-parameter -std=gnu++17 -MD -MT CMakeFiles/cmTC_ce462.dir/src.cxx.o -MF CMakeFiles/cmTC_ce462.dir/src.cxx.o.d -o CMakeFiles/cmTC_ce462.dir/src.cxx.o -c /home/park-ubuntu/park/SOLUTION/Mobile-SLAM/wasm/libs/ceres_build/CMakeFiles/CMakeTmp/src.cxx
+Linking CXX executable cmTC_ce462.js
+/usr/bin/cmake -E cmake_link_script CMakeFiles/cmTC_ce462.dir/link.txt --verbose=1
+/home/park-ubuntu/emsdk/upstream/emscripten/em++ -O3 -msimd128  @CMakeFiles/cmTC_ce462.dir/objects1.rsp -o cmTC_ce462.js 
+clang: warning: future releases of the clang compiler will prefer GCC installations containing libstdc++ include directories; '/usr/lib/gcc/x86_64-linux-gnu/11' would be chosen over '/usr/lib/gcc/x86_64-linux-gnu/12' [-Wgcc-install-dir-libstdcxx]
+gmake[1]: Leaving directory '/home/park-ubuntu/park/SOLUTION/Mobile-SLAM/wasm/libs/ceres_build/CMakeFiles/CMakeTmp'
+
+
+Source file was:
+int main() { return 0; }
+Performing C++ SOURCE FILE Test CHECK_CXX_FLAG_Wno_missing_field_initializers succeeded with the following output:
+Change Dir: /home/park-ubuntu/park/SOLUTION/Mobile-SLAM/wasm/libs/ceres_build/CMakeFiles/CMakeTmp
+
+Run Build Command(s):/usr/bin/gmake -f Makefile cmTC_58d0e/fast && /usr/bin/gmake  -f CMakeFiles/cmTC_58d0e.dir/build.make CMakeFiles/cmTC_58d0e.dir/build
+gmake[1]: Entering directory '/home/park-ubuntu/park/SOLUTION/Mobile-SLAM/wasm/libs/ceres_build/CMakeFiles/CMakeTmp'
+Building CXX object CMakeFiles/cmTC_58d0e.dir/src.cxx.o
+/home/park-ubuntu/emsdk/upstream/emscripten/em++ -DCHECK_CXX_FLAG_Wno_missing_field_initializers  -O3 -msimd128  -fPIE   -Wno-missing-field-initializers -std=gnu++17 -MD -MT CMakeFiles/cmTC_58d0e.dir/src.cxx.o -MF CMakeFiles/cmTC_58d0e.dir/src.cxx.o.d -o CMakeFiles/cmTC_58d0e.dir/src.cxx.o -c /home/park-ubuntu/park/SOLUTION/Mobile-SLAM/wasm/libs/ceres_build/CMakeFiles/CMakeTmp/src.cxx
+Linking CXX executable cmTC_58d0e.js
+/usr/bin/cmake -E cmake_link_script CMakeFiles/cmTC_58d0e.dir/link.txt --verbose=1
+/home/park-ubuntu/emsdk/upstream/emscripten/em++ -O3 -msimd128  @CMakeFiles/cmTC_58d0e.dir/objects1.rsp -o cmTC_58d0e.js 
+clang: warning: future releases of the clang compiler will prefer GCC installations containing libstdc++ include directories; '/usr/lib/gcc/x86_64-linux-gnu/11' would be chosen over '/usr/lib/gcc/x86_64-linux-gnu/12' [-Wgcc-install-dir-libstdcxx]
+gmake[1]: Leaving directory '/home/park-ubuntu/park/SOLUTION/Mobile-SLAM/wasm/libs/ceres_build/CMakeFiles/CMakeTmp'
+
+
+Source file was:
+int main() { return 0; }
+Performing C++ SOURCE FILE Test HAVE_RETURN_TYPE_C_LINKAGE succeeded with the following output:
+Change Dir: /home/park-ubuntu/park/SOLUTION/Mobile-SLAM/wasm/libs/ceres_build/CMakeFiles/CMakeTmp
+
+Run Build Command(s):/usr/bin/gmake -f Makefile cmTC_94211/fast && /usr/bin/gmake  -f CMakeFiles/cmTC_94211.dir/build.make CMakeFiles/cmTC_94211.dir/build
+gmake[1]: Entering directory '/home/park-ubuntu/park/SOLUTION/Mobile-SLAM/wasm/libs/ceres_build/CMakeFiles/CMakeTmp'
+Building CXX object CMakeFiles/cmTC_94211.dir/src.cxx.o
+/home/park-ubuntu/emsdk/upstream/emscripten/em++ -DHAVE_RETURN_TYPE_C_LINKAGE  -O3 -msimd128  -Wmissing-declarations -Wno-unknown-pragmas -Wno-sign-compare -Wno-unused-parameter -Wno-missing-field-initializers -Qunused-arguments -mllvm -inline-threshold=600  -fPIE   -Wno-return-type-c-linkage -std=gnu++17 -MD -MT CMakeFiles/cmTC_94211.dir/src.cxx.o -MF CMakeFiles/cmTC_94211.dir/src.cxx.o.d -o CMakeFiles/cmTC_94211.dir/src.cxx.o -c /home/park-ubuntu/park/SOLUTION/Mobile-SLAM/wasm/libs/ceres_build/CMakeFiles/CMakeTmp/src.cxx
+Linking CXX executable cmTC_94211.js
+/usr/bin/cmake -E cmake_link_script CMakeFiles/cmTC_94211.dir/link.txt --verbose=1
+/home/park-ubuntu/emsdk/upstream/emscripten/em++ -O3 -msimd128  -Wmissing-declarations -Wno-unknown-pragmas -Wno-sign-compare -Wno-unused-parameter -Wno-missing-field-initializers -Qunused-arguments -mllvm -inline-threshold=600  @CMakeFiles/cmTC_94211.dir/objects1.rsp -o cmTC_94211.js 
+clang: warning: future releases of the clang compiler will prefer GCC installations containing libstdc++ include directories; '/usr/lib/gcc/x86_64-linux-gnu/11' would be chosen over '/usr/lib/gcc/x86_64-linux-gnu/12' [-Wgcc-install-dir-libstdcxx]
+gmake[1]: Leaving directory '/home/park-ubuntu/park/SOLUTION/Mobile-SLAM/wasm/libs/ceres_build/CMakeFiles/CMakeTmp'
+
+
+Source file was:
+int main() { return 0; }
+Performing C SOURCE FILE Test CMAKE_HAVE_LIBC_PTHREAD succeeded with the following output:
+Change Dir: /home/park-ubuntu/park/SOLUTION/Mobile-SLAM/wasm/libs/ceres_build/CMakeFiles/CMakeTmp
+
+Run Build Command(s):/usr/bin/gmake -f Makefile cmTC_cdbe7/fast && /usr/bin/gmake  -f CMakeFiles/cmTC_cdbe7.dir/build.make CMakeFiles/cmTC_cdbe7.dir/build
+gmake[1]: Entering directory '/home/park-ubuntu/park/SOLUTION/Mobile-SLAM/wasm/libs/ceres_build/CMakeFiles/CMakeTmp'
+Building C object CMakeFiles/cmTC_cdbe7.dir/src.c.o
+/home/park-ubuntu/emsdk/upstream/emscripten/emcc -DCMAKE_HAVE_LIBC_PTHREAD  -O3 -msimd128  -fPIE -MD -MT CMakeFiles/cmTC_cdbe7.dir/src.c.o -MF CMakeFiles/cmTC_cdbe7.dir/src.c.o.d -o CMakeFiles/cmTC_cdbe7.dir/src.c.o -c /home/park-ubuntu/park/SOLUTION/Mobile-SLAM/wasm/libs/ceres_build/CMakeFiles/CMakeTmp/src.c
+Linking C executable cmTC_cdbe7.js
+/usr/bin/cmake -E cmake_link_script CMakeFiles/cmTC_cdbe7.dir/link.txt --verbose=1
+/home/park-ubuntu/emsdk/upstream/emscripten/emcc -O3 -msimd128  @CMakeFiles/cmTC_cdbe7.dir/objects1.rsp -o cmTC_cdbe7.js 
+clang: warning: future releases of the clang compiler will prefer GCC installations containing libstdc++ include directories; '/usr/lib/gcc/x86_64-linux-gnu/11' would be chosen over '/usr/lib/gcc/x86_64-linux-gnu/12' [-Wgcc-install-dir-libstdcxx]
+gmake[1]: Leaving directory '/home/park-ubuntu/park/SOLUTION/Mobile-SLAM/wasm/libs/ceres_build/CMakeFiles/CMakeTmp'
+
+
+Source file was:
+#include <pthread.h>
+
+static void* test_func(void* data)
+{
+  return data;
+}
+
+int main(void)
+{
+  pthread_t thread;
+  pthread_create(&thread, NULL, test_func, NULL);
+  pthread_detach(thread);
+  pthread_cancel(thread);
+  pthread_join(thread, NULL);
+  pthread_atfork(NULL, NULL, NULL);
+  pthread_exit(NULL);
+
+  return 0;
+}
+
+Performing C++ SOURCE FILE Test CHECK_CXX_FLAG_Wno_missing_declarations succeeded with the following output:
+Change Dir: /home/park-ubuntu/park/SOLUTION/Mobile-SLAM/wasm/libs/ceres_build/CMakeFiles/CMakeTmp
+
+Run Build Command(s):/usr/bin/gmake -f Makefile cmTC_11381/fast && /usr/bin/gmake  -f CMakeFiles/cmTC_11381.dir/build.make CMakeFiles/cmTC_11381.dir/build
+gmake[1]: Entering directory '/home/park-ubuntu/park/SOLUTION/Mobile-SLAM/wasm/libs/ceres_build/CMakeFiles/CMakeTmp'
+Building CXX object CMakeFiles/cmTC_11381.dir/src.cxx.o
+/home/park-ubuntu/emsdk/upstream/emscripten/em++ -DCHECK_CXX_FLAG_Wno_missing_declarations  -O3 -msimd128  -Wmissing-declarations -Wno-unknown-pragmas -Wno-sign-compare -Wno-unused-parameter -Wno-missing-field-initializers -Qunused-arguments -mllvm -inline-threshold=600 -Wno-return-type-c-linkage  -fPIE   -Wno-missing-declarations -std=gnu++17 -MD -MT CMakeFiles/cmTC_11381.dir/src.cxx.o -MF CMakeFiles/cmTC_11381.dir/src.cxx.o.d -o CMakeFiles/cmTC_11381.dir/src.cxx.o -c /home/park-ubuntu/park/SOLUTION/Mobile-SLAM/wasm/libs/ceres_build/CMakeFiles/CMakeTmp/src.cxx
+Linking CXX executable cmTC_11381.js
+/usr/bin/cmake -E cmake_link_script CMakeFiles/cmTC_11381.dir/link.txt --verbose=1
+/home/park-ubuntu/emsdk/upstream/emscripten/em++ -O3 -msimd128  -Wmissing-declarations -Wno-unknown-pragmas -Wno-sign-compare -Wno-unused-parameter -Wno-missing-field-initializers -Qunused-arguments -mllvm -inline-threshold=600 -Wno-return-type-c-linkage  @CMakeFiles/cmTC_11381.dir/objects1.rsp -o cmTC_11381.js 
+clang: warning: future releases of the clang compiler will prefer GCC installations containing libstdc++ include directories; '/usr/lib/gcc/x86_64-linux-gnu/11' would be chosen over '/usr/lib/gcc/x86_64-linux-gnu/12' [-Wgcc-install-dir-libstdcxx]
+gmake[1]: Leaving directory '/home/park-ubuntu/park/SOLUTION/Mobile-SLAM/wasm/libs/ceres_build/CMakeFiles/CMakeTmp'
+
+
+Source file was:
+int main() { return 0; }
+Performing C++ SOURCE FILE Test COMPILER_HAS_HIDDEN_VISIBILITY succeeded with the following output:
+Change Dir: /home/park-ubuntu/park/SOLUTION/Mobile-SLAM/wasm/libs/ceres_build/CMakeFiles/CMakeTmp
+
+Run Build Command(s):/usr/bin/gmake -f Makefile cmTC_6fb58/fast && /usr/bin/gmake  -f CMakeFiles/cmTC_6fb58.dir/build.make CMakeFiles/cmTC_6fb58.dir/build
+gmake[1]: Entering directory '/home/park-ubuntu/park/SOLUTION/Mobile-SLAM/wasm/libs/ceres_build/CMakeFiles/CMakeTmp'
+Building CXX object CMakeFiles/cmTC_6fb58.dir/src.cxx.o
+/home/park-ubuntu/emsdk/upstream/emscripten/em++ -DCOMPILER_HAS_HIDDEN_VISIBILITY  -O3 -msimd128  -Wmissing-declarations -Wno-unknown-pragmas -Wno-sign-compare -Wno-unused-parameter -Wno-missing-field-initializers -Qunused-arguments -mllvm -inline-threshold=600 -Wno-return-type-c-linkage  -fPIE   -fvisibility=hidden -std=gnu++17 -MD -MT CMakeFiles/cmTC_6fb58.dir/src.cxx.o -MF CMakeFiles/cmTC_6fb58.dir/src.cxx.o.d -o CMakeFiles/cmTC_6fb58.dir/src.cxx.o -c /home/park-ubuntu/park/SOLUTION/Mobile-SLAM/wasm/libs/ceres_build/CMakeFiles/CMakeTmp/src.cxx
+Linking CXX executable cmTC_6fb58.js
+/usr/bin/cmake -E cmake_link_script CMakeFiles/cmTC_6fb58.dir/link.txt --verbose=1
+/home/park-ubuntu/emsdk/upstream/emscripten/em++ -O3 -msimd128  -Wmissing-declarations -Wno-unknown-pragmas -Wno-sign-compare -Wno-unused-parameter -Wno-missing-field-initializers -Qunused-arguments -mllvm -inline-threshold=600 -Wno-return-type-c-linkage  @CMakeFiles/cmTC_6fb58.dir/objects1.rsp -o cmTC_6fb58.js 
+clang: warning: future releases of the clang compiler will prefer GCC installations containing libstdc++ include directories; '/usr/lib/gcc/x86_64-linux-gnu/11' would be chosen over '/usr/lib/gcc/x86_64-linux-gnu/12' [-Wgcc-install-dir-libstdcxx]
+gmake[1]: Leaving directory '/home/park-ubuntu/park/SOLUTION/Mobile-SLAM/wasm/libs/ceres_build/CMakeFiles/CMakeTmp'
+
+
+Source file was:
+int main() { return 0; }
+Performing C++ SOURCE FILE Test COMPILER_HAS_HIDDEN_INLINE_VISIBILITY succeeded with the following output:
+Change Dir: /home/park-ubuntu/park/SOLUTION/Mobile-SLAM/wasm/libs/ceres_build/CMakeFiles/CMakeTmp
+
+Run Build Command(s):/usr/bin/gmake -f Makefile cmTC_e798f/fast && /usr/bin/gmake  -f CMakeFiles/cmTC_e798f.dir/build.make CMakeFiles/cmTC_e798f.dir/build
+gmake[1]: Entering directory '/home/park-ubuntu/park/SOLUTION/Mobile-SLAM/wasm/libs/ceres_build/CMakeFiles/CMakeTmp'
+Building CXX object CMakeFiles/cmTC_e798f.dir/src.cxx.o
+/home/park-ubuntu/emsdk/upstream/emscripten/em++ -DCOMPILER_HAS_HIDDEN_INLINE_VISIBILITY  -O3 -msimd128  -Wmissing-declarations -Wno-unknown-pragmas -Wno-sign-compare -Wno-unused-parameter -Wno-missing-field-initializers -Qunused-arguments -mllvm -inline-threshold=600 -Wno-return-type-c-linkage  -fPIE   -fvisibility-inlines-hidden -std=gnu++17 -MD -MT CMakeFiles/cmTC_e798f.dir/src.cxx.o -MF CMakeFiles/cmTC_e798f.dir/src.cxx.o.d -o CMakeFiles/cmTC_e798f.dir/src.cxx.o -c /home/park-ubuntu/park/SOLUTION/Mobile-SLAM/wasm/libs/ceres_build/CMakeFiles/CMakeTmp/src.cxx
+Linking CXX executable cmTC_e798f.js
+/usr/bin/cmake -E cmake_link_script CMakeFiles/cmTC_e798f.dir/link.txt --verbose=1
+/home/park-ubuntu/emsdk/upstream/emscripten/em++ -O3 -msimd128  -Wmissing-declarations -Wno-unknown-pragmas -Wno-sign-compare -Wno-unused-parameter -Wno-missing-field-initializers -Qunused-arguments -mllvm -inline-threshold=600 -Wno-return-type-c-linkage  @CMakeFiles/cmTC_e798f.dir/objects1.rsp -o cmTC_e798f.js 
+clang: warning: future releases of the clang compiler will prefer GCC installations containing libstdc++ include directories; '/usr/lib/gcc/x86_64-linux-gnu/11' would be chosen over '/usr/lib/gcc/x86_64-linux-gnu/12' [-Wgcc-install-dir-libstdcxx]
+gmake[1]: Leaving directory '/home/park-ubuntu/park/SOLUTION/Mobile-SLAM/wasm/libs/ceres_build/CMakeFiles/CMakeTmp'
+
+
+Source file was:
+int main() { return 0; }
+Performing C++ SOURCE FILE Test COMPILER_HAS_DEPRECATED_ATTR succeeded with the following output:
+Change Dir: /home/park-ubuntu/park/SOLUTION/Mobile-SLAM/wasm/libs/ceres_build/CMakeFiles/CMakeTmp
+
+Run Build Command(s):/usr/bin/gmake -f Makefile cmTC_eae6f/fast && /usr/bin/gmake  -f CMakeFiles/cmTC_eae6f.dir/build.make CMakeFiles/cmTC_eae6f.dir/build
+gmake[1]: Entering directory '/home/park-ubuntu/park/SOLUTION/Mobile-SLAM/wasm/libs/ceres_build/CMakeFiles/CMakeTmp'
+Building CXX object CMakeFiles/cmTC_eae6f.dir/src.cxx.o
+/home/park-ubuntu/emsdk/upstream/emscripten/em++ -DCOMPILER_HAS_DEPRECATED_ATTR  -O3 -msimd128  -Wmissing-declarations -Wno-unknown-pragmas -Wno-sign-compare -Wno-unused-parameter -Wno-missing-field-initializers -Qunused-arguments -mllvm -inline-threshold=600 -Wno-return-type-c-linkage  -fPIE -std=gnu++17 -MD -MT CMakeFiles/cmTC_eae6f.dir/src.cxx.o -MF CMakeFiles/cmTC_eae6f.dir/src.cxx.o.d -o CMakeFiles/cmTC_eae6f.dir/src.cxx.o -c /home/park-ubuntu/park/SOLUTION/Mobile-SLAM/wasm/libs/ceres_build/CMakeFiles/CMakeTmp/src.cxx
+/home/park-ubuntu/park/SOLUTION/Mobile-SLAM/wasm/libs/ceres_build/CMakeFiles/CMakeTmp/src.cxx:2:25: warning: 'somefunc' is deprecated [-Wdeprecated-declarations]
+    2 |     int main() { return somefunc();}
+      |                         ^
+/home/park-ubuntu/park/SOLUTION/Mobile-SLAM/wasm/libs/ceres_build/CMakeFiles/CMakeTmp/src.cxx:1:16: note: 'somefunc' has been explicitly marked deprecated here
+    1 | __attribute__((__deprecated__)) int somefunc() { return 0; }
+      |                ^
+1 warning generated.
+Linking CXX executable cmTC_eae6f.js
+/usr/bin/cmake -E cmake_link_script CMakeFiles/cmTC_eae6f.dir/link.txt --verbose=1
+/home/park-ubuntu/emsdk/upstream/emscripten/em++ -O3 -msimd128  -Wmissing-declarations -Wno-unknown-pragmas -Wno-sign-compare -Wno-unused-parameter -Wno-missing-field-initializers -Qunused-arguments -mllvm -inline-threshold=600 -Wno-return-type-c-linkage  @CMakeFiles/cmTC_eae6f.dir/objects1.rsp -o cmTC_eae6f.js 
+clang: warning: future releases of the clang compiler will prefer GCC installations containing libstdc++ include directories; '/usr/lib/gcc/x86_64-linux-gnu/11' would be chosen over '/usr/lib/gcc/x86_64-linux-gnu/12' [-Wgcc-install-dir-libstdcxx]
+gmake[1]: Leaving directory '/home/park-ubuntu/park/SOLUTION/Mobile-SLAM/wasm/libs/ceres_build/CMakeFiles/CMakeTmp'
+
+
+Source file was:
+__attribute__((__deprecated__)) int somefunc() { return 0; }
+    int main() { return somefunc();}

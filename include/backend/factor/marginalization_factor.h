@@ -2,13 +2,19 @@
 #define BACKEND__FACTOR__MARGINALIZATION_FACTOR_H
 
 #include <ceres/ceres.h>
+#ifndef __EMSCRIPTEN__
 #include <pthread.h>
+#endif
 #include <cstdlib>
 #include <unordered_map>
 
 #include "utility/utility.h"
 
+#ifdef __EMSCRIPTEN__
+const int NUM_THREADS = 1;
+#else
 const int NUM_THREADS = 4;
+#endif
 
 namespace backend {
 namespace factor {

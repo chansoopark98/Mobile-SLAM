@@ -1,5 +1,8 @@
 #include "frontend/feature_tracker.h"
 
+using namespace std;
+using namespace common;
+using namespace Eigen;
 using namespace utility;
 
 namespace frontend {
