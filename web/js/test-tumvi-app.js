@@ -147,9 +147,53 @@ async function parseGroundTruth(url) {
         entries.push({
             timestamp_s: parseFloat(p[0]) * 1e-9,
             position: [parseFloat(p[1]), parseFloat(p[2]), parseFloat(p[3])],
+            quaternion: [parseFloat(p[4]), parseFloat(p[5]), parseFloat(p[6]), parseFloat(p[7])],  // qw, qx, qy, qz
         });
     }
     return entries;
+}
+
+/**
+ * Normalize GT trajectory: apply T_first_inv so it starts at origin with identity orientation.
+ * This aligns GT to a "first-pose-as-origin" frame, similar to how VIO starts at origin.
+ */
+function normalizeGroundTruth(gtPoses) {
+    if (gtPoses.length === 0) return gtPoses;
+
+    // First pose: position and quaternion (qw, qx, qy, qz)
+    const p0 = gtPoses[0].position;
+    const q0 = gtPoses[0].quaternion; // [qw, qx, qy, qz]
+
+    // Compute R0 from quaternion (qw, qx, qy, qz)
+    const [qw, qx, qy, qz] = q0;
+    // R0 = rotation matrix from quaternion
+    const R0 = [
+        1 - 2*(qy*qy + qz*qz),  2*(qx*qy - qz*qw),      2*(qx*qz + qy*qw),
+        2*(qx*qy + qz*qw),      1 - 2*(qx*qx + qz*qz),  2*(qy*qz - qx*qw),
+        2*(qx*qz - qy*qw),      2*(qy*qz + qx*qw),      1 - 2*(qx*qx + qy*qy),
+    ];
+
+    // R0_inv = R0^T (rotation matrix transpose)
+    const R0_inv = [
+        R0[0], R0[3], R0[6],
+        R0[1], R0[4], R0[7],
+        R0[2], R0[5], R0[8],
+    ];
+
+    // For each pose: p_aligned = R0^T * (p - p0)
+    return gtPoses.map(pose => {
+        const dx = pose.position[0] - p0[0];
+        const dy = pose.position[1] - p0[1];
+        const dz = pose.position[2] - p0[2];
+        return {
+            timestamp_s: pose.timestamp_s,
+            position: [
+                R0_inv[0]*dx + R0_inv[1]*dy + R0_inv[2]*dz,
+                R0_inv[3]*dx + R0_inv[4]*dy + R0_inv[5]*dz,
+                R0_inv[6]*dx + R0_inv[7]*dy + R0_inv[8]*dz,
+            ],
+        };
+    });
 }
 
 // ─── IMU Slicing (Binary Search) ─────────────────────────────────────────────
@@ -355,6 +399,18 @@ class TUMVITestApp {
                 this.startPlaybackTimer();
             }
         });
+
+        // Follow camera toggle
+        const followCamCheckbox = document.getElementById('follow-cam');
+        if (followCamCheckbox && this.renderer) {
+            followCamCheckbox.addEventListener('change', (e) => {
+                this.renderer.followCamera = e.target.checked;
+                // Enable/disable orbit controls based on follow state
+                this.renderer.controls.enabled = !e.target.checked;
+            });
+            // Initial state: follow on, orbit disabled
+            this.renderer.controls.enabled = false;
+        }
 
         this.setStatus('Loading WASM module...');
         this.log('Initializing WASM VIO engine...');
@@ -664,11 +720,14 @@ class TUMVITestApp {
 
     /** Add ground truth trajectory to 3D scene (blue line) */
     addGroundTruthToRenderer(gtPoses) {
+        // Normalize GT: first pose becomes origin with identity orientation
+        const normalized = normalizeGroundTruth(gtPoses);
+
         const positions = [];
         // Subsample for rendering performance
-        const step = Math.max(1, Math.floor(gtPoses.length / 2000));
-        for (let i = 0; i < gtPoses.length; i += step) {
-            const p = gtPoses[i].position;
+        const step = Math.max(1, Math.floor(normalized.length / 2000));
+        for (let i = 0; i < normalized.length; i += step) {
+            const p = normalized[i].position;
             positions.push(p[0], p[1], p[2]);
         }
 
@@ -676,9 +735,9 @@ class TUMVITestApp {
         geometry.setAttribute('position', new THREE.Float32BufferAttribute(positions, 3));
         const material = new THREE.LineBasicMaterial({ color: 0x4488ff, linewidth: 2 });
         const line = new THREE.Line(geometry, material);
-        this.renderer.scene.add(line);
+        this.renderer.worldRoot.add(line);
         this._gtLine = line;
-        this.log(`Ground truth: ${positions.length / 3} points rendered (blue).`);
+        this.log(`Ground truth: ${positions.length / 3} points rendered (blue), normalized to origin.`);
     }
 
     // ─── Playback Controls ───────────────────────────────────────────────────
@@ -760,7 +819,7 @@ class TUMVITestApp {
         if (this.renderer) {
             this.renderer.clear();
             if (this._gtLine) {
-                this.renderer.scene.remove(this._gtLine);
+                this.renderer.worldRoot.remove(this._gtLine);
                 this._gtLine = null;
             }
         }
