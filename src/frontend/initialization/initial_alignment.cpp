@@ -1,10 +1,5 @@
-#include <sys/stat.h>
-#include <chrono>
 #include <cmath>
-#include <fstream>
-#include <iomanip>
 #include <iostream>
-#include <sstream>
 
 #include "frontend/initialization/initial_alignment.h"
 #include "utility/config.h"
@@ -206,6 +201,7 @@ bool LinearAlignment(std::map<double, common::ImageFrame> const& all_image_frame
     }
     A = A * 1000.0;
     b = b * 1000.0;
+
     x = A.ldlt().solve(b);
     if (!x.allFinite()) {
         std::cout << "LinearAlignment LDLT solve produced NaN/Inf" << std::endl;

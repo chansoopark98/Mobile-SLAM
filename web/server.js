@@ -41,6 +41,8 @@ const MIME = {
     '.jpg': 'image/jpeg',
     '.svg': 'image/svg+xml',
     '.ico': 'image/x-icon',
+    '.csv': 'text/csv',
+    '.yaml': 'text/yaml',
 };
 
 // Generate self-signed certificates if no real certs and no self-signed exist
@@ -61,15 +63,68 @@ function ensureCerts() {
     console.log('Self-signed certificate generated.');
 }
 
+// Remote log file (browser console → server file)
+const LOG_FILE = path.join(PROJECT_ROOT, 'logs', 'test-tumvi.log');
+fs.mkdirSync(path.dirname(LOG_FILE), { recursive: true });
+// Clear log on server start
+fs.writeFileSync(LOG_FILE, `--- TUM VI Test Log (${new Date().toISOString()}) ---\n`);
+
 // Static file handler
 function handleRequest(req, res) {
-    let filePath = path.join(__dirname, req.url === '/' ? '/index.html' : req.url);
-
-    // Security: prevent directory traversal
-    if (!filePath.startsWith(__dirname)) {
-        res.writeHead(403);
-        res.end('Forbidden');
+    // POST /log — receive browser console logs and write to file
+    if (req.method === 'POST' && req.url === '/log') {
+        let body = '';
+        req.on('data', chunk => { body += chunk; });
+        req.on('end', () => {
+            try {
+                const { level, msg } = JSON.parse(body);
+                const line = `[${new Date().toISOString()}] [${level || 'info'}] ${msg}\n`;
+                fs.appendFileSync(LOG_FILE, line);
+                process.stdout.write(`  [client] ${line}`);
+            } catch (e) { /* ignore malformed */ }
+            res.writeHead(200);
+            res.end('ok');
+        });
         return;
+    }
+    // Decode percent-encoding; reject malformed URLs
+    let reqPath;
+    try {
+        reqPath = decodeURIComponent(req.url);
+    } catch (e) {
+        res.writeHead(400);
+        res.end('Bad Request');
+        return;
+    }
+
+    // Reject null bytes
+    if (reqPath.includes('\x00')) {
+        res.writeHead(400);
+        res.end('Bad Request');
+        return;
+    }
+
+    let filePath;
+    const webDir = path.resolve(__dirname) + path.sep;
+    const datasetsDir = path.resolve(PROJECT_ROOT, 'assets', 'datasets') + path.sep;
+
+    // Route /datasets/ to PROJECT_ROOT/assets/datasets/ (for TUM VI test harness)
+    if (reqPath.startsWith('/datasets/')) {
+        filePath = path.join(PROJECT_ROOT, 'assets', reqPath);
+        // Security: restrict to assets/datasets/ only (not assets/keys/ etc.)
+        if (!path.resolve(filePath).startsWith(datasetsDir)) {
+            res.writeHead(403);
+            res.end('Forbidden');
+            return;
+        }
+    } else {
+        filePath = path.join(__dirname, reqPath === '/' ? '/index.html' : reqPath);
+        // Security: restrict to web/ directory only
+        if (!path.resolve(filePath).startsWith(webDir)) {
+            res.writeHead(403);
+            res.end('Forbidden');
+            return;
+        }
     }
 
     const ext = path.extname(filePath).toLowerCase();

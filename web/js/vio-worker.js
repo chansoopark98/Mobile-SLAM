@@ -237,7 +237,14 @@ self.onmessage = async function(e) {
                     const module = await import(data.wasmPath);
                     VIOWasmFactory = module.default;
                 }
-                wasm = await VIOWasmFactory();
+                wasm = await VIOWasmFactory({
+                    print: (text) => {
+                        self.postMessage({ type: 'wasm_log', data: { level: 'info', msg: text } });
+                    },
+                    printErr: (text) => {
+                        self.postMessage({ type: 'wasm_log', data: { level: 'warn', msg: text } });
+                    },
+                });
                 engine = new wasm.VIOEngine();
                 self.postMessage({ type: 'init', success: true });
             } catch (err) {

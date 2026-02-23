@@ -20,6 +20,9 @@ export class VIOWrapper {
         this._pendingInit = null;
         this._pendingConfigure = null;
         this._pendingSetMobileParams = null;
+
+        // WASM C++ stdout/stderr log callback: (level, msg) => {}
+        this.onWasmLog = null;
     }
 
     /**
@@ -227,6 +230,12 @@ export class VIOWrapper {
                             count: msg.data.mapPointCount,
                         };
                     }
+                }
+                break;
+
+            case 'wasm_log':
+                if (this.onWasmLog && msg.data) {
+                    this.onWasmLog(msg.data.level, msg.data.msg);
                 }
                 break;
 

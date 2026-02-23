@@ -1,3 +1,4 @@
+build_wasm/
 wasm/dist/
 
 # TLS certificates (dev server)

@@ -190,10 +190,11 @@ bool Initializer::relativePose(Matrix3d& relative_R, Vector3d& relative_T, int& 
             }
 
             double average_parallax = 1.0 * sum_parallax / int(corres.size());
-            if (average_parallax * 460 > 30 &&
+            double focal = g_config.camera.focal_length;
+            if (average_parallax * focal > 30 &&
                 motion_estimator_->solveRelativeRT(corres, relative_R, relative_T)) {
                 l = i;
-                std::cout << "average_parallax " << average_parallax * 460 << " choose index " << l
+                std::cout << "average_parallax " << average_parallax * focal << " choose index " << l
                           << " and newest frame to triangulate "
                              "the whole structure"
                           << std::endl;
@@ -210,20 +211,34 @@ bool Initializer::solvePnPForAllFrames(const Quaterniond Q[], const Vector3d T[]
     std::map<int, Vector3d>::const_iterator it;
     frame_it = all_image_frame_->begin();
 
-    for (int i = 0; frame_it != all_image_frame_->end(); frame_it++) {
+    // CRITICAL: Evaluate r_ic transpose once. Do NOT use 'auto' with Eigen
+    // expressions — lazy expression templates hold references to temporaries
+    // that become dangling, producing NaN in WASM builds.
+    const Matrix3d r_ic_t = (*r_ic_).transpose();
+
+    int frame_idx = 0;
+    for (int i = 0; frame_it != all_image_frame_->end(); frame_it++, frame_idx++) {
         // Handle keyframes (those with SfM solutions)
-        if ((frame_it->first) == (*sliding_window_)[i].timestamp) {
+        if (i <= *frame_count_ && (frame_it->first) == (*sliding_window_)[i].timestamp) {
             frame_it->second.is_key_frame = true;
-            auto temp = Q[i].toRotationMatrix() * (*r_ic_).transpose();
-            frame_it->second.R = temp;
+            Matrix3d Ri = Q[i].toRotationMatrix();
+            frame_it->second.R = Ri * r_ic_t;
             frame_it->second.T = T[i];
             i++;
             continue;
         }
 
-        // Handle frame timing
-        if ((frame_it->first) > (*sliding_window_)[i].timestamp) {
+        // Handle frame timing - bounds check i
+        if (i <= *frame_count_ && (frame_it->first) > (*sliding_window_)[i].timestamp) {
             i++;
+        }
+
+        // Bounds check before using Q[i] and T[i]
+        if (i > *frame_count_) {
+            frame_it->second.is_key_frame = false;
+            frame_it->second.R = Matrix3d::Identity();
+            frame_it->second.T = Vector3d::Zero();
+            continue;
         }
 
         // Solve PnP for non-keyframes
@@ -277,7 +292,8 @@ bool Initializer::solvePnPForAllFrames(const Quaterniond Q[], const Vector3d T[]
         cv::cv2eigen(t, T_pnp);
         T_pnp = R_pnp * (-T_pnp);
 
-        frame_it->second.R = R_pnp * (*r_ic_).transpose();
+        Matrix3d R_pnp_mat = R_pnp;  // MatrixXd → Matrix3d
+        frame_it->second.R = R_pnp_mat * r_ic_t;
         frame_it->second.T = T_pnp;
     }
 

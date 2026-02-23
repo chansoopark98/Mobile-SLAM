@@ -1,0 +1,234 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>TUM VI Test - WASM VIO</title>
+    <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+            background: #0f0f1a;
+            color: #e0e0e0;
+            overflow: hidden;
+            height: 100vh;
+            display: flex;
+            flex-direction: column;
+        }
+
+        /* Header */
+        .header {
+            background: #1a1a2e;
+            padding: 8px 16px;
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            border-bottom: 1px solid #333;
+            flex-shrink: 0;
+        }
+        .header h1 { font-size: 16px; color: #00ff88; }
+        .controls { display: flex; gap: 8px; align-items: center; }
+        .controls button {
+            padding: 6px 16px;
+            border: 1px solid #555;
+            border-radius: 4px;
+            background: #2a2a3e;
+            color: #e0e0e0;
+            font-size: 13px;
+            cursor: pointer;
+        }
+        .controls button:disabled { opacity: 0.4; cursor: not-allowed; }
+        .controls button:hover:not(:disabled) { background: #3a3a5e; }
+        .controls select {
+            padding: 5px 8px;
+            border: 1px solid #555;
+            border-radius: 4px;
+            background: #2a2a3e;
+            color: #e0e0e0;
+            font-size: 13px;
+        }
+
+        /* Main layout */
+        .main {
+            display: flex;
+            flex: 1;
+            min-height: 0;
+        }
+
+        /* Left panel: image + diagnostics */
+        .left-panel {
+            flex: 0 0 360px;
+            display: flex;
+            flex-direction: column;
+            border-right: 1px solid #333;
+            overflow-y: auto;
+        }
+        .image-section {
+            padding: 8px;
+            flex-shrink: 0;
+        }
+        .image-section canvas {
+            width: 100%;
+            height: auto;
+            display: block;
+            border: 1px solid #333;
+            border-radius: 4px;
+        }
+        .diagnostics {
+            padding: 12px;
+            font-family: 'JetBrains Mono', 'Fira Code', monospace;
+            font-size: 12px;
+            line-height: 1.8;
+        }
+        .diag-title {
+            color: #00ff88;
+            font-weight: bold;
+            margin-bottom: 4px;
+            font-size: 13px;
+        }
+        .diag-row {
+            display: flex;
+            justify-content: space-between;
+        }
+        .diag-label { color: #888; }
+        .diag-value { color: #e0e0e0; }
+        .diag-value.tracking { color: #00ff88; }
+        .diag-value.initializing { color: #ffaa00; }
+        .diag-value.lost { color: #ff4444; }
+
+        /* Right panel: 3D renderer */
+        .right-panel {
+            flex: 1;
+            position: relative;
+            min-width: 0;
+        }
+        #canvas-3d {
+            width: 100%;
+            height: 100%;
+            display: block;
+        }
+
+        /* Progress bar */
+        .progress-section {
+            flex-shrink: 0;
+            background: #1a1a2e;
+            padding: 6px 16px;
+            border-top: 1px solid #333;
+            display: flex;
+            align-items: center;
+            gap: 12px;
+        }
+        .progress-bar {
+            flex: 1;
+            height: 6px;
+            background: #333;
+            border-radius: 3px;
+            overflow: hidden;
+        }
+        .progress-fill {
+            height: 100%;
+            width: 0%;
+            background: #00ff88;
+            border-radius: 3px;
+            transition: width 0.1s ease;
+        }
+        .progress-text {
+            font-family: monospace;
+            font-size: 12px;
+            color: #888;
+            white-space: nowrap;
+        }
+
+        /* Status bar */
+        #status {
+            flex-shrink: 0;
+            padding: 4px 12px;
+            background: #1a1a2e;
+            font-size: 12px;
+            color: #aaa;
+            border-top: 1px solid #333;
+        }
+
+        /* Log panel */
+        .log-section {
+            max-height: 120px;
+            overflow-y: auto;
+            padding: 4px 12px;
+            font-family: monospace;
+            font-size: 11px;
+            color: #666;
+            border-top: 1px solid #222;
+        }
+        .log-section .log-entry { padding: 1px 0; }
+        .log-section .log-warn { color: #ffaa00; }
+        .log-section .log-error { color: #ff4444; }
+    </style>
+</head>
+<body>
+    <div class="header">
+        <h1>TUM VI Dataset Test Harness</h1>
+        <div class="controls">
+            <button id="btn-start">Start</button>
+            <button id="btn-pause" disabled>Pause</button>
+            <button id="btn-step" disabled>Step</button>
+            <button id="btn-reset" disabled>Reset</button>
+            <select id="speed-select">
+                <option value="0">Step-by-step</option>
+                <option value="1" selected>1x (20Hz)</option>
+                <option value="2">2x</option>
+                <option value="5">5x</option>
+                <option value="-1">Max Speed</option>
+            </select>
+        </div>
+    </div>
+
+    <div class="main">
+        <div class="left-panel">
+            <div class="image-section">
+                <canvas id="image-preview" width="512" height="512"></canvas>
+            </div>
+            <div class="diagnostics">
+                <div class="diag-title">Diagnostics</div>
+                <div class="diag-row"><span class="diag-label">Frame:</span><span class="diag-value" id="diag-frame">- / -</span></div>
+                <div class="diag-row"><span class="diag-label">Status:</span><span class="diag-value" id="diag-status">-</span></div>
+                <div class="diag-row"><span class="diag-label">Features:</span><span class="diag-value" id="diag-features">-</span></div>
+                <div class="diag-row"><span class="diag-label">Proc Time:</span><span class="diag-value" id="diag-proc-time">-</span></div>
+                <div class="diag-row"><span class="diag-label">IMU/frame:</span><span class="diag-value" id="diag-imu-count">-</span></div>
+                <div style="margin-top: 8px;"></div>
+                <div class="diag-title">Pose (translation)</div>
+                <div class="diag-row"><span class="diag-label">X:</span><span class="diag-value" id="diag-pose-x">-</span></div>
+                <div class="diag-row"><span class="diag-label">Y:</span><span class="diag-value" id="diag-pose-y">-</span></div>
+                <div class="diag-row"><span class="diag-label">Z:</span><span class="diag-value" id="diag-pose-z">-</span></div>
+            </div>
+            <div class="log-section" id="log-panel"></div>
+        </div>
+        <div class="right-panel">
+            <canvas id="canvas-3d"></canvas>
+        </div>
+    </div>
+
+    <div class="progress-section">
+        <div class="progress-bar">
+            <div class="progress-fill" id="progress-fill"></div>
+        </div>
+        <span class="progress-text" id="progress-text">0 / 0</span>
+    </div>
+    <div id="status">Ready. Click Start to load dataset and begin processing.</div>
+
+    <script>
+        // Set 3D canvas size before loading modules
+        const canvas = document.getElementById('canvas-3d');
+        const container = canvas.parentElement;
+        canvas.width = container.clientWidth || 800;
+        canvas.height = container.clientHeight || 600;
+    </script>
+    <script type="importmap">
+    {
+        "imports": {
+            "three": "https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.module.js"
+        }
+    }
+    </script>
+    <script type="module" src="./js/test-tumvi-app.js"></script>
+</body>
+</html>
