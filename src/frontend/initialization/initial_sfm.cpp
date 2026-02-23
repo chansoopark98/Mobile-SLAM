@@ -38,7 +38,9 @@ bool InitialSFM::solveFrameByPnP(Matrix3d& R_initial, Vector3d& P_initial, int i
         }
     }
     if (int(pts_2_vector.size()) < 15) {
+#ifndef NDEBUG
         printf("unstable features tracking, please slowly move you device!\n");
+#endif
         if (int(pts_2_vector.size()) < 10)
             return false;
     }
@@ -233,7 +235,8 @@ bool InitialSFM::construct(int frame_num, Quaterniond* q, Vector3d* T, int refer
 
     ceres::Solver::Options options;
     options.linear_solver_type = ceres::DENSE_SCHUR;
-    // options.minimizer_progress_to_stdout = true;
+    options.logging_type = ceres::SILENT;
+    options.minimizer_progress_to_stdout = false;
     options.max_solver_time_in_seconds = 1.0;  // Init-time BA, not real-time critical
     ceres::Solver::Summary summary;
     ceres::Solve(options, &problem, &summary);

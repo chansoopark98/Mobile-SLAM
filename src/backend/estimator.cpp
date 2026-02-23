@@ -88,7 +88,9 @@ void Estimator::propagateIMUState(int frame_index, double dt, const Eigen::Vecto
     if (!sliding_window_[frame_index].P.allFinite() ||
         !sliding_window_[frame_index].V.allFinite() ||
         !sliding_window_[frame_index].R.allFinite()) {
+#ifndef NDEBUG
         std::cout << "NaN detected in IMU propagation at frame " << frame_index << ", reverting" << std::endl;
+#endif
         sliding_window_[frame_index].P = saved_P;
         sliding_window_[frame_index].V = saved_V;
         sliding_window_[frame_index].R = saved_R;
@@ -157,24 +159,31 @@ void Estimator::processImage(const common::ImageData& image, double timestamp) {
                 for (int i = 0; i <= WINDOW_SIZE; i++) {
                     if (!sliding_window_[i].P.allFinite() || !sliding_window_[i].R.allFinite() ||
                         !sliding_window_[i].V.allFinite()) {
+#ifndef NDEBUG
                         std::cout << "Invalid state at sliding window index " << i << " after initialization" << std::endl;
+#endif
                         state_valid = false;
                         break;
                     }
                     if (!sliding_window_[i].pre_integration) {
+#ifndef NDEBUG
                         std::cout << "Null pre_integration at index " << i << " after initialization" << std::endl;
+#endif
                         state_valid = false;
                         break;
                     }
                 }
                 if (!g_.allFinite() || g_.norm() < 1.0) {
+#ifndef NDEBUG
                     std::cout << "Invalid gravity vector after initialization: " << g_.transpose()
                               << " (norm=" << g_.norm() << ")" << std::endl;
+#endif
                     state_valid = false;
                 }
 
                 if (state_valid) {
                     solver_flag_ = common::SolverFlag::NON_LINEAR;
+#ifndef NDEBUG
                     std::cout << "VIO initialization SUCCESS" << std::endl;
                     std::cout << "  gravity: " << g_.transpose()
                               << " (norm=" << g_.norm() << ")" << std::endl;
@@ -183,9 +192,12 @@ void Estimator::processImage(const common::ImageData& image, double timestamp) {
                               << " (norm=" << sliding_window_[0].V.norm() << ")" << std::endl;
                     std::cout << "  Ba[0]: " << sliding_window_[0].Ba.transpose() << std::endl;
                     std::cout << "  Bg[0]: " << sliding_window_[0].Bg.transpose() << std::endl;
+#endif
                     solveOdometry();
                 } else {
+#ifndef NDEBUG
                     std::cout << "Post-initialization validation failed, will retry on next frame" << std::endl;
+#endif
                 }
                 slideWindow();
                 feature_manager_.removeFailures();
@@ -210,7 +222,9 @@ void Estimator::processImage(const common::ImageData& image, double timestamp) {
             }
         }
         if (state_corrupted) {
+#ifndef NDEBUG
             std::cout << "Post-optimization NaN detected, performing full reset" << std::endl;
+#endif
             clearState();
             setParameter();
             return;

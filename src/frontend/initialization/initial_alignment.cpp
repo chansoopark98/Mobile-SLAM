@@ -34,12 +34,16 @@ void solveGyroscopeBias(std::map<double, common::ImageFrame> const& all_image_fr
     Eigen::JacobiSVD<Matrix3d> svd(A);
     double cond = svd.singularValues()(0) / svd.singularValues()(2);
     if (cond > 1e10 || !std::isfinite(cond)) {
+#ifndef NDEBUG
         std::cout << "Gyroscope bias A matrix ill-conditioned (cond=" << cond << "), using zero bias" << std::endl;
+#endif
         delta_bg.setZero();
     } else {
         delta_bg = A.ldlt().solve(b);
     }
+#ifndef NDEBUG
     std::cout << "gyroscope bias initial calibration " << delta_bg.transpose() << std::endl;
+#endif
 
     // Clamp gyroscope bias to physically reasonable range (±0.05 rad/s per axis)
     // Mobile MEMS gyroscopes cannot have bias larger than ~3 deg/s
@@ -47,7 +51,9 @@ void solveGyroscopeBias(std::map<double, common::ImageFrame> const& all_image_fr
     for (int axis = 0; axis < 3; axis++) {
         delta_bg(axis) = std::max(-max_bias, std::min(max_bias, delta_bg(axis)));
     }
+#ifndef NDEBUG
     std::cout << "gyroscope bias clamped to " << delta_bg.transpose() << std::endl;
+#endif
 
     // update the gyroscope bias in the sliding window
     for (int i = 0; i <= WINDOW_SIZE; i++)
@@ -204,13 +210,19 @@ bool LinearAlignment(std::map<double, common::ImageFrame> const& all_image_frame
 
     x = A.ldlt().solve(b);
     if (!x.allFinite()) {
+#ifndef NDEBUG
         std::cout << "LinearAlignment LDLT solve produced NaN/Inf" << std::endl;
+#endif
         return false;
     }
     double s = x(n_state - 1) / 100.0;
+#ifndef NDEBUG
     std::cout << "estimated scale: " << s << std::endl;
+#endif
     g = x.segment<3>(n_state - 4);
+#ifndef NDEBUG
     std::cout << " result g     " << g.norm() << " " << g.transpose() << std::endl;
+#endif
     if (fabs(g.norm() - g_config.estimator.g.norm()) > 2.5 || s < 0) {
         return false;
     }
@@ -218,7 +230,9 @@ bool LinearAlignment(std::map<double, common::ImageFrame> const& all_image_frame
     RefineGravity(all_image_frame, g, x);
     s = (x.tail<1>())(0) / 100.0;
     (x.tail<1>())(0) = s;
+#ifndef NDEBUG
     std::cout << " refine     " << g.norm() << " " << g.transpose() << std::endl;
+#endif
     if (s < 0.0)
         return false;
     else

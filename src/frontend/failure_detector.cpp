@@ -46,15 +46,18 @@ bool FailureDetector::detectFailure(const Vector3d& last_P_end, const Matrix3d& 
 
 bool FailureDetector::detectFeatureFailure() {
     if (feature_manager_->last_track_num_ < feature_threshold_) {
+#ifndef NDEBUG
         std::cout << " little feature " << feature_manager_->last_track_num_ << std::endl;
-        // return true; // Currently commented out in original code
+#endif
     }
     return false;
 }
 
 bool FailureDetector::detectIMUAccBiasFailure() {
     if (sliding_window_->back().Ba.norm() > acc_bias_threshold_) {
+#ifndef NDEBUG
         std::cout << " big IMU acc bias estimation " << sliding_window_->back().Ba.norm() << std::endl;
+#endif
         return true;
     }
     return false;
@@ -62,7 +65,9 @@ bool FailureDetector::detectIMUAccBiasFailure() {
 
 bool FailureDetector::detectIMUGyrBiasFailure() {
     if (sliding_window_->back().Bg.norm() > gyr_bias_threshold_) {
+#ifndef NDEBUG
         std::cout << " big IMU gyr bias estimation " << sliding_window_->back().Bg.norm() << std::endl;
+#endif
         return true;
     }
     return false;
@@ -71,7 +76,9 @@ bool FailureDetector::detectIMUGyrBiasFailure() {
 bool FailureDetector::detectTranslationFailure(const Vector3d& last_P_end) {
     Vector3d tmp_P = sliding_window_->back().P;
     if ((tmp_P - last_P_end).norm() > translation_threshold_) {
+#ifndef NDEBUG
         std::cout << " big translation" << std::endl;
+#endif
         return true;
     }
     return false;
@@ -80,7 +87,9 @@ bool FailureDetector::detectTranslationFailure(const Vector3d& last_P_end) {
 bool FailureDetector::detectZTranslationFailure(const Vector3d& last_P_end) {
     Vector3d tmp_P = sliding_window_->back().P;
     if (abs(tmp_P.z() - last_P_end.z()) > z_translation_threshold_) {
+#ifndef NDEBUG
         std::cout << " big z translation" << std::endl;
+#endif
         return true;
     }
     return false;
@@ -93,8 +102,9 @@ bool FailureDetector::detectRotationFailure(const Matrix3d& last_R_end) {
     double delta_angle = acos(delta_Q.w()) * 2.0 / 3.14 * 180.0;
 
     if (delta_angle > rotation_threshold_) {
+#ifndef NDEBUG
         std::cout << " big delta_angle " << std::endl;
-        // return true; // Currently commented out in original code
+#endif
     }
     return false;
 }

@@ -45,7 +45,9 @@ void Optimizer::optimize(common::MarginalizationFlag marginalization_flag) {
 
     // NaN/Inf validation: rollback on failure
     if (!validateOptimizationParameters()) {
+#ifndef NDEBUG
         std::cout << "Optimization produced NaN/Inf, rolling back parameters" << std::endl;
+#endif
         std::memcpy(para_Pose, saved_Pose, sizeof(para_Pose));
         std::memcpy(para_SpeedAndBiases, saved_SpeedAndBiases, sizeof(para_SpeedAndBiases));
         std::memcpy(para_Feature, saved_Feature, sizeof(para_Feature));
@@ -87,7 +89,9 @@ void Optimizer::addIMUFactors(ceres::Problem& problem) {
     for (int i = 0; i < WINDOW_SIZE; i++) {
         int j = i + 1;
         if (!(*sliding_window_)[j].pre_integration) {
+#ifndef NDEBUG
             std::cout << "Warning: pre_integration null at index " << j << ", skipping IMU factor" << std::endl;
+#endif
             continue;
         }
         if ((*sliding_window_)[j].pre_integration->sum_dt > 10.0)
@@ -112,9 +116,11 @@ int Optimizer::addFeatureFactors(ceres::Problem& problem) {
 
         // Bounds check: prevent out-of-bounds access on para_Feature
         if (feature_index >= NUM_OF_FEATURES) {
+#ifndef NDEBUG
             std::cout << "Warning: feature count (" << feature_index
                       << ") exceeds NUM_OF_FEATURES (" << NUM_OF_FEATURES
                       << "), skipping remaining features" << std::endl;
+#endif
             break;
         }
 
@@ -142,6 +148,8 @@ void Optimizer::solveCeresProblem(ceres::Problem& problem) {
     options.trust_region_strategy_type = ceres::DOGLEG;
     options.max_solver_time_in_seconds = g_config.estimator.solver_time;
     options.max_num_iterations = g_config.estimator.num_iterations;
+    options.logging_type = ceres::SILENT;
+    options.minimizer_progress_to_stdout = false;
     ceres::Solver::Summary summary;
     ceres::Solve(options, &problem, &summary);
 }
@@ -156,7 +164,9 @@ void Optimizer::applyOptimizationResults() {
     // TODO
     Matrix3d rot_diff = Utility::ypr2R(Vector3d(y_diff, 0, 0));
     if (abs(abs(origin_R0.y()) - 90) < 1.0 || abs(abs(origin_R00.y()) - 90) < 1.0) {
+#ifndef NDEBUG
         std::cout << "euler singular point!" << std::endl;
+#endif
         rot_diff = (*sliding_window_).front().R *
                    Quaterniond(para_Pose[0][6], para_Pose[0][3], para_Pose[0][4], para_Pose[0][5])
                        .toRotationMatrix()
@@ -306,7 +316,9 @@ void Optimizer::marginalizeNewGeneralFrame() {
 
 void Optimizer::addIMUFactorForMarginalization(factor::MarginalizationInfo* marginalization_info) {
     if (!(*sliding_window_)[1].pre_integration) {
+#ifndef NDEBUG
         std::cout << "Warning: pre_integration null at index 1, skipping IMU marginalization factor" << std::endl;
+#endif
         return;
     }
     if ((*sliding_window_)[1].pre_integration->sum_dt < 10.0) {

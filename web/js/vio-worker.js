@@ -237,11 +237,15 @@ self.onmessage = async function(e) {
                     const module = await import(data.wasmPath);
                     VIOWasmFactory = module.default;
                 }
+                // Filter out Ceres miniglog noise (pre-built library, can't recompile)
+                const _ceresNoiseRe = /detect_structure|block_sparse_matrix|schur_eliminator|callbacks\.cc|trust_region_minimizer|Schur complement|Dynamic .* block size/;
                 wasm = await VIOWasmFactory({
                     print: (text) => {
+                        if (_ceresNoiseRe.test(text)) return;
                         self.postMessage({ type: 'wasm_log', data: { level: 'info', msg: text } });
                     },
                     printErr: (text) => {
+                        if (_ceresNoiseRe.test(text)) return;
                         self.postMessage({ type: 'wasm_log', data: { level: 'warn', msg: text } });
                     },
                 });

@@ -50,7 +50,9 @@ public:
             Eigen::Matrix3d dv_dbg = pre_integration->jacobian.template block<3, 3>(O_V, O_BG);
 
             if (pre_integration->jacobian.maxCoeff() > 1e8 || pre_integration->jacobian.minCoeff() < -1e8) {
+#ifndef NDEBUG
                 std::cout << "numerical unstable in preintegration" << std::endl;
+#endif
             }
 
             if (jacobians[0]) {
@@ -72,7 +74,9 @@ public:
                 jacobian_pose_i = sqrt_info * jacobian_pose_i;
 
                 if (jacobian_pose_i.maxCoeff() > 1e8 || jacobian_pose_i.minCoeff() < -1e8) {
-                    std::cout << "numerical unstable in preintegration" << std::endl;
+    #ifndef NDEBUG
+                std::cout << "numerical unstable in preintegration" << std::endl;
+#endif
                 }
             }
             if (jacobians[1]) {

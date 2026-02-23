@@ -25,22 +25,30 @@ bool Initializer::initialize() {
 
     // Perform initial SfM reconstruction
     if (!solveInitialSfM()) {
+#ifndef NDEBUG
         std::cout << "Initial SfM reconstruction failed!" << std::endl;
+#endif
         return false;
     }
 
     if (visualInitialAlign()) {
+#ifndef NDEBUG
         std::cout << "visualInertialAlign() success!" << std::endl;
+#endif
         return true;
     } else {
+#ifndef NDEBUG
         std::cout << "misalign visual structure with IMU" << std::endl;
+#endif
         return false;
     }
 }
 
 bool Initializer::checkIMUExcitation(double threshold) {
     if (all_image_frame_->size() <= 1) {
+#ifndef NDEBUG
         std::cout << "Not enough image frames for IMU excitation check!" << std::endl;
+#endif
         return false;
     }
 
@@ -63,7 +71,9 @@ bool Initializer::checkIMUExcitation(double threshold) {
     }
 
     if (valid_frames == 0) {
+#ifndef NDEBUG
         std::cout << "No valid frames with pre-integration data!" << std::endl;
+#endif
         return false;
     }
 
@@ -89,29 +99,39 @@ bool Initializer::checkIMUExcitation(double threshold) {
     }
 
     if (variance_count <= 1) {
+#ifndef NDEBUG
         std::cout << "Not enough frames for variance calculation!" << std::endl;
+#endif
         return false;
     }
 
     // Calculate standard deviation of gravity vectors
     double std_deviation = sqrt(variance / (variance_count - 1));
 
+#ifndef NDEBUG
     std::cout << "IMU excitation check: std_deviation = " << std_deviation << ", threshold = " << threshold
               << std::endl;
+#endif
 
     if (std_deviation < threshold) {
+#ifndef NDEBUG
         std::cout << "IMU excitation not enough! Please move the device with more "
                      "rotation."
                   << std::endl;
+#endif
         return false;
     } else {
+#ifndef NDEBUG
         std::cout << "IMU excitation sufficient for initialization." << std::endl;
+#endif
         return true;
     }
 }
 
 bool Initializer::solveInitialSfM() {
+#ifndef NDEBUG
     std::cout << "Starting initial SfM reconstruction..." << std::endl;
+#endif
 
     std::map<int, Vector3d> sfm_tracked_points;
 
@@ -134,7 +154,9 @@ bool Initializer::solveInitialSfM() {
         sfm_f.push_back(sfm_feature);
     }
 
+#ifndef NDEBUG
     std::cout << "Prepared " << sfm_f.size() << " SfM features for reconstruction" << std::endl;
+#endif
 
     // Find relative pose between frames
     Matrix3d relative_R;
@@ -142,13 +164,17 @@ bool Initializer::solveInitialSfM() {
     // index of reference frame
     int l;
     if (!relativePose(relative_R, relative_T, l)) {
+#ifndef NDEBUG
         std::cout << "Initial SfM failed: Not enough features or parallax. Move device "
                      "around!"
                   << std::endl;
+#endif
         return false;
     }
 
+#ifndef NDEBUG
     std::cout << "Found relative pose between frame " << l << " and latest frame" << std::endl;
+#endif
 
     // Perform initial SfM reconstruction
     Quaterniond Q[(*frame_count_) + 1];
@@ -156,20 +182,28 @@ bool Initializer::solveInitialSfM() {
 
     InitialSFM sfm;
     if (!sfm.construct((*frame_count_) + 1, Q, T, l, relative_R, relative_T, sfm_f, sfm_tracked_points)) {
+#ifndef NDEBUG
         std::cout << "Initial SfM reconstruction failed!" << std::endl;
+#endif
         *marginalization_flag_ = common::MarginalizationFlag::MARGIN_OLD_KEYFRAME;
         return false;
     }
 
+#ifndef NDEBUG
     std::cout << "Initial SfM successful! Reconstructed " << sfm_tracked_points.size() << " 3D points" << std::endl;
+#endif
 
     // Solve PnP for all frames to get camera poses
     if (!solvePnPForAllFrames(Q, T, sfm_tracked_points)) {
+#ifndef NDEBUG
         std::cout << "PnP solving failed for non-keyframes!" << std::endl;
+#endif
         return false;
     }
 
+#ifndef NDEBUG
     std::cout << "Initial SfM completed" << std::endl;
+#endif
     return true;
 }
 
@@ -194,10 +228,12 @@ bool Initializer::relativePose(Matrix3d& relative_R, Vector3d& relative_T, int& 
             if (average_parallax * focal > 30 &&
                 motion_estimator_->solveRelativeRT(corres, relative_R, relative_T)) {
                 l = i;
+#ifndef NDEBUG
                 std::cout << "average_parallax " << average_parallax * focal << " choose index " << l
                           << " and newest frame to triangulate "
                              "the whole structure"
                           << std::endl;
+#endif
                 return true;
             }
         }
@@ -271,15 +307,19 @@ bool Initializer::solvePnPForAllFrames(const Quaterniond Q[], const Vector3d T[]
 
         // Check if we have enough points for PnP
         if (pts_3_vector.size() < 6) {
+#ifndef NDEBUG
             std::cout << "Not enough 3D-2D correspondences (" << pts_3_vector.size() << ") for PnP at frame "
                       << frame_it->first << std::endl;
+#endif
             return false;
         }
 
         // Solve PnP
         cv::Mat K = cv::Mat::eye(3, 3, CV_64F);
         if (!cv::solvePnP(pts_3_vector, pts_2_vector, K, D, rvec, t, 1)) {
+#ifndef NDEBUG
             std::cout << "PnP solving failed for frame " << frame_it->first << std::endl;
+#endif
             return false;
         }
 
@@ -297,7 +337,9 @@ bool Initializer::solvePnPForAllFrames(const Quaterniond Q[], const Vector3d T[]
         frame_it->second.T = T_pnp;
     }
 
+#ifndef NDEBUG
     std::cout << "PnP solving completed for all frames" << std::endl;
+#endif
     return true;
 }
 
@@ -307,7 +349,9 @@ bool Initializer::visualInitialAlign() {
     // solve for gravity vector and scale, gyroscope bias
     bool result = VisualIMUAlignment(*all_image_frame_, *sliding_window_, *g_, x);
     if (!result) {
+#ifndef NDEBUG
         std::cout << "solve gravity vector failed!" << std::endl;
+#endif
         return false;
     }
 

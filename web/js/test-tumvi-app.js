@@ -418,9 +418,10 @@ class TUMVITestApp {
         try {
             await this.vio.load('/vio_engine.js');
 
-            // Forward C++ stdout/stderr (Ceres solver, gravity estimation, etc.) to server log
+            // Forward C++ stdout/stderr to log, filtering Ceres miniglog noise
+            const _ceresNoise = /detect_structure|block_sparse_matrix|schur_eliminator|callbacks\.cc|trust_region_minimizer|Schur complement|Dynamic .* block size|Allocating values array|Terminating:/;
             this.vio.onWasmLog = (level, msg) => {
-                if (msg && msg.trim().length > 0) {
+                if (msg && msg.trim().length > 0 && !_ceresNoise.test(msg)) {
                     this.log(`[WASM] ${msg}`, level);
                 }
             };
