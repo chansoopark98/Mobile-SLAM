@@ -1,5 +1,7 @@
 #include "backend/optimizer.h"
 
+#include <cmath>
+
 namespace backend {
 
 Optimizer::Optimizer(SlidingWindow* sliding_window, frontend::FeatureManager* feature_manager)
@@ -30,8 +32,25 @@ void Optimizer::optimize(common::MarginalizationFlag marginalization_flag) {
     addIMUFactors(problem);
     addFeatureFactors(problem);
 
+    // Backup parameters before Ceres solve
+    double saved_Pose[WINDOW_SIZE + 1][SIZE_POSE];
+    double saved_SpeedAndBiases[WINDOW_SIZE + 1][SIZE_SPEEDANDBIAS];
+    double saved_Feature[NUM_OF_FEATURES][SIZE_FEATURE];
+    std::memcpy(saved_Pose, para_Pose, sizeof(para_Pose));
+    std::memcpy(saved_SpeedAndBiases, para_SpeedAndBiases, sizeof(para_SpeedAndBiases));
+    std::memcpy(saved_Feature, para_Feature, sizeof(para_Feature));
+
     // STEP 3: Solve the optimization problem
     solveCeresProblem(problem);
+
+    // NaN/Inf validation: rollback on failure
+    if (!validateOptimizationParameters()) {
+        std::cout << "Optimization produced NaN/Inf, rolling back parameters" << std::endl;
+        std::memcpy(para_Pose, saved_Pose, sizeof(para_Pose));
+        std::memcpy(para_SpeedAndBiases, saved_SpeedAndBiases, sizeof(para_SpeedAndBiases));
+        std::memcpy(para_Feature, saved_Feature, sizeof(para_Feature));
+        return;  // Skip marginalization
+    }
 
     // STEP 4: Apply results and handle marginalization
     applyOptimizationResults();
@@ -67,6 +86,10 @@ void Optimizer::addMarginalizationFactor(ceres::Problem& problem) {
 void Optimizer::addIMUFactors(ceres::Problem& problem) {
     for (int i = 0; i < WINDOW_SIZE; i++) {
         int j = i + 1;
+        if (!(*sliding_window_)[j].pre_integration) {
+            std::cout << "Warning: pre_integration null at index " << j << ", skipping IMU factor" << std::endl;
+            continue;
+        }
         if ((*sliding_window_)[j].pre_integration->sum_dt > 10.0)
             continue;
         backend::factor::IMUFactor* imu_factor = new backend::factor::IMUFactor((*sliding_window_)[j].pre_integration.get());
@@ -86,6 +109,14 @@ int Optimizer::addFeatureFactors(ceres::Problem& problem) {
             continue;
 
         ++feature_index;
+
+        // Bounds check: prevent out-of-bounds access on para_Feature
+        if (feature_index >= NUM_OF_FEATURES) {
+            std::cout << "Warning: feature count (" << feature_index
+                      << ") exceeds NUM_OF_FEATURES (" << NUM_OF_FEATURES
+                      << "), skipping remaining features" << std::endl;
+            break;
+        }
 
         int imu_i = it_per_id.start_frame, imu_j = imu_i - 1;
         Vector3d pts_i = it_per_id.feature_per_frame[0].ray_vector;
@@ -157,7 +188,8 @@ void Optimizer::applyOptimizationResults() {
     r_ic_ = Quaterniond(para_Ex_Pose[6], para_Ex_Pose[3], para_Ex_Pose[4], para_Ex_Pose[5]).toRotationMatrix();
 
     VectorXd dep = feature_manager_->getDepthVector();
-    for (int i = 0; i < feature_manager_->getFeatureCount(); i++)
+    int feature_count = std::min(feature_manager_->getFeatureCount(), NUM_OF_FEATURES);
+    for (int i = 0; i < feature_count; i++)
         dep(i) = para_Feature[i][0];
     feature_manager_->setDepth(dep);
 }
@@ -211,9 +243,10 @@ void Optimizer::prepareOptimizationParameters() {
     para_Ex_Pose[5] = q.z();
     para_Ex_Pose[6] = q.w();
 
-    // Feature point depth
+    // Feature point depth (with bounds check)
     VectorXd dep = feature_manager_->getDepthVector();
-    for (int i = 0; i < feature_manager_->getFeatureCount(); i++)
+    int feature_count = std::min(feature_manager_->getFeatureCount(), NUM_OF_FEATURES);
+    for (int i = 0; i < feature_count; i++)
         para_Feature[i][0] = dep(i);
 }
 
@@ -272,6 +305,10 @@ void Optimizer::marginalizeNewGeneralFrame() {
 }
 
 void Optimizer::addIMUFactorForMarginalization(factor::MarginalizationInfo* marginalization_info) {
+    if (!(*sliding_window_)[1].pre_integration) {
+        std::cout << "Warning: pre_integration null at index 1, skipping IMU marginalization factor" << std::endl;
+        return;
+    }
     if ((*sliding_window_)[1].pre_integration->sum_dt < 10.0) {
         factor::IMUFactor* imu_factor = new factor::IMUFactor((*sliding_window_)[1].pre_integration.get());
         factor::ResidualBlockInfo* residual_block_info = new factor::ResidualBlockInfo(
@@ -291,6 +328,10 @@ void Optimizer::addFeatureFactorsForMarginalization(factor::MarginalizationInfo*
             continue;
 
         ++feature_index;
+
+        // Bounds check
+        if (feature_index >= NUM_OF_FEATURES)
+            break;
 
         int imu_i = it_per_id.start_frame, imu_j = imu_i - 1;
         if (imu_i != 0)
@@ -355,6 +396,22 @@ void Optimizer::performMarginalizationForNewGeneralFrame(factor::Marginalization
         delete last_marginalization_info_;
     last_marginalization_info_ = marginalization_info;
     last_marginalization_parameter_blocks_ = parameter_blocks;
+}
+
+bool Optimizer::validateOptimizationParameters() const {
+    for (int i = 0; i < WINDOW_SIZE + 1; i++) {
+        for (int j = 0; j < SIZE_POSE; j++) {
+            if (!std::isfinite(para_Pose[i][j])) return false;
+        }
+        for (int j = 0; j < SIZE_SPEEDANDBIAS; j++) {
+            if (!std::isfinite(para_SpeedAndBiases[i][j])) return false;
+        }
+    }
+    int feature_count = std::min(feature_manager_->getFeatureCount(), NUM_OF_FEATURES);
+    for (int i = 0; i < feature_count; i++) {
+        if (!std::isfinite(para_Feature[i][0])) return false;
+    }
+    return true;
 }
 
 }  // namespace backend

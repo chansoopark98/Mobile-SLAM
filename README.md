@@ -66,7 +66,8 @@ web/
     vio-wrapper.js             # High-level JS API wrapping WASM VIOEngine
     shared-memory.js           # WASM heap memory management (malloc/free)
     camera.js                  # getUserMedia camera capture + grayscale
-    imu.js                     # DeviceMotion IMU capture (iOS 13+ permission)
+    imu.js                     # IMU capture (Generic Sensor API + DeviceMotion fallback)
+    vio-worker.js              # Web Worker for WASM VIO processing
     renderer.js                # Three.js trajectory + map point renderer
 
 assets/
@@ -140,17 +141,27 @@ cd build && ctest --output-on-failure
 
 ## WASM Build
 
+> **중요**: 모든 WASM 빌드 명령어는 `source ~/emsdk/emsdk_env.sh`를 실행한 **같은 셸 세션**에서
+> 수행해야 합니다. 새 터미널을 열면 PATH가 초기화되므로 다시 source 해야 합니다.
+
 ### 1. Prerequisites
 
 ```bash
-# Emscripten SDK
-cd ~/emsdk && ./emsdk activate latest
+# Emscripten SDK 설치 (최초 1회)
+cd ~/emsdk && ./emsdk install latest && ./emsdk activate latest
+
+# 현재 셸에 Emscripten PATH 등록 (새 터미널마다 필요)
 source ~/emsdk/emsdk_env.sh
+
+# 등록 확인
+emcc --version
 ```
 
-### 2. Build WASM Dependencies
+### 2. Build WASM Dependencies (최초 1회)
 
 ```bash
+# 반드시 emsdk_env.sh를 source한 셸에서 실행
+
 # OpenCV (core, imgproc, calib3d, features2d, video, flann)
 cd wasm && bash build_opencv.sh
 
@@ -161,15 +172,22 @@ bash build_ceres.sh
 ### 3. Build VIO WASM Module
 
 ```bash
+# 반드시 emsdk_env.sh를 source한 셸에서 실행
 cd wasm
 mkdir -p build && cd build
 emcmake cmake ..
 emmake make -j$(nproc)
 ```
 
-Output: `wasm/build/vio_engine.js` (3.4MB, SINGLE_FILE with embedded WASM)
+Output: `wasm/build/vio_engine.js` (3.5MB, SINGLE_FILE with embedded WASM)
 
-### 4. WASM Module Test
+### 4. Deploy to Web
+
+```bash
+cp wasm/build/vio_engine.js web/vio_engine.js
+```
+
+### 5. WASM Module Test
 
 ```bash
 cd wasm
@@ -211,9 +229,13 @@ const hasPose = engine.processFrame(
     imuPtr, imuCount,
     poseOutputPtr);
 
-// 4. Query state
+// 4. Mobile optimization
+engine.setMobileParams(solverTime, numIterations, maxFeatures);
+
+// 5. Query state
 engine.isInitialized();
 engine.getFeaturePointCount();
+engine.getStatusCode();          // 0=NotConfigured, 1=Initializing, 2=Tracking, 3=Lost, 4=Cooldown
 engine.getMapPoints(outputPtr, maxCount);
 engine.reset();
 ```

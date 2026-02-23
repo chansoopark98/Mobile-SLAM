@@ -15,7 +15,9 @@ VIOEngine::VIOEngine()
       first_imu_(false),
       latest_position_(Eigen::Vector3d::Zero()),
       latest_rotation_(Eigen::Matrix3d::Identity()),
-      has_valid_pose_(false) {
+      has_valid_pose_(false),
+      consecutive_failures_(0),
+      cooldown_counter_(0) {
 }
 
 VIOEngine::~VIOEngine() = default;
@@ -154,7 +156,9 @@ void VIOEngine::processIMUData(const IMUReading* readings, int count,
             }
             double dt = imu_time - current_time_;
             // Skip invalid dt: near-zero, negative (out-of-order), or too large (sensor gap)
-            if (dt < 1e-6 || dt > 0.5) {
+            // Threshold 1e-4 (0.1ms) allows up to 10kHz IMU rate while filtering
+            // duplicate timestamps from browser jitter.
+            if (dt < 1e-4 || dt > 0.5) {
                 current_time_ = imu_time;
                 prev_acc_ = acc;
                 prev_gyro_ = gyro;
@@ -166,7 +170,7 @@ void VIOEngine::processIMUData(const IMUReading* readings, int count,
             // Interpolate at image timestamp
             double dt_to_image = image_timestamp - current_time_;
             // Skip invalid interpolation interval
-            if (dt_to_image < 1e-6 || dt_to_image > 0.5) {
+            if (dt_to_image < 1e-4 || dt_to_image > 0.5) {
                 current_time_ = image_timestamp;
                 prev_acc_ = acc;
                 prev_gyro_ = gyro;
@@ -197,6 +201,12 @@ bool VIOEngine::processFrame(const uint8_t* gray_image, int width, int height,
                               double image_timestamp,
                               double* pose_output) {
     if (!configured_ || !estimator_ || !feature_tracker_) {
+        return false;
+    }
+
+    // Cooldown mode: skip processing to prevent infinite reset loop
+    if (cooldown_counter_ > 0) {
+        cooldown_counter_--;
         return false;
     }
 
@@ -247,8 +257,22 @@ bool VIOEngine::processFrame(const uint8_t* gray_image, int width, int height,
 
     prev_image_timestamp_ = image_timestamp;
 
+    // Detect initialization loss (was tracking, now reverted to INITIAL)
+    bool currently_initialized = (estimator_->solver_flag_ == common::SolverFlag::NON_LINEAR);
+    if (has_valid_pose_ && !currently_initialized) {
+        consecutive_failures_++;
+        LOG_WARN("VIO lost initialization (consecutive: " << consecutive_failures_ << ")");
+        has_valid_pose_ = false;
+        if (consecutive_failures_ >= kMaxConsecutiveFailures) {
+            LOG_WARN("Too many consecutive failures, entering cooldown for " << kCooldownFrames << " frames");
+            cooldown_counter_ = kCooldownFrames;
+            consecutive_failures_ = 0;
+        }
+        return false;
+    }
+
     // Extract pose if VIO is initialized
-    if (estimator_->solver_flag_ == common::SolverFlag::NON_LINEAR) {
+    if (currently_initialized) {
         int ws = utility::g_config.estimator.window_size;
         Eigen::Vector3d body_pos = estimator_->sliding_window_[ws].P;
         Eigen::Matrix3d body_rot = estimator_->sliding_window_[ws].R;
@@ -256,7 +280,8 @@ bool VIOEngine::processFrame(const uint8_t* gray_image, int width, int height,
         // Detect numerical divergence: position > 1e6 or NaN/Inf
         if (!body_pos.allFinite() || !body_rot.allFinite() ||
             body_pos.norm() > 1e6) {
-            LOG_WARN("VIO numerical divergence detected, resetting...");
+            consecutive_failures_++;
+            LOG_WARN("VIO numerical divergence detected (consecutive: " << consecutive_failures_ << "), resetting...");
             // Preserve config but reset estimator state
             estimator_ = std::make_unique<backend::Estimator>();
             estimator_->setParameter();
@@ -264,6 +289,12 @@ bool VIOEngine::processFrame(const uint8_t* gray_image, int width, int height,
             prev_image_timestamp_ = -1.0;
             first_imu_ = false;
             has_valid_pose_ = false;
+            // Enter cooldown after too many consecutive failures
+            if (consecutive_failures_ >= kMaxConsecutiveFailures) {
+                LOG_WARN("Too many consecutive failures, entering cooldown for " << kCooldownFrames << " frames");
+                cooldown_counter_ = kCooldownFrames;
+                consecutive_failures_ = 0;
+            }
             return false;
         }
 
@@ -284,6 +315,7 @@ bool VIOEngine::processFrame(const uint8_t* gray_image, int width, int height,
                 }
             }
         }
+        consecutive_failures_ = 0;
         return true;
     }
 
@@ -319,6 +351,28 @@ int VIOEngine::getMapPoints(double* output, int max_count) const {
     return count;
 }
 
+int VIOEngine::getStatusCode() const {
+    if (!configured_) return static_cast<int>(VIOStatus::NOT_CONFIGURED);
+    if (cooldown_counter_ > 0) return static_cast<int>(VIOStatus::COOLDOWN);
+    if (!estimator_) return static_cast<int>(VIOStatus::NOT_CONFIGURED);
+    if (estimator_->solver_flag_ == common::SolverFlag::NON_LINEAR) {
+        return has_valid_pose_
+            ? static_cast<int>(VIOStatus::TRACKING)
+            : static_cast<int>(VIOStatus::LOST);
+    }
+    return static_cast<int>(VIOStatus::INITIALIZING);
+}
+
+void VIOEngine::setMobileParams(double solver_time, int num_iterations, int max_features) {
+    auto& cfg = utility::g_config;
+    cfg.estimator.solver_time = solver_time;
+    cfg.estimator.num_iterations = num_iterations;
+    cfg.feature_tracker.max_cnt = max_features;
+    LOG_INFO("Mobile params set: solver_time=" << solver_time
+             << " iterations=" << num_iterations
+             << " max_features=" << max_features);
+}
+
 void VIOEngine::reset() {
     estimator_ = std::make_unique<backend::Estimator>();
     if (configured_) {
@@ -332,4 +386,6 @@ void VIOEngine::reset() {
     latest_rotation_ = Eigen::Matrix3d::Identity();
     prev_acc_ = Eigen::Vector3d::Zero();
     prev_gyro_ = Eigen::Vector3d::Zero();
+    consecutive_failures_ = 0;
+    cooldown_counter_ = 0;
 }

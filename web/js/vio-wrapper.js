@@ -1,232 +1,241 @@
 /**
- * VIOWrapper - High-level JavaScript API wrapping the WASM VIO engine.
- * Manages SharedMemory buffers and provides a clean interface for the app.
+ * VIOWrapper - Async Worker-based API wrapping the WASM VIO engine.
+ * Main thread remains unblocked; all VIO processing runs in a Web Worker.
+ *
+ * IMU data is sent independently from camera frames via sendIMU().
+ * The worker accumulates IMU internally and drains on each frame.
  */
-import { SharedMemory } from './shared-memory.js';
 
 export class VIOWrapper {
     constructor() {
-        this.wasm = null;
-        this.engine = null;
+        this.worker = null;
         this.configured = false;
+        this.workerBusy = false;
 
-        // Pre-allocated shared memory buffers
-        this.memImage = null;
-        this.memIMU = null;
-        this.memPose = null;
-        this.memMapPoints = null;
-        this.memExtrinsicR = null;
-        this.memExtrinsicT = null;
+        // Latest result from worker (updated asynchronously)
+        this._latestResult = null;
+        this._latestMapPoints = null;
 
-        this.imageWidth = 0;
-        this.imageHeight = 0;
-        this.maxIMUReadings = 256;
-        this.maxMapPoints = 2000;
+        // Pending promises for init/configure/setMobileParams
+        this._pendingInit = null;
+        this._pendingConfigure = null;
+        this._pendingSetMobileParams = null;
     }
 
     /**
-     * Load and initialize the WASM module.
-     * @param {string} wasmPath - Path to the vio_engine.js module
+     * Load and initialize the WASM module inside a Web Worker.
+     * @param {string} wasmPath - Path to the vio_engine_worker.js WASM module
      * @returns {Promise<void>}
      */
-    async load(wasmPath = './vio_engine.js') {
-        const VIOWasm = (await import(wasmPath)).default;
-        this.wasm = await VIOWasm();
-        this.engine = new this.wasm.VIOEngine();
+    async load(wasmPath = '/vio_engine.js') {
+        return new Promise((resolve, reject) => {
+            this.worker = new Worker('/js/vio-worker.js', { type: 'module' });
+
+            this.worker.onmessage = (e) => {
+                this._handleWorkerMessage(e.data);
+            };
+
+            this.worker.onerror = (err) => {
+                console.error('[VIO Wrapper] Worker error:', err);
+                if (this._pendingInit) {
+                    this._pendingInit.reject(err);
+                    this._pendingInit = null;
+                }
+            };
+
+            this._pendingInit = { resolve, reject };
+            this.worker.postMessage({ type: 'init', data: { wasmPath } });
+        });
     }
 
     /**
      * Configure the VIO engine with camera and IMU parameters.
      * @param {Object} params - Configuration parameters
-     * @param {number} params.width - Image width
-     * @param {number} params.height - Image height
-     * @param {number} params.fx - Focal length x
-     * @param {number} params.fy - Focal length y
-     * @param {number} params.cx - Principal point x
-     * @param {number} params.cy - Principal point y
-     * @param {number} [params.modelType=0] - Camera model (0=PINHOLE, 1=KANNALA_BRANDT)
-     * @param {number} [params.k2=0] - Distortion k2
-     * @param {number} [params.k3=0] - Distortion k3
-     * @param {number} [params.k4=0] - Distortion k4
-     * @param {number} [params.k5=0] - Distortion k5
-     * @param {number[]} [params.r_ic] - Extrinsic rotation (9 doubles, row-major)
-     * @param {number[]} [params.t_ic] - Extrinsic translation (3 doubles)
-     * @param {number} [params.acc_n=0.08] - Accelerometer noise
-     * @param {number} [params.acc_w=0.004] - Accelerometer random walk
-     * @param {number} [params.gyr_n=0.004] - Gyroscope noise
-     * @param {number} [params.gyr_w=0.0002] - Gyroscope random walk
-     * @param {number} [params.g_norm=9.81] - Gravity magnitude
-     * @returns {boolean} True if configuration succeeded
+     * @returns {Promise<boolean>}
      */
-    configure(params) {
-        if (!this.wasm || !this.engine) {
-            throw new Error('WASM module not loaded. Call load() first.');
-        }
-
-        this.imageWidth = params.width;
-        this.imageHeight = params.height;
-
-        // Allocate shared memory buffers
-        this._allocateBuffers();
-
-        // Write extrinsic parameters
-        const r_ic = params.r_ic || [1, 0, 0, 0, 1, 0, 0, 0, 1]; // identity
-        const t_ic = params.t_ic || [0, 0, 0];
-        this.memExtrinsicR.write(new Float64Array(r_ic));
-        this.memExtrinsicT.write(new Float64Array(t_ic));
-
-        const result = this.engine.configure(
-            params.width, params.height,
-            params.fx, params.fy, params.cx, params.cy,
-            params.modelType || 0,
-            params.k2 || 0, params.k3 || 0, params.k4 || 0, params.k5 || 0,
-            this.memExtrinsicR.byteOffset,
-            this.memExtrinsicT.byteOffset,
-            params.acc_n || 0.08,
-            params.acc_w || 0.004,
-            params.gyr_n || 0.004,
-            params.gyr_w || 0.0002,
-            params.g_norm || 9.81
-        );
-
-        this.configured = result;
-        return result;
-    }
-
-    /** Allocate WASM heap buffers */
-    _allocateBuffers() {
-        this._disposeBuffers();
-
-        // Grayscale image buffer
-        this.memImage = new SharedMemory(
-            this.wasm, this.wasm.HEAPU8,
-            this.imageWidth * this.imageHeight
-        );
-
-        // IMU readings buffer (7 doubles per reading: timestamp, acc_xyz, gyro_xyz)
-        this.memIMU = new SharedMemory(
-            this.wasm, this.wasm.HEAPF64,
-            this.maxIMUReadings * 7
-        );
-
-        // Pose output buffer (16 doubles for 4x4 matrix)
-        this.memPose = new SharedMemory(
-            this.wasm, this.wasm.HEAPF64,
-            16
-        );
-
-        // Map points buffer (3 doubles per point)
-        this.memMapPoints = new SharedMemory(
-            this.wasm, this.wasm.HEAPF64,
-            this.maxMapPoints * 3
-        );
-
-        // Extrinsic parameters
-        this.memExtrinsicR = new SharedMemory(this.wasm, this.wasm.HEAPF64, 9);
-        this.memExtrinsicT = new SharedMemory(this.wasm, this.wasm.HEAPF64, 3);
+    async configure(params) {
+        return new Promise((resolve, reject) => {
+            this._pendingConfigure = { resolve, reject };
+            this.worker.postMessage({ type: 'configure', data: params });
+        });
     }
 
     /**
-     * Process a camera frame with IMU readings.
+     * Set mobile-optimized solver parameters (call after configure).
+     * @param {number} solverTime - Max solver time in seconds
+     * @param {number} numIterations - Max solver iterations
+     * @param {number} maxFeatures - Max tracked features
+     * @returns {Promise<boolean>}
+     */
+    async setMobileParams(solverTime, numIterations, maxFeatures) {
+        return new Promise((resolve, reject) => {
+            this._pendingSetMobileParams = { resolve, reject };
+            this.worker.postMessage({
+                type: 'setMobileParams',
+                data: { solver_time: solverTime, num_iterations: numIterations, max_features: maxFeatures },
+            });
+        });
+    }
+
+    /**
+     * Send IMU data to the worker independently from camera frames.
+     * This is NOT blocked by workerBusy — IMU always gets through.
+     *
+     * @param {Float64Array} imuData - Flat array: [ts, ax, ay, az, gx, gy, gz] × count
+     * @param {number} count - Number of IMU readings
+     * @returns {boolean} true if sent
+     */
+    sendIMU(imuData, count) {
+        if (!this.configured || !this.worker || !imuData || count <= 0) {
+            return false;
+        }
+
+        // Transfer the buffer for zero-copy delivery
+        const buffer = imuData.buffer;
+        this.worker.postMessage(
+            {
+                type: 'imu',
+                data: { imuData: buffer, count },
+            },
+            [buffer]  // Transferable
+        );
+        return true;
+    }
+
+    /**
+     * Send a camera frame to the worker for processing (non-blocking).
+     * If the worker is busy, the frame is dropped (but IMU is NOT lost).
+     *
      * @param {Uint8Array} grayImage - Grayscale image data
-     * @param {Array<Object>} imuReadings - Array of {timestamp, acc_x, acc_y, acc_z, gyro_x, gyro_y, gyro_z}
-     * @returns {{pose: Float64Array|null, initialized: boolean, featureCount: number}}
+     * @param {number} timestamp - Image timestamp in seconds
+     * @returns {boolean} true if frame was sent, false if dropped
      */
-    processFrame(grayImage, imuReadings = [], imageTimestamp = 0) {
-        if (!this.configured) {
-            throw new Error('VIO not configured. Call configure() first.');
+    sendFrame(grayImage, timestamp = 0) {
+        if (!this.configured || !this.worker || this.workerBusy) {
+            return false;
         }
 
-        // Write image to WASM heap
-        this.memImage.write(grayImage);
+        this.workerBusy = true;
 
-        // Write IMU readings to WASM heap (packed as 7 doubles per reading)
-        const imuCount = Math.min(imuReadings.length, this.maxIMUReadings);
-        if (imuCount > 0) {
-            const imuData = new Float64Array(imuCount * 7);
-            for (let i = 0; i < imuCount; i++) {
-                const r = imuReadings[i];
-                imuData[i * 7 + 0] = r.timestamp;
-                imuData[i * 7 + 1] = r.acc_x;
-                imuData[i * 7 + 2] = r.acc_y;
-                imuData[i * 7 + 3] = r.acc_z;
-                imuData[i * 7 + 4] = r.gyro_x;
-                imuData[i * 7 + 5] = r.gyro_y;
-                imuData[i * 7 + 6] = r.gyro_z;
-            }
-            this.memIMU.write(imuData);
-        }
-
-        // Call WASM processFrame with explicit image timestamp
-        const hasPose = this.engine.processFrame(
-            this.memImage.byteOffset,
-            this.imageWidth,
-            this.imageHeight,
-            this.memIMU.byteOffset,
-            imuCount,
-            imageTimestamp,
-            this.memPose.byteOffset
+        // Transfer the image buffer for zero-copy
+        const grayBuffer = grayImage.buffer.slice(
+            grayImage.byteOffset,
+            grayImage.byteOffset + grayImage.byteLength
         );
 
-        const result = {
-            pose: null,
-            initialized: this.engine.isInitialized(),
-            featureCount: this.engine.getFeaturePointCount(),
-        };
-
-        if (hasPose) {
-            result.pose = new Float64Array(this.memPose.read(16));
-        }
-
-        return result;
+        this.worker.postMessage(
+            {
+                type: 'frame',
+                data: {
+                    gray: grayBuffer,
+                    timestamp: timestamp,
+                },
+            },
+            [grayBuffer]  // Transferable
+        );
+        return true;
     }
 
     /**
-     * Get 3D map points from the VIO engine.
-     * @returns {{points: Float64Array, count: number}}
+     * Get the latest result from the worker (synchronous, non-blocking).
+     * @returns {{pose: Float64Array|null, initialized: boolean, featureCount: number}|null}
+     */
+    getLatestResult() {
+        return this._latestResult;
+    }
+
+    /**
+     * Get the latest map points from the worker.
+     * @returns {{points: Float64Array|null, count: number}}
      */
     getMapPoints() {
-        if (!this.configured) return { points: null, count: 0 };
-
-        const count = this.engine.getMapPoints(
-            this.memMapPoints.byteOffset,
-            this.maxMapPoints
-        );
-
-        return {
-            points: count > 0 ? new Float64Array(this.memMapPoints.read(count * 3)) : null,
-            count: count,
-        };
+        if (this._latestMapPoints) {
+            return this._latestMapPoints;
+        }
+        return { points: null, count: 0 };
     }
 
     /** Check if VIO has initialized */
     isInitialized() {
-        return this.engine ? this.engine.isInitialized() : false;
+        return this._latestResult ? this._latestResult.initialized : false;
     }
 
     /** Reset VIO state */
     reset() {
-        if (this.engine) {
-            this.engine.reset();
+        if (this.worker) {
+            this.workerBusy = false;
+            this._latestResult = null;
+            this._latestMapPoints = null;
+            this.worker.postMessage({ type: 'reset' });
         }
     }
 
-    /** Free all shared memory */
-    _disposeBuffers() {
-        [this.memImage, this.memIMU, this.memPose, this.memMapPoints,
-         this.memExtrinsicR, this.memExtrinsicT].forEach(m => {
-            if (m) m.dispose();
-        });
-    }
-
-    /** Clean up */
+    /** Clean up worker and resources */
     dispose() {
-        this._disposeBuffers();
-        if (this.engine) {
-            this.engine.delete();
-            this.engine = null;
+        if (this.worker) {
+            this.worker.postMessage({ type: 'dispose' });
+            this.worker.terminate();
+            this.worker = null;
         }
-        this.wasm = null;
         this.configured = false;
+        this.workerBusy = false;
+        this._latestResult = null;
+        this._latestMapPoints = null;
+    }
+
+    /** Handle messages from the worker */
+    _handleWorkerMessage(msg) {
+        switch (msg.type) {
+            case 'init':
+                if (this._pendingInit) {
+                    if (msg.success) {
+                        this._pendingInit.resolve();
+                    } else {
+                        this._pendingInit.reject(new Error(msg.error || 'Worker init failed'));
+                    }
+                    this._pendingInit = null;
+                }
+                break;
+
+            case 'configure':
+                this.configured = msg.success;
+                if (this._pendingConfigure) {
+                    this._pendingConfigure.resolve(msg.success);
+                    this._pendingConfigure = null;
+                }
+                break;
+
+            case 'setMobileParams':
+                if (this._pendingSetMobileParams) {
+                    this._pendingSetMobileParams.resolve(msg.success);
+                    this._pendingSetMobileParams = null;
+                }
+                break;
+
+            case 'result':
+                this.workerBusy = false;
+                if (msg.data) {
+                    this._latestResult = {
+                        pose: msg.data.pose,
+                        initialized: msg.data.initialized,
+                        featureCount: msg.data.featureCount,
+                        statusCode: msg.data.statusCode,
+                    };
+                    if (msg.data.mapPoints && msg.data.mapPointCount > 0) {
+                        this._latestMapPoints = {
+                            points: msg.data.mapPoints,
+                            count: msg.data.mapPointCount,
+                        };
+                    }
+                }
+                break;
+
+            case 'reset':
+                this.workerBusy = false;
+                break;
+
+            case 'dispose':
+                break;
+        }
     }
 }

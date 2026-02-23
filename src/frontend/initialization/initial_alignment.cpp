@@ -1,5 +1,6 @@
 #include <sys/stat.h>
 #include <chrono>
+#include <cmath>
 #include <fstream>
 #include <iomanip>
 #include <iostream>
@@ -34,7 +35,15 @@ void solveGyroscopeBias(std::map<double, common::ImageFrame> const& all_image_fr
         A += tmp_A.transpose() * tmp_A;
         b += tmp_A.transpose() * tmp_b;
     }
-    delta_bg = A.ldlt().solve(b);
+    // Check condition number via SVD before solving
+    Eigen::JacobiSVD<Matrix3d> svd(A);
+    double cond = svd.singularValues()(0) / svd.singularValues()(2);
+    if (cond > 1e10 || !std::isfinite(cond)) {
+        std::cout << "Gyroscope bias A matrix ill-conditioned (cond=" << cond << "), using zero bias" << std::endl;
+        delta_bg.setZero();
+    } else {
+        delta_bg = A.ldlt().solve(b);
+    }
     std::cout << "gyroscope bias initial calibration " << delta_bg.transpose() << std::endl;
 
     // Clamp gyroscope bias to physically reasonable range (±0.05 rad/s per axis)
@@ -198,6 +207,10 @@ bool LinearAlignment(std::map<double, common::ImageFrame> const& all_image_frame
     A = A * 1000.0;
     b = b * 1000.0;
     x = A.ldlt().solve(b);
+    if (!x.allFinite()) {
+        std::cout << "LinearAlignment LDLT solve produced NaN/Inf" << std::endl;
+        return false;
+    }
     double s = x(n_state - 1) / 100.0;
     std::cout << "estimated scale: " << s << std::endl;
     g = x.segment<3>(n_state - 4);

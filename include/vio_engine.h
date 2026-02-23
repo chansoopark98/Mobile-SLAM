@@ -13,11 +13,21 @@
 // No visualization, no file I/O, no threading.
 // Accepts raw image data + IMU data arrays directly.
 
+enum class VIOStatus : int {
+    NOT_CONFIGURED = 0,
+    INITIALIZING = 1,
+    TRACKING = 2,
+    LOST = 3,
+    COOLDOWN = 4
+};
+
 struct IMUReading {
     double timestamp;
     double acc_x, acc_y, acc_z;
     double gyro_x, gyro_y, gyro_z;
 };
+static_assert(sizeof(IMUReading) == 7 * sizeof(double),
+              "IMUReading must be 7 contiguous doubles (JS/WASM interop)");
 
 class VIOEngine {
 public:
@@ -60,6 +70,12 @@ public:
     // Returns actual number of points written.
     int getMapPoints(double* output, int max_count) const;
 
+    // Set mobile-optimized solver parameters (call after configure).
+    void setMobileParams(double solver_time, int num_iterations, int max_features);
+
+    // Get current VIO status code.
+    int getStatusCode() const;
+
     // Reset the VIO system to initial state.
     void reset();
 
@@ -81,6 +97,10 @@ private:
     Eigen::Vector3d latest_position_;
     Eigen::Matrix3d latest_rotation_;
     bool has_valid_pose_;
+    int consecutive_failures_;
+    static constexpr int kMaxConsecutiveFailures = 5;
+    static constexpr int kCooldownFrames = 30;
+    int cooldown_counter_;
 };
 
 #endif // VIO_ENGINE_H

@@ -102,6 +102,9 @@ target_link_libraries(vio_engine
 )
 
 # ── Emscripten linker flags ──
+# STACK_SIZE: Ceres solver + Eigen matrix ops require significant stack space.
+# Default 64KB is insufficient; 8MB provides ample room for DENSE_SCHUR + marginalization.
+# ASSERTIONS: Set to 1 for debug builds to catch memory errors early.
 set(EM_LINK_FLAGS
     "-s EXPORT_NAME='VIOWasm'"
     "-s ENVIRONMENT=web,worker"
@@ -109,8 +112,10 @@ set(EM_LINK_FLAGS
     "-s EXPORT_ES6=1"
     "-s SINGLE_FILE=1"
     "-s INITIAL_MEMORY=256MB"
+    "-s MAXIMUM_MEMORY=512MB"
     "-s ALLOW_MEMORY_GROWTH=1"
     "-s ALLOW_TABLE_GROWTH=1"
+    "-s STACK_SIZE=8MB"
     "-s EXPORTED_FUNCTIONS=['_malloc','_free']"
     "-s EXPORTED_RUNTIME_METHODS=['HEAPU8','HEAPF64','HEAPF32','HEAP32','HEAPU32','wasmMemory']"
     "-s DISABLE_EXCEPTION_CATCHING=0"
@@ -119,7 +124,7 @@ set(EM_LINK_FLAGS
     "-s USE_ZLIB=1"
     "--bind"
     "--no-entry"
-    "-O3"
+    "-O2"
     "-msimd128"
     "-lembind"
 )
@@ -130,7 +135,46 @@ set_target_properties(vio_engine PROPERTIES
     LINK_FLAGS "${EM_LINK_FLAGS_STR}"
 )
 
+# ── Worker-compatible build target ──
+add_executable(vio_engine_worker ${VIO_SOURCES})
+
+target_link_libraries(vio_engine_worker
+    ${LIB_OPENCV}
+    ${LIB_OPENCV_3RDPARTY}
+    ${LIB_CERES}
+)
+
+set(EM_WORKER_LINK_FLAGS
+    "-s EXPORT_NAME='VIOWasm'"
+    "-s ENVIRONMENT=worker"
+    "-s MODULARIZE=1"
+    "-s EXPORT_ES6=0"
+    "-s SINGLE_FILE=1"
+    "-s INITIAL_MEMORY=256MB"
+    "-s MAXIMUM_MEMORY=512MB"
+    "-s ALLOW_MEMORY_GROWTH=1"
+    "-s ALLOW_TABLE_GROWTH=1"
+    "-s STACK_SIZE=8MB"
+    "-s EXPORTED_FUNCTIONS=['_malloc','_free']"
+    "-s EXPORTED_RUNTIME_METHODS=['HEAPU8','HEAPF64','HEAPF32','HEAP32','HEAPU32','wasmMemory']"
+    "-s DISABLE_EXCEPTION_CATCHING=0"
+    "-s ERROR_ON_UNDEFINED_SYMBOLS=0"
+    "-s ASSERTIONS=0"
+    "-s USE_ZLIB=1"
+    "--bind"
+    "--no-entry"
+    "-O2"
+    "-msimd128"
+    "-lembind"
+)
+
+string(REPLACE ";" " " EM_WORKER_LINK_FLAGS_STR "${EM_WORKER_LINK_FLAGS}")
+set_target_properties(vio_engine_worker PROPERTIES
+    SUFFIX ".js"
+    LINK_FLAGS "${EM_WORKER_LINK_FLAGS_STR}"
+)
+
 # ── Install ──
-install(TARGETS vio_engine
+install(TARGETS vio_engine vio_engine_worker
     RUNTIME DESTINATION "${CMAKE_CURRENT_SOURCE_DIR}/dist"
 )

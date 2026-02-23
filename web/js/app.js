@@ -1,10 +1,87 @@
 /**
  * Main application - combines Camera, IMU, VIO, and Renderer.
+ * Includes IMU data overlay, coordinate system verification, and mobile config management.
+ *
+ * Architecture:
+ * - IMU data is flushed and sent to the worker independently from camera frames.
+ * - Camera frames are sent without IMU data; the worker drains its internal
+ *   IMU buffer on each frame.
+ * - This prevents IMU data loss when frames are dropped due to worker being busy.
  */
 import { VIOWrapper } from './vio-wrapper.js';
 import { Camera } from './camera.js';
 import { IMU } from './imu.js';
 import { Renderer } from './renderer.js';
+
+/**
+ * Mobile web VIO configuration profiles.
+ * Mobile phones have different sensor characteristics than research-grade IMUs.
+ */
+const VIO_CONFIGS = {
+    // Default mobile phone config
+    // NOTE: Noise values enter pre-integration covariance as acc_n², so even
+    // small changes have quadratic effect. Values must match VINS-Mono's
+    // continuous-time noise density model (NOT raw sensor specs).
+    // Reference: EuRoC acc_n=0.08, TUM-VI acc_n=0.028
+    mobile_default: {
+        label: 'Mobile Default',
+        acc_n: 0.1,       // accelerometer noise density - mobile MEMS ~2-3x EuRoC
+        acc_w: 0.002,     // accelerometer random walk
+        gyr_n: 0.01,      // gyroscope noise density - mobile MEMS ~2-3x EuRoC
+        gyr_w: 0.0005,    // gyroscope random walk
+        g_norm: 9.81,
+        focalLengthFactor: 0.8,  // fx = fy = width * factor
+        modelType: 0,  // PINHOLE
+        solver_time: 0.04,
+        num_iterations: 8,
+        max_features: 120,
+    },
+    // Tuned for high-end phones (iPhone 14+, Pixel 7+, Galaxy S23+)
+    mobile_highend: {
+        label: 'Mobile High-end',
+        acc_n: 0.08,
+        acc_w: 0.001,
+        gyr_n: 0.005,
+        gyr_w: 0.0001,
+        g_norm: 9.81,
+        focalLengthFactor: 0.85,
+        modelType: 0,
+        solver_time: 0.06,
+        num_iterations: 10,
+        max_features: 150,
+    },
+    // EuRoC MAV dataset (research-grade VI sensor)
+    euroc: {
+        label: 'EuRoC Dataset',
+        acc_n: 0.08,
+        acc_w: 0.00004,
+        gyr_n: 0.004,
+        gyr_w: 2.0e-6,
+        g_norm: 9.81007,
+        focalLengthFactor: null,  // uses dataset intrinsics
+        modelType: 0,
+        solver_time: 0.1,
+        num_iterations: 10,
+        max_features: 150,
+    },
+    // TUM VI dataset
+    tum_vi: {
+        label: 'TUM VI Dataset',
+        acc_n: 0.028,
+        acc_w: 0.00086,
+        gyr_n: 0.004,
+        gyr_w: 2.2e-5,
+        g_norm: 9.81007,
+        focalLengthFactor: null,
+        modelType: 0,
+        solver_time: 0.1,
+        num_iterations: 10,
+        max_features: 150,
+    },
+};
+
+/** IMU flush interval in ms (independent of rAF) */
+const IMU_FLUSH_INTERVAL_MS = 20;
 
 class App {
     constructor() {
@@ -15,8 +92,13 @@ class App {
 
         this.running = false;
         this.frameCount = 0;
+        this.totalFrameCount = 0;
         this.lastFPSTime = 0;
         this.fps = 0;
+        this.imuLogCount = 0;
+
+        // Active config profile
+        this.activeConfig = 'mobile_default';
 
         // UI elements
         this.statusEl = null;
@@ -25,6 +107,14 @@ class App {
         this.frameEl = null;
         this.startBtn = null;
         this.resetBtn = null;
+        this.imuRateEl = null;
+
+        // IMU overlay elements
+        this.imuOverlayEls = {};
+        this.lastImuUpdateTime = 0;
+
+        // IMU flush timer (independent of rAF)
+        this._imuFlushTimer = null;
     }
 
     async initialize() {
@@ -34,6 +124,17 @@ class App {
         this.frameEl = document.getElementById('frame-count');
         this.startBtn = document.getElementById('btn-start');
         this.resetBtn = document.getElementById('btn-reset');
+        this.imuRateEl = document.getElementById('imu-rate');
+
+        // IMU overlay elements
+        this.imuOverlayEls = {
+            accX: document.getElementById('acc-x'),
+            accY: document.getElementById('acc-y'),
+            accZ: document.getElementById('acc-z'),
+            gyroX: document.getElementById('gyro-x'),
+            gyroY: document.getElementById('gyro-y'),
+            gyroZ: document.getElementById('gyro-z'),
+        };
 
         this.updateStatus('Loading WASM module...');
 
@@ -79,32 +180,54 @@ class App {
                 videoContainer.appendChild(video);
             }
 
-            // Configure VIO with typical mobile camera parameters
+            // Get active config profile
+            const config = VIO_CONFIGS[this.activeConfig];
+
             // Camera-IMU extrinsic rotation for smartphone (rear camera, portrait mode)
             // Camera frame (OpenCV): x=right, y=down, z=forward (into scene)
-            // IMU frame (DeviceMotion): x=right, y=up, z=out-of-screen
-            // R_imu_camera = 180° rotation around x-axis
+            // IMU frame (W3C DeviceMotion): x=right, y=up, z=out-of-screen
+            // R_imu_camera = 180 deg rotation around x-axis
             const r_ic = [
-                1,  0,  0,   // cam_x → imu_x (same: right)
-                0, -1,  0,   // cam_y → -imu_y (down → up)
-                0,  0, -1    // cam_z → -imu_z (forward → out-of-screen)
+                1,  0,  0,   // cam_x -> imu_x (same: right)
+                0, -1,  0,   // cam_y -> -imu_y (down -> up)
+                0,  0, -1    // cam_z -> -imu_z (forward -> out-of-screen)
             ];
 
-            // Mobile phone IMU noise parameters (higher than research-grade sensors)
-            const configured = this.vio.configure({
+            // Log coordinate system configuration for verification
+            console.log('[VIO] Coordinate system configuration:');
+            console.log('[VIO]   Camera frame (OpenCV): x=right, y=down, z=forward');
+            console.log('[VIO]   IMU frame (DeviceMotion): x=right, y=up, z=out-of-screen');
+            console.log('[VIO]   R_imu_camera:', r_ic);
+            console.log('[VIO]   Expected: phone upright -> acc_y ~= +9.8 (gravity along +Y)');
+            console.log('[VIO] Config profile:', this.activeConfig, config.label);
+
+            // Log actual camera dimensions for orientation verification
+            const video = this.camera.getVideoElement();
+            console.log(`[VIO] Camera video dimensions: ${video.videoWidth}x${video.videoHeight}`);
+            console.log(`[VIO] Camera capture dimensions: ${width}x${height}`);
+            console.log(`[VIO] Orientation: ${width > height ? 'LANDSCAPE' : 'PORTRAIT'}`);
+            if (width > height) {
+                console.warn('[VIO] WARNING: Landscape video from mobile camera. ' +
+                    'R_ic assumes portrait mode. Verify coordinate alignment.');
+            }
+
+            const fx = config.focalLengthFactor ? width * config.focalLengthFactor : width * 0.8;
+            const fy = fx;
+
+            const configured = await this.vio.configure({
                 width: width,
                 height: height,
-                fx: width * 0.8,  // Approximate focal length
-                fy: width * 0.8,
+                fx: fx,
+                fy: fy,
                 cx: width / 2,
                 cy: height / 2,
-                modelType: 0, // PINHOLE
+                modelType: config.modelType,
                 r_ic: r_ic,
-                acc_n: 0.2,
-                acc_w: 0.02,
-                gyr_n: 0.02,
-                gyr_w: 0.002,
-                g_norm: 9.81,
+                acc_n: config.acc_n,
+                acc_w: config.acc_w,
+                gyr_n: config.gyr_n,
+                gyr_w: config.gyr_w,
+                g_norm: config.g_norm,
             });
 
             if (!configured) {
@@ -112,11 +235,25 @@ class App {
                 return;
             }
 
+            // Apply mobile solver parameters if present in config
+            if (config.solver_time !== undefined) {
+                await this.vio.setMobileParams(
+                    config.solver_time,
+                    config.num_iterations,
+                    config.max_features
+                );
+            }
+
+            console.log(`[VIO] Configured: ${width}x${height}, fx=${fx.toFixed(1)}, ` +
+                         `acc_n=${config.acc_n}, gyr_n=${config.gyr_n}` +
+                         (config.solver_time ? `, solver_time=${config.solver_time}` : ''));
+
             // Request IMU permission and start
             if (IMU.isAvailable()) {
                 const granted = await this.imu.requestPermission();
                 if (granted) {
-                    this.imu.start();
+                    this.imu.start(100);  // Request 100Hz
+                    console.log(`[VIO] IMU started: sensor=${this.imu.getSensorType()}`);
                     this.updateStatus('Camera + IMU active');
                 } else {
                     this.updateStatus('Camera active (no IMU permission)');
@@ -126,8 +263,14 @@ class App {
             }
 
             this.running = true;
+            this.imuLogCount = 0;
             this.resetBtn.disabled = false;
             this.lastFPSTime = performance.now();
+
+            // Start independent IMU flush timer
+            this._startIMUFlush();
+
+            // Start frame processing loop
             this.processLoop();
 
         } catch (e) {
@@ -137,40 +280,83 @@ class App {
         }
     }
 
+    /**
+     * Start independent IMU flush timer.
+     * Flushes IMU data to the worker at a fixed interval, decoupled from rAF.
+     */
+    _startIMUFlush() {
+        this._stopIMUFlush();
+        this._imuFlushTimer = setInterval(() => {
+            if (!this.running) return;
+            const { data, count } = this.imu.flush();
+            if (count > 0 && data) {
+                // Log first few batches for diagnostics
+                if (this.imuLogCount < 10) {
+                    const r = {
+                        acc_x: data[1], acc_y: data[2], acc_z: data[3],
+                        gyro_x: data[4], gyro_y: data[5], gyro_z: data[6],
+                    };
+                    console.log(`[VIO] IMU batch #${this.imuLogCount}: ` +
+                        `count=${count} ` +
+                        `acc=(${r.acc_x.toFixed(3)}, ${r.acc_y.toFixed(3)}, ${r.acc_z.toFixed(3)}) ` +
+                        `gyro=(${r.gyro_x.toFixed(4)}, ${r.gyro_y.toFixed(4)}, ${r.gyro_z.toFixed(4)}) ` +
+                        `|acc|=${Math.sqrt(r.acc_x**2 + r.acc_y**2 + r.acc_z**2).toFixed(3)}`);
+                    if (this.imuLogCount === 0) {
+                        console.log(`[VIO] IMU sensor type: ${this.imu.getSensorType()}`);
+                        console.log(`[VIO] Expected: |acc| ~= 9.81 (gravity)`);
+                    }
+                    this.imuLogCount++;
+                }
+
+                // Send IMU independently to worker (never blocked by workerBusy)
+                this.vio.sendIMU(data, count);
+            }
+        }, IMU_FLUSH_INTERVAL_MS);
+    }
+
+    /** Stop the independent IMU flush timer. */
+    _stopIMUFlush() {
+        if (this._imuFlushTimer !== null) {
+            clearInterval(this._imuFlushTimer);
+            this._imuFlushTimer = null;
+        }
+    }
+
     processLoop() {
         if (!this.running) return;
 
         const frameTimestamp = performance.now() / 1000.0;
         const gray = this.camera.captureGrayscale();
         if (gray) {
-            const imuReadings = this.imu.flush();
-            const result = this.vio.processFrame(gray, imuReadings, frameTimestamp);
-
+            // Send frame only (no IMU bundled — worker drains its internal buffer)
+            this.vio.sendFrame(gray, frameTimestamp);
+            this.totalFrameCount++;
             this.frameCount++;
+        }
 
-            // Update UI
+        // Read latest result from worker (non-blocking)
+        const result = this.vio.getLatestResult();
+
+        // Update UI
+        if (result) {
             if (this.featureEl) {
                 this.featureEl.textContent = result.featureCount;
             }
             if (this.frameEl) {
-                this.frameEl.textContent = this.frameCount;
+                this.frameEl.textContent = this.totalFrameCount;
             }
 
-            // Update FPS
-            const now = performance.now();
-            if (now - this.lastFPSTime >= 1000) {
-                this.fps = Math.round(this.frameCount / ((now - this.lastFPSTime) / 1000));
-                if (this.fpsEl) this.fpsEl.textContent = this.fps;
-                this.lastFPSTime = now;
-                this.frameCount = 0;
-            }
-
-            // Update status
-            if (result.initialized) {
-                this.updateStatus('VIO initialized - tracking');
-            } else {
-                this.updateStatus('Initializing VIO...');
-            }
+            // Update status based on status code
+            const statusMessages = {
+                0: 'Not configured',
+                1: 'Initializing VIO...',
+                2: 'Tracking',
+                3: 'Lost - recovering...',
+                4: 'Cooldown - stabilizing...',
+            };
+            const statusMsg = statusMessages[result.statusCode] ||
+                (result.initialized ? 'Tracking' : 'Initializing VIO...');
+            this.updateStatus(statusMsg);
 
             // Update 3D rendering
             if (this.renderer) {
@@ -185,7 +371,36 @@ class App {
             }
         }
 
+        // Update FPS + IMU rate
+        const now = performance.now();
+        if (now - this.lastFPSTime >= 1000) {
+            this.fps = Math.round(this.frameCount / ((now - this.lastFPSTime) / 1000));
+            if (this.fpsEl) this.fpsEl.textContent = this.fps;
+            if (this.imuRateEl) this.imuRateEl.textContent = Math.round(this.imu.getRate());
+            this.lastFPSTime = now;
+            this.frameCount = 0;
+        }
+
+        // Update IMU overlay at ~10Hz for readability
+        if (now - this.lastImuUpdateTime >= 100) {
+            this.updateIMUOverlay();
+            this.lastImuUpdateTime = now;
+        }
+
         requestAnimationFrame(() => this.processLoop());
+    }
+
+    /** Update IMU sensor data overlay display */
+    updateIMUOverlay() {
+        const l = this.imu.latest;
+        if (!l) return;
+        const els = this.imuOverlayEls;
+        if (els.accX) els.accX.textContent = l.acc_x.toFixed(2);
+        if (els.accY) els.accY.textContent = l.acc_y.toFixed(2);
+        if (els.accZ) els.accZ.textContent = l.acc_z.toFixed(2);
+        if (els.gyroX) els.gyroX.textContent = l.gyro_x.toFixed(3);
+        if (els.gyroY) els.gyroY.textContent = l.gyro_y.toFixed(3);
+        if (els.gyroZ) els.gyroZ.textContent = l.gyro_z.toFixed(3);
     }
 
     resetVIO() {
@@ -194,6 +409,8 @@ class App {
             this.renderer.clear();
         }
         this.frameCount = 0;
+        this.totalFrameCount = 0;
+        this.imuLogCount = 0;
         this.updateStatus('VIO reset');
     }
 
@@ -206,6 +423,7 @@ class App {
 
     stop() {
         this.running = false;
+        this._stopIMUFlush();
         this.camera.stop();
         this.imu.stop();
         this.vio.dispose();

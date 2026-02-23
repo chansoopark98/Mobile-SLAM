@@ -96,6 +96,30 @@
             color: #aaa;
             border-top: 1px solid #333;
         }
+        .imu-overlay {
+            position: absolute;
+            top: 8px;
+            right: 8px;
+            background: rgba(0, 0, 0, 0.75);
+            padding: 6px 10px;
+            border-radius: 6px;
+            font-family: monospace;
+            font-size: 11px;
+            line-height: 1.5;
+            z-index: 10;
+            pointer-events: none;
+        }
+        .imu-overlay .imu-title {
+            color: #00ff88;
+            font-weight: bold;
+            margin-bottom: 2px;
+        }
+        .imu-overlay .imu-row {
+            display: flex;
+            gap: 6px;
+        }
+        .imu-overlay .imu-axis { color: #888; width: 16px; display: inline-block; }
+        .imu-overlay .imu-val { color: #e0e0e0; width: 64px; display: inline-block; text-align: right; }
     </style>
 </head>
 <body>
@@ -109,6 +133,16 @@
     <div class="main">
         <div class="video-section">
             <div id="video-container"></div>
+            <div class="imu-overlay" id="imu-overlay">
+                <div class="imu-title">Accel (m/s²)</div>
+                <div class="imu-row"><span class="imu-axis">X:</span><span class="imu-val" id="acc-x">-</span></div>
+                <div class="imu-row"><span class="imu-axis">Y:</span><span class="imu-val" id="acc-y">-</span></div>
+                <div class="imu-row"><span class="imu-axis">Z:</span><span class="imu-val" id="acc-z">-</span></div>
+                <div class="imu-title" style="margin-top:4px">Gyro (rad/s)</div>
+                <div class="imu-row"><span class="imu-axis">X:</span><span class="imu-val" id="gyro-x">-</span></div>
+                <div class="imu-row"><span class="imu-axis">Y:</span><span class="imu-val" id="gyro-y">-</span></div>
+                <div class="imu-row"><span class="imu-axis">Z:</span><span class="imu-val" id="gyro-z">-</span></div>
+            </div>
         </div>
         <div class="render-section">
             <canvas id="canvas-3d"></canvas>
@@ -124,6 +158,11 @@
                 <div class="stat-item">
                     <span class="stat-label">Features:</span>
                     <span class="stat-value" id="features">0</span>
+                </div>
+                <div class="stat-item">
+                    <span class="stat-label">IMU:</span>
+                    <span class="stat-value" id="imu-rate">0</span>
+                    <span class="stat-label">Hz</span>
                 </div>
             </div>
         </div>

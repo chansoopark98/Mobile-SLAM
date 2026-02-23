@@ -50,5 +50,7 @@ EMSCRIPTEN_BINDINGS(VIOModule) {
         .function("isInitialized", &VIOEngine::isInitialized)
         .function("getFeaturePointCount", &VIOEngine::getFeaturePointCount)
         .function("getMapPoints", &getMapPoints_wrapper)
+        .function("setMobileParams", &VIOEngine::setMobileParams)
+        .function("getStatusCode", &VIOEngine::getStatusCode)
         .function("reset", &VIOEngine::reset);
 }

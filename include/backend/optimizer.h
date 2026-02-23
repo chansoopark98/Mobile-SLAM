@@ -56,6 +56,7 @@ private:
     // Parameter management
     void prepareOptimizationParameters();
     void applyOptimizationResults();
+    bool validateOptimizationParameters() const;
 
     // Member variables
     SlidingWindow* sliding_window_;
