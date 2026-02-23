@@ -248,3 +248,19 @@ target_link_libraries(test_measurement_robustness
 )
 target_include_directories(test_measurement_robustness PRIVATE include)
 add_test(NAME MeasurementRobustnessTest COMMAND test_measurement_robustness)
+
+add_executable(test_vio_engine_parity tests/test_vio_engine_parity.cpp
+    src/utility/measurement_processor.cpp
+)
+target_link_libraries(test_vio_engine_parity
+    gtest gtest_main
+    vio_engine
+    estimator
+    feature_tracker
+    utility
+    camera_models
+    ${OpenCV_LIBS}
+    ${YAML_CPP_LIBRARIES}
+)
+target_include_directories(test_vio_engine_parity PRIVATE include)
+add_test(NAME VIOEngineParityTest COMMAND test_vio_engine_parity)
