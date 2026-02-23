@@ -4,7 +4,9 @@
 #include <Eigen/Dense>
 #include <iostream>
 #include <memory>
+#ifndef __EMSCRIPTEN__
 #include <mutex>
+#endif
 
 #include "backend/optimizer.h"
 #include "backend/sliding_window.h"
@@ -74,7 +76,9 @@ private:
     frontend::FeatureManager feature_manager_;
     frontend::initialization::MotionEstimator motion_estimator_;
 
+#ifndef __EMSCRIPTEN__
     mutable std::mutex estimator_mutex_;
+#endif
 };
 
 }  // namespace backend

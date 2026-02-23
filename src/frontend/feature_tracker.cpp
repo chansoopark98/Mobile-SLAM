@@ -182,6 +182,22 @@ void FeatureTracker::readIntrinsicParameter(const string& calib_file) {
     m_camera = common::camera_models::CameraFactory::instance()->generateCameraFromYamlFile(calib_file);
 }
 
+void FeatureTracker::setIntrinsicParameter(int model_type, int width, int height,
+                                           double fx, double fy, double cx, double cy,
+                                           double k2, double k3, double k4, double k5) {
+    if (model_type == common::camera_models::Camera::PINHOLE) {
+        // Pinhole: k2->k1, k3->k2, k4->p1, k5->p2
+        common::camera_models::PinholeCamera::Parameters params(
+            "camera", width, height, k2, k3, k4, k5, fx, fy, cx, cy);
+        m_camera = std::make_shared<common::camera_models::PinholeCamera>(params);
+    } else {
+        // Default to equidistant (KANNALA_BRANDT) for fisheye
+        common::camera_models::EquidistantCamera::Parameters params(
+            "camera", width, height, k2, k3, k4, k5, fx, fy, cx, cy);
+        m_camera = std::make_shared<common::camera_models::EquidistantCamera>(params);
+    }
+}
+
 void FeatureTracker::undistortedPoints() {
     cur_undistorted_pts.clear();
     cur_undistorted_pts_map.clear();

@@ -1,5 +1,8 @@
 wasm/dist/
 
+# TLS certificates (dev server)
+web/.certs/
+
 build/
 data/
 logs/

@@ -17,7 +17,11 @@ VIOEngine::VIOEngine()
       latest_rotation_(Eigen::Matrix3d::Identity()),
       has_valid_pose_(false),
       consecutive_failures_(0),
-      cooldown_counter_(0) {
+      cooldown_counter_(0),
+      total_imu_count_(0),
+      total_frame_count_(0),
+      frames_since_init_start_(0),
+      init_start_time_(-1.0) {
 }
 
 VIOEngine::~VIOEngine() = default;
@@ -67,9 +71,9 @@ bool VIOEngine::configure(int width, int height,
     cfg.feature_tracker.f_threshold = 1.0;
     cfg.feature_tracker.window_size = 20;
 
-    // Estimator defaults
-    cfg.estimator.solver_time = 0.1;
-    cfg.estimator.num_iterations = 10;
+    // Estimator defaults (optimized for mobile WASM: 30fps → 33ms budget)
+    cfg.estimator.solver_time = 0.04;
+    cfg.estimator.num_iterations = 6;
     cfg.estimator.min_parallax = 10.0;
 
     // Create estimator and feature tracker
@@ -78,54 +82,10 @@ bool VIOEngine::configure(int width, int height,
 
     feature_tracker_ = std::make_unique<frontend::FeatureTracker>();
 
-    // For WASM, we need to create camera model from parameters directly
-    // Build a temporary YAML-like config string for the camera factory
-    // This uses the existing camera model infrastructure
-    std::string temp_config;
-    if (model_type == 1) { // KANNALA_BRANDT
-        temp_config = "%YAML:1.0\n"
-            "model_type: KANNALA_BRANDT\n"
-            "camera_name: camera\n"
-            "image_width: " + std::to_string(width) + "\n"
-            "image_height: " + std::to_string(height) + "\n"
-            "projection_parameters:\n"
-            "   k2: " + std::to_string(k2) + "\n"
-            "   k3: " + std::to_string(k3) + "\n"
-            "   k4: " + std::to_string(k4) + "\n"
-            "   k5: " + std::to_string(k5) + "\n"
-            "   mu: " + std::to_string(fx) + "\n"
-            "   mv: " + std::to_string(fy) + "\n"
-            "   u0: " + std::to_string(cx) + "\n"
-            "   v0: " + std::to_string(cy) + "\n";
-    } else { // PINHOLE
-        temp_config = "%YAML:1.0\n"
-            "model_type: PINHOLE\n"
-            "camera_name: camera\n"
-            "image_width: " + std::to_string(width) + "\n"
-            "image_height: " + std::to_string(height) + "\n"
-            "distortion_parameters:\n"
-            "   k1: " + std::to_string(k2) + "\n"
-            "   k2: " + std::to_string(k3) + "\n"
-            "   p1: " + std::to_string(k4) + "\n"
-            "   p2: " + std::to_string(k5) + "\n"
-            "projection_parameters:\n"
-            "   fx: " + std::to_string(fx) + "\n"
-            "   fy: " + std::to_string(fy) + "\n"
-            "   cx: " + std::to_string(cx) + "\n"
-            "   cy: " + std::to_string(cy) + "\n";
-    }
-
-    // Write temp config file for camera model initialization
-    std::string temp_path = "/tmp/vio_engine_camera.yaml";
-    std::ofstream ofs(temp_path);
-    if (ofs.is_open()) {
-        ofs << temp_config;
-        ofs.close();
-        feature_tracker_->readIntrinsicParameter(temp_path);
-    } else {
-        LOG_ERROR("Failed to create temp camera config");
-        return false;
-    }
+    // Direct camera model initialization (no file I/O, safe for WASM)
+    feature_tracker_->setIntrinsicParameter(model_type, width, height,
+                                             fx, fy, cx, cy,
+                                             k2, k3, k4, k5);
 
     // Set projection factor info
     backend::factor::ProjectionFactor::sqrt_info =
@@ -213,9 +173,46 @@ bool VIOEngine::processFrame(const uint8_t* gray_image, int width, int height,
     // Create cv::Mat from raw data (no copy)
     cv::Mat img(height, width, CV_8UC1, const_cast<uint8_t*>(gray_image));
 
+    // Track diagnostics
+    total_frame_count_++;
+    total_imu_count_ += imu_count;
+
     // Process IMU data
     if (imu_count > 0) {
         processIMUData(imu_readings, imu_count, image_timestamp);
+    }
+
+    // Diagnostic logging at regular intervals
+    bool is_initializing = (estimator_->solver_flag_ != common::SolverFlag::NON_LINEAR);
+    if (is_initializing && total_frame_count_ % kDiagLogInterval == 0) {
+        LOG_INFO("[DIAG] frame=" << total_frame_count_
+                 << " imu_total=" << total_imu_count_
+                 << " imu_this=" << imu_count
+                 << " dt=" << (prev_image_timestamp_ > 0 ? image_timestamp - prev_image_timestamp_ : 0));
+    }
+
+    // Initialization timeout check
+    if (is_initializing) {
+        frames_since_init_start_++;
+        if (init_start_time_ < 0) {
+            init_start_time_ = image_timestamp;
+        } else if (image_timestamp - init_start_time_ > kInitTimeoutSeconds) {
+            LOG_WARN("VIO initialization timeout (" << kInitTimeoutSeconds
+                     << "s, " << frames_since_init_start_ << " frames). Resetting...");
+            estimator_ = std::make_unique<backend::Estimator>();
+            estimator_->setParameter();
+            current_time_ = -1.0;
+            prev_image_timestamp_ = -1.0;
+            first_imu_ = false;
+            has_valid_pose_ = false;
+            init_start_time_ = -1.0;
+            frames_since_init_start_ = 0;
+            return false;
+        }
+    } else {
+        // Reset init timer once tracking
+        init_start_time_ = -1.0;
+        frames_since_init_start_ = 0;
     }
 
     // Feature tracking
@@ -225,6 +222,16 @@ bool VIOEngine::processFrame(const uint8_t* gray_image, int width, int height,
     for (unsigned int i = 0;; i++) {
         bool completed = feature_tracker_->updateID(i);
         if (!completed) break;
+    }
+
+    // Diagnostic: feature tracking quality
+    if (is_initializing && total_frame_count_ % kDiagLogInterval == 0) {
+        int tracked = 0;
+        for (unsigned int j = 0; j < feature_tracker_->track_cnt.size(); j++) {
+            if (feature_tracker_->track_cnt[j] > 1) tracked++;
+        }
+        LOG_INFO("[DIAG] features_detected=" << feature_tracker_->ids.size()
+                 << " features_tracked=" << tracked);
     }
 
     // Build image data for estimator
@@ -273,7 +280,7 @@ bool VIOEngine::processFrame(const uint8_t* gray_image, int width, int height,
 
     // Extract pose if VIO is initialized
     if (currently_initialized) {
-        int ws = utility::g_config.estimator.window_size;
+        int ws = WINDOW_SIZE;
         Eigen::Vector3d body_pos = estimator_->sliding_window_[ws].P;
         Eigen::Matrix3d body_rot = estimator_->sliding_window_[ws].R;
 
@@ -388,4 +395,8 @@ void VIOEngine::reset() {
     prev_gyro_ = Eigen::Vector3d::Zero();
     consecutive_failures_ = 0;
     cooldown_counter_ = 0;
+    total_imu_count_ = 0;
+    total_frame_count_ = 0;
+    frames_since_init_start_ = 0;
+    init_start_time_ = -1.0;
 }

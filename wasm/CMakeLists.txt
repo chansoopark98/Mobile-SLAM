@@ -8,9 +8,8 @@ set(CMAKE_BUILD_TYPE Release)
 set(PROJECT_SRC_ROOT "${CMAKE_CURRENT_SOURCE_DIR}/..")
 set(LIBS_DIR "${CMAKE_CURRENT_SOURCE_DIR}/libs")
 
-# Eigen (system-installed, header-only)
-set(Eigen3_DIR "/usr/share/eigen3/cmake")
-find_package(Eigen3 REQUIRED)
+# Eigen (system-installed, header-only — skip find_package for Emscripten compatibility)
+set(EIGEN3_INCLUDE_DIR "/usr/include/eigen3")
 
 # Pre-built WASM libraries
 set(OPENCV_DIR "${LIBS_DIR}/opencv")
@@ -124,7 +123,7 @@ set(EM_LINK_FLAGS
     "-s USE_ZLIB=1"
     "--bind"
     "--no-entry"
-    "-O2"
+    "-O3"
     "-msimd128"
     "-lembind"
 )
@@ -163,7 +162,7 @@ set(EM_WORKER_LINK_FLAGS
     "-s USE_ZLIB=1"
     "--bind"
     "--no-entry"
-    "-O2"
+    "-O3"
     "-msimd128"
     "-lembind"
 )

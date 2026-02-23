@@ -101,6 +101,14 @@ private:
     static constexpr int kMaxConsecutiveFailures = 5;
     static constexpr int kCooldownFrames = 30;
     int cooldown_counter_;
+
+    // Diagnostic counters
+    int total_imu_count_;
+    int total_frame_count_;
+    int frames_since_init_start_;
+    double init_start_time_;
+    static constexpr double kInitTimeoutSeconds = 15.0;
+    static constexpr int kDiagLogInterval = 30;  // Log every N frames
 };
 
 #endif // VIO_ENGINE_H

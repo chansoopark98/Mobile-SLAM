@@ -63,13 +63,14 @@ function appendIMU(data, count) {
  */
 function drainIMUToWasm() {
     const available = imuRingWriteIdx - imuRingReadIdx;
-    if (available <= 0 || !memIMU) return 0;
+    if (available <= 0 || !memIMU || !wasm) return 0;
 
     // Clamp to ring capacity and max WASM buffer
     const count = Math.min(available, IMU_RING_CAPACITY, maxIMUReadings);
     const startIdx = imuRingWriteIdx - count;
 
     // Write directly into WASM heap (memIMU is Float64, 7 fields per reading)
+    // Access wasm.HEAPF64 directly each time to handle memory growth
     const heapOffset = memIMU.ptr / 8;  // Float64 index
     for (let i = 0; i < count; i++) {
         const srcSlot = ((startIdx + i) % IMU_RING_CAPACITY) * IMU_FIELDS;
@@ -94,29 +95,44 @@ function drainIMUToWasm() {
 class WorkerSharedMemory {
     constructor(wasmModule, heapArray, count) {
         this.wasm = wasmModule;
-        this.heap = heapArray;
         this.count = count;
         this.byteSize = count * heapArray.BYTES_PER_ELEMENT;
         this.ptr = wasmModule._malloc(this.byteSize);
         this.byteOffset = this.ptr;
-        if (heapArray === wasmModule.HEAPF64) {
+        this._heapType = heapArray === wasmModule.HEAPF64 ? 'f64' : 'u8';
+        if (this._heapType === 'f64') {
             this.byteOffset = this.ptr / 8;  // Float64 index
+        }
+        // Track buffer identity for memory growth detection
+        this._lastBuffer = wasmModule.HEAPU8.buffer;
+    }
+
+    /** Check if WASM memory has grown and update heap references */
+    _updateHeapViews() {
+        if (this.wasm.HEAPU8.buffer !== this._lastBuffer) {
+            this._lastBuffer = this.wasm.HEAPU8.buffer;
         }
     }
 
     write(typedArray) {
-        if (this.heap === this.wasm.HEAPU8) {
+        this._updateHeapViews();
+        if (this._heapType === 'u8') {
             this.wasm.HEAPU8.set(typedArray, this.ptr);
-        } else if (this.heap === this.wasm.HEAPF64) {
+        } else {
             this.wasm.HEAPF64.set(typedArray, this.ptr / 8);
         }
     }
 
     read(count) {
-        if (this.heap === this.wasm.HEAPF64) {
-            return new Float64Array(this.wasm.HEAPF64.buffer, this.ptr, count);
+        this._updateHeapViews();
+        if (this._heapType === 'f64') {
+            return new Float64Array(
+                this.wasm.HEAPF64.buffer.slice(this.ptr, this.ptr + count * 8)
+            );
         }
-        return new Uint8Array(this.wasm.HEAPU8.buffer, this.ptr, count);
+        return new Uint8Array(
+            this.wasm.HEAPU8.buffer.slice(this.ptr, this.ptr + count)
+        );
     }
 
     dispose() {
@@ -254,11 +270,11 @@ self.onmessage = async function(e) {
                     p.k2 || 0, p.k3 || 0, p.k4 || 0, p.k5 || 0,
                     memExtrinsicR.ptr,
                     memExtrinsicT.ptr,
-                    p.acc_n || 0.08,
-                    p.acc_w || 0.004,
-                    p.gyr_n || 0.004,
-                    p.gyr_w || 0.0002,
-                    p.g_norm || 9.81
+                    p.acc_n ?? 0.1,
+                    p.acc_w ?? 0.002,
+                    p.gyr_n ?? 0.01,
+                    p.gyr_w ?? 0.0005,
+                    p.g_norm ?? 9.81
                 );
 
                 configured = result;

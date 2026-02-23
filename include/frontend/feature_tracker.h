@@ -11,6 +11,7 @@
 #include <string>
 
 #include "common/camera_models/CameraFactory.h"
+#include "common/camera_models/EquidistantCamera.h"
 #include "common/camera_models/PinholeCamera.h"
 #include "utility/config.h"
 
@@ -34,6 +35,11 @@ public:
     bool updateID(unsigned int i);
 
     void readIntrinsicParameter(const std::string& calib_file);
+
+    // Direct camera model initialization (no file I/O, for WASM)
+    void setIntrinsicParameter(int model_type, int width, int height,
+                               double fx, double fy, double cx, double cy,
+                               double k2, double k3, double k4, double k5);
 
     void rejectWithFundamentalMatrix();
 

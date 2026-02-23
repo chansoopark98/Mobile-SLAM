@@ -24,6 +24,17 @@ const DEFAULT_FREQUENCY = 100;
 const DEG_TO_RAD = Math.PI / 180;
 
 /**
+ * Detect if running on iOS (Safari, Chrome on iOS, etc.)
+ * iOS uses WebKit which reports accelerationIncludingGravity with inverted signs
+ * compared to the Generic Sensor API convention.
+ * @returns {boolean}
+ */
+function isIOS() {
+    return /iPad|iPhone|iPod/.test(navigator.userAgent) ||
+        (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1);
+}
+
+/**
  * Sensor API type currently in use.
  * @enum {string}
  */
@@ -54,6 +65,13 @@ export class IMU {
         // DeviceMotionEvent handler
         this._motionHandler = null;
         this._lastMotionTimestamp = 0;
+
+        // Platform detection: iOS inverts accelerationIncludingGravity signs
+        // iOS Safari: stationary phone reports acc_y ~= -9.81 (gravity opposes +Y)
+        // Android Generic Sensor: stationary phone reports acc_y ~= +9.81
+        // We need consistent convention: gravity along +Y when phone upright
+        this._isIOS = isIOS();
+        this._iosAccSign = this._isIOS ? -1 : 1;
 
         // Rate measurement
         this._rateCount = 0;
@@ -233,12 +251,14 @@ export class IMU {
 
             // DeviceMotion rotationRate is in deg/s -> convert to rad/s
             // W3C spec: beta=x-axis, gamma=y-axis, alpha=z-axis
+            // iOS inverts accelerationIncludingGravity signs vs Android convention
+            const s = this._iosAccSign;
             this._pushSample(
                 timestamp,
-                acc.x || 0, acc.y || 0, acc.z || 0,
-                (rot.beta || 0) * DEG_TO_RAD,
-                (rot.gamma || 0) * DEG_TO_RAD,
-                (rot.alpha || 0) * DEG_TO_RAD
+                (acc.x ?? 0) * s, (acc.y ?? 0) * s, (acc.z ?? 0) * s,
+                (rot.beta ?? 0) * DEG_TO_RAD,
+                (rot.gamma ?? 0) * DEG_TO_RAD,
+                (rot.alpha ?? 0) * DEG_TO_RAD
             );
         };
 

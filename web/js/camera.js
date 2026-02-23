@@ -83,6 +83,15 @@ export class Camera {
         return this.video;
     }
 
+    /** Get the active video track for settings/capabilities queries */
+    getVideoTrack() {
+        if (this.stream) {
+            const tracks = this.stream.getVideoTracks();
+            return tracks.length > 0 ? tracks[0] : null;
+        }
+        return null;
+    }
+
     /** Stop camera capture */
     stop() {
         this.running = false;

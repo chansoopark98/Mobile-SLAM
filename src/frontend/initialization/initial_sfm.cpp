@@ -234,11 +234,11 @@ bool InitialSFM::construct(int frame_num, Quaterniond* q, Vector3d* T, int refer
     ceres::Solver::Options options;
     options.linear_solver_type = ceres::DENSE_SCHUR;
     // options.minimizer_progress_to_stdout = true;
-    options.max_solver_time_in_seconds = 0.2;
+    options.max_solver_time_in_seconds = 1.0;  // Init-time BA, not real-time critical
     ceres::Solver::Summary summary;
     ceres::Solve(options, &problem, &summary);
     // std::cout << summary.BriefReport() << "\n";
-    if (summary.termination_type == ceres::CONVERGENCE || summary.final_cost < 5e-03) {
+    if (summary.termination_type == ceres::CONVERGENCE || summary.final_cost < 2e-02) {
         // cout << "vision only BA converge" << endl;
     } else {
         // cout << "vision only BA not converge " << endl;

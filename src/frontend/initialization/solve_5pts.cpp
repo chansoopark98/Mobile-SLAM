@@ -1,4 +1,5 @@
 #include "frontend/initialization/solve_5pts.h"
+#include "utility/config.h"
 
 namespace frontend {
 namespace initialization {
@@ -10,9 +11,12 @@ bool MotionEstimator::solveRelativeRT(const Correspondences& corres, Matrix3d& R
             ll.push_back(cv::Point2f(corres[i].first(0), corres[i].first(1)));
             rr.push_back(cv::Point2f(corres[i].second(0), corres[i].second(1)));
         }
-        // Use OpenCV's findEssentialMat for normalized coordinates (K=I, focal=1, pp=(0,0))
+        // Adaptive RANSAC threshold: ~1 pixel error in normalized coordinates
+        // Original 0.003 was calibrated for EuRoC (focal~460): 0.003*460 ≈ 1.4px
+        double focal = utility::g_config.camera.focal_length;
+        double ransac_threshold = (focal > 0) ? (1.0 / focal) : 0.003;
         cv::Mat mask;
-        cv::Mat E = cv::findEssentialMat(ll, rr, 1.0, cv::Point2d(0, 0), cv::RANSAC, 0.99, 0.003, mask);
+        cv::Mat E = cv::findEssentialMat(ll, rr, 1.0, cv::Point2d(0, 0), cv::RANSAC, 0.99, ransac_threshold, mask);
         if (E.empty()) {
             return false;
         }

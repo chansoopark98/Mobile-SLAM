@@ -83,6 +83,54 @@ const VIO_CONFIGS = {
 /** IMU flush interval in ms (independent of rAF) */
 const IMU_FLUSH_INTERVAL_MS = 20;
 
+/**
+ * Estimate focal length from camera FOV or track settings.
+ * Priority: MediaStreamTrack.getSettings() > config factor > default factor
+ * @param {MediaStreamTrack} videoTrack - Camera video track
+ * @param {number} width - Image width in pixels
+ * @param {number} height - Image height in pixels
+ * @param {number|null} configFactor - focalLengthFactor from config profile
+ * @returns {number} Estimated focal length in pixels
+ */
+function estimateFocalLength(videoTrack, width, height, configFactor) {
+    // Try to get FOV from MediaStreamTrack settings (Chrome Android 100+)
+    if (videoTrack) {
+        try {
+            const settings = videoTrack.getSettings();
+            // Some browsers expose fieldOfView or related capabilities
+            // Check for explicit FOV (future-proof, not yet widely supported)
+            if (settings.fieldOfView) {
+                const fovRad = settings.fieldOfView * Math.PI / 180;
+                const fx = (width / 2) / Math.tan(fovRad / 2);
+                console.log(`[VIO] Focal length from track FOV: ${settings.fieldOfView}° → fx=${fx.toFixed(1)}`);
+                return fx;
+            }
+
+            // Check zoom level - if available, adjust factor
+            if (settings.zoom && settings.zoom > 1) {
+                const baseFx = width * (configFactor || 0.8);
+                const fx = baseFx * settings.zoom;
+                console.log(`[VIO] Focal length adjusted for zoom ${settings.zoom}x: fx=${fx.toFixed(1)}`);
+                return fx;
+            }
+        } catch (_) {
+            // getSettings/getCapabilities not available
+        }
+    }
+
+    // Use config factor if specified
+    if (configFactor) {
+        return width * configFactor;
+    }
+
+    // Default: typical mobile rear camera ~65° horizontal FOV
+    // fx = (width/2) / tan(65°/2) ≈ width * 0.87
+    const defaultFovDeg = 65;
+    const fx = (width / 2) / Math.tan((defaultFovDeg * Math.PI / 180) / 2);
+    console.log(`[VIO] Focal length from default FOV ${defaultFovDeg}°: fx=${fx.toFixed(1)}`);
+    return fx;
+}
+
 class App {
     constructor() {
         this.vio = new VIOWrapper();
@@ -151,6 +199,9 @@ class App {
         this.startBtn.addEventListener('click', () => this.start());
         this.resetBtn.addEventListener('click', () => this.resetVIO());
 
+        // Handle tab visibility changes to prevent stale IMU data
+        document.addEventListener('visibilitychange', () => this._onVisibilityChange());
+
         // Setup renderer
         const canvas3d = document.getElementById('canvas-3d');
         if (canvas3d) {
@@ -206,13 +257,26 @@ class App {
             console.log(`[VIO] Camera video dimensions: ${video.videoWidth}x${video.videoHeight}`);
             console.log(`[VIO] Camera capture dimensions: ${width}x${height}`);
             console.log(`[VIO] Orientation: ${width > height ? 'LANDSCAPE' : 'PORTRAIT'}`);
+
+            // Handle landscape camera stream: try to lock portrait orientation
             if (width > height) {
-                console.warn('[VIO] WARNING: Landscape video from mobile camera. ' +
-                    'R_ic assumes portrait mode. Verify coordinate alignment.');
+                console.warn('[VIO] WARNING: Landscape video from mobile camera.');
+                try {
+                    await screen.orientation.lock('portrait');
+                    console.log('[VIO] Screen orientation locked to portrait');
+                } catch (_) {
+                    console.warn('[VIO] Could not lock orientation. Using landscape dimensions.');
+                }
             }
 
-            const fx = config.focalLengthFactor ? width * config.focalLengthFactor : width * 0.8;
+            // Estimate focal length using FOV or config factor
+            const videoTrack = this.camera.getVideoTrack ? this.camera.getVideoTrack() : null;
+            const fx = estimateFocalLength(videoTrack, width, height, config.focalLengthFactor);
             const fy = fx;
+
+            // Camera-IMU translation offset
+            // Typical smartphone: camera is ~2-3cm above IMU center
+            const t_ic = [0, -0.02, 0];
 
             const configured = await this.vio.configure({
                 width: width,
@@ -223,6 +287,7 @@ class App {
                 cy: height / 2,
                 modelType: config.modelType,
                 r_ic: r_ic,
+                t_ic: t_ic,
                 acc_n: config.acc_n,
                 acc_w: config.acc_w,
                 gyr_n: config.gyr_n,
@@ -244,8 +309,8 @@ class App {
                 );
             }
 
-            console.log(`[VIO] Configured: ${width}x${height}, fx=${fx.toFixed(1)}, ` +
-                         `acc_n=${config.acc_n}, gyr_n=${config.gyr_n}` +
+            console.log(`[VIO] Configured: ${width}x${height}, fx=${fx.toFixed(1)}, fy=${fy.toFixed(1)}, ` +
+                         `t_ic=[${t_ic}], acc_n=${config.acc_n}, gyr_n=${config.gyr_n}` +
                          (config.solver_time ? `, solver_time=${config.solver_time}` : ''));
 
             // Request IMU permission and start
@@ -401,6 +466,27 @@ class App {
         if (els.gyroX) els.gyroX.textContent = l.gyro_x.toFixed(3);
         if (els.gyroY) els.gyroY.textContent = l.gyro_y.toFixed(3);
         if (els.gyroZ) els.gyroZ.textContent = l.gyro_z.toFixed(3);
+    }
+
+    /**
+     * Handle tab visibility changes.
+     * When tab goes background, sensors stop. On return, flush stale IMU data
+     * and reset VIO to prevent divergence from large timestamp gaps.
+     */
+    _onVisibilityChange() {
+        if (!this.running) return;
+
+        if (document.hidden) {
+            // Tab going to background: stop IMU flush to prevent stale accumulation
+            this._stopIMUFlush();
+            console.log('[VIO] Tab hidden — IMU flush paused');
+        } else {
+            // Tab returning: clear stale IMU data and restart
+            this.imu.flush();  // Discard any stale buffered data
+            this._startIMUFlush();
+            this.imuLogCount = 0;
+            console.log('[VIO] Tab visible — IMU flush resumed, stale data cleared');
+        }
     }
 
     resetVIO() {

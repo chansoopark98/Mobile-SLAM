@@ -1,6 +1,8 @@
 #include <fstream>
 #include <iostream>
+#ifndef __EMSCRIPTEN__
 #include <mutex>
+#endif
 
 #include "backend/estimator.h"
 #include "utility/config.h"
@@ -96,7 +98,9 @@ void Estimator::propagateIMUState(int frame_index, double dt, const Eigen::Vecto
 
 void Estimator::processIMU(double dt, const Eigen::Vector3d& linear_acceleration,
                            const Eigen::Vector3d& angular_velocity) {
+#ifndef __EMSCRIPTEN__
     std::lock_guard<std::mutex> lock(estimator_mutex_);
+#endif
     // check initial IMU data
     if (!first_imu_) {
         first_imu_ = true;
@@ -122,7 +126,9 @@ void Estimator::processIMU(double dt, const Eigen::Vector3d& linear_acceleration
 }
 
 void Estimator::processImage(const common::ImageData& image, double timestamp) {
+#ifndef __EMSCRIPTEN__
     std::lock_guard<std::mutex> lock(estimator_mutex_);
+#endif
     if (feature_manager_.addFeatureAndCheckParallax(frame_count_, image)) {
         marginalization_flag_ = common::MarginalizationFlag::MARGIN_OLD_KEYFRAME;
     } else {
@@ -315,7 +321,9 @@ void Estimator::solveOdometry() {
 }
 
 std::vector<Eigen::Vector3d> Estimator::getSlidingWindowMapPoints() const {
+#ifndef __EMSCRIPTEN__
     std::lock_guard<std::mutex> lock(estimator_mutex_);
+#endif
     std::vector<Eigen::Vector3d> new_points;
     if (solver_flag_ == common::SolverFlag::NON_LINEAR) {
         for (const auto& it_per_id : feature_manager_.feature_bank_) {

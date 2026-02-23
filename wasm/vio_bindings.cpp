@@ -29,6 +29,12 @@ bool processFrame_wrapper(VIOEngine& self,
                           uintptr_t imu_readings_ptr, int imu_count,
                           double image_timestamp,
                           uintptr_t pose_output_ptr) {
+    // Validate inputs at the WASM boundary
+    static constexpr int kMaxIMUReadings = 512;
+    if (imu_count < 0) imu_count = 0;
+    if (imu_count > kMaxIMUReadings) imu_count = kMaxIMUReadings;
+    if (gray_image_ptr == 0 || pose_output_ptr == 0) return false;
+
     return self.processFrame(reinterpret_cast<const uint8_t*>(gray_image_ptr),
                              width, height,
                              reinterpret_cast<const IMUReading*>(imu_readings_ptr),
