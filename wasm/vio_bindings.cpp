@@ -34,6 +34,7 @@ bool processFrame_wrapper(VIOEngine& self,
     if (imu_count < 0) imu_count = 0;
     if (imu_count > kMaxIMUReadings) imu_count = kMaxIMUReadings;
     if (gray_image_ptr == 0 || pose_output_ptr == 0) return false;
+    if (imu_count > 0 && imu_readings_ptr == 0) imu_count = 0;
 
     return self.processFrame(reinterpret_cast<const uint8_t*>(gray_image_ptr),
                              width, height,

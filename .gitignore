@@ -1,3 +1,4 @@
+web/datasets
 build_wasm/
 wasm/dist/
 

@@ -12,7 +12,6 @@ VIOEngine::VIOEngine()
       prev_image_timestamp_(-1.0),
       prev_acc_(Eigen::Vector3d::Zero()),
       prev_gyro_(Eigen::Vector3d::Zero()),
-      first_imu_(false),
       latest_position_(Eigen::Vector3d::Zero()),
       latest_rotation_(Eigen::Matrix3d::Identity()),
       has_valid_pose_(false),
@@ -87,14 +86,9 @@ bool VIOEngine::configure(int width, int height,
                                              fx, fy, cx, cy,
                                              k2, k3, k4, k5);
 
-    // Set projection factor info
-    backend::factor::ProjectionFactor::sqrt_info =
-        (cfg.camera.focal_length / 1.5) * Eigen::Matrix2d::Identity();
-
     configured_ = true;
     current_time_ = -1.0;
     prev_image_timestamp_ = -1.0;
-    first_imu_ = false;
     has_valid_pose_ = false;
 
     LOG_INFO("VIOEngine configured: " << width << "x" << height
@@ -203,7 +197,6 @@ bool VIOEngine::processFrame(const uint8_t* gray_image, int width, int height,
             estimator_->setParameter();
             current_time_ = -1.0;
             prev_image_timestamp_ = -1.0;
-            first_imu_ = false;
             has_valid_pose_ = false;
             init_start_time_ = -1.0;
             frames_since_init_start_ = 0;
@@ -294,7 +287,6 @@ bool VIOEngine::processFrame(const uint8_t* gray_image, int width, int height,
             estimator_->setParameter();
             current_time_ = -1.0;
             prev_image_timestamp_ = -1.0;
-            first_imu_ = false;
             has_valid_pose_ = false;
             // Enter cooldown after too many consecutive failures
             if (consecutive_failures_ >= kMaxConsecutiveFailures) {
@@ -387,7 +379,6 @@ void VIOEngine::reset() {
     }
     current_time_ = -1.0;
     prev_image_timestamp_ = -1.0;
-    first_imu_ = false;
     has_valid_pose_ = false;
     latest_position_ = Eigen::Vector3d::Zero();
     latest_rotation_ = Eigen::Matrix3d::Identity();

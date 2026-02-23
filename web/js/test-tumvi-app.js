@@ -851,12 +851,9 @@ class TUMVITestApp {
             this.ui.logPanel.appendChild(entry);
             this.ui.logPanel.scrollTop = this.ui.logPanel.scrollHeight;
         }
-        // Send to server for file logging (fire-and-forget)
-        fetch('/log', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ level, msg }),
-        }).catch(() => {});
+        // Console mirror for developer tools
+        if (level === 'error') console.error(`[TUM-VI] ${msg}`);
+        else if (level === 'warn') console.warn(`[TUM-VI] ${msg}`);
     }
 }
 

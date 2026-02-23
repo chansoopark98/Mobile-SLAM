@@ -88,7 +88,6 @@ private:
     double prev_image_timestamp_;
     Eigen::Vector3d prev_acc_;
     Eigen::Vector3d prev_gyro_;
-    bool first_imu_;
 
     std::unique_ptr<backend::Estimator> estimator_;
     std::unique_ptr<frontend::FeatureTracker> feature_tracker_;
