@@ -345,6 +345,9 @@ class TUMVITestApp {
         this.ui = {};
         this.imageCtx = null;
         this._gtLine = null;
+
+        // Reusable ImageData for preview (avoids 1MB allocation per frame)
+        this._previewImageData = null;
     }
 
     async initialize() {
@@ -371,13 +374,17 @@ class TUMVITestApp {
 
         this.imageCtx = this.ui.imageCanvas.getContext('2d', { willReadFrequently: true });
 
-        // 3D renderer
+        // 3D renderer (supports WebGL/WebGPU backend selection)
         const canvas3d = document.getElementById('canvas-3d');
         if (canvas3d) {
             const container = canvas3d.parentElement;
             canvas3d.width = container.clientWidth || 800;
             canvas3d.height = container.clientHeight || 600;
-            this.renderer = new Renderer(canvas3d);
+
+            const backendSelect = document.getElementById('renderer-backend');
+            const backend = backendSelect ? backendSelect.value : 'webgl';
+            this.renderer = await Renderer.create(canvas3d, backend);
+            this.log(`3D Renderer: ${this.renderer.backendName.toUpperCase()} backend`);
 
             window.addEventListener('resize', () => {
                 const c = canvas3d.parentElement;
@@ -568,7 +575,7 @@ class TUMVITestApp {
             }
 
             // 5. Wait for worker to be free, then send frame
-            await this.waitForWorkerFree(5000);
+            await this.vio.waitForFree(5000);
             const sent = this.vio.sendFrame(gray, frameEntry.timestamp_s);
 
             if (!sent) {
@@ -578,7 +585,7 @@ class TUMVITestApp {
             }
 
             // 6. Wait for processing to finish
-            await this.waitForWorkerFree(10000);
+            await this.vio.waitForFree(10000);
 
             const t1 = performance.now();
             this.frameProcessingTime = t1 - t0;
@@ -634,35 +641,18 @@ class TUMVITestApp {
         }
     }
 
-    /**
-     * Poll workerBusy with timeout.
-     */
-    waitForWorkerFree(timeoutMs = 5000) {
-        return new Promise((resolve, reject) => {
-            const start = performance.now();
-            const check = () => {
-                if (!this.vio.workerBusy) {
-                    resolve();
-                } else if (performance.now() - start > timeoutMs) {
-                    reject(new Error('Worker timeout'));
-                } else {
-                    setTimeout(check, 1);
-                }
-            };
-            check();
-        });
-    }
-
-    /** Draw grayscale image on preview canvas */
+    /** Draw grayscale image on preview canvas (reuses ImageData to avoid 1MB alloc per frame) */
     displayImagePreview(gray) {
         const w = IMAGE_WIDTH, h = IMAGE_HEIGHT;
-        const imageData = this.imageCtx.createImageData(w, h);
-        const rgba = imageData.data;
+        if (!this._previewImageData) {
+            this._previewImageData = this.imageCtx.createImageData(w, h);
+        }
+        const rgba = this._previewImageData.data;
         for (let i = 0, j = 0; i < gray.length; i++, j += 4) {
             rgba[j] = rgba[j + 1] = rgba[j + 2] = gray[i];
             rgba[j + 3] = 255;
         }
-        this.imageCtx.putImageData(imageData, 0, 0);
+        this.imageCtx.putImageData(this._previewImageData, 0, 0);
     }
 
     /** Update diagnostics panel */

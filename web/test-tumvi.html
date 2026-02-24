@@ -179,6 +179,10 @@
                 <option value="5">5x</option>
                 <option value="-1">Max Speed</option>
             </select>
+            <select id="renderer-backend" title="3D renderer backend (reload to apply)">
+                <option value="webgl" selected>WebGL</option>
+                <option value="webgpu">WebGPU</option>
+            </select>
             <label style="display:flex;align-items:center;gap:4px;font-size:13px;color:#ccc;margin-left:8px;cursor:pointer;">
                 <input type="checkbox" id="follow-cam" checked> Follow Cam
             </label>
@@ -225,11 +229,12 @@
         canvas.width = container.clientWidth || 800;
         canvas.height = container.clientHeight || 600;
     </script>
+    <!-- Three.js r170: WebGPU renderer support requires r165+ -->
     <script type="importmap">
     {
         "imports": {
-            "three": "https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.module.js",
-            "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.160.0/examples/jsm/"
+            "three": "https://cdn.jsdelivr.net/npm/three@0.170.0/build/three.module.js",
+            "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.170.0/examples/jsm/"
         }
     }
     </script>

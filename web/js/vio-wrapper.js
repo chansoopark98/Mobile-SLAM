@@ -23,6 +23,10 @@ export class VIOWrapper {
 
         // WASM C++ stdout/stderr log callback: (level, msg) => {}
         this.onWasmLog = null;
+
+        // Promise-based worker completion notification (replaces busy-poll)
+        this._workerFreeResolve = null;
+        this._workerFreeTimer = null;
     }
 
     /**
@@ -186,6 +190,41 @@ export class VIOWrapper {
         this._latestMapPoints = null;
     }
 
+    /**
+     * Wait for the worker to become free (promise-based, no busy-poll).
+     * Resolves immediately if worker is already free.
+     * @param {number} timeoutMs - Timeout in milliseconds
+     * @returns {Promise<void>}
+     */
+    waitForFree(timeoutMs = 5000) {
+        if (!this.workerBusy) return Promise.resolve();
+        return new Promise((resolve, reject) => {
+            this._workerFreeResolve = resolve;
+            if (timeoutMs > 0) {
+                this._workerFreeTimer = setTimeout(() => {
+                    if (this._workerFreeResolve === resolve) {
+                        this._workerFreeResolve = null;
+                        this._workerFreeTimer = null;
+                        reject(new Error('Worker timeout'));
+                    }
+                }, timeoutMs);
+            }
+        });
+    }
+
+    /** Resolve pending waitForFree promise */
+    _resolveWorkerFree() {
+        if (this._workerFreeResolve) {
+            const resolve = this._workerFreeResolve;
+            this._workerFreeResolve = null;
+            if (this._workerFreeTimer) {
+                clearTimeout(this._workerFreeTimer);
+                this._workerFreeTimer = null;
+            }
+            resolve();
+        }
+    }
+
     /** Handle messages from the worker */
     _handleWorkerMessage(msg) {
         switch (msg.type) {
@@ -217,6 +256,7 @@ export class VIOWrapper {
 
             case 'result':
                 this.workerBusy = false;
+                this._resolveWorkerFree();
                 if (msg.data) {
                     this._latestResult = {
                         pose: msg.data.pose,
@@ -241,6 +281,7 @@ export class VIOWrapper {
 
             case 'reset':
                 this.workerBusy = false;
+                this._resolveWorkerFree();
                 break;
 
             case 'dispose':

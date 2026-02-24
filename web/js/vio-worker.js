@@ -30,6 +30,14 @@ const maxMapPoints = 2000;
 
 let processing = false;
 
+// Last successfully processed frame timestamp (for stale frame detection)
+let lastFrameTimestamp = 0;
+
+/** Max age (seconds) for IMU readings relative to frame timestamp */
+const MAX_IMU_AGE_S = 3.0;
+/** Max gap (seconds) between consecutive frames before VIO reset */
+const MAX_FRAME_GAP_S = 2.0;
+
 // ── Worker-side IMU accumulation ring buffer ──
 const IMU_FIELDS = 7;
 const IMU_RING_CAPACITY = 1024;
@@ -59,11 +67,30 @@ function appendIMU(data, count) {
 
 /**
  * Drain all accumulated IMU readings into the WASM heap buffer.
+ * Discards stale readings (older than MAX_IMU_AGE_S relative to frameTs).
+ * @param {number} frameTs - Current frame timestamp in seconds
  * @returns {number} Number of readings written to memIMU
  */
-function drainIMUToWasm() {
+function drainIMUToWasm(frameTs) {
+    if (!memIMU || !wasm) return 0;
+
+    // Discard stale IMU readings (older than MAX_IMU_AGE_S from frame timestamp)
+    // This prevents accumulated data from browser stalls (GC, thermal throttle)
+    // from poisoning the VIO pre-integration with huge time intervals.
+    if (frameTs > 0) {
+        const cutoff = frameTs - MAX_IMU_AGE_S;
+        while (imuRingReadIdx < imuRingWriteIdx) {
+            const slot = (imuRingReadIdx % IMU_RING_CAPACITY) * IMU_FIELDS;
+            if (imuRing[slot] < cutoff) {
+                imuRingReadIdx++;
+            } else {
+                break;
+            }
+        }
+    }
+
     const available = imuRingWriteIdx - imuRingReadIdx;
-    if (available <= 0 || !memIMU || !wasm) return 0;
+    if (available <= 0) return 0;
 
     // Clamp to ring capacity and max WASM buffer
     const count = Math.min(available, IMU_RING_CAPACITY, maxIMUReadings);
@@ -164,11 +191,22 @@ function disposeBuffers() {
 function processFrame(gray, timestamp) {
     if (!configured || !engine) return null;
 
+    // Stale frame guard: if gap between frames is too large, reset VIO
+    // to prevent divergence from accumulated IMU drift over long pause.
+    if (lastFrameTimestamp > 0 && timestamp - lastFrameTimestamp > MAX_FRAME_GAP_S) {
+        console.warn(`[VIO Worker] Frame gap ${(timestamp - lastFrameTimestamp).toFixed(2)}s > ${MAX_FRAME_GAP_S}s — resetting VIO`);
+        try { engine.reset(); } catch (_) {}
+        imuRingWriteIdx = imuRingReadIdx = 0;  // Clear stale IMU
+        lastFrameTimestamp = timestamp;
+        return { pose: null, initialized: false, featureCount: 0, statusCode: 1, mapPoints: null, mapPointCount: 0 };
+    }
+    lastFrameTimestamp = timestamp;
+
     // Write image to WASM heap
     memImage.write(gray);
 
-    // Drain accumulated IMU readings into WASM heap
-    const imuCount = drainIMUToWasm();
+    // Drain accumulated IMU readings into WASM heap (discards stale data)
+    const imuCount = drainIMUToWasm(timestamp);
 
     // Process frame
     let hasPose = false;
@@ -348,6 +386,7 @@ self.onmessage = async function(e) {
             processing = false;
             imuRingWriteIdx = 0;
             imuRingReadIdx = 0;
+            lastFrameTimestamp = 0;
             self.postMessage({ type: 'reset', success: true });
             break;
         }
@@ -363,6 +402,7 @@ self.onmessage = async function(e) {
             processing = false;
             imuRingWriteIdx = 0;
             imuRingReadIdx = 0;
+            lastFrameTimestamp = 0;
             self.postMessage({ type: 'dispose', success: true });
             break;
         }

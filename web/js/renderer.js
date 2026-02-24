@@ -1,15 +1,37 @@
 /**
  * Three.js trajectory and map point renderer.
- * Displays camera trajectory, current camera frustum, and feature point cloud.
+ * Supports WebGL (default) and WebGPU (experimental) backends.
+ *
+ * Performance optimizations:
+ * - Pre-allocated Float32Array buffers for trajectory and map points
+ * - DynamicDrawUsage + needsUpdate + setDrawRange (zero per-frame allocation)
+ * - Cached scratch Three.js objects for follow-cam (zero per-frame GC pressure)
+ * - Fixed bounding spheres (skip O(n) computeBoundingSphere per frame)
  */
 import * as THREE from 'three';
 import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
 
+const MAX_TRAJECTORY_POINTS = 10000;
+const MAX_MAP_POINTS = 2000;
+
 export class Renderer {
     /**
-     * @param {HTMLCanvasElement} canvas - Canvas for Three.js rendering
+     * Use Renderer.create() for async WebGPU support.
+     * Direct construction defaults to WebGL.
+     * @param {HTMLCanvasElement} canvas
+     * @param {THREE.WebGLRenderer|object} [rendererInstance] - Pre-initialized renderer
+     * @param {string} [backendName='webgl'] - 'webgl' or 'webgpu'
      */
-    constructor(canvas) {
+    constructor(canvas, rendererInstance, backendName) {
+        // Legacy direct construction: create WebGL renderer
+        if (!rendererInstance) {
+            rendererInstance = new THREE.WebGLRenderer({ canvas, antialias: true });
+            rendererInstance.setSize(canvas.width, canvas.height);
+            rendererInstance.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+            backendName = 'webgl';
+        }
+
+        this.backendName = backendName || 'webgl';
         this.scene = new THREE.Scene();
         this.scene.background = new THREE.Color(0x1a1a2e);
 
@@ -18,10 +40,8 @@ export class Renderer {
         this.camera.position.set(-3, 3, 3);
         this.camera.lookAt(0, 0, 0);
 
-        // Renderer
-        this.renderer = new THREE.WebGLRenderer({ canvas, antialias: true });
-        this.renderer.setSize(canvas.width, canvas.height);
-        this.renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+        // Renderer (pre-created or freshly constructed)
+        this.renderer = rendererInstance;
 
         // OrbitControls for manual mouse interaction
         this.controls = new OrbitControls(this.camera, canvas);
@@ -49,10 +69,17 @@ export class Renderer {
         // Origin axes
         this.worldRoot.add(new THREE.AxesHelper(1));
 
-        // Trajectory line
-        this.trajectoryPoints = [];
-        this.trajectoryMaterial = new THREE.LineBasicMaterial({ color: 0x00ff88, linewidth: 2 });
+        // ── Pre-allocated trajectory buffer ──
+        this._trajCount = 0;
+        this._trajBuffer = new Float32Array(MAX_TRAJECTORY_POINTS * 3);
+        const trajAttr = new THREE.BufferAttribute(this._trajBuffer, 3);
+        trajAttr.setUsage(THREE.DynamicDrawUsage);
         this.trajectoryGeometry = new THREE.BufferGeometry();
+        this.trajectoryGeometry.setAttribute('position', trajAttr);
+        this.trajectoryGeometry.setDrawRange(0, 0);
+        // Fixed bounding sphere avoids O(n) computeBoundingSphere() per frame
+        this.trajectoryGeometry.boundingSphere = new THREE.Sphere(new THREE.Vector3(), 500);
+        this.trajectoryMaterial = new THREE.LineBasicMaterial({ color: 0x00ff88, linewidth: 2 });
         this.trajectoryLine = new THREE.Line(this.trajectoryGeometry, this.trajectoryMaterial);
         this.worldRoot.add(this.trajectoryLine);
 
@@ -60,20 +87,78 @@ export class Renderer {
         this.frustumGroup = this._createFrustum();
         this.worldRoot.add(this.frustumGroup);
 
-        // Map points
+        // ── Pre-allocated map points buffer ──
+        this._mapBuffer = new Float32Array(MAX_MAP_POINTS * 3);
+        const mapAttr = new THREE.BufferAttribute(this._mapBuffer, 3);
+        mapAttr.setUsage(THREE.DynamicDrawUsage);
+        this.pointsGeometry = new THREE.BufferGeometry();
+        this.pointsGeometry.setAttribute('position', mapAttr);
+        this.pointsGeometry.setDrawRange(0, 0);
+        this.pointsGeometry.boundingSphere = new THREE.Sphere(new THREE.Vector3(), 500);
         this.pointsMaterial = new THREE.PointsMaterial({
             color: 0xff6644,
             size: 0.03,
             sizeAttenuation: true,
         });
-        this.pointsGeometry = new THREE.BufferGeometry();
         this.mapPoints = new THREE.Points(this.pointsGeometry, this.pointsMaterial);
         this.worldRoot.add(this.mapPoints);
 
         // Camera follow state
         this.followCamera = true;
-        // Store latest VIO pose matrix for follow-cam computation
         this._latestPoseMatrix = null;
+
+        // ── Cached scratch objects for follow-cam (zero per-frame allocation) ──
+        this._scratchMat4 = new THREE.Matrix4();
+        this._scratchFrustumWorld = new THREE.Matrix4();
+        this._scratchCamPos = new THREE.Vector3();
+        this._scratchCamQuat = new THREE.Quaternion();
+        this._scratchScale = new THREE.Vector3();
+        this._scratchBehind = new THREE.Vector3();
+        this._scratchUp = new THREE.Vector3();
+        this._scratchTargetPos = new THREE.Vector3();
+    }
+
+    /**
+     * Async factory: creates renderer with WebGL or WebGPU backend.
+     * WebGPU requires browser support (navigator.gpu) and Three.js r165+.
+     * Falls back to WebGL if WebGPU is unavailable or fails.
+     *
+     * @param {HTMLCanvasElement} canvas
+     * @param {'webgl'|'webgpu'} [backend='webgl']
+     * @returns {Promise<Renderer>}
+     */
+    static async create(canvas, backend = 'webgl') {
+        let rendererInstance = null;
+        let actualBackend = backend;
+
+        if (backend === 'webgpu') {
+            if (typeof navigator === 'undefined' || !navigator.gpu) {
+                console.warn('[Renderer] WebGPU not available in this browser, falling back to WebGL.');
+                actualBackend = 'webgl';
+            } else {
+                try {
+                    const mod = await import('three/addons/renderers/webgpu/WebGPURenderer.js');
+                    const WebGPURenderer = mod.default || mod.WebGPURenderer;
+                    rendererInstance = new WebGPURenderer({ canvas, antialias: true });
+                    await rendererInstance.init();
+                    console.log('[Renderer] WebGPU backend initialized.');
+                } catch (e) {
+                    console.warn('[Renderer] WebGPU init failed, falling back to WebGL:', e.message);
+                    rendererInstance = null;
+                    actualBackend = 'webgl';
+                }
+            }
+        }
+
+        if (!rendererInstance) {
+            rendererInstance = new THREE.WebGLRenderer({ canvas, antialias: true });
+            actualBackend = 'webgl';
+        }
+
+        rendererInstance.setSize(canvas.width, canvas.height);
+        rendererInstance.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+
+        return new Renderer(canvas, rendererInstance, actualBackend);
     }
 
     /** Create a wireframe camera frustum */
@@ -104,23 +189,27 @@ export class Renderer {
 
     /**
      * Update camera pose from 4x4 transformation matrix.
+     * Zero-allocation hot path: uses pre-allocated buffer and cached scratch objects.
      * @param {Float64Array} poseMatrix - 16 doubles, row-major 4x4 matrix
      */
     updateCameraPose(poseMatrix) {
         if (!poseMatrix || poseMatrix.length < 16) return;
 
-        const pos = new THREE.Vector3(poseMatrix[3], poseMatrix[7], poseMatrix[11]);
+        // Append to pre-allocated trajectory buffer (no new Float32Array)
+        if (this._trajCount < MAX_TRAJECTORY_POINTS) {
+            const base = this._trajCount * 3;
+            this._trajBuffer[base] = poseMatrix[3];
+            this._trajBuffer[base + 1] = poseMatrix[7];
+            this._trajBuffer[base + 2] = poseMatrix[11];
+            this._trajCount++;
 
-        // Update trajectory
-        this.trajectoryPoints.push(pos.x, pos.y, pos.z);
-        this.trajectoryGeometry.setAttribute(
-            'position',
-            new THREE.Float32BufferAttribute(this.trajectoryPoints, 3)
-        );
-        this.trajectoryGeometry.computeBoundingSphere();
+            const attr = this.trajectoryGeometry.getAttribute('position');
+            attr.needsUpdate = true;
+            this.trajectoryGeometry.setDrawRange(0, this._trajCount);
+        }
 
-        // Update frustum position and orientation (in worldRoot local space = VIO Z-up)
-        const m = new THREE.Matrix4();
+        // Update frustum position and orientation using cached Matrix4
+        const m = this._scratchMat4;
         m.set(
             poseMatrix[0], poseMatrix[1], poseMatrix[2], poseMatrix[3],
             poseMatrix[4], poseMatrix[5], poseMatrix[6], poseMatrix[7],
@@ -131,53 +220,49 @@ export class Renderer {
         this.frustumGroup.matrixAutoUpdate = false;
         this._latestPoseMatrix = m;
 
-        // Follow camera: view from behind the VIO camera, looking in its forward direction
+        // Follow camera using cached scratch objects (zero allocations)
         if (this.followCamera) {
-            // Frustum's world matrix = worldRoot.matrixWorld * poseLocalMatrix
-            const frustumWorld = new THREE.Matrix4().multiplyMatrices(this.worldRoot.matrixWorld, m);
+            const frustumWorld = this._scratchFrustumWorld.multiplyMatrices(
+                this.worldRoot.matrixWorld, m
+            );
 
-            // Extract position and orientation in scene space
-            const camPos = new THREE.Vector3();
-            const camQuat = new THREE.Quaternion();
-            frustumWorld.decompose(camPos, camQuat, new THREE.Vector3());
+            const camPos = this._scratchCamPos;
+            const camQuat = this._scratchCamQuat;
+            frustumWorld.decompose(camPos, camQuat, this._scratchScale);
 
-            // VIO camera looks along +Z in its local frame (camera convention).
-            // "Behind" = negative Z direction in camera local frame.
-            const behind = new THREE.Vector3(0, 0, -1).applyQuaternion(camQuat);
-            // "Up" in camera local frame = -Y (image Y points down, so camera up = -Y local)
-            const up = new THREE.Vector3(0, -1, 0).applyQuaternion(camQuat);
+            // VIO camera looks along +Z; "behind" = -Z in camera local frame
+            const behind = this._scratchBehind.set(0, 0, -1).applyQuaternion(camQuat);
+            // Camera up = -Y local (image Y points down)
+            const up = this._scratchUp.set(0, -1, 0).applyQuaternion(camQuat);
 
-            // Position the viewer behind and slightly above the VIO camera
-            const followDist = 1.5;
-            const followHeight = 0.5;
-            const targetPos = camPos.clone()
-                .add(behind.multiplyScalar(followDist))
-                .add(up.multiplyScalar(followHeight));
+            // addScaledVector avoids mutating behind/up vectors
+            const targetPos = this._scratchTargetPos.copy(camPos)
+                .addScaledVector(behind, 1.5)    // followDist
+                .addScaledVector(up, 0.5);        // followHeight
 
             this.camera.position.lerp(targetPos, 0.08);
             this.camera.lookAt(camPos);
-            // Update orbit target to current camera position for smooth transition
             this.controls.target.copy(camPos);
         }
     }
 
     /**
-     * Update map points.
+     * Update map points using pre-allocated buffer.
      * @param {Float64Array} points - 3N doubles (x,y,z per point)
      * @param {number} count - Number of points
      */
     updateMapPoints(points, count) {
         if (!points || count === 0) return;
 
-        const positions = new Float32Array(count * 3);
-        for (let i = 0; i < count * 3; i++) {
-            positions[i] = points[i];
+        const n = Math.min(count, MAX_MAP_POINTS);
+        // Write directly into pre-allocated buffer (Float64 → Float32 downcast)
+        for (let i = 0; i < n * 3; i++) {
+            this._mapBuffer[i] = points[i];
         }
-        this.pointsGeometry.setAttribute(
-            'position',
-            new THREE.Float32BufferAttribute(positions, 3)
-        );
-        this.pointsGeometry.computeBoundingSphere();
+
+        const attr = this.pointsGeometry.getAttribute('position');
+        attr.needsUpdate = true;
+        this.pointsGeometry.setDrawRange(0, n);
     }
 
     /** Render one frame */
@@ -197,15 +282,15 @@ export class Renderer {
 
     /** Clear trajectory and points */
     clear() {
-        this.trajectoryPoints = [];
-        this.trajectoryGeometry.setAttribute(
-            'position',
-            new THREE.Float32BufferAttribute([], 3)
-        );
-        this.pointsGeometry.setAttribute(
-            'position',
-            new THREE.Float32BufferAttribute([], 3)
-        );
+        this._trajCount = 0;
+        const trajAttr = this.trajectoryGeometry.getAttribute('position');
+        trajAttr.needsUpdate = true;
+        this.trajectoryGeometry.setDrawRange(0, 0);
+
+        const mapAttr = this.pointsGeometry.getAttribute('position');
+        mapAttr.needsUpdate = true;
+        this.pointsGeometry.setDrawRange(0, 0);
+
         this._latestPoseMatrix = null;
     }
 }

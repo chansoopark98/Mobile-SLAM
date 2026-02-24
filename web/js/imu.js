@@ -66,6 +66,9 @@ export class IMU {
         this._motionHandler = null;
         this._lastMotionTimestamp = 0;
 
+        // Generic Sensor timestamp monotonicity guard
+        this._lastGenericTimestamp = 0;
+
         // Platform detection: iOS inverts accelerationIncludingGravity signs
         // iOS Safari: stationary phone reports acc_y ~= -9.81 (gravity opposes +Y)
         // Android Generic Sensor: stationary phone reports acc_y ~= +9.81
@@ -128,7 +131,15 @@ export class IMU {
 
     /**
      * Start capturing IMU data.
-     * Tries Generic Sensor API first, falls back to DeviceMotionEvent.
+     * Prefers DeviceMotionEvent (synchronized accel+gyro in single event),
+     * falls back to Generic Sensor API if DeviceMotion is unavailable.
+     *
+     * Rationale: Generic Sensor API fires Accelerometer and Gyroscope
+     * independently, causing temporal misalignment between accel and gyro
+     * readings. DeviceMotionEvent provides both from the same measurement
+     * instant, which is critical for VIO pre-integration accuracy.
+     * (Reference: 8th Wall uses DeviceMotionEvent exclusively)
+     *
      * @param {number} [frequency=100] Requested sensor frequency in Hz
      */
     start(frequency = DEFAULT_FREQUENCY) {
@@ -142,17 +153,18 @@ export class IMU {
         this._currentRate = 0;
         this.running = true;
 
-        // Try Generic Sensor API first (Chrome Android 67+)
-        if (this._tryGenericSensor(frequency)) {
-            this._sensorType = SensorType.GENERIC_SENSOR;
-            console.log(`[IMU] Using Generic Sensor API @ ${frequency}Hz requested`);
+        // Try DeviceMotionEvent first (synchronized accel+gyro in single event)
+        if (this._tryDeviceMotion()) {
+            this._sensorType = SensorType.DEVICE_MOTION;
+            console.log('[IMU] Using DeviceMotionEvent (synchronized accel+gyro)');
             return;
         }
 
-        // Fallback to DeviceMotionEvent
-        if (this._tryDeviceMotion()) {
-            this._sensorType = SensorType.DEVICE_MOTION;
-            console.log('[IMU] Using DeviceMotionEvent fallback (browser-controlled rate)');
+        // Fallback to Generic Sensor API (Chrome Android 67+)
+        // WARNING: accel and gyro fire independently — temporal misalignment possible
+        if (this._tryGenericSensor(frequency)) {
+            this._sensorType = SensorType.GENERIC_SENSOR;
+            console.warn(`[IMU] Fallback to Generic Sensor API @ ${frequency}Hz (accel-gyro may desync)`);
             return;
         }
 
@@ -189,8 +201,15 @@ export class IMU {
 
                 const timestamp = performance.now() / 1000.0;
 
+                // Monotonicity guard: reject out-of-order or duplicate timestamps
+                // (prevents negative dt in VIO pre-integration → divergence)
+                if (timestamp <= this._lastGenericTimestamp) return;
+                this._lastGenericTimestamp = timestamp;
+
                 // Generic Sensor API Accelerometer includes gravity by default
                 // and reports in m/s^2. Gyroscope reports in rad/s.
+                // WARNING: gyro values are cached from a separate sensor and may
+                // be from a slightly different measurement instant (~10ms at 100Hz).
                 this._pushSample(
                     timestamp,
                     this._accel.x, this._accel.y, this._accel.z,
@@ -388,6 +407,7 @@ export class IMU {
         this._writeIdx = 0;
         this._readIdx = 0;
         this._lastMotionTimestamp = 0;
+        this._lastGenericTimestamp = 0;
         this._sensorType = SensorType.NONE;
         this._currentRate = 0;
     }
