@@ -208,6 +208,16 @@ function processFrame(gray, timestamp) {
     // Drain accumulated IMU readings into WASM heap (discards stale data)
     const imuCount = drainIMUToWasm(timestamp);
 
+    // Diagnostic: log IMU density per VIO frame (first 20 frames)
+    if (typeof processFrame._logCount === 'undefined') processFrame._logCount = 0;
+    if (processFrame._logCount < 20) {
+        console.log(`[VIO Worker] Frame #${processFrame._logCount}: imuCount=${imuCount}, t=${timestamp.toFixed(3)}`);
+        if (imuCount < 2) {
+            console.warn(`[VIO Worker] Low IMU density: ${imuCount} readings — pre-integration may be unreliable`);
+        }
+        processFrame._logCount++;
+    }
+
     // Process frame
     let hasPose = false;
     try {
@@ -234,6 +244,7 @@ function processFrame(gray, timestamp) {
         initialized: engine.isInitialized(),
         featureCount: engine.getFeaturePointCount(),
         statusCode: engine.getStatusCode(),
+        imuCount: imuCount,
         mapPoints: null,
         mapPointCount: 0,
     };
@@ -319,10 +330,10 @@ self.onmessage = async function(e) {
                     p.k2 || 0, p.k3 || 0, p.k4 || 0, p.k5 || 0,
                     memExtrinsicR.ptr,
                     memExtrinsicT.ptr,
-                    p.acc_n ?? 0.1,
-                    p.acc_w ?? 0.002,
-                    p.gyr_n ?? 0.01,
-                    p.gyr_w ?? 0.0005,
+                    p.acc_n ?? 0.2,
+                    p.acc_w ?? 0.004,
+                    p.gyr_n ?? 0.03,
+                    p.gyr_w ?? 0.004,
                     p.g_norm ?? 9.81
                 );
 
@@ -387,6 +398,7 @@ self.onmessage = async function(e) {
             imuRingWriteIdx = 0;
             imuRingReadIdx = 0;
             lastFrameTimestamp = 0;
+            processFrame._logCount = 0;
             self.postMessage({ type: 'reset', success: true });
             break;
         }

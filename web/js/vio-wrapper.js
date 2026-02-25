@@ -263,6 +263,7 @@ export class VIOWrapper {
                         initialized: msg.data.initialized,
                         featureCount: msg.data.featureCount,
                         statusCode: msg.data.statusCode,
+                        imuCount: msg.data.imuCount || 0,
                     };
                     if (msg.data.mapPoints && msg.data.mapPointCount > 0) {
                         this._latestMapPoints = {

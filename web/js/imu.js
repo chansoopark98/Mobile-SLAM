@@ -86,6 +86,13 @@ export class IMU {
 
         // Requested frequency
         this._frequency = DEFAULT_FREQUENCY;
+
+        // Gyroscope bias calibration
+        // Mobile MEMS gyros have large bias offsets (0.01-0.1 rad/s) that
+        // overwhelm VIO pre-integration if not compensated. Calibrate by
+        // collecting samples while stationary and computing average gyro.
+        this._gyroBias = { x: 0, y: 0, z: 0 };
+        this._calibrated = false;
     }
 
     /**
@@ -127,6 +134,93 @@ export class IMU {
 
         // Legacy: no permission needed
         return true;
+    }
+
+    /**
+     * Calibrate gyroscope bias by collecting stationary samples.
+     * MUST be called after start() while device is held still.
+     * Computes average gyro reading as bias estimate and validates
+     * accelerometer magnitude (~9.81) to confirm stationarity.
+     *
+     * @param {number} [durationMs=1500] Calibration duration in ms
+     * @returns {Promise<{bias: {x,y,z}, gravMag: number, sampleCount: number}>}
+     */
+    async calibrate(durationMs = 1500) {
+        if (!this.running) {
+            console.warn('[IMU] Cannot calibrate: not running');
+            return null;
+        }
+
+        console.log(`[IMU] Calibrating gyro bias (${durationMs}ms, keep device still)...`);
+
+        // Flush any stale data
+        this.flush();
+
+        // Collect samples for the specified duration
+        await new Promise(resolve => setTimeout(resolve, durationMs));
+
+        const { data, count } = this.flush();
+        if (!data || count < 10) {
+            console.warn(`[IMU] Calibration failed: only ${count} samples collected`);
+            return null;
+        }
+
+        // Compute average gyro and accelerometer magnitude
+        let sumGx = 0, sumGy = 0, sumGz = 0;
+        let sumAx = 0, sumAy = 0, sumAz = 0;
+        for (let i = 0; i < count; i++) {
+            const off = i * FIELDS_PER_READING;
+            sumAx += data[off + 1];
+            sumAy += data[off + 2];
+            sumAz += data[off + 3];
+            sumGx += data[off + 4];
+            sumGy += data[off + 5];
+            sumGz += data[off + 6];
+        }
+
+        const bias = {
+            x: sumGx / count,
+            y: sumGy / count,
+            z: sumGz / count,
+        };
+
+        const avgAcc = {
+            x: sumAx / count,
+            y: sumAy / count,
+            z: sumAz / count,
+        };
+        const gravMag = Math.sqrt(avgAcc.x ** 2 + avgAcc.y ** 2 + avgAcc.z ** 2);
+
+        // Validate: gravity magnitude should be ~9.81 if stationary
+        if (gravMag < 8.5 || gravMag > 11.0) {
+            console.warn(`[IMU] Calibration suspect: |acc|=${gravMag.toFixed(2)} (expected ~9.81). Device may be moving.`);
+        }
+
+        this._gyroBias = bias;
+        this._calibrated = true;
+
+        console.log(`[IMU] Gyro bias calibrated from ${count} samples:`);
+        console.log(`[IMU]   bias = (${bias.x.toFixed(5)}, ${bias.y.toFixed(5)}, ${bias.z.toFixed(5)}) rad/s`);
+        console.log(`[IMU]   |bias| = ${Math.sqrt(bias.x**2 + bias.y**2 + bias.z**2).toFixed(5)} rad/s`);
+        console.log(`[IMU]   |acc| = ${gravMag.toFixed(3)} m/s² (gravity validation)`);
+
+        return { bias, gravMag, sampleCount: count };
+    }
+
+    /**
+     * Check if gyroscope bias has been calibrated.
+     * @returns {boolean}
+     */
+    isCalibrated() {
+        return this._calibrated;
+    }
+
+    /**
+     * Get current gyroscope bias estimate.
+     * @returns {{x: number, y: number, z: number}}
+     */
+    getGyroBias() {
+        return { ...this._gyroBias };
     }
 
     /**
@@ -290,23 +384,30 @@ export class IMU {
      * @private
      */
     _pushSample(timestamp, ax, ay, az, gx, gy, gz) {
+        // Subtract calibrated gyroscope bias
+        // Mobile MEMS gyros have persistent bias offsets that cause
+        // VIO pre-integration drift if not compensated.
+        const bx = this._gyroBias.x;
+        const by = this._gyroBias.y;
+        const bz = this._gyroBias.z;
+
         const slot = (this._writeIdx % RING_CAPACITY) * FIELDS_PER_READING;
         this._ring[slot + 0] = timestamp;
         this._ring[slot + 1] = ax;
         this._ring[slot + 2] = ay;
         this._ring[slot + 3] = az;
-        this._ring[slot + 4] = gx;
-        this._ring[slot + 5] = gy;
-        this._ring[slot + 6] = gz;
+        this._ring[slot + 4] = gx - bx;
+        this._ring[slot + 5] = gy - by;
+        this._ring[slot + 6] = gz - bz;
         this._writeIdx++;
 
-        // Update latest for UI display
+        // Update latest for UI display (bias-corrected gyro)
         this.latest.acc_x = ax;
         this.latest.acc_y = ay;
         this.latest.acc_z = az;
-        this.latest.gyro_x = gx;
-        this.latest.gyro_y = gy;
-        this.latest.gyro_z = gz;
+        this.latest.gyro_x = gx - bx;
+        this.latest.gyro_y = gy - by;
+        this.latest.gyro_z = gz - bz;
 
         // Rate measurement
         this._rateCount++;
@@ -410,5 +511,7 @@ export class IMU {
         this._lastGenericTimestamp = 0;
         this._sensorType = SensorType.NONE;
         this._currentRate = 0;
+        this._gyroBias = { x: 0, y: 0, z: 0 };
+        this._calibrated = false;
     }
 }
