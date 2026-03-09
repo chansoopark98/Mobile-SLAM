@@ -67,10 +67,8 @@ bool FeatureManager::addFeatureAndCheckParallax(int frame_count, const common::I
         return true;
     } else {
         // enough parallax, new keyframe
-        // Use fixed FOCAL_LENGTH=460.0 for normalization (matching original VINS-Mono).
-        // actual focal_length varies with processScale, but parallax thresholds must stay constant.
-        constexpr double kParallaxFocalLength = 460.0;
-        return (parallax_sum / parallax_num) >= (g_config.estimator.min_parallax / kParallaxFocalLength);
+        // min_parallax (pixels) / focal_length = threshold in normalized coords
+        return (parallax_sum / parallax_num) >= (g_config.estimator.min_parallax / g_config.camera.focal_length);
     }
 }
 

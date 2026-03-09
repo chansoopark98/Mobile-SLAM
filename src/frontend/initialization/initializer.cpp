@@ -224,17 +224,15 @@ bool Initializer::relativePose(Matrix3d& relative_R, Vector3d& relative_T, int& 
             }
 
             double average_parallax = 1.0 * sum_parallax / int(corres.size());
-            // Use fixed FOCAL_LENGTH=460.0 for parallax check (matching original VINS-Mono).
-            // actual focal_length varies with processScale, so scale the pixel threshold
-            // proportionally: threshold = 30 * (actual_focal / 460.0)
+            // Parallax in "virtual pixels" = average_parallax * focal_length
+            // Threshold 30 "virtual pixels" — same as VINS-Mono reference
             double focal = g_config.camera.focal_length;
-            double scaled_threshold = 30.0 * (focal / 460.0);
-            if (average_parallax * focal > scaled_threshold &&
+            if (average_parallax * focal > 30 &&
                 motion_estimator_->solveRelativeRT(corres, relative_R, relative_T)) {
                 l = i;
 #ifndef NDEBUG
                 std::cout << "average_parallax " << average_parallax * focal
-                          << " (threshold=" << scaled_threshold << ") choose index " << l
+                          << " choose index " << l
                           << " and newest frame to triangulate the whole structure"
                           << std::endl;
 #endif

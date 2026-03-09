@@ -21,11 +21,13 @@ Estimator::Estimator()
 void Estimator::setParameter() {
     t_ic_ = utility::g_config.camera.t_ic;
     r_ic_ = utility::g_config.camera.r_ic;
-    // Use fixed FOCAL_LENGTH=460.0 for projection weight (matching original VINS-Mono).
-    // actual focal_length varies with processScale, but the visual-vs-IMU balance
-    // must remain constant to prevent divergence from IMU drift.
-    constexpr double kProjectionFocalLength = 460.0;
-    backend::factor::ProjectionFactor::sqrt_info = (kProjectionFocalLength / 1.5) * Eigen::Matrix2d::Identity();
+    // sqrt_info = focal_length / 1.5: weights reprojection residual (in normalized coords)
+    // by the actual camera focal length. This correctly maps ~1.5 pixel noise to
+    // normalized coordinate noise regardless of camera/resolution.
+    // VINS-Mono hardcodes FOCAL_LENGTH=460 because EuRoC focal≈460.
+    // For other cameras (TUM-VI focal≈191, mobile focal≈232), use actual value.
+    backend::factor::ProjectionFactor::sqrt_info =
+        (utility::g_config.camera.focal_length / 1.5) * Eigen::Matrix2d::Identity();
 
     // Set extrinsic parameters in optimizer
     optimizer_.setExtrinsicParameters(t_ic_, r_ic_);
