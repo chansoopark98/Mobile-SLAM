@@ -25,7 +25,7 @@ const TUM_VI_CONFIG = {
     fy: 190.97330705212260,   // mv
     cx: 254.93170605935475,   // u0
     cy: 256.89744289965040,   // v0
-    modelType: 1,             // KANNALA_BRANDT (equidistant)
+    modelType: 0,             // C++ enum: KANNALA_BRANDT=0 (equidistant)
     k2: 0.0034823894022493434,
     k3: 0.0007150348452162257,
     k4: -0.0020532361418706202,

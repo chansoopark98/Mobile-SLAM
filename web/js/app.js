@@ -62,7 +62,7 @@ const VIO_CONFIGS = {
                           //   destabilizing gyro bias tracking → rotational drift
         g_norm: 9.81,
         focalLengthFactor: null,  // null → estimate from FOV (see estimateFocalLength)
-        modelType: 0,  // PINHOLE
+        modelType: 2,  // C++ enum: PINHOLE=2 (not 0)
         solver_time: 0.04,
         num_iterations: 8,
         max_features: 120,
@@ -76,7 +76,7 @@ const VIO_CONFIGS = {
         gyr_w: 0.00005,   // reduced from 0.001
         g_norm: 9.81,
         focalLengthFactor: null,  // estimate from FOV
-        modelType: 0,
+        modelType: 2,  // C++ enum: PINHOLE=2
         solver_time: 0.06,
         num_iterations: 10,
         max_features: 150,
@@ -90,7 +90,7 @@ const VIO_CONFIGS = {
         gyr_w: 2.0e-6,
         g_norm: 9.81007,
         focalLengthFactor: null,  // uses dataset intrinsics
-        modelType: 0,
+        modelType: 2,  // C++ enum: PINHOLE=2
         solver_time: 0.1,
         num_iterations: 10,
         max_features: 150,
@@ -225,8 +225,9 @@ function estimateFocalLength(videoTrack, width, height, configFactor) {
 
     // Method 2: Use config factor if explicitly specified
     if (configFactor) {
-        const fx = width * configFactor;
-        console.log(`[VIO] Focal length from config factor ${configFactor}: fx=${fx.toFixed(1)}`);
+        const refDim = Math.max(width, height);
+        const fx = refDim * configFactor;
+        console.log(`[VIO] Focal length from config factor ${configFactor} (ref=${refDim}): fx=${fx.toFixed(1)}`);
         return { fx, method: `config factor ${configFactor}` };
     }
 

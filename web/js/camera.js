@@ -20,7 +20,7 @@
  * fx, fy, cx, cy are computed for these portrait dimensions.
  */
 
-const CAMERA_VERSION = 'v7';
+const CAMERA_VERSION = 'v8';
 
 export class Camera {
     constructor() {
@@ -113,11 +113,18 @@ export class Camera {
             console.log(`[Camera] ${CAMERA_VERSION} Rotation override from URL: ${urlRotate}`);
         } else if (nativeIsLandscape) {
             // Browser reports raw sensor dimensions (e.g., 640x480).
-            // This means drawImage does NOT auto-rotate content.
-            // Apply CCW 90° to produce portrait output matching the phone's screen.
-            // (Standard Android rear camera has sensor orientation 90°)
-            this._rotateMode = 'ccw';
-            console.log(`[Camera] ${CAMERA_VERSION} Sensor is landscape ${this._nativeWidth}x${this._nativeHeight} → applying CCW rotation`);
+            // But drawImage() may or may not auto-rotate the pixel content.
+            // Use a pixel test to detect: draw video to a small canvas and check
+            // whether the actual pixel aspect ratio matches landscape or portrait.
+            const needsRotation = await this._detectDrawImageOrientation();
+            if (needsRotation) {
+                this._rotateMode = 'ccw';
+                console.log(`[Camera] ${CAMERA_VERSION} drawImage returns raw landscape → applying CCW rotation`);
+            } else {
+                // drawImage already auto-rotates to portrait despite landscape videoWidth/Height
+                this._rotateMode = 'none';
+                console.log(`[Camera] ${CAMERA_VERSION} drawImage auto-rotates to portrait → no rotation needed`);
+            }
         } else {
             // Browser reports portrait dimensions (e.g., 480x640).
             // This means browser auto-rotated both videoWidth AND drawImage content.
@@ -198,6 +205,85 @@ export class Camera {
         }
 
         return gray;
+    }
+
+    /**
+     * Detect whether drawImage() returns raw (landscape) or auto-rotated (portrait) pixels.
+     * Draws video to a small test canvas at native dims and checks the actual content
+     * aspect ratio by comparing edge brightness distributions.
+     *
+     * Returns true if drawImage returns raw landscape data (needs manual rotation).
+     * Returns false if drawImage auto-rotates to portrait (no rotation needed).
+     *
+     * Fallback: if detection is inconclusive, assumes raw landscape (needs rotation),
+     * since that's the more common case on Android Chrome.
+     */
+    async _detectDrawImageOrientation() {
+        try {
+            // Draw video at native dimensions to a test canvas
+            const testW = this._nativeWidth;
+            const testH = this._nativeHeight;
+            const testCanvas = document.createElement('canvas');
+            testCanvas.width = testW;
+            testCanvas.height = testH;
+            const testCtx = testCanvas.getContext('2d');
+            testCtx.drawImage(this.video, 0, 0, testW, testH);
+            const testData = testCtx.getImageData(0, 0, testW, testH).data;
+
+            // Check if drawn pixels fill the canvas in landscape or portrait pattern.
+            // If drawImage auto-rotated to portrait but canvas is landscape (W>H),
+            // the content will have black/empty bars on the sides.
+            // Sample the rightmost column — if mostly black, content is narrower than canvas.
+
+            // Count non-black pixels in the rightmost 5% of columns
+            const sampleStartX = Math.floor(testW * 0.95);
+            let rightEdgeBrightness = 0;
+            let sampleCount = 0;
+            for (let y = 0; y < testH; y += 4) {
+                for (let x = sampleStartX; x < testW; x += 2) {
+                    const idx = (y * testW + x) * 4;
+                    rightEdgeBrightness += testData[idx] + testData[idx + 1] + testData[idx + 2];
+                    sampleCount++;
+                }
+            }
+            const avgRightBrightness = sampleCount > 0 ? rightEdgeBrightness / (sampleCount * 3) : 128;
+
+            // Count non-black pixels in the center
+            const centerStartX = Math.floor(testW * 0.4);
+            const centerEndX = Math.floor(testW * 0.6);
+            const centerStartY = Math.floor(testH * 0.4);
+            const centerEndY = Math.floor(testH * 0.6);
+            let centerBrightness = 0;
+            let centerCount = 0;
+            for (let y = centerStartY; y < centerEndY; y += 4) {
+                for (let x = centerStartX; x < centerEndX; x += 2) {
+                    const idx = (y * testW + x) * 4;
+                    centerBrightness += testData[idx] + testData[idx + 1] + testData[idx + 2];
+                    centerCount++;
+                }
+            }
+            const avgCenterBrightness = centerCount > 0 ? centerBrightness / (centerCount * 3) : 128;
+
+            // If right edge is very dark compared to center, drawImage auto-rotated
+            // and the content doesn't fill the landscape canvas → portrait content in landscape canvas
+            const ratio = avgCenterBrightness > 1 ? avgRightBrightness / avgCenterBrightness : 1;
+
+            console.log(`[Camera] ${CAMERA_VERSION} drawImage orientation test: ` +
+                `rightEdge=${avgRightBrightness.toFixed(1)}, center=${avgCenterBrightness.toFixed(1)}, ` +
+                `ratio=${ratio.toFixed(3)}`);
+
+            if (ratio < 0.15 && avgCenterBrightness > 10) {
+                // Right edge is black, center has content → auto-rotated portrait in landscape canvas
+                return false;  // no manual rotation needed
+            }
+
+            // Content fills the landscape canvas → raw landscape data
+            return true;  // needs manual rotation
+        } catch (e) {
+            console.warn(`[Camera] ${CAMERA_VERSION} drawImage orientation detection failed:`, e.message);
+            // Fallback: assume raw landscape (most common on Android)
+            return true;
+        }
     }
 
     /** Whether the camera frame is being rotated */

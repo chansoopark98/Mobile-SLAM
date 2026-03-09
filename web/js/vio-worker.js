@@ -348,14 +348,14 @@ self.onmessage = async function(e) {
                 const result = engine.configure(
                     p.width, p.height,
                     p.fx, p.fy, p.cx, p.cy,
-                    p.modelType || 0,
+                    p.modelType ?? 2,  // C++ enum: KANNALA_BRANDT=0, MEI=1, PINHOLE=2, SCARAMUZZA=3
                     p.k2 || 0, p.k3 || 0, p.k4 || 0, p.k5 || 0,
                     memExtrinsicR.ptr,
                     memExtrinsicT.ptr,
                     p.acc_n ?? 0.08,
-                    p.acc_w ?? 0.002,
+                    p.acc_w ?? 0.0004,   // was 0.002 (50x too large)
                     p.gyr_n ?? 0.01,
-                    p.gyr_w ?? 0.002,
+                    p.gyr_w ?? 0.0001,   // was 0.002 (20x too large)
                     p.g_norm ?? 9.81
                 );
 
