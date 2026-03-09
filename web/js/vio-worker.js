@@ -202,6 +202,13 @@ function processFrame(gray, timestamp) {
     }
     lastFrameTimestamp = timestamp;
 
+    // Validate image dimensions match configured buffer
+    const expectedSize = imageWidth * imageHeight;
+    if (gray.length !== expectedSize) {
+        console.error(`[VIO Worker] Image size mismatch: got ${gray.length} bytes, expected ${expectedSize} (${imageWidth}x${imageHeight})`);
+        return { pose: null, initialized: false, featureCount: 0, statusCode: 3, mapPoints: null, mapPointCount: 0 };
+    }
+
     // Write image to WASM heap
     memImage.write(gray);
 
@@ -330,10 +337,10 @@ self.onmessage = async function(e) {
                     p.k2 || 0, p.k3 || 0, p.k4 || 0, p.k5 || 0,
                     memExtrinsicR.ptr,
                     memExtrinsicT.ptr,
-                    p.acc_n ?? 0.2,
-                    p.acc_w ?? 0.004,
-                    p.gyr_n ?? 0.03,
-                    p.gyr_w ?? 0.004,
+                    p.acc_n ?? 0.08,
+                    p.acc_w ?? 0.002,
+                    p.gyr_n ?? 0.01,
+                    p.gyr_w ?? 0.002,
                     p.g_norm ?? 9.81
                 );
 

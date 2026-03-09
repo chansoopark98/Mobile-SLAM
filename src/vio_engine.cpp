@@ -87,6 +87,14 @@ bool VIOEngine::configure(int width, int height,
     current_time_ = -1.0;
     prev_image_timestamp_ = -1.0;
     has_valid_pose_ = false;
+    consecutive_failures_ = 0;
+    cooldown_counter_ = 0;
+    frames_since_init_start_ = 0;
+    init_start_time_ = -1.0;
+    prev_acc_ = Eigen::Vector3d::Zero();
+    prev_gyro_ = Eigen::Vector3d::Zero();
+    latest_position_ = Eigen::Vector3d::Zero();
+    latest_rotation_ = Eigen::Matrix3d::Identity();
     return true;
 }
 

@@ -225,14 +225,19 @@ export class IMU {
 
     /**
      * Start capturing IMU data.
-     * Prefers DeviceMotionEvent (synchronized accel+gyro in single event),
-     * falls back to Generic Sensor API if DeviceMotion is unavailable.
      *
-     * Rationale: Generic Sensor API fires Accelerometer and Gyroscope
-     * independently, causing temporal misalignment between accel and gyro
-     * readings. DeviceMotionEvent provides both from the same measurement
-     * instant, which is critical for VIO pre-integration accuracy.
-     * (Reference: 8th Wall uses DeviceMotionEvent exclusively)
+     * Strategy:
+     * - Android: Prefer Generic Sensor API (configurable frequency up to 200Hz,
+     *   higher IMU rate → better VIO pre-integration). DeviceMotionEvent on
+     *   Android is capped at ~60Hz and cannot be configured.
+     * - iOS: Prefer DeviceMotionEvent (Generic Sensor API is unavailable on
+     *   Safari; DeviceMotionEvent provides synchronized accel+gyro at ~60Hz).
+     *
+     * Trade-off: Generic Sensor fires accel and gyro independently (~10ms
+     * desync at 100Hz). For VIO pre-integration this is acceptable because
+     * the mid-point integration scheme averages consecutive samples.
+     * The higher sample rate (100Hz vs 60Hz) is more valuable than perfect
+     * synchronization for pre-integration quality.
      *
      * @param {number} [frequency=100] Requested sensor frequency in Hz
      */
@@ -247,19 +252,27 @@ export class IMU {
         this._currentRate = 0;
         this.running = true;
 
-        // Try DeviceMotionEvent first (synchronized accel+gyro in single event)
-        if (this._tryDeviceMotion()) {
-            this._sensorType = SensorType.DEVICE_MOTION;
-            console.log('[IMU] Using DeviceMotionEvent (synchronized accel+gyro)');
-            return;
-        }
+        if (this._isIOS) {
+            // iOS: DeviceMotionEvent only (no Generic Sensor API on Safari)
+            if (this._tryDeviceMotion()) {
+                this._sensorType = SensorType.DEVICE_MOTION;
+                console.log('[IMU] Using DeviceMotionEvent (iOS, synchronized accel+gyro)');
+                return;
+            }
+        } else {
+            // Android: Prefer Generic Sensor API for higher configurable rate
+            if (this._tryGenericSensor(frequency)) {
+                this._sensorType = SensorType.GENERIC_SENSOR;
+                console.log(`[IMU] Using Generic Sensor API @ ${frequency}Hz`);
+                return;
+            }
 
-        // Fallback to Generic Sensor API (Chrome Android 67+)
-        // WARNING: accel and gyro fire independently — temporal misalignment possible
-        if (this._tryGenericSensor(frequency)) {
-            this._sensorType = SensorType.GENERIC_SENSOR;
-            console.warn(`[IMU] Fallback to Generic Sensor API @ ${frequency}Hz (accel-gyro may desync)`);
-            return;
+            // Fallback to DeviceMotionEvent (~60Hz, not configurable)
+            if (this._tryDeviceMotion()) {
+                this._sensorType = SensorType.DEVICE_MOTION;
+                console.warn('[IMU] Fallback to DeviceMotionEvent (~60Hz, rate not configurable)');
+                return;
+            }
         }
 
         console.error('[IMU] No IMU sensor API available');

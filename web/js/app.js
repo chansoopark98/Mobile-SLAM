@@ -24,16 +24,22 @@ const VIO_CONFIGS = {
     // small changes have quadratic effect. Values must match VINS-Mono's
     // continuous-time noise density model (NOT raw sensor specs).
     // Reference: EuRoC acc_n=0.08, TUM-VI acc_n=0.028
+    //
+    // Previous values (acc_n=0.2, gyr_n=0.03) were ~50x too loose in covariance
+    // (0.2²/0.028² ≈ 51), making the optimizer barely trust IMU data.
+    // Result: visual-only tracking → rapid divergence on fast motion.
+    // Tightened to ~2-3x EuRoC level, appropriate for modern mobile MEMS.
     mobile_default: {
         label: 'Mobile Default',
-        acc_n: 0.2,       // accelerometer noise density - mobile MEMS ~5x EuRoC
-        acc_w: 0.004,     // accelerometer random walk - relaxed for mobile drift
-        gyr_n: 0.03,      // gyroscope noise density - mobile MEMS ~7x EuRoC
-        gyr_w: 0.004,     // gyroscope random walk - CRITICAL: must be large enough
-                          //   for optimizer to track mobile gyro bias drift.
-                          //   Old value 0.0005 was 20x too tight → divergence.
+        acc_n: 0.08,      // accelerometer noise density — tightened from 0.2
+                          //   Modern mobile MEMS: 0.004-0.012 m/s/√Hz raw
+                          //   Using ~2x EuRoC to account for mobile noise floor
+        acc_w: 0.002,     // accelerometer random walk — tightened from 0.004
+        gyr_n: 0.01,      // gyroscope noise density — tightened from 0.03
+                          //   Modern mobile MEMS: 0.001-0.005 rad/s/√Hz
+        gyr_w: 0.002,     // gyroscope random walk — must track mobile gyro bias drift
         g_norm: 9.81,
-        focalLengthFactor: 0.8,  // fx = fy = width * factor
+        focalLengthFactor: null,  // null → estimate from FOV (see estimateFocalLength)
         modelType: 0,  // PINHOLE
         solver_time: 0.04,
         num_iterations: 8,
@@ -42,12 +48,12 @@ const VIO_CONFIGS = {
     // Tuned for high-end phones (iPhone 14+, Pixel 7+, Galaxy S23+)
     mobile_highend: {
         label: 'Mobile High-end',
-        acc_n: 0.1,
-        acc_w: 0.002,
-        gyr_n: 0.015,
-        gyr_w: 0.002,
+        acc_n: 0.05,
+        acc_w: 0.001,
+        gyr_n: 0.005,
+        gyr_w: 0.001,
         g_norm: 9.81,
-        focalLengthFactor: 0.85,
+        focalLengthFactor: null,  // estimate from FOV
         modelType: 0,
         solver_time: 0.06,
         num_iterations: 10,
@@ -96,50 +102,91 @@ const MIN_FRAME_INTERVAL_MS = 50;
 
 /**
  * Estimate focal length from camera FOV or track settings.
- * Priority: MediaStreamTrack.getSettings() > config factor > default factor
+ * Priority:
+ *   1. MediaStreamTrack.getCapabilities().fov (if available)
+ *   2. Reasonable FOV assumption based on lens type detection
+ *   3. Config factor (if explicitly provided)
+ *   4. Default ~75° FOV (typical mobile rear camera, standard lens)
+ *
+ * Getting the focal length approximately right is CRITICAL for VIO:
+ * - Too large fx (narrow FOV assumption): features appear to move less →
+ *   under-estimated parallax → wrong triangulation → divergence
+ * - Too small fx (wide FOV assumption): features appear to move more →
+ *   over-estimated parallax → noisy geometry → drift
+ *
  * @param {MediaStreamTrack} videoTrack - Camera video track
  * @param {number} width - Image width in pixels
  * @param {number} height - Image height in pixels
  * @param {number|null} configFactor - focalLengthFactor from config profile
- * @returns {number} Estimated focal length in pixels
+ * @returns {{fx: number, method: string}} Estimated focal length and estimation method
  */
 function estimateFocalLength(videoTrack, width, height, configFactor) {
-    // Try to get FOV from MediaStreamTrack settings (Chrome Android 100+)
+    // Method 1: Try to get FOV from MediaStreamTrack
     if (videoTrack) {
         try {
             const settings = videoTrack.getSettings();
-            // Some browsers expose fieldOfView or related capabilities
+
             // Check for explicit FOV (future-proof, not yet widely supported)
             if (settings.fieldOfView) {
                 const fovRad = settings.fieldOfView * Math.PI / 180;
                 const fx = (width / 2) / Math.tan(fovRad / 2);
                 console.log(`[VIO] Focal length from track FOV: ${settings.fieldOfView}° → fx=${fx.toFixed(1)}`);
-                return fx;
+                return { fx, method: `track FOV ${settings.fieldOfView}°` };
             }
 
-            // Check zoom level - if available, adjust factor
+            // Check zoom level - applies as multiplier to base focal length
             if (settings.zoom && settings.zoom > 1) {
-                const baseFx = width * (configFactor || 0.8);
+                const baseFovDeg = 75;
+                const baseFx = (width / 2) / Math.tan((baseFovDeg * Math.PI / 180) / 2);
                 const fx = baseFx * settings.zoom;
                 console.log(`[VIO] Focal length adjusted for zoom ${settings.zoom}x: fx=${fx.toFixed(1)}`);
-                return fx;
+                return { fx, method: `zoom ${settings.zoom}x (base ${baseFovDeg}°)` };
             }
         } catch (_) {
             // getSettings/getCapabilities not available
         }
+
+        // Try to detect ultrawide lens (some devices expose this info)
+        try {
+            const capabilities = videoTrack.getCapabilities ? videoTrack.getCapabilities() : null;
+            if (capabilities) {
+                // Log capabilities for debugging
+                const capKeys = Object.keys(capabilities);
+                console.log(`[VIO] Track capabilities: ${capKeys.join(', ')}`);
+                if (capabilities.width && capabilities.height) {
+                    console.log(`[VIO] Track resolution range: ${capabilities.width.min}-${capabilities.width.max} x ${capabilities.height.min}-${capabilities.height.max}`);
+                }
+                // Some devices expose focusDistance; very short min suggests ultrawide
+                if (capabilities.focusDistance && capabilities.focusDistance.min < 0.05) {
+                    const ultrawideFovDeg = 100;
+                    const fx = (width / 2) / Math.tan((ultrawideFovDeg * Math.PI / 180) / 2);
+                    console.log(`[VIO] Likely ultrawide lens (focusDist min=${capabilities.focusDistance.min}m) → FOV~${ultrawideFovDeg}°, fx=${fx.toFixed(1)}`);
+                    return { fx, method: `ultrawide detect ${ultrawideFovDeg}°` };
+                }
+            }
+        } catch (_) {
+            // getCapabilities not available
+        }
     }
 
-    // Use config factor if specified
+    // Method 2: Use config factor if explicitly specified
     if (configFactor) {
-        return width * configFactor;
+        const fx = width * configFactor;
+        console.log(`[VIO] Focal length from config factor ${configFactor}: fx=${fx.toFixed(1)}`);
+        return { fx, method: `config factor ${configFactor}` };
     }
 
-    // Default: typical mobile rear camera ~65° horizontal FOV
-    // fx = (width/2) / tan(65°/2) ≈ width * 0.87
-    const defaultFovDeg = 65;
+    // Method 3: Default — assume typical mobile rear camera ~75° horizontal FOV
+    // Common mobile camera FOVs:
+    //   Standard: 70-80° (most common rear camera)
+    //   Wide: 100-120° (ultrawide lens)
+    //   Telephoto: 35-50°
+    // Using 75° as a conservative default for the primary rear camera.
+    // fx = (width/2) / tan(75°/2) = width * 0.767
+    const defaultFovDeg = 75;
     const fx = (width / 2) / Math.tan((defaultFovDeg * Math.PI / 180) / 2);
     console.log(`[VIO] Focal length from default FOV ${defaultFovDeg}°: fx=${fx.toFixed(1)}`);
-    return fx;
+    return { fx, method: `default ${defaultFovDeg}°` };
 }
 
 class App {
@@ -240,8 +287,15 @@ class App {
         this.updateStatus('Requesting camera...');
 
         try {
-            const { width, height } = await this.camera.initialize(640, 480);
-            this.updateStatus(`Camera: ${width}x${height}`);
+            // Try to lock portrait orientation (simplest for VIO)
+            await this.orientation.tryLockPortrait();
+            const orientationType = this.orientation.getType();
+            const isPortrait = orientationType.startsWith('portrait');
+
+            // Initialize camera with orientation hint — camera module will
+            // auto-rotate the frame if the device gives landscape pixels in portrait mode.
+            const { width, height, rotated } = await this.camera.initialize(640, 480, isPortrait);
+            this.updateStatus(`Camera: ${width}x${height}${rotated ? ' (rotated)' : ''}`);
 
             // Display video feed
             const videoContainer = document.getElementById('video-container');
@@ -254,35 +308,31 @@ class App {
             // Get active config profile
             const config = VIO_CONFIGS[this.activeConfig];
 
-            // Try to lock portrait orientation (simplest for VIO)
-            await this.orientation.tryLockPortrait();
-
             // Get orientation-aware camera-IMU extrinsic rotation (R_ic).
             // IMU frame (W3C DeviceMotion): fixed to device body
             //   X_d = right edge, Y_d = top edge, Z_d = out of screen
             // Camera frame (OpenCV): rotates with screen orientation
             //   X_c = right in image, Y_c = down in image, Z_c = forward
             // R_ic transforms camera→IMU: v_imu = R_ic * v_cam
-            const orientationType = this.orientation.getType();
             const r_ic = this.orientation.getRIC();
 
             // Log coordinate system configuration
             const video = this.camera.getVideoElement();
-            console.log('[VIO] Coordinate system configuration:');
-            console.log('[VIO]   Screen orientation:', orientationType);
-            console.log('[VIO]   Camera frame (OpenCV): x=right, y=down, z=forward');
-            console.log('[VIO]   IMU frame (DeviceMotion): x=right-edge, y=top-edge, z=out-of-screen');
-            console.log('[VIO]   R_imu_camera:', r_ic);
-            console.log('[VIO]   Expected: phone upright portrait → acc_y ≈ +9.8');
-            console.log('[VIO]   Expected: phone flat face-up → acc_z ≈ +9.8');
-            console.log('[VIO] Config profile:', this.activeConfig, config.label);
-            console.log(`[VIO] Camera video: ${video.videoWidth}x${video.videoHeight}`);
-            console.log(`[VIO] Camera capture: ${width}x${height}`);
+            console.log('[VIO] ═══════ Configuration Summary ═══════');
+            console.log(`[VIO] Screen orientation: ${orientationType}`);
+            console.log(`[VIO] Camera native: ${video.videoWidth}x${video.videoHeight}`);
+            console.log(`[VIO] Camera output: ${width}x${height} (rotated=${rotated})`);
             console.log(`[VIO] Image orientation: ${width > height ? 'LANDSCAPE' : 'PORTRAIT'}`);
+            console.log(`[VIO] Config profile: ${this.activeConfig} (${config.label})`);
+            console.log(`[VIO] R_ic: [${r_ic.map(v => v.toFixed(1)).join(', ')}]`);
+            console.log('[VIO] Camera frame (OpenCV): x=right, y=down, z=forward');
+            console.log('[VIO] IMU frame (DeviceMotion): x=right-edge, y=top-edge, z=out-of-screen');
+            console.log('[VIO] VIO body frame: x=right, y=forward, z=up');
+            console.log('[VIO] Expected portrait upright → acc_z_vio ≈ +9.81 (gravity on Z)');
 
             // Estimate focal length using FOV or config factor
             const videoTrack = this.camera.getVideoTrack ? this.camera.getVideoTrack() : null;
-            const fx = estimateFocalLength(videoTrack, width, height, config.focalLengthFactor);
+            const { fx, method: fxMethod } = estimateFocalLength(videoTrack, width, height, config.focalLengthFactor);
             const fy = fx;
 
             // Camera-IMU translation offset in VIO body frame
@@ -332,9 +382,13 @@ class App {
                 );
             }
 
-            console.log(`[VIO] Configured: ${width}x${height}, fx=${fx.toFixed(1)}, fy=${fy.toFixed(1)}, ` +
-                         `t_ic=[${t_ic}], acc_n=${config.acc_n}, gyr_n=${config.gyr_n}` +
-                         (config.solver_time ? `, solver_time=${config.solver_time}` : ''));
+            console.log(`[VIO] ═══════ VIO Engine Configured ═══════`);
+            console.log(`[VIO]   Image: ${width}x${height}`);
+            console.log(`[VIO]   Focal: fx=${fx.toFixed(1)}, fy=${fy.toFixed(1)} (${fxMethod})`);
+            console.log(`[VIO]   Principal: cx=${(width/2).toFixed(1)}, cy=${(height/2).toFixed(1)}`);
+            console.log(`[VIO]   t_ic: [${t_ic}]`);
+            console.log(`[VIO]   IMU noise: acc_n=${config.acc_n}, acc_w=${config.acc_w}, gyr_n=${config.gyr_n}, gyr_w=${config.gyr_w}`);
+            console.log(`[VIO]   Solver: time=${config.solver_time}s, iter=${config.num_iterations}, features=${config.max_features}`);
 
             // Request IMU permission and start
             if (IMU.isAvailable()) {
@@ -417,14 +471,30 @@ class App {
                 acc_x: data[1], acc_y: data[2], acc_z: data[3],
                 gyro_x: data[4], gyro_y: data[5], gyro_z: data[6],
             };
+            const accMag = Math.sqrt(r.acc_x**2 + r.acc_y**2 + r.acc_z**2);
             console.log(`[VIO] IMU batch #${this.imuLogCount} (VIO frame): ` +
                 `count=${count} ` +
                 `acc=(${r.acc_x.toFixed(3)}, ${r.acc_y.toFixed(3)}, ${r.acc_z.toFixed(3)}) ` +
                 `gyro=(${r.gyro_x.toFixed(4)}, ${r.gyro_y.toFixed(4)}, ${r.gyro_z.toFixed(4)}) ` +
-                `|acc|=${Math.sqrt(r.acc_x**2 + r.acc_y**2 + r.acc_z**2).toFixed(3)}`);
+                `|acc|=${accMag.toFixed(3)}`);
             if (this.imuLogCount === 0) {
                 console.log(`[VIO] IMU sensor type: ${this.imu.getSensorType()}`);
-                console.log(`[VIO] Expected: portrait upright → acc_z ~= +9.81 (gravity on Z)`);
+                console.log(`[VIO] IMU rate: ${Math.round(this.imu.getRate())}Hz`);
+                console.log(`[VIO] Gyro bias calibrated: ${this.imu.isCalibrated()}`);
+                // Gravity direction validation
+                // In VIO body frame: phone upright portrait → acc_z ≈ +9.81
+                if (accMag > 8.5 && accMag < 11.0) {
+                    const gravAxis = Math.abs(r.acc_z) > Math.abs(r.acc_x) && Math.abs(r.acc_z) > Math.abs(r.acc_y) ? 'Z' :
+                                     Math.abs(r.acc_y) > Math.abs(r.acc_x) ? 'Y' : 'X';
+                    const gravSign = gravAxis === 'Z' ? Math.sign(r.acc_z) : gravAxis === 'Y' ? Math.sign(r.acc_y) : Math.sign(r.acc_x);
+                    console.log(`[VIO] Gravity dominant axis: ${gravSign > 0 ? '+' : '-'}${gravAxis} (expected: +Z for portrait upright)`);
+                    if (gravAxis !== 'Z' || gravSign < 0) {
+                        console.warn(`[VIO] ⚠ Gravity NOT on +Z! Check IMU axis transform or phone orientation.`);
+                        console.warn(`[VIO]   acc=(${r.acc_x.toFixed(2)}, ${r.acc_y.toFixed(2)}, ${r.acc_z.toFixed(2)})`);
+                    }
+                } else {
+                    console.warn(`[VIO] ⚠ |acc|=${accMag.toFixed(2)} (expected ~9.81). Device may be moving or sensor error.`);
+                }
             }
             this.imuLogCount++;
         }
