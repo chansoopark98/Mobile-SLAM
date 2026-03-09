@@ -96,7 +96,9 @@ void FeatureTracker::detectAndTrack(const cv::Mat& _img, double _cur_time) {
     if (cur_pts.size() > 0) {
         vector<uchar> status;
         vector<float> err;
-        cv::calcOpticalFlowPyrLK(cur_img, next_img, cur_pts, next_pts, status, err, cv::Size(21, 21), 3);
+        const int lk_win = g_config.feature_tracker.lk_window_size;
+        const int lk_pyr = g_config.feature_tracker.lk_pyramid_levels;
+        cv::calcOpticalFlowPyrLK(cur_img, next_img, cur_pts, next_pts, status, err, cv::Size(lk_win, lk_win), lk_pyr);
 
         for (int i = 0; i < int(next_pts.size()); i++)
             if (status[i] && !inBorder(next_pts[i]))
@@ -145,22 +147,83 @@ void FeatureTracker::rejectWithFundamentalMatrix() {
     if (next_pts.size() >= 8) {
         const int before_count = static_cast<int>(next_pts.size());
         vector<cv::Point2f> undistorted_cur_pts(cur_pts.size()), undistorted_next_pts(next_pts.size());
+
+        const double cx = g_config.camera.col / 2.0;
+        const double cy = g_config.camera.row / 2.0;
+
         for (unsigned int i = 0; i < cur_pts.size(); i++) {
             Eigen::Vector3d tmp_p;
             m_camera->liftProjective(Eigen::Vector2d(cur_pts[i].x, cur_pts[i].y), tmp_p);
-            tmp_p.x() = g_config.camera.focal_length * tmp_p.x() / tmp_p.z() + g_config.camera.col / 2.0;
-            tmp_p.y() = g_config.camera.focal_length * tmp_p.y() / tmp_p.z() + g_config.camera.row / 2.0;
+            tmp_p.x() = g_config.camera.focal_length * tmp_p.x() / tmp_p.z() + cx;
+            tmp_p.y() = g_config.camera.focal_length * tmp_p.y() / tmp_p.z() + cy;
             undistorted_cur_pts[i] = cv::Point2f(tmp_p.x(), tmp_p.y());
 
             m_camera->liftProjective(Eigen::Vector2d(next_pts[i].x, next_pts[i].y), tmp_p);
-            tmp_p.x() = g_config.camera.focal_length * tmp_p.x() / tmp_p.z() + g_config.camera.col / 2.0;
-            tmp_p.y() = g_config.camera.focal_length * tmp_p.y() / tmp_p.z() + g_config.camera.row / 2.0;
+            tmp_p.x() = g_config.camera.focal_length * tmp_p.x() / tmp_p.z() + cx;
+            tmp_p.y() = g_config.camera.focal_length * tmp_p.y() / tmp_p.z() + cy;
             undistorted_next_pts[i] = cv::Point2f(tmp_p.x(), tmp_p.y());
         }
 
         vector<uchar> status;
-        cv::findFundamentalMat(undistorted_cur_pts, undistorted_next_pts, cv::FM_RANSAC,
+        cv::Mat F = cv::findFundamentalMat(undistorted_cur_pts, undistorted_next_pts, cv::FM_RANSAC,
                                g_config.feature_tracker.f_threshold, 0.99, status);
+
+        // Distance-aware edge feature recovery for unmodeled lens distortion.
+        // Mobile PINHOLE cameras with zero distortion coefficients have actual barrel
+        // distortion that causes edge features to have larger epipolar residuals.
+        // Without this, F-matrix RANSAC systematically rejects edge features,
+        // causing all surviving features to cluster toward image center.
+        const double edge_factor = g_config.feature_tracker.f_threshold_edge_factor;
+        if (edge_factor > 0.0 && !F.empty() && F.rows == 3 && F.cols == 3) {
+            const double r_max = std::sqrt(cx * cx + cy * cy);
+            const double r_max_inv = (r_max > 1e-6) ? 1.0 / r_max : 0.0;
+            int restored = 0;
+
+            for (unsigned int i = 0; i < status.size(); i++) {
+                if (status[i]) continue;  // Already inlier
+
+                // Compute normalized distance from image center (0=center, 1=corner)
+                const double dx = next_pts[i].x - cx;
+                const double dy = next_pts[i].y - cy;
+                const double r_ratio = std::sqrt(dx * dx + dy * dy) * r_max_inv;
+
+                // Only apply edge recovery to features in the outer region
+                if (r_ratio < 0.3) continue;
+
+                // Compute epipolar distance: d = |p2^T F p1| / ||l||
+                const double* f = F.ptr<double>();
+                const double u1 = undistorted_cur_pts[i].x;
+                const double v1 = undistorted_cur_pts[i].y;
+                const double u2 = undistorted_next_pts[i].x;
+                const double v2 = undistorted_next_pts[i].y;
+
+                // Epipolar line l = F * [u1, v1, 1]^T
+                const double la = f[0] * u1 + f[1] * v1 + f[2];
+                const double lb = f[3] * u1 + f[4] * v1 + f[5];
+                const double lc = f[6] * u1 + f[7] * v1 + f[8];
+                const double norm_ab = std::sqrt(la * la + lb * lb);
+                if (norm_ab < 1e-12) continue;
+
+                const double dist = std::abs(la * u2 + lb * v2 + lc) / norm_ab;
+
+                // Adaptive threshold: base * (1 + edge_factor * r_ratio^2)
+                // Center features (r=0): 1x threshold
+                // Edge features (r=r_max): (1 + edge_factor)x threshold
+                const double adaptive_thresh =
+                    g_config.feature_tracker.f_threshold * (1.0 + edge_factor * r_ratio * r_ratio);
+
+                if (dist < adaptive_thresh) {
+                    status[i] = 1;  // Restore this edge feature
+                    restored++;
+                }
+            }
+
+            if (restored > 0) {
+                std::cout << "[FeatureTracker] Edge recovery: restored " << restored
+                          << " features (edge_factor=" << edge_factor << ")" << std::endl;
+            }
+        }
+
         int inlier_count = 0;
         for (const auto& s : status) { if (s) inlier_count++; }
         const int rejected = before_count - inlier_count;

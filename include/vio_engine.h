@@ -77,6 +77,13 @@ public:
     // Higher values accommodate unmodeled lens distortion (mobile phones).
     void setFThreshold(double f_threshold);
 
+    // Set feature tracking parameters for mobile optimization.
+    // lk_window: LK optical flow window size (must be odd, default 21)
+    // lk_pyramid: LK pyramid levels (default 3)
+    // min_dist: minimum distance between features in pixels (default 20)
+    // f_edge_factor: edge distortion compensation factor (0=off, 2.0=recommended for mobile)
+    void setTrackingParams(int lk_window, int lk_pyramid, int min_dist, double f_edge_factor);
+
     // Get current VIO status code.
     int getStatusCode() const;
 

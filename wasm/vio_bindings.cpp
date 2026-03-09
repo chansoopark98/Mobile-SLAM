@@ -59,6 +59,7 @@ EMSCRIPTEN_BINDINGS(VIOModule) {
         .function("getMapPoints", &getMapPoints_wrapper)
         .function("setMobileParams", &VIOEngine::setMobileParams)
         .function("setFThreshold", &VIOEngine::setFThreshold)
+        .function("setTrackingParams", &VIOEngine::setTrackingParams)
         .function("getStatusCode", &VIOEngine::getStatusCode)
         .function("reset", &VIOEngine::reset);
 }

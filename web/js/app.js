@@ -65,7 +65,21 @@ const VIO_CONFIGS = {
         modelType: 2,  // C++ enum: PINHOLE=2 (not 0)
         solver_time: 0.04,
         num_iterations: 8,
-        max_features: 120,
+        max_features: 100,
+        // Image downscale factor: 0.5 = half resolution (240x320).
+        // Reduces computation ~3x (CLAHE, LK pyramid, corner detection all O(pixels)).
+        // Also halves barrel distortion magnitude in pixels, reducing F-matrix
+        // edge rejection that causes feature center clustering.
+        processScale: 0.5,
+        // Mobile-optimized LK optical flow: smaller window + fewer pyramid levels.
+        // 15x15 window is sufficient at 240x320 resolution.
+        lk_window: 15,
+        lk_pyramid: 2,
+        min_dist: 15,
+        // Edge distortion compensation: restores edge features rejected by F-matrix
+        // due to unmodeled barrel distortion from PINHOLE model with zero distortion.
+        // 2.0 = edge features get up to 3x the base RANSAC threshold.
+        f_edge_factor: 2.0,
     },
     // Tuned for high-end phones (iPhone 14+, Pixel 7+, Galaxy S23+)
     mobile_highend: {
@@ -79,7 +93,12 @@ const VIO_CONFIGS = {
         modelType: 2,  // C++ enum: PINHOLE=2
         solver_time: 0.06,
         num_iterations: 10,
-        max_features: 150,
+        max_features: 120,
+        processScale: 0.67,       // ~320x427, good balance of speed vs quality
+        lk_window: 17,
+        lk_pyramid: 3,
+        min_dist: 18,
+        f_edge_factor: 1.5,
     },
     // EuRoC MAV dataset (research-grade VI sensor)
     euroc: {
@@ -271,6 +290,73 @@ function validateFocalLength(fx, width, height) {
     return { fx, valid: true };
 }
 
+/**
+ * Downsample a grayscale image by 2x using area averaging.
+ * Fast: only array access and bit shifts. Produces good quality for VIO.
+ * @param {Uint8Array} gray - Source grayscale pixels
+ * @param {number} w - Source width
+ * @param {number} h - Source height
+ * @returns {Uint8Array} Downsampled image (w/2 × h/2)
+ */
+function downsample2x(gray, w, h) {
+    const nw = w >> 1;
+    const nh = h >> 1;
+    const out = new Uint8Array(nw * nh);
+    for (let y = 0; y < nh; y++) {
+        const sy = y << 1;
+        const srcRow0 = sy * w;
+        const srcRow1 = srcRow0 + w;
+        const dstRow = y * nw;
+        for (let x = 0; x < nw; x++) {
+            const sx = x << 1;
+            out[dstRow + x] = (gray[srcRow0 + sx] + gray[srcRow0 + sx + 1] +
+                                gray[srcRow1 + sx] + gray[srcRow1 + sx + 1] + 2) >> 2;
+        }
+    }
+    return out;
+}
+
+/**
+ * Downsample a grayscale image by an arbitrary scale using bilinear area average.
+ * Falls back to downsample2x when scale is exactly 0.5.
+ * @param {Uint8Array} gray - Source grayscale pixels
+ * @param {number} srcW - Source width
+ * @param {number} srcH - Source height
+ * @param {number} dstW - Destination width
+ * @param {number} dstH - Destination height
+ * @returns {Uint8Array} Downsampled image
+ */
+function downsampleGray(gray, srcW, srcH, dstW, dstH) {
+    if (dstW === (srcW >> 1) && dstH === (srcH >> 1)) {
+        return downsample2x(gray, srcW, srcH);
+    }
+    const out = new Uint8Array(dstW * dstH);
+    const xRatio = srcW / dstW;
+    const yRatio = srcH / dstH;
+    for (let y = 0; y < dstH; y++) {
+        const srcY = y * yRatio;
+        const sy = Math.floor(srcY);
+        const fy = srcY - sy;
+        const sy1 = Math.min(sy + 1, srcH - 1);
+        for (let x = 0; x < dstW; x++) {
+            const srcX = x * xRatio;
+            const sx = Math.floor(srcX);
+            const fx = srcX - sx;
+            const sx1 = Math.min(sx + 1, srcW - 1);
+            // Bilinear interpolation
+            const v00 = gray[sy * srcW + sx];
+            const v10 = gray[sy * srcW + sx1];
+            const v01 = gray[sy1 * srcW + sx];
+            const v11 = gray[sy1 * srcW + sx1];
+            out[y * dstW + x] = Math.round(
+                v00 * (1 - fx) * (1 - fy) + v10 * fx * (1 - fy) +
+                v01 * (1 - fx) * fy + v11 * fx * fy
+            );
+        }
+    }
+    return out;
+}
+
 class App {
     constructor() {
         this.vio = new VIOWrapper();
@@ -324,6 +410,13 @@ class App {
 
         // Stored config for reconfiguration on orientation change
         this._lastConfigParams = null;
+
+        // Image downscaling for mobile performance + distortion reduction
+        this._processScale = 1.0;   // Set from config.processScale
+        this._processWidth = 0;     // VIO processing width (after scale)
+        this._processHeight = 0;    // VIO processing height (after scale)
+        this._captureWidth = 0;     // Camera capture width (before scale)
+        this._captureHeight = 0;    // Camera capture height (before scale)
     }
 
     async initialize() {
@@ -431,7 +524,22 @@ class App {
             console.log('[VIO] VIO body frame: x=right, y=forward, z=up');
             console.log('[VIO] Expected portrait upright → acc_z_vio ≈ +9.81 (gravity on Z)');
 
+            // Determine processing scale and dimensions
+            // Downscaling reduces computation (O(pixels) for CLAHE, LK, corner detection)
+            // and halves barrel distortion magnitude, preventing F-matrix edge rejection.
+            const scale = config.processScale || 1.0;
+            this._processScale = scale;
+            this._captureWidth = width;
+            this._captureHeight = height;
+            // Ensure even dimensions for 2x downsample path
+            this._processWidth = (scale === 1.0) ? width : (Math.round(width * scale) & ~1);
+            this._processHeight = (scale === 1.0) ? height : (Math.round(height * scale) & ~1);
+            const pW = this._processWidth;
+            const pH = this._processHeight;
+
             // Estimate focal length using FOV or config factor
+            // IMPORTANT: fx is a lens property in pixels — computed from capture dims,
+            // then scaled to processing dims.
             const videoTrack = this.camera.getVideoTrack ? this.camera.getVideoTrack() : null;
             let { fx, method: fxMethod } = estimateFocalLength(videoTrack, width, height, config.focalLengthFactor);
             const fxValidation = validateFocalLength(fx, width, height);
@@ -439,7 +547,9 @@ class App {
                 fx = fxValidation.fx;
                 fxMethod += ' (corrected)';
             }
-            const fy = fx;
+            // Scale focal length to processing resolution
+            const fxScaled = fx * scale;
+            const fyScaled = fxScaled;
 
             // Camera-IMU translation offset in VIO body frame
             // VIO body frame: X=right, Y=forward, Z=up
@@ -447,12 +557,12 @@ class App {
             const t_ic = [0, 0, -0.02];
 
             const configured = await this.vio.configure({
-                width: width,
-                height: height,
-                fx: fx,
-                fy: fy,
-                cx: width / 2,
-                cy: height / 2,
+                width: pW,
+                height: pH,
+                fx: fxScaled,
+                fy: fyScaled,
+                cx: pW / 2,
+                cy: pH / 2,
                 modelType: config.modelType,
                 r_ic: r_ic,
                 t_ic: t_ic,
@@ -470,8 +580,8 @@ class App {
 
             // Store config for reconfiguration on orientation change
             this._lastConfigParams = {
-                width, height, fx, fy,
-                cx: width / 2, cy: height / 2,
+                width: pW, height: pH, fx: fxScaled, fy: fyScaled,
+                cx: pW / 2, cy: pH / 2,
                 modelType: config.modelType,
                 t_ic,
                 acc_n: config.acc_n, acc_w: config.acc_w,
@@ -488,6 +598,16 @@ class App {
                 );
             }
 
+            // Apply mobile-optimized tracking parameters
+            if (config.lk_window !== undefined) {
+                await this.vio.setTrackingParams(
+                    config.lk_window,
+                    config.lk_pyramid || 3,
+                    config.min_dist || 20,
+                    config.f_edge_factor || 0.0
+                );
+            }
+
             // Apply f_threshold override from URL (?fth=N.N)
             const urlFth = URL_PARAMS.get('fth');
             if (urlFth) {
@@ -499,20 +619,23 @@ class App {
             }
 
             console.log(`[VIO] ═══════ VIO Engine Configured ═══════`);
-            console.log(`[VIO]   Image: ${width}x${height} (native: ${video.videoWidth}x${video.videoHeight})`);
-            console.log(`[VIO]   ★ Focal: fx=${fx.toFixed(1)}, fy=${fy.toFixed(1)} (${fxMethod})`);
-            console.log(`[VIO]   ★ fx/width=${(fx/width).toFixed(3)}, fx/max(w,h)=${(fx/Math.max(width,height)).toFixed(3)}`);
-            console.log(`[VIO]   Principal: cx=${(width/2).toFixed(1)}, cy=${(height/2).toFixed(1)}`);
-            console.log(`[VIO]   hFOV=${(2*Math.atan(width/(2*fx))*180/Math.PI).toFixed(1)}°, vFOV=${(2*Math.atan(height/(2*fx))*180/Math.PI).toFixed(1)}°`);
+            console.log(`[VIO]   Capture: ${width}x${height} → Process: ${pW}x${pH} (scale=${scale})`);
+            console.log(`[VIO]   Native: ${video.videoWidth}x${video.videoHeight}`);
+            console.log(`[VIO]   ★ Focal: fx=${fxScaled.toFixed(1)}, fy=${fyScaled.toFixed(1)} (${fxMethod}, scaled from ${fx.toFixed(1)})`);
+            console.log(`[VIO]   ★ fx/width=${(fxScaled/pW).toFixed(3)}, fx/max(w,h)=${(fxScaled/Math.max(pW,pH)).toFixed(3)}`);
+            console.log(`[VIO]   Principal: cx=${(pW/2).toFixed(1)}, cy=${(pH/2).toFixed(1)}`);
+            console.log(`[VIO]   hFOV=${(2*Math.atan(pW/(2*fxScaled))*180/Math.PI).toFixed(1)}°, vFOV=${(2*Math.atan(pH/(2*fxScaled))*180/Math.PI).toFixed(1)}°`);
             console.log(`[VIO]   t_ic: [${t_ic}]`);
             console.log(`[VIO]   IMU noise: acc_n=${config.acc_n}, acc_w=${config.acc_w}, gyr_n=${config.gyr_n}, gyr_w=${config.gyr_w}`);
             console.log(`[VIO]   Solver: time=${config.solver_time}s, iter=${config.num_iterations}, features=${config.max_features}`);
+            console.log(`[VIO]   Tracking: lk_window=${config.lk_window||21}, lk_pyramid=${config.lk_pyramid||3}, min_dist=${config.min_dist||20}, f_edge=${config.f_edge_factor||0}`);
             console.log(`[VIO]   Rotation: ${this.camera.getRotateMode()}, DimsSwapped: ${this.camera.isDimsSwapped()}`);
             console.log(`[VIO]   URL overrides: fx=${URL_PARAMS.get('fx')||'(none)'}, config=${URL_PARAMS.get('config')||'(none)'}, fth=${URL_PARAMS.get('fth')||'(none)'}, rotate=${URL_PARAMS.get('rotate')||'(auto)'}`);
 
             // Remote log key params for mobile debugging
-            remoteLog('info', `VIO configured: ${width}x${height} fx=${fx.toFixed(1)} (${fxMethod}) ` +
-                `hFOV=${(2*Math.atan(width/(2*fx))*180/Math.PI).toFixed(1)}° ` +
+            remoteLog('info', `VIO configured: ${pW}x${pH} (from ${width}x${height}, scale=${scale}) ` +
+                `fx=${fxScaled.toFixed(1)} (${fxMethod}) ` +
+                `hFOV=${(2*Math.atan(pW/(2*fxScaled))*180/Math.PI).toFixed(1)}° ` +
                 `profile=${this.activeConfig} rotate=${this.camera.getRotateMode()}`);
 
             // Request IMU permission and start
@@ -678,7 +801,7 @@ class App {
             const frameTimestamp = now / 1000.0;
             const gray = this.camera.captureGrayscale();
             if (gray) {
-                // Draw grayscale preview (debug: verify capture quality + rotation)
+                // Draw grayscale preview at capture resolution (debug visualization)
                 if (this._grayPreviewCtx) {
                     const w = this.camera.width;
                     const h = this.camera.height;
@@ -690,9 +813,9 @@ class App {
                     }
                     this._grayPreviewCtx.putImageData(imgData, 0, 0);
 
-                    // Draw version + rotation mode label for cache verification
+                    // Draw version + rotation mode + processing info label
                     const mode = this.camera.getRotateMode();
-                    const label = `v8 ${mode} ${w}x${h}`;
+                    const label = `v8 ${mode} ${this._captureWidth}x${this._captureHeight}→${this._processWidth}x${this._processHeight}`;
                     this._grayPreviewCtx.fillStyle = 'rgba(0,0,0,0.6)';
                     this._grayPreviewCtx.fillRect(0, 0, w, 18);
                     this._grayPreviewCtx.fillStyle = '#0f8';
@@ -700,12 +823,20 @@ class App {
                     this._grayPreviewCtx.fillText(label, 4, 14);
                 }
 
+                // Downscale for VIO processing if processScale < 1.0
+                let vioGray = gray;
+                if (this._processScale < 1.0) {
+                    vioGray = downsampleGray(gray,
+                        this._captureWidth, this._captureHeight,
+                        this._processWidth, this._processHeight);
+                }
+
                 // Flush all pending IMU right before the frame so the worker
                 // has the most up-to-date IMU data for pre-integration.
                 this._flushAndSendIMU();
 
                 // Send frame only — worker drains its internal IMU buffer
-                this.vio.sendFrame(gray, frameTimestamp);
+                this.vio.sendFrame(vioGray, frameTimestamp);
                 this.totalFrameCount++;
                 this.frameCount++;
             }
@@ -854,6 +985,16 @@ class App {
                 config.solver_time,
                 config.num_iterations,
                 config.max_features
+            );
+        }
+
+        // Re-apply tracking params
+        if (config.lk_window !== undefined) {
+            await this.vio.setTrackingParams(
+                config.lk_window,
+                config.lk_pyramid || 3,
+                config.min_dist || 20,
+                config.f_edge_factor || 0.0
             );
         }
 

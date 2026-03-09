@@ -228,10 +228,19 @@ function processFrame(gray, timestamp) {
         }
         processFrame._logCount++;
     } else if (timestamp - processFrame._lastLogTime > 5.0) {
-        // Periodic log every 5s during init for ongoing diagnostics
-        console.log(`[VIO Worker] Status: imuCount=${imuCount}, initialized=${engine.isInitialized()}, features=${engine.getFeaturePointCount()}`);
+        // Periodic log every 5s for ongoing diagnostics
+        const isInit = engine.isInitialized();
+        console.log(`[VIO Worker] Status: imuCount=${imuCount}, initialized=${isInit}, features=${engine.getFeaturePointCount()}`);
         processFrame._lastLogTime = timestamp;
+        // Detect init transition
+        if (isInit && !processFrame._wasInitialized) {
+            const elapsed = (timestamp - processFrame._firstFrameTime).toFixed(1);
+            console.log(`[VIO Worker] ★ INITIALIZED after ${processFrame._logCount} worker frames (${elapsed}s)`);
+        }
+        processFrame._wasInitialized = isInit;
     }
+    if (typeof processFrame._firstFrameTime === 'undefined') processFrame._firstFrameTime = timestamp;
+    if (typeof processFrame._wasInitialized === 'undefined') processFrame._wasInitialized = false;
 
     // Guard: skip frame if no IMU data available (pre-integration impossible).
     // This commonly happens on the very first frame before IMU pipeline starts.
@@ -274,6 +283,21 @@ function processFrame(gray, timestamp) {
     if (hasPose) {
         const poseData = memPose.read(16);
         result.pose = new Float64Array(poseData);
+
+        // Divergence detection: log pose position for first 20 tracking frames
+        // and whenever position magnitude exceeds threshold
+        if (typeof processFrame._trackCount === 'undefined') processFrame._trackCount = 0;
+        if (result.initialized) {
+            const px = poseData[3], py = poseData[7], pz = poseData[11];
+            const posMag = Math.sqrt(px*px + py*py + pz*pz);
+            if (processFrame._trackCount < 20) {
+                console.log(`[VIO Worker] Track #${processFrame._trackCount}: pos=(${px.toFixed(3)}, ${py.toFixed(3)}, ${pz.toFixed(3)}) |pos|=${posMag.toFixed(3)} feat=${result.featureCount}`);
+            }
+            if (posMag > 10.0) {
+                console.warn(`[VIO Worker] ⚠ DIVERGENCE: |pos|=${posMag.toFixed(1)} at track #${processFrame._trackCount} pos=(${px.toFixed(2)}, ${py.toFixed(2)}, ${pz.toFixed(2)})`);
+            }
+            processFrame._trackCount++;
+        }
     }
 
     // Get map points
@@ -385,6 +409,17 @@ self.onmessage = async function(e) {
                 self.postMessage({ type: 'setFThreshold', success: true });
             } catch (err) {
                 self.postMessage({ type: 'setFThreshold', success: false, error: err.message });
+            }
+            break;
+        }
+
+        case 'setTrackingParams': {
+            try {
+                const { lk_window, lk_pyramid, min_dist, f_edge_factor } = data;
+                engine.setTrackingParams(lk_window, lk_pyramid, min_dist, f_edge_factor);
+                self.postMessage({ type: 'setTrackingParams', success: true });
+            } catch (err) {
+                self.postMessage({ type: 'setTrackingParams', success: false, error: err.message });
             }
             break;
         }

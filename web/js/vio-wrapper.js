@@ -101,6 +101,24 @@ export class VIOWrapper {
     }
 
     /**
+     * Set feature tracking parameters for mobile optimization.
+     * @param {number} lkWindow - LK optical flow window size (odd, default 21)
+     * @param {number} lkPyramid - LK pyramid levels (default 3)
+     * @param {number} minDist - Min distance between features in pixels (default 20)
+     * @param {number} fEdgeFactor - Edge distortion compensation (0=off, 2.0=recommended)
+     * @returns {Promise<boolean>}
+     */
+    async setTrackingParams(lkWindow, lkPyramid, minDist, fEdgeFactor) {
+        return new Promise((resolve, reject) => {
+            this._pendingSetTrackingParams = { resolve, reject };
+            this.worker.postMessage({
+                type: 'setTrackingParams',
+                data: { lk_window: lkWindow, lk_pyramid: lkPyramid, min_dist: minDist, f_edge_factor: fEdgeFactor },
+            });
+        });
+    }
+
+    /**
      * Send IMU data to the worker independently from camera frames.
      * This is NOT blocked by workerBusy — IMU always gets through.
      *
@@ -274,6 +292,13 @@ export class VIOWrapper {
                 if (this._pendingSetFThreshold) {
                     this._pendingSetFThreshold.resolve(msg.success);
                     this._pendingSetFThreshold = null;
+                }
+                break;
+
+            case 'setTrackingParams':
+                if (this._pendingSetTrackingParams) {
+                    this._pendingSetTrackingParams.resolve(msg.success);
+                    this._pendingSetTrackingParams = null;
                 }
                 break;
 

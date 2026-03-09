@@ -352,6 +352,26 @@ void VIOEngine::setFThreshold(double f_threshold) {
     std::cout << "[VIOEngine] f_threshold set to " << f_threshold << std::endl;
 }
 
+void VIOEngine::setTrackingParams(int lk_window, int lk_pyramid, int min_dist, double f_edge_factor) {
+    auto& cfg = utility::g_config.feature_tracker;
+    if (lk_window > 0 && (lk_window % 2 == 1)) {
+        cfg.lk_window_size = lk_window;
+    }
+    if (lk_pyramid > 0 && lk_pyramid <= 5) {
+        cfg.lk_pyramid_levels = lk_pyramid;
+    }
+    if (min_dist > 0) {
+        cfg.min_dist = min_dist;
+    }
+    if (f_edge_factor >= 0.0) {
+        cfg.f_threshold_edge_factor = f_edge_factor;
+    }
+    std::cout << "[VIOEngine] Tracking params: lk_window=" << cfg.lk_window_size
+              << " lk_pyramid=" << cfg.lk_pyramid_levels
+              << " min_dist=" << cfg.min_dist
+              << " f_edge_factor=" << cfg.f_threshold_edge_factor << std::endl;
+}
+
 void VIOEngine::reset() {
     estimator_ = std::make_unique<backend::Estimator>();
     if (configured_) {

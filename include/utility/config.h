@@ -39,6 +39,16 @@ struct FeatureTrackerConfig {
     int equalize = 1;
     int fisheye = 0;
 
+    // LK optical flow parameters
+    int lk_window_size = 21;    // Lucas-Kanade window size (must be odd)
+    int lk_pyramid_levels = 3;  // Number of pyramid levels for LK flow
+
+    // Distance-aware F-matrix rejection for unmodeled lens distortion.
+    // When enabled, edge features get a larger RANSAC threshold to
+    // compensate for barrel distortion not captured by the camera model.
+    // Factor of 2.0 means edge features get up to 3x the base threshold.
+    double f_threshold_edge_factor = 0.0;  // 0 = disabled, >0 = quadratic edge boost
+
     // Image processing
     std::string fisheye_mask;
 };
