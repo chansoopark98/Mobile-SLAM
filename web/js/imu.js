@@ -18,8 +18,11 @@ const RING_CAPACITY = 512;
 const FIELDS_PER_READING = 7;
 /** Total Float64 elements in the ring buffer */
 const RING_ELEMENTS = RING_CAPACITY * FIELDS_PER_READING;
-/** Default sensor frequency to request (Hz) */
-const DEFAULT_FREQUENCY = 100;
+/** Default sensor frequency to request (Hz).
+ *  Chrome caps Generic Sensor API at 60Hz (security/privacy measure).
+ *  Requesting >60Hz triggers a console warning and may cause the browser
+ *  to deliver at a lower actual rate (~45Hz observed). Request exactly 60Hz. */
+const DEFAULT_FREQUENCY = 60;
 
 const DEG_TO_RAD = Math.PI / 180;
 
@@ -59,8 +62,11 @@ export class IMU {
         // Generic Sensor API handles
         this._accel = null;
         this._gyro = null;
-        // Latest gyro reading (accel callback writes the combined sample)
+        // Latest readings from each sensor (for cross-sensor sampling)
         this._latestGyro = { x: 0, y: 0, z: 0 };
+        this._latestAccel = { x: 0, y: 0, z: 0 };
+        // Timestamp of last pushed sample (for dedup)
+        this._lastSampleTime = 0;
 
         // DeviceMotionEvent handler
         this._motionHandler = null;
@@ -292,41 +298,58 @@ export class IMU {
         }
 
         try {
-            this._accel = new Accelerometer({ frequency, referenceFrame: 'device' });
-            this._gyro = new Gyroscope({ frequency, referenceFrame: 'device' });
+            // Chrome caps at 60Hz. Request exactly 60Hz to avoid warning.
+            const freq = Math.min(frequency, 60);
+            this._accel = new Accelerometer({ frequency: freq, referenceFrame: 'device' });
+            this._gyro = new Gyroscope({ frequency: freq, referenceFrame: 'device' });
 
-            // Gyroscope: just cache latest values (it fires at the same rate)
-            this._gyro.addEventListener('reading', () => {
-                this._latestGyro.x = this._gyro.x;
-                this._latestGyro.y = this._gyro.y;
-                this._latestGyro.z = this._gyro.z;
-            });
+            // Both sensors drive sampling independently for maximum rate.
+            // Each callback pushes a combined sample using its own fresh reading
+            // + the latest value from the other sensor.
+            // Dedup: skip if < 8ms since last sample (~125Hz max, prevents
+            // near-simultaneous events from both sensors creating duplicates).
+            const DEDUP_S = 0.008;
 
-            // Accelerometer: write combined sample on each reading
             this._accel.addEventListener('reading', () => {
                 if (!this.running) return;
+                // Store latest accel
+                this._latestAccel.x = this._accel.x;
+                this._latestAccel.y = this._accel.y;
+                this._latestAccel.z = this._accel.z;
 
-                const timestamp = performance.now() / 1000.0;
+                const t = performance.now() / 1000.0;
+                if (t - this._lastSampleTime < DEDUP_S) return;
+                if (t <= this._lastGenericTimestamp) return;
+                this._lastGenericTimestamp = t;
+                this._lastSampleTime = t;
 
-                // Monotonicity guard: reject out-of-order or duplicate timestamps
-                // (prevents negative dt in VIO pre-integration → divergence)
-                if (timestamp <= this._lastGenericTimestamp) return;
-                this._lastGenericTimestamp = timestamp;
-
-                // Generic Sensor API Accelerometer includes gravity by default
-                // and reports in m/s^2. Gyroscope reports in rad/s.
-                // WARNING: gyro values are cached from a separate sensor and may
-                // be from a slightly different measurement instant (~10ms at 100Hz).
-                this._pushSample(
-                    timestamp,
+                this._pushSample(t,
                     this._accel.x, this._accel.y, this._accel.z,
                     this._latestGyro.x, this._latestGyro.y, this._latestGyro.z
                 );
             });
 
+            this._gyro.addEventListener('reading', () => {
+                if (!this.running) return;
+                // Store latest gyro
+                this._latestGyro.x = this._gyro.x;
+                this._latestGyro.y = this._gyro.y;
+                this._latestGyro.z = this._gyro.z;
+
+                const t = performance.now() / 1000.0;
+                if (t - this._lastSampleTime < DEDUP_S) return;
+                if (t <= this._lastGenericTimestamp) return;
+                this._lastGenericTimestamp = t;
+                this._lastSampleTime = t;
+
+                this._pushSample(t,
+                    this._latestAccel.x, this._latestAccel.y, this._latestAccel.z,
+                    this._gyro.x, this._gyro.y, this._gyro.z
+                );
+            });
+
             this._accel.addEventListener('error', (e) => {
                 console.warn('[IMU] Accelerometer error:', e.error.message);
-                // Fall back to DeviceMotionEvent
                 this._stopGenericSensor();
                 if (this.running && this._sensorType !== SensorType.DEVICE_MOTION) {
                     if (this._tryDeviceMotion()) {
@@ -522,6 +545,9 @@ export class IMU {
         this._readIdx = 0;
         this._lastMotionTimestamp = 0;
         this._lastGenericTimestamp = 0;
+        this._lastSampleTime = 0;
+        this._latestAccel = { x: 0, y: 0, z: 0 };
+        this._latestGyro = { x: 0, y: 0, z: 0 };
         this._sensorType = SensorType.NONE;
         this._currentRate = 0;
         this._gyroBias = { x: 0, y: 0, z: 0 };

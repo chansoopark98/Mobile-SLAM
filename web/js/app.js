@@ -8,11 +8,11 @@
  *   IMU buffer on each frame.
  * - This prevents IMU data loss when frames are dropped due to worker being busy.
  */
-import { VIOWrapper } from './vio-wrapper.js';
-import { Camera } from './camera.js';
-import { IMU } from './imu.js';
-import { Renderer } from './renderer.js';
-import { OrientationHandler } from './orientation.js';
+import { VIOWrapper } from './vio-wrapper.js?v=5';
+import { Camera } from './camera.js?v=5';
+import { IMU } from './imu.js?v=5';
+import { Renderer } from './renderer.js?v=5';
+import { OrientationHandler } from './orientation.js?v=5';
 
 /**
  * Mobile web VIO configuration profiles.
@@ -31,13 +31,17 @@ const VIO_CONFIGS = {
     // Tightened to ~2-3x EuRoC level, appropriate for modern mobile MEMS.
     mobile_default: {
         label: 'Mobile Default',
-        acc_n: 0.08,      // accelerometer noise density — tightened from 0.2
-                          //   Modern mobile MEMS: 0.004-0.012 m/s/√Hz raw
-                          //   Using ~2x EuRoC to account for mobile noise floor
-        acc_w: 0.002,     // accelerometer random walk — tightened from 0.004
-        gyr_n: 0.01,      // gyroscope noise density — tightened from 0.03
-                          //   Modern mobile MEMS: 0.001-0.005 rad/s/√Hz
-        gyr_w: 0.002,     // gyroscope random walk — must track mobile gyro bias drift
+        acc_n: 0.08,      // accelerometer noise density (m/s²/√Hz)
+                          //   Measured: Pixel 7 ~0.088, iPhone XR ~0.094
+                          //   Ref: Kalibr wiki recommends 10-20x inflate over datasheet
+        acc_w: 0.0004,    // accelerometer random walk — reduced from 0.002
+                          //   TUM VI BMI160: 0.0004. Previous 0.002 was 5x too high,
+                          //   causing unstable bias estimation → pre-integration divergence
+        gyr_n: 0.01,      // gyroscope noise density (rad/s/√Hz)
+                          //   Measured: Pixel 7 ~0.008, iPhone XR ~0.027
+        gyr_w: 0.0001,    // gyroscope random walk — reduced from 0.002
+                          //   TUM VI BMI160: 2e-5. Previous 0.002 was 100x too high,
+                          //   destabilizing gyro bias tracking → rotational drift
         g_norm: 9.81,
         focalLengthFactor: null,  // null → estimate from FOV (see estimateFocalLength)
         modelType: 0,  // PINHOLE
@@ -49,9 +53,9 @@ const VIO_CONFIGS = {
     mobile_highend: {
         label: 'Mobile High-end',
         acc_n: 0.05,
-        acc_w: 0.001,
+        acc_w: 0.0002,    // reduced from 0.001 (TUM VI BMI160 baseline)
         gyr_n: 0.005,
-        gyr_w: 0.001,
+        gyr_w: 0.00005,   // reduced from 0.001
         g_norm: 9.81,
         focalLengthFactor: null,  // estimate from FOV
         modelType: 0,
@@ -101,6 +105,24 @@ const IMU_FLUSH_INTERVAL_MS = 10;
 const MIN_FRAME_INTERVAL_MS = 50;
 
 /**
+ * Frame interval during VIO initialization phase (ms).
+ *
+ * VINS-Mono initialization requires:
+ *   - Sufficient IMU pre-integration quality (needs 4+ readings/frame)
+ *   - Enough parallax across the 10-frame sliding window (need 30px)
+ *   - IMU excitation (gravity vector variance > 0.25)
+ *
+ * At 45Hz IMU (typical mobile):
+ *   - 50ms interval (20fps): ~2.3 IMU/frame, 0.5s window → often fails
+ *   - 100ms interval (10fps): ~4.5 IMU/frame, 1.0s window → much better
+ *
+ * Wider window = more time for parallax. More IMU/frame = better
+ * pre-integration. Both dramatically improve initialization success rate.
+ * After initialization, we switch to MIN_FRAME_INTERVAL_MS for tracking.
+ */
+const INIT_FRAME_INTERVAL_MS = 100;
+
+/**
  * Estimate focal length from camera FOV or track settings.
  * Priority:
  *   1. MediaStreamTrack.getCapabilities().fov (if available)
@@ -129,15 +151,17 @@ function estimateFocalLength(videoTrack, width, height, configFactor) {
             // Check for explicit FOV (future-proof, not yet widely supported)
             if (settings.fieldOfView) {
                 const fovRad = settings.fieldOfView * Math.PI / 180;
-                const fx = (width / 2) / Math.tan(fovRad / 2);
-                console.log(`[VIO] Focal length from track FOV: ${settings.fieldOfView}° → fx=${fx.toFixed(1)}`);
+                const refDim = Math.max(width, height);
+                const fx = (refDim / 2) / Math.tan(fovRad / 2);
+                console.log(`[VIO] Focal length from track FOV: ${settings.fieldOfView}° (ref=${refDim}) → fx=${fx.toFixed(1)}`);
                 return { fx, method: `track FOV ${settings.fieldOfView}°` };
             }
 
             // Check zoom level - applies as multiplier to base focal length
             if (settings.zoom && settings.zoom > 1) {
                 const baseFovDeg = 75;
-                const baseFx = (width / 2) / Math.tan((baseFovDeg * Math.PI / 180) / 2);
+                const refDim = Math.max(width, height);
+                const baseFx = (refDim / 2) / Math.tan((baseFovDeg * Math.PI / 180) / 2);
                 const fx = baseFx * settings.zoom;
                 console.log(`[VIO] Focal length adjusted for zoom ${settings.zoom}x: fx=${fx.toFixed(1)}`);
                 return { fx, method: `zoom ${settings.zoom}x (base ${baseFovDeg}°)` };
@@ -159,7 +183,8 @@ function estimateFocalLength(videoTrack, width, height, configFactor) {
                 // Some devices expose focusDistance; very short min suggests ultrawide
                 if (capabilities.focusDistance && capabilities.focusDistance.min < 0.05) {
                     const ultrawideFovDeg = 100;
-                    const fx = (width / 2) / Math.tan((ultrawideFovDeg * Math.PI / 180) / 2);
+                    const refDim = Math.max(width, height);
+                    const fx = (refDim / 2) / Math.tan((ultrawideFovDeg * Math.PI / 180) / 2);
                     console.log(`[VIO] Likely ultrawide lens (focusDist min=${capabilities.focusDistance.min}m) → FOV~${ultrawideFovDeg}°, fx=${fx.toFixed(1)}`);
                     return { fx, method: `ultrawide detect ${ultrawideFovDeg}°` };
                 }
@@ -176,17 +201,44 @@ function estimateFocalLength(videoTrack, width, height, configFactor) {
         return { fx, method: `config factor ${configFactor}` };
     }
 
-    // Method 3: Default — assume typical mobile rear camera ~75° horizontal FOV
-    // Common mobile camera FOVs:
-    //   Standard: 70-80° (most common rear camera)
-    //   Wide: 100-120° (ultrawide lens)
+    // Method 3: Default — assume typical mobile rear camera ~69° horizontal FOV
+    // Measured main camera FOVs (2023-2026):
+    //   iPhone 14 main: 69°, Pixel 7: 72°, Galaxy S23: 70°
+    //   Ultrawide: 100-120° (detected by focusDistance check above)
     //   Telephoto: 35-50°
-    // Using 75° as a conservative default for the primary rear camera.
-    // fx = (width/2) / tan(75°/2) = width * 0.767
-    const defaultFovDeg = 75;
-    const fx = (width / 2) / Math.tan((defaultFovDeg * Math.PI / 180) / 2);
-    console.log(`[VIO] Focal length from default FOV ${defaultFovDeg}°: fx=${fx.toFixed(1)}`);
-    return { fx, method: `default ${defaultFovDeg}°` };
+    // Using 69° based on iPhone 14 main camera (most common baseline).
+    //
+    // IMPORTANT: The 69° FOV is the camera's WIDER field of view, which
+    // corresponds to the sensor's longer dimension (640px in landscape).
+    // In portrait mode, the output width (480px) spans a narrower FOV (~54°).
+    // The focal length in pixels is a lens property — independent of rotation.
+    // Always compute using the longer dimension to get correct fx.
+    const defaultFovDeg = 69;
+    const longerDim = Math.max(width, height);
+    const fx = (longerDim / 2) / Math.tan((defaultFovDeg * Math.PI / 180) / 2);
+    console.log(`[VIO] Focal length from default FOV ${defaultFovDeg}° (ref dim=${longerDim}): fx=${fx.toFixed(1)}`);
+    return { fx, method: `default ${defaultFovDeg}° (ref=${longerDim})` };
+}
+
+/**
+ * Validate focal length is within reasonable bounds for a phone camera.
+ * @param {number} fx - Estimated focal length in pixels
+ * @param {number} width - Image width in pixels
+ * @returns {{fx: number, valid: boolean}} Validated (or corrected) focal length
+ */
+function validateFocalLength(fx, width, height) {
+    // Typical phone camera: FOV 50°-120° → fx ranges from 0.42 to 1.2 × longer dimension
+    // Use longer dimension because fx is computed from the sensor's wider FOV.
+    const longerDim = Math.max(width, height || width);
+    const minFx = longerDim * 0.4;
+    const maxFx = longerDim * 1.5;
+    if (!Number.isFinite(fx) || fx < minFx || fx > maxFx) {
+        const fallbackFov = 69;
+        const corrected = (longerDim / 2) / Math.tan((fallbackFov * Math.PI / 180) / 2);
+        console.warn(`[VIO] Invalid focal length ${fx} (bounds: ${minFx.toFixed(0)}-${maxFx.toFixed(0)}) → fallback ${fallbackFov}° FOV: fx=${corrected.toFixed(1)}`);
+        return { fx: corrected, valid: false };
+    }
+    return { fx, valid: true };
 }
 
 class App {
@@ -227,6 +279,14 @@ class App {
         this._lastVideoTime = -1;
         // Frame rate limiting: ensure enough IMU between VIO frames
         this._lastVIOFrameTime = 0;
+
+        // VIO initialization state (for adaptive frame rate)
+        this._vioInitialized = false;
+        this._initFrameCount = 0;
+
+        // Grayscale preview canvas (debug visualization)
+        this._grayPreviewCanvas = null;
+        this._grayPreviewCtx = null;
 
         // Stored config for reconfiguration on orientation change
         this._lastConfigParams = null;
@@ -305,6 +365,15 @@ class App {
                 videoContainer.appendChild(video);
             }
 
+            // Setup grayscale preview canvas
+            this._grayPreviewCanvas = document.getElementById('gray-preview');
+            if (this._grayPreviewCanvas) {
+                this._grayPreviewCanvas.width = width;
+                this._grayPreviewCanvas.height = height;
+                this._grayPreviewCanvas.style.display = 'block';
+                this._grayPreviewCtx = this._grayPreviewCanvas.getContext('2d');
+            }
+
             // Get active config profile
             const config = VIO_CONFIGS[this.activeConfig];
 
@@ -332,7 +401,12 @@ class App {
 
             // Estimate focal length using FOV or config factor
             const videoTrack = this.camera.getVideoTrack ? this.camera.getVideoTrack() : null;
-            const { fx, method: fxMethod } = estimateFocalLength(videoTrack, width, height, config.focalLengthFactor);
+            let { fx, method: fxMethod } = estimateFocalLength(videoTrack, width, height, config.focalLengthFactor);
+            const fxValidation = validateFocalLength(fx, width, height);
+            if (!fxValidation.valid) {
+                fx = fxValidation.fx;
+                fxMethod += ' (corrected)';
+            }
             const fy = fx;
 
             // Camera-IMU translation offset in VIO body frame
@@ -394,7 +468,7 @@ class App {
             if (IMU.isAvailable()) {
                 const granted = await this.imu.requestPermission();
                 if (granted) {
-                    this.imu.start(100);  // Request 100Hz
+                    this.imu.start(60);  // Chrome caps Generic Sensor API at 60Hz
                     console.log(`[VIO] IMU started: sensor=${this.imu.getSensorType()}`);
 
                     // Calibrate gyroscope bias while device is stationary.
@@ -539,10 +613,12 @@ class App {
         //
         // Rate limiting ensures enough IMU readings accumulate between
         // VIO frames (at 60Hz IMU, 20fps VIO → ~3 readings per frame).
+        // Adaptive frame interval: slower during init for better IMU density
+        const frameInterval = this._vioInitialized ? MIN_FRAME_INTERVAL_MS : INIT_FRAME_INTERVAL_MS;
         const video = this.camera.getVideoElement();
         const videoTime = video ? video.currentTime : -1;
         const isNewFrame = videoTime > 0 && videoTime !== this._lastVideoTime;
-        const enoughTime = (now - this._lastVIOFrameTime) >= MIN_FRAME_INTERVAL_MS;
+        const enoughTime = (now - this._lastVIOFrameTime) >= frameInterval;
 
         if (isNewFrame && enoughTime) {
             this._lastVideoTime = videoTime;
@@ -551,6 +627,28 @@ class App {
             const frameTimestamp = now / 1000.0;
             const gray = this.camera.captureGrayscale();
             if (gray) {
+                // Draw grayscale preview (debug: verify capture quality + rotation)
+                if (this._grayPreviewCtx) {
+                    const w = this.camera.width;
+                    const h = this.camera.height;
+                    const imgData = this._grayPreviewCtx.createImageData(w, h);
+                    const d = imgData.data;
+                    for (let i = 0, j = 0; i < gray.length; i++, j += 4) {
+                        d[j] = d[j + 1] = d[j + 2] = gray[i];
+                        d[j + 3] = 255;
+                    }
+                    this._grayPreviewCtx.putImageData(imgData, 0, 0);
+
+                    // Draw version + rotation mode label for cache verification
+                    const mode = this.camera.getRotateMode();
+                    const label = `v5 ${mode} ${w}x${h}`;
+                    this._grayPreviewCtx.fillStyle = 'rgba(0,0,0,0.6)';
+                    this._grayPreviewCtx.fillRect(0, 0, w, 18);
+                    this._grayPreviewCtx.fillStyle = '#0f8';
+                    this._grayPreviewCtx.font = '14px monospace';
+                    this._grayPreviewCtx.fillText(label, 4, 14);
+                }
+
                 // Flush all pending IMU right before the frame so the worker
                 // has the most up-to-date IMU data for pre-integration.
                 this._flushAndSendIMU();
@@ -574,16 +672,33 @@ class App {
                 this.frameEl.textContent = this.totalFrameCount;
             }
 
+            // Track VIO initialization state for adaptive frame rate
+            if (result.initialized && !this._vioInitialized) {
+                this._vioInitialized = true;
+                this._initFrameCount = 0;
+                console.log(`[VIO] ✓ Initialized! Switching to ${MIN_FRAME_INTERVAL_MS}ms frame interval (tracking mode)`);
+            } else if (!result.initialized && this._vioInitialized) {
+                // Lost tracking, revert to init mode
+                this._vioInitialized = false;
+                this._initFrameCount = 0;
+                console.log(`[VIO] Tracking lost — reverting to ${INIT_FRAME_INTERVAL_MS}ms frame interval (init mode)`);
+            }
+
             // Update status based on status code
-            const statusMessages = {
-                0: 'Not configured',
-                1: 'Initializing VIO...',
-                2: 'Tracking',
-                3: 'Lost - recovering...',
-                4: 'Cooldown - stabilizing...',
-            };
-            const statusMsg = statusMessages[result.statusCode] ||
-                (result.initialized ? 'Tracking' : 'Initializing VIO...');
+            let statusMsg;
+            if (result.statusCode === 1 || (!result.initialized && result.statusCode !== 0)) {
+                this._initFrameCount++;
+                statusMsg = `Initializing VIO... (${this._initFrameCount} frames, move phone slowly)`;
+            } else {
+                const statusMessages = {
+                    0: 'Not configured',
+                    2: 'Tracking',
+                    3: 'Lost - recovering...',
+                    4: 'Cooldown - stabilizing...',
+                };
+                statusMsg = statusMessages[result.statusCode] ||
+                    (result.initialized ? 'Tracking' : 'Initializing VIO...');
+            }
             this.updateStatus(statusMsg);
 
             // Update 3D rendering
@@ -694,6 +809,8 @@ class App {
         this.imuLogCount = 0;
         this._lastVideoTime = -1;
         this._lastVIOFrameTime = 0;
+        this._vioInitialized = false;
+        this._initFrameCount = 0;
         console.log(`[VIO] Reconfigured for ${info.type}, R_ic:`, info.r_ic);
     }
 
@@ -707,6 +824,8 @@ class App {
         this.imuLogCount = 0;
         this._lastVideoTime = -1;
         this._lastVIOFrameTime = 0;
+        this._vioInitialized = false;
+        this._initFrameCount = 0;
         this.updateStatus('VIO reset');
     }
 

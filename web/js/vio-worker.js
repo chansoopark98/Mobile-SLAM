@@ -33,10 +33,13 @@ let processing = false;
 // Last successfully processed frame timestamp (for stale frame detection)
 let lastFrameTimestamp = 0;
 
-/** Max age (seconds) for IMU readings relative to frame timestamp */
-const MAX_IMU_AGE_S = 3.0;
+/** Max age (seconds) for IMU readings relative to frame timestamp.
+ *  Reduced from 3.0 to 0.5: 3s was too loose — browser GC/thermal stalls
+ *  could accumulate massive IMU batches with stale data, causing
+ *  pre-integration to span unreasonable time intervals → divergence. */
+const MAX_IMU_AGE_S = 0.5;
 /** Max gap (seconds) between consecutive frames before VIO reset */
-const MAX_FRAME_GAP_S = 2.0;
+const MAX_FRAME_GAP_S = 1.5;
 
 // ── Worker-side IMU accumulation ring buffer ──
 const IMU_FIELDS = 7;
@@ -215,14 +218,26 @@ function processFrame(gray, timestamp) {
     // Drain accumulated IMU readings into WASM heap (discards stale data)
     const imuCount = drainIMUToWasm(timestamp);
 
-    // Diagnostic: log IMU density per VIO frame (first 20 frames)
+    // Diagnostic: log IMU density per VIO frame
     if (typeof processFrame._logCount === 'undefined') processFrame._logCount = 0;
+    if (typeof processFrame._lastLogTime === 'undefined') processFrame._lastLogTime = 0;
     if (processFrame._logCount < 20) {
         console.log(`[VIO Worker] Frame #${processFrame._logCount}: imuCount=${imuCount}, t=${timestamp.toFixed(3)}`);
         if (imuCount < 2) {
             console.warn(`[VIO Worker] Low IMU density: ${imuCount} readings — pre-integration may be unreliable`);
         }
         processFrame._logCount++;
+    } else if (timestamp - processFrame._lastLogTime > 5.0) {
+        // Periodic log every 5s during init for ongoing diagnostics
+        console.log(`[VIO Worker] Status: imuCount=${imuCount}, initialized=${engine.isInitialized()}, features=${engine.getFeaturePointCount()}`);
+        processFrame._lastLogTime = timestamp;
+    }
+
+    // Guard: skip frame if no IMU data available (pre-integration impossible).
+    // This commonly happens on the very first frame before IMU pipeline starts.
+    if (imuCount === 0) {
+        return { pose: null, initialized: false, featureCount: 0,
+                 statusCode: 1, mapPoints: null, mapPointCount: 0 };
     }
 
     // Process frame

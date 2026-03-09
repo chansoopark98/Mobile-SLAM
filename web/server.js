@@ -87,10 +87,13 @@ function handleRequest(req, res) {
         });
         return;
     }
+    // Strip query string before resolving file path (allows ?v=4 cache busting)
+    const urlWithoutQuery = req.url.split('?')[0];
+
     // Decode percent-encoding; reject malformed URLs
     let reqPath;
     try {
-        reqPath = decodeURIComponent(req.url);
+        reqPath = decodeURIComponent(urlWithoutQuery);
     } catch (e) {
         res.writeHead(400);
         res.end('Bad Request');
@@ -148,6 +151,15 @@ function handleRequest(req, res) {
         // SharedArrayBuffer not needed since WASM is single-threaded.
         res.setHeader('Cross-Origin-Opener-Policy', 'same-origin');
         res.setHeader('Cross-Origin-Embedder-Policy', 'credentialless');
+
+        // Disable caching for development (JS/HTML/CSS/WASM)
+        // This prevents stale cached code from causing hard-to-debug issues
+        // on mobile browsers that aggressively cache resources.
+        if (['.js', '.mjs', '.html', '.css', '.wasm'].includes(ext)) {
+            res.setHeader('Cache-Control', 'no-store, no-cache, must-revalidate');
+            res.setHeader('Pragma', 'no-cache');
+            res.setHeader('Expires', '0');
+        }
 
         res.writeHead(200, { 'Content-Type': contentType });
         res.end(data);
