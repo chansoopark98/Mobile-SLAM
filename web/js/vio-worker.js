@@ -378,6 +378,17 @@ self.onmessage = async function(e) {
             break;
         }
 
+        case 'setFThreshold': {
+            try {
+                const { f_threshold } = data;
+                engine.setFThreshold(f_threshold);
+                self.postMessage({ type: 'setFThreshold', success: true });
+            } catch (err) {
+                self.postMessage({ type: 'setFThreshold', success: false, error: err.message });
+            }
+            break;
+        }
+
         case 'imu': {
             // Independent IMU delivery — accumulate in worker ring buffer
             if (configured && data.imuData && data.count > 0) {

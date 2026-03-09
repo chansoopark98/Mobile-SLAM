@@ -2,19 +2,25 @@
  * Camera capture module using navigator.mediaDevices.getUserMedia.
  * Captures frames from the environment-facing camera and extracts grayscale data.
  *
- * Handles video frame orientation:
- * Mobile camera sensors are physically landscape (e.g., 640x480).
- * Modern browsers (Chrome 93+, Safari 15+) auto-rotate canvas.drawImage()
- * content to match the display orientation. This means drawImage() output
- * is already portrait-correct — no manual rotation is needed.
+ * v7: Robust rotation handling for VINS-Mono coordinate system.
  *
- * For older browsers that do NOT auto-rotate drawImage, use URL override:
- *   ?rotate=ccw  — for Android rear cameras (sensor orientation 90°)
- *   ?rotate=cw   — for some Samsung/front cameras (sensor orientation 270°)
- *   ?rotate=none  — explicit no rotation (default)
+ * The grayscale image MUST be portrait-oriented for the VIO engine:
+ *   X_c = right in image (phone right edge)
+ *   Y_c = down in image (phone bottom edge)
+ *   Z_c = forward (into scene)
+ *
+ * Rotation logic:
+ *   - If videoWidth < videoHeight: browser already auto-rotated dimensions
+ *     → drawImage also auto-rotates → no manual rotation needed ('none')
+ *   - If videoWidth > videoHeight: browser reports raw sensor dims
+ *     → drawImage does NOT auto-rotate → apply CCW 90° rotation
+ *   - URL ?rotate=none|cw|ccw overrides all detection
+ *
+ * Output is always portrait: width < height (e.g., 480x640, 3:4 aspect ratio).
+ * fx, fy, cx, cy are computed for these portrait dimensions.
  */
 
-const CAMERA_VERSION = 'v5';
+const CAMERA_VERSION = 'v7';
 
 export class Camera {
     constructor() {
@@ -28,40 +34,30 @@ export class Camera {
 
         // Rotation mode: 'none' | 'cw' | 'ccw'
         this._rotateMode = 'none';
-        // Native (un-rotated) video dimensions reported by videoWidth/videoHeight
+        // Native video dimensions reported by videoWidth/videoHeight
         this._nativeWidth = 0;
         this._nativeHeight = 0;
-        // Whether output dims are swapped from native (for portrait output from landscape sensor)
+        // Whether output dims are swapped from native
         this._dimsSwapped = false;
     }
 
     /**
      * Initialize camera capture.
-     * @param {number} targetWidth - Desired capture width
-     * @param {number} targetHeight - Desired capture height
-     * @param {boolean} [expectPortrait=null] - If true, expect portrait output.
+     * Output is always portrait-oriented to match the phone's screen and
+     * VINS-Mono camera coordinate convention.
+     *
+     * @param {number} targetWidth - Desired capture width (larger dim)
+     * @param {number} targetHeight - Desired capture height (smaller dim)
      * @returns {Promise<{width: number, height: number, rotated: boolean}>}
      */
-    async initialize(targetWidth = 640, targetHeight = 480, expectPortrait = null) {
-        console.log(`[Camera] ${CAMERA_VERSION} — browser auto-rotate default`);
+    async initialize(targetWidth = 640, targetHeight = 480) {
+        console.log(`[Camera] ${CAMERA_VERSION} — VINS-Mono portrait capture`);
 
-        // Infer expected orientation if not specified
-        if (expectPortrait === null) {
-            expectPortrait = window.innerHeight > window.innerWidth;
-        }
+        // Request landscape dimensions (camera sensor is naturally landscape)
+        const reqW = Math.max(targetWidth, targetHeight);
+        const reqH = Math.min(targetWidth, targetHeight);
 
-        // Request dimensions matching the expected orientation.
-        let reqW = targetWidth;
-        let reqH = targetHeight;
-        if (expectPortrait && targetWidth > targetHeight) {
-            reqW = targetHeight;
-            reqH = targetWidth;
-        } else if (!expectPortrait && targetHeight > targetWidth) {
-            reqW = targetHeight;
-            reqH = targetWidth;
-        }
-
-        // Force rear camera. Try exact first, fall back to ideal.
+        // Force rear camera
         let constraints = {
             video: {
                 facingMode: { exact: 'environment' },
@@ -90,7 +86,6 @@ export class Camera {
             };
         });
 
-        // Wait for actual frame data to be available
         while (this.video.readyState < 2) {
             await new Promise(r => setTimeout(r, 50));
         }
@@ -98,7 +93,7 @@ export class Camera {
         this._nativeWidth = this.video.videoWidth;
         this._nativeHeight = this.video.videoHeight;
 
-        // Log camera track info for diagnostics
+        // Log camera track info
         const activeTrack = this.stream.getVideoTracks()[0];
         if (activeTrack) {
             const settings = activeTrack.getSettings();
@@ -106,60 +101,51 @@ export class Camera {
             console.log(`[Camera] ${CAMERA_VERSION} facingMode: ${this._facingMode}`);
             console.log(`[Camera] ${CAMERA_VERSION} track settings: ${settings.width}x${settings.height}`);
             console.log(`[Camera] ${CAMERA_VERSION} videoWidth/Height: ${this._nativeWidth}x${this._nativeHeight}`);
-            if (this._facingMode !== 'environment' && this._facingMode !== 'unknown') {
-                console.warn(`[Camera] WARNING: Not using rear camera (facingMode=${this._facingMode})`);
-            }
         }
 
-        // Determine if native dimensions match expected orientation
-        const nativePortrait = this._nativeHeight > this._nativeWidth;
-        const needsSwap = (expectPortrait !== nativePortrait);
+        // Determine rotation mode
+        const nativeIsLandscape = this._nativeWidth > this._nativeHeight;
 
-        // Check URL override: ?rotate=none|cw|ccw
+        // URL override takes highest priority
         const urlRotate = new URLSearchParams(window.location.search).get('rotate');
         if (urlRotate && ['none', 'cw', 'ccw'].includes(urlRotate)) {
             this._rotateMode = urlRotate;
             console.log(`[Camera] ${CAMERA_VERSION} Rotation override from URL: ${urlRotate}`);
-        } else if (!needsSwap) {
-            // Native dimensions already match expected orientation.
-            this._rotateMode = 'none';
-            console.log(`[Camera] ${CAMERA_VERSION} Native dims match expected → no rotation`);
+        } else if (nativeIsLandscape) {
+            // Browser reports raw sensor dimensions (e.g., 640x480).
+            // This means drawImage does NOT auto-rotate content.
+            // Apply CCW 90° to produce portrait output matching the phone's screen.
+            // (Standard Android rear camera has sensor orientation 90°)
+            this._rotateMode = 'ccw';
+            console.log(`[Camera] ${CAMERA_VERSION} Sensor is landscape ${this._nativeWidth}x${this._nativeHeight} → applying CCW rotation`);
         } else {
-            // Native is landscape but we expect portrait (or vice versa).
-            //
-            // Modern Chrome Android (93+) and Safari (15+) auto-rotate
-            // canvas.drawImage(video) content to match the display orientation.
-            // The video element's <video> display is auto-rotated by the compositor,
-            // AND drawImage() output is also auto-rotated.
-            //
-            // So we just need portrait-sized canvas and draw without rotation.
-            // The browser handles the rotation internally.
-            //
-            // If the preview looks DISTORTED (squished, not rotated):
-            //   Your browser does NOT auto-rotate drawImage.
-            //   Use ?rotate=ccw (most Android) or ?rotate=cw (some Samsung).
+            // Browser reports portrait dimensions (e.g., 480x640).
+            // This means browser auto-rotated both videoWidth AND drawImage content.
+            // No manual rotation needed.
             this._rotateMode = 'none';
-            console.log(`[Camera] ${CAMERA_VERSION} Native ${this._nativeWidth}x${this._nativeHeight} ` +
-                `doesn't match expected ${expectPortrait ? 'portrait' : 'landscape'}`);
-            console.log(`[Camera] ${CAMERA_VERSION} Using browser auto-rotation (no manual rotation)`);
-            console.log(`[Camera] ${CAMERA_VERSION} If preview looks distorted, try ?rotate=ccw or ?rotate=cw`);
+            console.log(`[Camera] ${CAMERA_VERSION} Browser auto-rotated to portrait ${this._nativeWidth}x${this._nativeHeight} → no rotation needed`);
         }
 
-        // Set output dimensions
-        // CW/CCW: always swap (manual rotation handles orientation)
-        // none with needsSwap: swap dims, rely on browser auto-rotation
-        // none without needsSwap: use native dims
-        if (this._rotateMode === 'cw' || this._rotateMode === 'ccw' || needsSwap) {
+        // Set output dimensions — always portrait
+        if (this._rotateMode === 'cw' || this._rotateMode === 'ccw') {
+            // Manual rotation: swap native dims for portrait output
+            this.width = this._nativeHeight;   // e.g., 480
+            this.height = this._nativeWidth;   // e.g., 640
+            this._dimsSwapped = true;
+        } else if (nativeIsLandscape) {
+            // 'none' mode with landscape native (URL override ?rotate=none):
+            // Still swap dims for portrait canvas, rely on browser auto-rotation
             this.width = this._nativeHeight;
             this.height = this._nativeWidth;
             this._dimsSwapped = true;
         } else {
+            // Native is already portrait
             this.width = this._nativeWidth;
             this.height = this._nativeHeight;
             this._dimsSwapped = false;
         }
 
-        console.log(`[Camera] ${CAMERA_VERSION} Output: ${this.width}x${this.height}, ` +
+        console.log(`[Camera] ${CAMERA_VERSION} Output: ${this.width}x${this.height} (${this.width < this.height ? 'portrait' : 'landscape'}), ` +
             `Rotation: ${this._rotateMode}, DimsSwapped: ${this._dimsSwapped}`);
 
         // Create offscreen canvas matching output dimensions
@@ -167,24 +153,19 @@ export class Camera {
         this.canvas.width = this.width;
         this.canvas.height = this.height;
         this.ctx = this.canvas.getContext('2d', { willReadFrequently: true });
-        this.running = true;
 
+        this.running = true;
         return { width: this.width, height: this.height, rotated: this._rotateMode !== 'none' };
     }
 
     /**
-     * Capture a grayscale frame.
-     * Applies rotation based on mode to ensure output matches screen orientation.
+     * Capture a grayscale frame in portrait orientation.
      *
-     * Rotation transforms (for landscape 640x480 → portrait 480x640):
-     *   CW:  translate(outW, 0) + rotate(+PI/2)
-     *        Correct for sensor orientation 270° (scene top → sensor left)
-     *   CCW: translate(0, outH) + rotate(-PI/2)
-     *        Correct for sensor orientation 90° (scene top → sensor right)
-     *   none (with swapped dims): drawImage scales to portrait canvas
-     *        Correct when browser auto-rotates drawImage content
+     * CCW rotation transform (landscape 640x480 → portrait 480x640):
+     *   translate(0, outH) + rotate(-PI/2) + drawImage(video, 0, 0, nW, nH)
+     *   Maps sensor pixels so that scene-up → image-up in portrait canvas.
      *
-     * @returns {Uint8Array|null} Grayscale pixel data (width * height bytes)
+     * @returns {Uint8Array|null} Grayscale pixel data (width * height bytes), portrait-oriented
      */
     captureGrayscale() {
         if (!this.running || !this.video || this.video.readyState < 2) {
@@ -204,9 +185,7 @@ export class Camera {
             this.ctx.drawImage(this.video, 0, 0, this._nativeWidth, this._nativeHeight);
             this.ctx.restore();
         } else {
-            // No manual rotation — draw at output dimensions.
-            // If dims are swapped (portrait from landscape sensor), the browser's
-            // auto-rotation handles orientation. drawImage scales content to fit.
+            // No manual rotation — browser handles orientation
             this.ctx.drawImage(this.video, 0, 0, this.width, this.height);
         }
 
@@ -214,7 +193,6 @@ export class Camera {
         const rgba = imageData.data;
         const gray = new Uint8Array(this.width * this.height);
 
-        // RGBA to grayscale: Y = 0.299R + 0.587G + 0.114B (BT.601 integer approx)
         for (let i = 0, j = 0; i < rgba.length; i += 4, j++) {
             gray[j] = (rgba[i] * 77 + rgba[i + 1] * 150 + rgba[i + 2] * 29) >> 8;
         }
@@ -227,7 +205,7 @@ export class Camera {
         return this._rotateMode !== 'none';
     }
 
-    /** Get rotation mode: 'none' | 'cw' | 'ccw' */
+    /** Get rotation mode */
     getRotateMode() {
         return this._rotateMode;
     }
@@ -242,7 +220,7 @@ export class Camera {
         return this.video;
     }
 
-    /** Get the active video track for settings/capabilities queries */
+    /** Get the active video track */
     getVideoTrack() {
         if (this.stream) {
             const tracks = this.stream.getVideoTracks();

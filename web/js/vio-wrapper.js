@@ -16,10 +16,11 @@ export class VIOWrapper {
         this._latestResult = null;
         this._latestMapPoints = null;
 
-        // Pending promises for init/configure/setMobileParams
+        // Pending promises for init/configure/setMobileParams/setFThreshold
         this._pendingInit = null;
         this._pendingConfigure = null;
         this._pendingSetMobileParams = null;
+        this._pendingSetFThreshold = null;
 
         // WASM C++ stdout/stderr log callback: (level, msg) => {}
         this.onWasmLog = null;
@@ -80,6 +81,21 @@ export class VIOWrapper {
             this.worker.postMessage({
                 type: 'setMobileParams',
                 data: { solver_time: solverTime, num_iterations: numIterations, max_features: maxFeatures },
+            });
+        });
+    }
+
+    /**
+     * Set fundamental matrix RANSAC threshold for feature rejection.
+     * @param {number} fThreshold - Threshold in pixels (default: 5.0)
+     * @returns {Promise<boolean>}
+     */
+    async setFThreshold(fThreshold) {
+        return new Promise((resolve, reject) => {
+            this._pendingSetFThreshold = { resolve, reject };
+            this.worker.postMessage({
+                type: 'setFThreshold',
+                data: { f_threshold: fThreshold },
             });
         });
     }
@@ -251,6 +267,13 @@ export class VIOWrapper {
                 if (this._pendingSetMobileParams) {
                     this._pendingSetMobileParams.resolve(msg.success);
                     this._pendingSetMobileParams = null;
+                }
+                break;
+
+            case 'setFThreshold':
+                if (this._pendingSetFThreshold) {
+                    this._pendingSetFThreshold.resolve(msg.success);
+                    this._pendingSetFThreshold = null;
                 }
                 break;
 

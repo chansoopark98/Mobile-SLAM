@@ -73,6 +73,10 @@ public:
     // Set mobile-optimized solver parameters (call after configure).
     void setMobileParams(double solver_time, int num_iterations, int max_features);
 
+    // Set fundamental matrix RANSAC threshold for feature rejection.
+    // Higher values accommodate unmodeled lens distortion (mobile phones).
+    void setFThreshold(double f_threshold);
+
     // Get current VIO status code.
     int getStatusCode() const;
 

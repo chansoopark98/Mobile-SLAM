@@ -8,11 +8,29 @@
  *   IMU buffer on each frame.
  * - This prevents IMU data loss when frames are dropped due to worker being busy.
  */
-import { VIOWrapper } from './vio-wrapper.js?v=5';
-import { Camera } from './camera.js?v=5';
-import { IMU } from './imu.js?v=5';
-import { Renderer } from './renderer.js?v=5';
-import { OrientationHandler } from './orientation.js?v=5';
+import { VIOWrapper } from './vio-wrapper.js?v=8';
+import { Camera } from './camera.js?v=8';
+import { IMU } from './imu.js?v=8';
+import { Renderer } from './renderer.js?v=8';
+import { OrientationHandler } from './orientation.js?v=8';
+
+/**
+ * URL parameter overrides for rapid mobile testing.
+ * Usage: https://host:port/?fx=466&config=mobile_highend&fth=5.0&rotate=ccw
+ *
+ *   ?fx=NNN        — Override focal length (pixels). Bypasses FOV estimation.
+ *   ?config=NAME   — Config profile: mobile_default, mobile_highend, euroc, tum_vi
+ *   ?fth=N.N       — Override fundamental matrix RANSAC threshold (default: 5.0)
+ *   ?rotate=none|cw|ccw — Force rotation mode (overrides auto-detection)
+ */
+const URL_PARAMS = new URLSearchParams(window.location.search);
+
+/** Send a log message to the server for remote debugging on mobile */
+function remoteLog(level, msg) {
+    try {
+        navigator.sendBeacon('/log', JSON.stringify({ level, msg }));
+    } catch (_) { /* ignore */ }
+}
 
 /**
  * Mobile web VIO configuration profiles.
@@ -143,6 +161,17 @@ const INIT_FRAME_INTERVAL_MS = 100;
  * @returns {{fx: number, method: string}} Estimated focal length and estimation method
  */
 function estimateFocalLength(videoTrack, width, height, configFactor) {
+    // Method 0: URL override (?fx=NNN) — highest priority for rapid testing
+    const urlFx = URL_PARAMS.get('fx');
+    if (urlFx) {
+        const fx = parseFloat(urlFx);
+        if (Number.isFinite(fx) && fx > 50 && fx < 2000) {
+            console.log(`[VIO] ★ Focal length from URL override: fx=${fx}`);
+            return { fx, method: `URL override ?fx=${urlFx}` };
+        }
+        console.warn(`[VIO] Invalid URL fx=${urlFx}, ignoring`);
+    }
+
     // Method 1: Try to get FOV from MediaStreamTrack
     if (videoTrack) {
         try {
@@ -256,8 +285,12 @@ class App {
         this.fps = 0;
         this.imuLogCount = 0;
 
-        // Active config profile
-        this.activeConfig = 'mobile_default';
+        // Active config profile (can be overridden with ?config=NAME)
+        this.activeConfig = URL_PARAMS.get('config') || 'mobile_default';
+        if (!VIO_CONFIGS[this.activeConfig]) {
+            console.warn(`[VIO] Unknown config '${this.activeConfig}', falling back to mobile_default`);
+            this.activeConfig = 'mobile_default';
+        }
 
         // UI elements
         this.statusEl = null;
@@ -350,12 +383,12 @@ class App {
             // Try to lock portrait orientation (simplest for VIO)
             await this.orientation.tryLockPortrait();
             const orientationType = this.orientation.getType();
-            const isPortrait = orientationType.startsWith('portrait');
 
-            // Initialize camera with orientation hint — camera module will
-            // auto-rotate the frame if the device gives landscape pixels in portrait mode.
-            const { width, height, rotated } = await this.camera.initialize(640, 480, isPortrait);
-            this.updateStatus(`Camera: ${width}x${height}${rotated ? ' (rotated)' : ''}`);
+            // Initialize camera — requests 640x480 from sensor, outputs portrait
+            // (480x640) with actual pixel rotation if needed (camera.js v8).
+            // VIO always receives portrait-oriented grayscale data.
+            const { width, height } = await this.camera.initialize(640, 480);
+            this.updateStatus(`Camera: ${width}x${height}`);
 
             // Display video feed
             const videoContainer = document.getElementById('video-container');
@@ -366,6 +399,8 @@ class App {
             }
 
             // Setup grayscale preview canvas
+            // Camera v8 always outputs portrait-oriented data (e.g., 480x640).
+            // No CSS rotation needed — pixel data matches RGB video display.
             this._grayPreviewCanvas = document.getElementById('gray-preview');
             if (this._grayPreviewCanvas) {
                 this._grayPreviewCanvas.width = width;
@@ -378,11 +413,7 @@ class App {
             const config = VIO_CONFIGS[this.activeConfig];
 
             // Get orientation-aware camera-IMU extrinsic rotation (R_ic).
-            // IMU frame (W3C DeviceMotion): fixed to device body
-            //   X_d = right edge, Y_d = top edge, Z_d = out of screen
-            // Camera frame (OpenCV): rotates with screen orientation
-            //   X_c = right in image, Y_c = down in image, Z_c = forward
-            // R_ic transforms camera→IMU: v_imu = R_ic * v_cam
+            // Camera v8 always outputs portrait-oriented image, so use portrait R_ic.
             const r_ic = this.orientation.getRIC();
 
             // Log coordinate system configuration
@@ -390,7 +421,7 @@ class App {
             console.log('[VIO] ═══════ Configuration Summary ═══════');
             console.log(`[VIO] Screen orientation: ${orientationType}`);
             console.log(`[VIO] Camera native: ${video.videoWidth}x${video.videoHeight}`);
-            console.log(`[VIO] Camera output: ${width}x${height} (rotated=${rotated})`);
+            console.log(`[VIO] Camera output: ${width}x${height} (rotate=${this.camera.getRotateMode()})`);
             console.log(`[VIO] Image orientation: ${width > height ? 'LANDSCAPE' : 'PORTRAIT'}`);
             console.log(`[VIO] Config profile: ${this.activeConfig} (${config.label})`);
             console.log(`[VIO] R_ic: [${r_ic.map(v => v.toFixed(1)).join(', ')}]`);
@@ -456,13 +487,32 @@ class App {
                 );
             }
 
+            // Apply f_threshold override from URL (?fth=N.N)
+            const urlFth = URL_PARAMS.get('fth');
+            if (urlFth) {
+                const fth = parseFloat(urlFth);
+                if (Number.isFinite(fth) && fth > 0 && fth < 100) {
+                    await this.vio.setFThreshold(fth);
+                    console.log(`[VIO] f_threshold overridden to ${fth} via URL`);
+                }
+            }
+
             console.log(`[VIO] ═══════ VIO Engine Configured ═══════`);
-            console.log(`[VIO]   Image: ${width}x${height}`);
-            console.log(`[VIO]   Focal: fx=${fx.toFixed(1)}, fy=${fy.toFixed(1)} (${fxMethod})`);
+            console.log(`[VIO]   Image: ${width}x${height} (native: ${video.videoWidth}x${video.videoHeight})`);
+            console.log(`[VIO]   ★ Focal: fx=${fx.toFixed(1)}, fy=${fy.toFixed(1)} (${fxMethod})`);
+            console.log(`[VIO]   ★ fx/width=${(fx/width).toFixed(3)}, fx/max(w,h)=${(fx/Math.max(width,height)).toFixed(3)}`);
             console.log(`[VIO]   Principal: cx=${(width/2).toFixed(1)}, cy=${(height/2).toFixed(1)}`);
+            console.log(`[VIO]   hFOV=${(2*Math.atan(width/(2*fx))*180/Math.PI).toFixed(1)}°, vFOV=${(2*Math.atan(height/(2*fx))*180/Math.PI).toFixed(1)}°`);
             console.log(`[VIO]   t_ic: [${t_ic}]`);
             console.log(`[VIO]   IMU noise: acc_n=${config.acc_n}, acc_w=${config.acc_w}, gyr_n=${config.gyr_n}, gyr_w=${config.gyr_w}`);
             console.log(`[VIO]   Solver: time=${config.solver_time}s, iter=${config.num_iterations}, features=${config.max_features}`);
+            console.log(`[VIO]   Rotation: ${this.camera.getRotateMode()}, DimsSwapped: ${this.camera.isDimsSwapped()}`);
+            console.log(`[VIO]   URL overrides: fx=${URL_PARAMS.get('fx')||'(none)'}, config=${URL_PARAMS.get('config')||'(none)'}, fth=${URL_PARAMS.get('fth')||'(none)'}, rotate=${URL_PARAMS.get('rotate')||'(auto)'}`);
+
+            // Remote log key params for mobile debugging
+            remoteLog('info', `VIO configured: ${width}x${height} fx=${fx.toFixed(1)} (${fxMethod}) ` +
+                `hFOV=${(2*Math.atan(width/(2*fx))*180/Math.PI).toFixed(1)}° ` +
+                `profile=${this.activeConfig} rotate=${this.camera.getRotateMode()}`);
 
             // Request IMU permission and start
             if (IMU.isAvailable()) {
@@ -641,7 +691,7 @@ class App {
 
                     // Draw version + rotation mode label for cache verification
                     const mode = this.camera.getRotateMode();
-                    const label = `v5 ${mode} ${w}x${h}`;
+                    const label = `v8 ${mode} ${w}x${h}`;
                     this._grayPreviewCtx.fillStyle = 'rgba(0,0,0,0.6)';
                     this._grayPreviewCtx.fillRect(0, 0, w, 18);
                     this._grayPreviewCtx.fillStyle = '#0f8';

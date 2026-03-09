@@ -143,6 +143,7 @@ void FeatureTracker::detectAndTrack(const cv::Mat& _img, double _cur_time) {
 
 void FeatureTracker::rejectWithFundamentalMatrix() {
     if (next_pts.size() >= 8) {
+        const int before_count = static_cast<int>(next_pts.size());
         vector<cv::Point2f> undistorted_cur_pts(cur_pts.size()), undistorted_next_pts(next_pts.size());
         for (unsigned int i = 0; i < cur_pts.size(); i++) {
             Eigen::Vector3d tmp_p;
@@ -160,6 +161,19 @@ void FeatureTracker::rejectWithFundamentalMatrix() {
         vector<uchar> status;
         cv::findFundamentalMat(undistorted_cur_pts, undistorted_next_pts, cv::FM_RANSAC,
                                g_config.feature_tracker.f_threshold, 0.99, status);
+        int inlier_count = 0;
+        for (const auto& s : status) { if (s) inlier_count++; }
+        const int rejected = before_count - inlier_count;
+
+        // Log when >30% features rejected (indicates tracking stress)
+        if (rejected > before_count * 3 / 10) {
+            std::cout << "[FeatureTracker] F-matrix: " << before_count
+                      << " → " << inlier_count
+                      << " (rejected " << rejected
+                      << ", threshold=" << g_config.feature_tracker.f_threshold << ")"
+                      << std::endl;
+        }
+
         filterByStatus(prev_pts, status);
         filterByStatus(cur_pts, status);
         filterByStatus(next_pts, status);

@@ -36,8 +36,12 @@
  *
  * @type {Object<string, number[]>}
  */
-const R_IC = {
-    // Portrait (0°): natural phone orientation
+/**
+ * R_ic matrices when the image is PORTRAIT-oriented (browser auto-rotated
+ * dimensions, e.g., 480x640). Camera axes match screen orientation.
+ */
+const R_IC_PORTRAIT = {
+    // Portrait (0°): natural phone orientation, portrait image
     //   Camera: X_c=right, Y_c=down, Z_c=forward
     //   VIO:    X_c→X_v,   Y_c→-Z_v,  Z_c→Y_v
     'portrait-primary': [
@@ -45,31 +49,75 @@ const R_IC = {
          0,  0,  1,
          0, -1,  0,
     ],
-
-    // Landscape-primary (90°): phone rotated 90° CCW, right edge at top
-    //   Camera: X_c→Z_v(up), Y_c→X_v(right), Z_c→Y_v(forward)
     'landscape-primary': [
          0,  1,  0,
          0,  0,  1,
          1,  0,  0,
     ],
-
-    // Portrait upside-down (180°): phone flipped 180°
-    //   Camera: X_c→-X_v(left), Y_c→Z_v(up), Z_c→Y_v(forward)
     'portrait-secondary': [
         -1,  0,  0,
          0,  0,  1,
          0,  1,  0,
     ],
-
-    // Landscape-secondary (270°): phone rotated 90° CW, left edge at top
-    //   Camera: X_c→-Z_v(down), Y_c→-X_v(left), Z_c→Y_v(forward)
     'landscape-secondary': [
          0, -1,  0,
          0,  0,  1,
         -1,  0,  0,
     ],
 };
+
+/**
+ * R_ic matrices when the image is LANDSCAPE-oriented (raw sensor data,
+ * e.g., 640x480). Camera axes are in sensor orientation, NOT screen.
+ *
+ * For a typical Android rear camera (sensor orientation 90°):
+ *   Phone in portrait → sensor X (right in image) = scene DOWN (-Y_d)
+ *                     → sensor Y (down in image) = scene RIGHT (X_d)
+ *                     → sensor Z (forward) = -Z_d
+ *
+ * Derivation for portrait-primary (landscape image):
+ *   R_cd (camera→device):
+ *     X_c = -Y_d → row 0: [0, -1, 0]
+ *     Y_c = X_d  → row 1: [1,  0, 0]
+ *     Z_c = -Z_d → row 2: [0,  0, -1]
+ *   R_dv (device→VIO body): [1,0,0; 0,0,-1; 0,1,0]
+ *   R_ic = R_dv × R_cd
+ */
+const R_IC_LANDSCAPE = {
+    // Portrait (0°): phone upright, but image is raw landscape (sensor orientation 90°)
+    //   Sensor right (X_c) = scene down = -Y_d
+    //   Sensor down (Y_c) = scene right = X_d
+    'portrait-primary': [
+         0, -1,  0,
+         0,  0,  1,
+         1,  0,  0,
+    ],
+
+    // Landscape-primary (90°): phone rotated CCW, sensor orientation matches
+    //   Camera axes align with scene naturally in landscape
+    'landscape-primary': [
+         1,  0,  0,
+         0,  0,  1,
+         0, -1,  0,
+    ],
+
+    // Portrait upside-down (180°): phone flipped, raw landscape image
+    'portrait-secondary': [
+         0,  1,  0,
+         0,  0,  1,
+        -1,  0,  0,
+    ],
+
+    // Landscape-secondary (270°): phone rotated CW
+    'landscape-secondary': [
+        -1,  0,  0,
+         0,  0,  1,
+         0,  1,  0,
+    ],
+};
+
+// Default to portrait R_ic (used when browser auto-rotates dimensions)
+const R_IC = R_IC_PORTRAIT;
 
 export class OrientationHandler {
     constructor() {
@@ -106,19 +154,25 @@ export class OrientationHandler {
 
     /**
      * Get R_ic (camera-to-IMU rotation) for the current screen orientation.
+     * @param {boolean} [imageLandscape=false] - True if image is in raw sensor
+     *   landscape orientation (e.g., 640x480). False if browser auto-rotated
+     *   to portrait (e.g., 480x640).
      * @returns {number[]} 9-element row-major 3×3 rotation matrix
      */
-    getRIC() {
-        return R_IC[this.getType()] || R_IC['portrait-primary'];
+    getRIC(imageLandscape = false) {
+        const table = imageLandscape ? R_IC_LANDSCAPE : R_IC_PORTRAIT;
+        return table[this.getType()] || table['portrait-primary'];
     }
 
     /**
      * Get R_ic for a specific orientation type.
      * @param {string} type - Screen orientation type
+     * @param {boolean} [imageLandscape=false] - True if raw sensor orientation
      * @returns {number[]} 9-element row-major 3×3 rotation matrix
      */
-    static getRICForType(type) {
-        return R_IC[type] || R_IC['portrait-primary'];
+    static getRICForType(type, imageLandscape = false) {
+        const table = imageLandscape ? R_IC_LANDSCAPE : R_IC_PORTRAIT;
+        return table[type] || table['portrait-primary'];
     }
 
     /**

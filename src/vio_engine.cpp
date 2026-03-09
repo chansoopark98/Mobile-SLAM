@@ -64,12 +64,18 @@ bool VIOEngine::configure(int width, int height,
     cfg.feature_tracker.min_dist = 20;
     cfg.feature_tracker.equalize = 1;
     cfg.feature_tracker.fisheye = 0;
-    cfg.feature_tracker.f_threshold = 1.0;
+    // RANSAC fundamental matrix threshold (pixels).
+    // VINS-Mono default is 1.0 for calibrated cameras with distortion correction.
+    // Mobile phones use PINHOLE with no distortion coefficients (k1=k2=p1=p2=0),
+    // so unmodeled barrel distortion causes 2-10px errors near image edges.
+    // Threshold 1.0 rejects most features on movement → tracking failure.
+    // Set 5.0 to accommodate unmodeled lens distortion.
+    cfg.feature_tracker.f_threshold = 5.0;
     cfg.feature_tracker.window_size = 20;
 
     // Estimator defaults (optimized for mobile WASM: 30fps → 33ms budget)
     cfg.estimator.solver_time = 0.04;
-    cfg.estimator.num_iterations = 6;
+    cfg.estimator.num_iterations = 8;
     cfg.estimator.min_parallax = 10.0;
 
     // Create estimator and feature tracker
@@ -339,6 +345,11 @@ void VIOEngine::setMobileParams(double solver_time, int num_iterations, int max_
     cfg.estimator.solver_time = solver_time;
     cfg.estimator.num_iterations = num_iterations;
     cfg.feature_tracker.max_cnt = max_features;
+}
+
+void VIOEngine::setFThreshold(double f_threshold) {
+    utility::g_config.feature_tracker.f_threshold = f_threshold;
+    std::cout << "[VIOEngine] f_threshold set to " << f_threshold << std::endl;
 }
 
 void VIOEngine::reset() {
