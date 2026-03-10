@@ -2,25 +2,25 @@
  * Camera capture module using navigator.mediaDevices.getUserMedia.
  * Captures frames from the environment-facing camera and extracts grayscale data.
  *
- * v7: Robust rotation handling for VINS-Mono coordinate system.
+ * v9: Landscape 4:3 crop + zoom=1.0 standard lens selection.
  *
- * The grayscale image MUST be portrait-oriented for the VIO engine:
+ * Pipeline:
+ *   1. Capture portrait from rear camera (480x640) with zoom=1.0 (standard lens)
+ *   2. Rotate if needed (CCW for raw landscape sensors)
+ *   3. Center-crop to landscape 4:3 (480x360) for VIO
+ *
+ * Camera coordinate system (same regardless of crop):
  *   X_c = right in image (phone right edge)
  *   Y_c = down in image (phone bottom edge)
  *   Z_c = forward (into scene)
  *
  * Rotation logic:
- *   - If videoWidth < videoHeight: browser already auto-rotated dimensions
- *     → drawImage also auto-rotates → no manual rotation needed ('none')
- *   - If videoWidth > videoHeight: browser reports raw sensor dims
- *     → drawImage does NOT auto-rotate → apply CCW 90° rotation
+ *   - If videoWidth < videoHeight: browser already auto-rotated → no rotation ('none')
+ *   - If videoWidth > videoHeight: raw sensor dims → apply CCW 90° rotation
  *   - URL ?rotate=none|cw|ccw overrides all detection
- *
- * Output is always portrait: width < height (e.g., 480x640, 3:4 aspect ratio).
- * fx, fy, cx, cy are computed for these portrait dimensions.
  */
 
-const CAMERA_VERSION = 'v8';
+const CAMERA_VERSION = 'v9';
 
 export class Camera {
     constructor() {
@@ -44,6 +44,12 @@ export class Camera {
         this._grayBuffer = null;
         // Capture timing counter
         this._captureCount = 0;
+
+        // Landscape crop mode
+        this._cropMode = 'none'; // 'none' | 'landscape_4_3'
+        this._portraitWidth = 0;
+        this._portraitHeight = 0;
+        this._cropOffsetY = 0;
     }
 
     /**
@@ -107,6 +113,24 @@ export class Camera {
             console.log(`[Camera] ${CAMERA_VERSION} facingMode: ${this._facingMode}`);
             console.log(`[Camera] ${CAMERA_VERSION} track settings: ${settings.width}x${settings.height}`);
             console.log(`[Camera] ${CAMERA_VERSION} videoWidth/Height: ${this._nativeWidth}x${this._nativeHeight}`);
+
+            // Prefer standard (1x) lens over ultrawide by setting zoom=1.0.
+            // Many phones default to ultrawide (~100° FOV) for 'environment' camera,
+            // which breaks VIO focal length estimation (assumes ~69° standard lens).
+            try {
+                const caps = activeTrack.getCapabilities();
+                if (caps && caps.zoom) {
+                    const zoomRange = caps.zoom;
+                    console.log(`[Camera] ${CAMERA_VERSION} zoom range: ${zoomRange.min}-${zoomRange.max} (current: ${settings.zoom || 'N/A'})`);
+                    if (zoomRange.min <= 1.0 && zoomRange.max >= 1.0) {
+                        await activeTrack.applyConstraints({ advanced: [{ zoom: 1.0 }] });
+                        const updatedSettings = activeTrack.getSettings();
+                        console.log(`[Camera] ${CAMERA_VERSION} zoom set to ${updatedSettings.zoom || 1.0} (standard lens)`);
+                    }
+                }
+            } catch (zoomErr) {
+                console.log(`[Camera] ${CAMERA_VERSION} zoom constraint not supported: ${zoomErr.message}`);
+            }
         }
 
         // Determine rotation mode
@@ -161,10 +185,14 @@ export class Camera {
         console.log(`[Camera] ${CAMERA_VERSION} Output: ${this.width}x${this.height} (${this.width < this.height ? 'portrait' : 'landscape'}), ` +
             `Rotation: ${this._rotateMode}, DimsSwapped: ${this._dimsSwapped}`);
 
-        // Create offscreen canvas matching output dimensions
+        // Store full portrait dimensions (before any crop)
+        this._portraitWidth = this.width;
+        this._portraitHeight = this.height;
+
+        // Create offscreen canvas at full portrait size (crop is done at getImageData level)
         this.canvas = document.createElement('canvas');
-        this.canvas.width = this.width;
-        this.canvas.height = this.height;
+        this.canvas.width = this._portraitWidth;
+        this.canvas.height = this._portraitHeight;
         this.ctx = this.canvas.getContext('2d', { willReadFrequently: true });
 
         this.running = true;
@@ -172,13 +200,44 @@ export class Camera {
     }
 
     /**
-     * Capture a grayscale frame in portrait orientation.
+     * Enable landscape 4:3 crop from portrait image.
+     * Crops the center vertical region: full width, height = width * 3/4.
+     * Output becomes landscape (width > height) with 4:3 aspect ratio.
+     * Must be called after initialize().
      *
-     * CCW rotation transform (landscape 640x480 → portrait 480x640):
-     *   translate(0, outH) + rotate(-PI/2) + drawImage(video, 0, 0, nW, nH)
-     *   Maps sensor pixels so that scene-up → image-up in portrait canvas.
+     * This improves VIO by:
+     * - Matching standard SLAM landscape image assumption
+     * - Reducing vertical extent (floor/ceiling) while keeping useful horizontal features
+     * - Reducing total pixels → faster processing
+     */
+    enableLandscapeCrop() {
+        if (this._portraitWidth === 0) return;
+        this._cropMode = 'landscape_4_3';
+        // Landscape 4:3: width = portrait width (shorter physical side), height = width * 3/4
+        const cropH = Math.floor(this._portraitWidth * 3 / 4) & ~1; // ensure even
+        this._cropOffsetY = Math.floor((this._portraitHeight - cropH) / 2);
+        this.width = this._portraitWidth;
+        this.height = cropH;
+        this._grayBuffer = null; // reallocate for new size
+        console.log(`[Camera] ${CAMERA_VERSION} Landscape 4:3 crop: ` +
+            `${this._portraitWidth}x${this._portraitHeight} → ${this.width}x${this.height} ` +
+            `(offsetY=${this._cropOffsetY}, aspect=${(this.width/this.height).toFixed(2)})`);
+    }
+
+    /** Get original portrait dimensions (before crop) */
+    getPortraitDimensions() {
+        return { width: this._portraitWidth, height: this._portraitHeight };
+    }
+
+    /**
+     * Capture a grayscale frame.
      *
-     * @returns {Uint8Array|null} Grayscale pixel data (width * height bytes), portrait-oriented
+     * Steps:
+     *   1. Draw video to full portrait canvas (with rotation if needed)
+     *   2. Extract pixel region (full portrait or landscape 4:3 center crop)
+     *   3. Convert RGBA → grayscale
+     *
+     * @returns {Uint8Array|null} Grayscale pixel data (width * height bytes)
      */
     captureGrayscale() {
         if (!this.running || !this.video || this.video.readyState < 2) {
@@ -187,24 +246,30 @@ export class Camera {
 
         const t0 = performance.now();
 
+        // Draw video to full portrait canvas (canvas always at portrait dimensions)
+        const cw = this.canvas.width;
+        const ch = this.canvas.height;
+
         if (this._rotateMode === 'cw') {
             this.ctx.save();
-            this.ctx.translate(this.width, 0);
+            this.ctx.translate(cw, 0);
             this.ctx.rotate(Math.PI / 2);
             this.ctx.drawImage(this.video, 0, 0, this._nativeWidth, this._nativeHeight);
             this.ctx.restore();
         } else if (this._rotateMode === 'ccw') {
             this.ctx.save();
-            this.ctx.translate(0, this.height);
+            this.ctx.translate(0, ch);
             this.ctx.rotate(-Math.PI / 2);
             this.ctx.drawImage(this.video, 0, 0, this._nativeWidth, this._nativeHeight);
             this.ctx.restore();
         } else {
             // No manual rotation — browser handles orientation
-            this.ctx.drawImage(this.video, 0, 0, this.width, this.height);
+            this.ctx.drawImage(this.video, 0, 0, cw, ch);
         }
 
-        const imageData = this.ctx.getImageData(0, 0, this.width, this.height);
+        // Extract pixels: full portrait or center crop for landscape 4:3
+        const cropY = this._cropMode === 'landscape_4_3' ? this._cropOffsetY : 0;
+        const imageData = this.ctx.getImageData(0, cropY, this.width, this.height);
         const rgba = imageData.data;
 
         // Reuse output buffer to avoid per-frame allocation / GC pressure
@@ -332,21 +397,32 @@ export class Camera {
             this._rotateMode = 'none';
         }
 
-        // Update output dimensions
+        // Update portrait dimensions
         if (this._rotateMode === 'cw' || this._rotateMode === 'ccw' || nativeIsLandscape) {
-            this.width = this._nativeHeight;
-            this.height = this._nativeWidth;
+            this._portraitWidth = this._nativeHeight;
+            this._portraitHeight = this._nativeWidth;
             this._dimsSwapped = true;
         } else {
-            this.width = this._nativeWidth;
-            this.height = this._nativeHeight;
+            this._portraitWidth = this._nativeWidth;
+            this._portraitHeight = this._nativeHeight;
             this._dimsSwapped = false;
         }
 
-        // Resize offscreen canvas if dimensions changed
-        if (this.canvas && (this.canvas.width !== this.width || this.canvas.height !== this.height)) {
-            this.canvas.width = this.width;
-            this.canvas.height = this.height;
+        // Re-apply crop if active, otherwise use portrait dims
+        if (this._cropMode === 'landscape_4_3') {
+            const cropH = Math.floor(this._portraitWidth * 3 / 4) & ~1;
+            this._cropOffsetY = Math.floor((this._portraitHeight - cropH) / 2);
+            this.width = this._portraitWidth;
+            this.height = cropH;
+        } else {
+            this.width = this._portraitWidth;
+            this.height = this._portraitHeight;
+        }
+
+        // Resize offscreen canvas to portrait (canvas always full portrait for drawing)
+        if (this.canvas && (this.canvas.width !== this._portraitWidth || this.canvas.height !== this._portraitHeight)) {
+            this.canvas.width = this._portraitWidth;
+            this.canvas.height = this._portraitHeight;
         }
 
         if (oldMode !== this._rotateMode) {

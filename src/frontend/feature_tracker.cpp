@@ -78,10 +78,12 @@ void FeatureTracker::detectAndTrack(const cv::Mat& _img, double _cur_time) {
     cv::Mat img;
     cur_time = _cur_time;
 
-    // equalize histogram
+    // equalize histogram (CLAHE cached to avoid per-frame allocation)
     if (g_config.feature_tracker.equalize) {
-        cv::Ptr<cv::CLAHE> clahe = cv::createCLAHE(3.0, cv::Size(8, 8));
-        clahe->apply(_img, img);
+        if (!clahe_) {
+            clahe_ = cv::createCLAHE(3.0, cv::Size(8, 8));
+        }
+        clahe_->apply(_img, img);
     } else
         img = _img;
 

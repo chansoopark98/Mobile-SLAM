@@ -376,6 +376,14 @@ std::vector<Eigen::Vector3d> Estimator::getSlidingWindowMapPoints() const {
             if (!(it_per_id.used_num >= 2 && it_per_id.start_frame < WINDOW_SIZE - 2))
                 continue;
             if (it_per_id.estimated_depth > 0 && it_per_id.solve_flag == 1) {
+                // Skip features still at init_depth — not properly triangulated.
+                // On mobile (small baseline), 60-80% of features fail triangulation
+                // and stay at init_depth, clustering at a fixed distance from camera.
+                // Filtering these shows only well-triangulated map structure.
+                const double init_d = utility::g_config.estimator.init_depth;
+                if (std::abs(it_per_id.estimated_depth - init_d) < 0.01)
+                    continue;
+
                 Eigen::Vector3d point_normalized = it_per_id.feature_per_frame[0].ray_vector;
                 Eigen::Vector3d point_3d = point_normalized * it_per_id.estimated_depth;
                 int frame_idx = it_per_id.start_frame;

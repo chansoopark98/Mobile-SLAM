@@ -285,9 +285,9 @@ Three.js Renderer (renderer.js)
 
 | 파라미터 | mobile_default | euroc | 비고 |
 |----------|---------------|-------|------|
-| acc_n | 1.0 | 0.08 | 12.5x 차이 |
+| acc_n | 0.3 | 0.08 | 3.75x 차이 (이전 1.0에서 조정) |
 | acc_w | 0.001 | 0.00004 | 25x 차이 |
-| gyr_n | 0.05 | 0.004 | 12.5x 차이 |
+| gyr_n | 0.02 | 0.004 | 5x 차이 (이전 0.05에서 조정) |
 | gyr_w | 0.0005 | 2e-6 | 250x 차이 |
 | focal_length | ~232 | ~460 | 2x 차이 |
 | processScale | 0.5 | 1.0 | 해상도 절반 |
@@ -327,7 +327,7 @@ Three.js Renderer (renderer.js)
 
 | # | 영역 | 현재 상태 | 문제점 | 심각도 |
 |---|------|----------|--------|--------|
-| **P1** | IMU noise params | acc_n=1.0, gyr_n=0.05 | IMU 가중치 극도로 낮음 → visual-only에 가까움 | **HIGH** |
+| **P1** | IMU noise params | ~~acc_n=1.0, gyr_n=0.05~~ → acc_n=0.3, gyr_n=0.02 **조정됨** | 이전: IMU 거의 무시. 현재: ~4x EuRoC 수준으로 적절한 IMU constraint 제공. 테스트 필요. | ~~HIGH~~ **IN PROGRESS** |
 | **P2** | Frame interval | ~~80ms (12.5fps)~~ → 33ms (30fps) **수정됨** | 기존 80ms로 인한 displacement 문제 해결 | ~~MED~~ **RESOLVED** |
 | **P3** | Init bias clamp | Ba≤2.0, Bg≤0.1 (post-init) | Optimizer 일관성 훼손 가능 (CLAUDE.md death spiral 경고) | **MED** |
 | **P4** | solver_time | 0.06s, 10 iterations | WASM에서 각 iteration 느림 → 실시간성 트레이드오프 | **LOW** |
@@ -389,8 +389,15 @@ Three.js Renderer (renderer.js)
 
 #### ISSUE-3: Feature center clustering
 - **원인**: PINHOLE model에 k1=0, k2=0. 실제 barrel distortion 존재 → F-matrix RANSAC가 edge feature reject → 중앙 집중
-- **현재 대응**: `f_threshold_edge_factor=2.0`
-- **한계**: threshold 높이면 outlier도 복원
+- **현재 대응**: `f_threshold_edge_factor=4.0` (2.0→4.0 증가, 2026-03-10)
+- **추가 대응**: F-matrix minimum feature guard: 30개 미만 시 skip (8→30)
+- **로그 근거**: f=560에서 cascade rejection 85→56→22→14 관찰. edge_factor=2에서 1-12개만 복원 → 불충분
+
+#### ISSUE-4: Feature depth over-estimation
+- **원인**: `init_depth=5.0`이 모바일 실내(0.3-3m)에 비해 너무 높음. 정지 시 parallax 없어 삼각측량 불가 → 90%가 default depth에 고착
+- **현재 대응**: `init_depth=3.0`으로 축소 (5.0→3.0, 2026-03-10)
+- **추가 대응**: depth clamp 200m→50m (feature_manager.cpp). 빠른 모션 시 73m 이상극치 방지
+- **로그 근거**: f=140에서 97/108 (90%) 피처가 default depth, f=440에서 max depth 73.4m 폭발
 
 ---
 
@@ -426,18 +433,23 @@ Three.js Renderer (renderer.js)
 
 ## 9. 잘못 구현된 부분
 
-### WRONG-1: IMU noise 파라미터 과도한 약화
+### ~~WRONG-1: IMU noise 파라미터 과도한 약화~~ **조정됨 (2026-03-10)**
 
-**현재**: `acc_n=1.0` (실제 모바일 IMU 노이즈의 5-10배 이상)
+**이전**: `acc_n=1.0, gyr_n=0.05` (실제 모바일 IMU 노이즈의 5-10배 이상)
+**현재**: `acc_n=0.3, gyr_n=0.02` (EuRoC의 ~4x/~5x, 모바일 MEMS 수준에 적합)
 
-**문제**:
-- IMU factor의 information matrix가 극도로 작아짐
-- 사실상 visual-only SLAM으로 동작
+**이전 문제** (acc_n=1.0):
+- IMU factor의 information matrix가 극도로 작아짐 → 사실상 visual-only SLAM
 - Feature가 일시적으로 부족해지면 즉시 발산 (IMU가 버텨주지 못함)
+- 스케일 제약 없음 → depth 과대추정 (피처가 멀리 보이는 증상)
 - VINS-Mono의 핵심 장점인 tightly-coupled fusion이 무력화됨
 
-**올바른 접근**:
-- IMU noise는 실측 기반으로 설정 (acc_n=0.1~0.3, gyr_n=0.01~0.03)
+**조정 이력**:
+- `acc_n=0.08~0.15` (EuRoC 수준): Ba explosion → timestamp 오류 + 낮은 frame rate가 원인 (둘 다 수정됨)
+- `acc_n=1.0`: 위 문제 회피용이었으나 IMU 무력화 → fast motion tracking loss + depth over-estimation
+- `acc_n=0.3`: timestamp/framerate 수정 후 적절한 밸런스. 테스트 중.
+
+**추가 개선 가능**:
 - Visual weight 조절이 필요하면 `sqrt_info` 스케일링 또는 robust kernel 조정
 - 또는 `FOCAL_LENGTH / 1.5` 대신 별도의 visual weight factor 도입
 
@@ -476,11 +488,13 @@ Three.js Renderer (renderer.js)
 | Task | 설명 | 파일 | 난이도 | 효과 |
 |------|------|------|--------|------|
 | **T1.1** | ~~Frame timestamp 교정~~ | `web/js/app.js` | ~~MED~~ | ✅ **DONE** — `requestVideoFrameCallback` 적용 |
-| **T1.2** | IMU noise 파라미터 재조정 (acc_n=0.2~0.5, gyr_n=0.02) | `web/js/app.js` | LOW | **HIGH** — 미수정 |
+| **T1.2** | ~~IMU noise 파라미터 재조정~~ | `web/js/app.js` | ~~LOW~~ | ✅ **DONE** — acc_n=1.0→0.3, gyr_n=0.05→0.02. 테스트 중. |
 | **T1.3** | ~~`requestVideoFrameCallback` API~~ | `web/js/app.js` | ~~MED~~ | ✅ **DONE** — T1.1에 통합 |
 | **T1.4** | ~~drainIMUToWasm 수정~~ | `web/js/vio-worker.js` | ~~LOW~~ | ✅ **DONE** — frameTs 기반 drain |
 
-**예상 효과**: T1.1, T1.3, T1.4 완료. T1.2(IMU noise 재조정)는 실측 기반 튜닝 필요.
+**Phase 1 완료**: T1.1~T1.4 모두 완료. IMU noise(T1.2)는 acc_n=0.3, gyr_n=0.02로 조정 완료.
+
+**Phase 2 대부분 완료**: T2.1~T2.3, T2.5~T2.7 완료. T2.4(processScale 0.67)만 미적용.
 
 ### Phase 2: Tracking 안정성 개선
 
@@ -489,10 +503,12 @@ Three.js Renderer (renderer.js)
 | Task | 설명 | 파일 | 난이도 | 효과 |
 |------|------|------|--------|------|
 | **T2.1** | ~~Frame interval 최적화~~ | `web/js/app.js` | ~~MED~~ | ✅ **DONE** — 30fps tracking / 20fps init |
-| **T2.2** | Feature velocity 무한대 방어 (dt < threshold → skip) | `feature_tracker.cpp` | LOW | **MED** |
-| **T2.3** | 초기화 parallax threshold 동적 조정 (`focal`에 비례) | `initializer.cpp` | LOW | **MED** |
+| **T2.2** | ~~Feature velocity 무한대 방어 (dt < threshold → skip)~~ | `feature_tracker.cpp` | ~~LOW~~ | ✅ **DONE** — dt < 1e-4 guard |
+| **T2.3** | ~~초기화 parallax threshold 동적 조정 (`focal`에 비례)~~ | `initializer.cpp` | ~~LOW~~ | ✅ **DONE** — 0.065*focal 동적 threshold |
 | **T2.4** | processScale 0.67 옵션 추가 (320x427) | `web/js/app.js` | LOW | **MED** |
-| **T2.5** | Degenerate baseline 감지 (너무 짧은 frame interval skip) | `web/js/app.js` | LOW | **LOW** |
+| **T2.5** | ~~Degenerate baseline 감지 (너무 짧은 frame interval skip)~~ | `web/js/app.js` | ~~LOW~~ | ✅ **DONE** — captureInterval < 20ms skip |
+| **T2.6** | ~~Feature center clustering 개선~~ | `feature_tracker.cpp`, `app.js` | ~~MED~~ | ✅ **DONE** — edge_factor 2→4, F-matrix min 8→30 |
+| **T2.7** | ~~Depth over-estimation 개선~~ | `vio_engine.cpp`, `feature_manager.cpp` | ~~LOW~~ | ✅ **DONE** — init_depth 5→3, clamp 200→50 |
 
 ### Phase 3: 초기화 성공률 개선
 
@@ -520,11 +536,12 @@ Three.js Renderer (renderer.js)
 ### 우선순위 로드맵
 
 ```
-[즉시] Phase 1 ── T1.1 + T1.2 ────────────────── 발산 근본 원인 해결
+[완료] Phase 1 ── T1.1~T1.4 ✅ ─────────────── 발산 근본 원인 해결
          │
-[1주]  Phase 2 ── T2.1~T2.5 ────────────────── tracking loss 감소
+[완료] Phase 2 ── T2.1~T2.3,T2.5~T2.7 ✅ ──── tracking/depth/clustering 개선
+         │                                       (T2.4 processScale 미적용)
          │
-[2주]  Phase 3 ── T3.1~T3.4 ────────────────── 초기화 성공률 향상
+[현재] Phase 3 ── T3.1~T3.4 ────────────────── 초기화 성공률 향상
          │
 [장기] Phase 4 ── T4.1 (td) → T4.2 (fast BA) ── 정밀도 향상
                    T4.4 (extrinsic) → T4.5 (loop closure)
@@ -557,4 +574,4 @@ CLAUDE.md "NOT Applied" 섹션 참조. 아래 패치들은 WASM NaN 방지용으
 
 > **모바일 웹 VIO의 근본적 제약**: 60Hz IMU + 30fps camera target (하드웨어 타임스탬프 활용)은 원본 VINS-Mono(200Hz IMU + 20fps camera + 하드웨어 동기화)에 근접하지만, IMU 밀도(2-3 readings/frame vs 10)가 여전히 제한적. 알고리즘 자체보다 **데이터 품질**(IMU 밀도, 해상도, noise 수준)이 성능의 병목.
 
-> **IMU-Visual Balance가 핵심**: 현재 설정은 IMU를 극도로 약화(acc_n=1.0)하여 visual-only에 가까움. 이는 feature tracking이 안정적일 때만 작동하며, 모바일의 움직임/조명 변화에 취약. IMU noise를 적절히 설정(0.2~0.5)하면 feature 부족 시에도 IMU가 pose를 유지하는 VINS-Mono 본래의 강점을 활용 가능.
+> **IMU-Visual Balance가 핵심**: acc_n=1.0→0.3, gyr_n=0.05→0.02로 조정 완료 (2026-03-10). 이전 acc_n=1.0은 timestamp/framerate 버그 회피용이었으나, 두 버그가 수정된 이후에는 불필요. 현재 설정(~4x EuRoC)은 모바일 MEMS 노이즈 수준에 적합하며, fast motion 시 IMU bridge 역할을 기대. 추가 튜닝은 실측 결과에 따라 진행.

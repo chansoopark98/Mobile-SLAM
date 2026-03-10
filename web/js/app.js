@@ -8,11 +8,11 @@
  *   IMU buffer on each frame.
  * - This prevents IMU data loss when frames are dropped due to worker being busy.
  */
-import { VIOWrapper } from './vio-wrapper.js?v=8';
-import { Camera } from './camera.js?v=8';
-import { IMU } from './imu.js?v=8';
-import { Renderer } from './renderer.js?v=8';
-import { OrientationHandler } from './orientation.js?v=8';
+import { VIOWrapper } from './vio-wrapper.js?v=10';
+import { Camera } from './camera.js?v=10';
+import { IMU } from './imu.js?v=10';
+import { Renderer } from './renderer.js?v=10';
+import { OrientationHandler } from './orientation.js?v=10';
 
 /**
  * URL parameter overrides for rapid mobile testing.
@@ -67,20 +67,26 @@ const VIO_CONFIGS = {
         g_norm: 9.81,
         focalLengthFactor: null,  // null → estimate from FOV (see estimateFocalLength)
         modelType: 2,  // C++ enum: PINHOLE=2 (not 0)
-        solver_time: 0.04,   // at 30fps need faster solve than 0.06
-        num_iterations: 8,   // fewer iterations for faster turnaround at 30fps
-        max_features: 120,
+        solver_time: 0.04,   // 40ms Ceres budget — MUST NOT reduce below this.
+                             // At 25ms/6iter, Ba/Bg never update → velocity diverges monotonically.
+                             // VINS-Mono needs sufficient iterations for bias convergence.
+        num_iterations: 8,   // 8 iterations required for bias (Ba, Bg) convergence in DOGLEG.
+                             // 6 iterations: optimizer terminates before reaching bias parameters
+                             // → Ba=(0,0,0) throughout → ~1 m/s² drift → divergence in ~7s.
+        max_features: 100,   // Proportional to 240x180 resolution (VINS-Mono uses 150 for 512x512).
+                             // Fewer features = fewer Ceres residuals = faster optimization.
+                             // 100 features at 240x180 ≈ same density as 150 at 512x512.
         // Image downscale factor: 0.5 = half resolution (240x320).
         // Reduces computation ~3x (CLAHE, LK pyramid, corner detection all O(pixels)).
         // Also halves barrel distortion magnitude in pixels, reducing F-matrix
         // edge rejection that causes feature center clustering.
         processScale: 0.5,
-        // LK optical flow: 3 pyramid levels handle up to ~32px inter-frame
-        // displacement (4px/level × 2^3). At 80ms interval, moderate rotation
-        // (30°/s) causes ~20px shift at 240x320 → within 3-level range.
-        // 2 pyramid levels only handled ~8px → tracking loss on any motion.
+        // LK optical flow: 4 pyramid levels handle up to ~80px inter-frame
+        // displacement (10px/level × 2^3). At 50ms init / 33ms tracking,
+        // fast rotation (200°/s) causes ~40px shift at 240x180 → within range.
+        // 3 pyramid levels only handled ~40px → tracking loss on fast motion.
         lk_window: 21,
-        lk_pyramid: 3,
+        lk_pyramid: 4,
         min_dist: 15,
         // Edge distortion compensation: restores edge features rejected by F-matrix
         // due to unmodeled barrel distortion from PINHOLE model with zero distortion.
@@ -104,7 +110,7 @@ const VIO_CONFIGS = {
         max_features: 120,
         processScale: 0.67,       // ~320x427, good balance of speed vs quality
         lk_window: 17,
-        lk_pyramid: 3,
+        lk_pyramid: 4,
         min_dist: 18,
         f_edge_factor: 3.0,
     },
@@ -166,14 +172,17 @@ const MIN_FRAME_INTERVAL_MS = 33;
  *
  * At 60Hz IMU (mobile):
  *   - 33ms interval (30fps): ~2 IMU/frame — too sparse for init
- *   - 50ms interval (20fps): ~3 IMU/frame — marginal
- *   - 100ms interval (10fps): ~6 IMU/frame — good pre-integration
+ *   - 50ms interval (20fps): ~3 IMU/frame — marginal but adequate
+ *   - 100ms interval (10fps): ~6 IMU/frame — good pre-integration but
+ *     causes LK tracking loss on moderate motion (>90°/s → >37px displacement
+ *     exceeds 3-level pyramid range of ~40px)
  *
- * The 10-frame sliding window at 100ms spans 1.0 second, giving enough
- * time for the user to generate sufficient parallax (translation).
+ * 50ms balances IMU density (~3/frame) vs tracking robustness.
+ * The 10-frame sliding window at 50ms spans 0.5s — still sufficient
+ * for parallax if user moves steadily.
  * After initialization succeeds, we switch to MIN_FRAME_INTERVAL_MS (30fps).
  */
-const INIT_FRAME_INTERVAL_MS = 100;
+const INIT_FRAME_INTERVAL_MS = 50;
 
 /**
  * Estimate focal length from camera FOV or track settings.
@@ -432,6 +441,7 @@ class App {
         // Grayscale preview canvas (debug visualization)
         this._grayPreviewCanvas = null;
         this._grayPreviewCtx = null;
+        this._previewImageData = null;  // Reused ImageData to avoid GC pressure
 
         // Stored config for reconfiguration on orientation change
         this._lastConfigParams = null;
@@ -507,9 +517,17 @@ class App {
             const orientationType = this.orientation.getType();
 
             // Initialize camera — requests 640x480 from sensor, outputs portrait
-            // (480x640) with actual pixel rotation if needed (camera.js v8).
-            // VIO always receives portrait-oriented grayscale data.
-            const { width, height } = await this.camera.initialize(640, 480);
+            // (480x640) with actual pixel rotation if needed (camera.js v9).
+            // Then crop to landscape 4:3 for VIO processing.
+            await this.camera.initialize(640, 480);
+
+            // Crop portrait to landscape 4:3 (width > height).
+            // VIO works better with landscape: wider horizontal FOV for parallax,
+            // standard SLAM assumption, fewer wasted floor/ceiling pixels.
+            // 480x640 portrait → 480x360 landscape (4:3)
+            this.camera.enableLandscapeCrop();
+            const width = this.camera.width;
+            const height = this.camera.height;
             this.updateStatus(`Camera: ${width}x${height}`);
 
             // Display video feed
@@ -521,8 +539,8 @@ class App {
             }
 
             // Setup grayscale preview canvas
-            // Camera v8 always outputs portrait-oriented data (e.g., 480x640).
-            // No CSS rotation needed — pixel data matches RGB video display.
+            // Camera outputs landscape 4:3 crop (e.g., 480x360) from portrait feed.
+            // No CSS rotation needed — pixel data matches display orientation.
             this._grayPreviewCanvas = document.getElementById('gray-preview');
             if (this._grayPreviewCanvas) {
                 this._grayPreviewCanvas.width = width;
@@ -535,16 +553,18 @@ class App {
             const config = VIO_CONFIGS[this.activeConfig];
 
             // Get orientation-aware camera-IMU extrinsic rotation (R_ic).
-            // Camera v8 always outputs portrait-oriented image, so use portrait R_ic.
+            // Camera v9 outputs landscape 4:3 crop, but R_ic is a physical rotation
+            // (camera→body), unchanged by crop since camera axes stay the same.
             const r_ic = this.orientation.getRIC();
 
             // Log coordinate system configuration
             const video = this.camera.getVideoElement();
+            const portraitDims = this.camera.getPortraitDimensions();
             console.log('[VIO] ═══════ Configuration Summary ═══════');
             console.log(`[VIO] Screen orientation: ${orientationType}`);
             console.log(`[VIO] Camera native: ${video.videoWidth}x${video.videoHeight}`);
-            console.log(`[VIO] Camera output: ${width}x${height} (rotate=${this.camera.getRotateMode()})`);
-            console.log(`[VIO] Image orientation: ${width > height ? 'LANDSCAPE' : 'PORTRAIT'}`);
+            console.log(`[VIO] Camera portrait: ${portraitDims.width}x${portraitDims.height} (rotate=${this.camera.getRotateMode()})`);
+            console.log(`[VIO] Camera crop: ${width}x${height} (${width > height ? 'LANDSCAPE' : 'PORTRAIT'} ${(width/height).toFixed(2)})`);
             console.log(`[VIO] Config profile: ${this.activeConfig} (${config.label})`);
             console.log(`[VIO] R_ic: [${r_ic.map(v => v.toFixed(1)).join(', ')}]`);
             console.log('[VIO] Camera frame (OpenCV): x=right, y=down, z=forward');
@@ -565,12 +585,14 @@ class App {
             const pW = this._processWidth;
             const pH = this._processHeight;
 
-            // Estimate focal length using FOV or config factor
-            // IMPORTANT: fx is a lens property in pixels — computed from capture dims,
-            // then scaled to processing dims.
+            // Estimate focal length using FOV or config factor.
+            // IMPORTANT: fx is a lens property — must use native portrait dimensions
+            // (before crop) for FOV→focal length conversion, since the 69° FOV
+            // spans the camera's full native longer dimension (640px), not the crop.
             const videoTrack = this.camera.getVideoTrack ? this.camera.getVideoTrack() : null;
-            let { fx, method: fxMethod } = estimateFocalLength(videoTrack, width, height, config.focalLengthFactor);
-            const fxValidation = validateFocalLength(fx, width, height);
+            // portraitDims already declared above for logging
+            let { fx, method: fxMethod } = estimateFocalLength(videoTrack, portraitDims.width, portraitDims.height, config.focalLengthFactor);
+            const fxValidation = validateFocalLength(fx, portraitDims.width, portraitDims.height);
             if (!fxValidation.valid) {
                 fx = fxValidation.fx;
                 fxMethod += ' (corrected)';
@@ -630,7 +652,7 @@ class App {
             if (config.lk_window !== undefined) {
                 await this.vio.setTrackingParams(
                     config.lk_window,
-                    config.lk_pyramid || 3,
+                    config.lk_pyramid || 4,
                     config.min_dist || 20,
                     config.f_edge_factor || 0.0
                 );
@@ -647,7 +669,7 @@ class App {
             }
 
             console.log(`[VIO] ═══════ VIO Engine Configured ═══════`);
-            console.log(`[VIO]   Capture: ${width}x${height} → Process: ${pW}x${pH} (scale=${scale})`);
+            console.log(`[VIO]   Portrait: ${portraitDims.width}x${portraitDims.height} → Crop: ${width}x${height} → Process: ${pW}x${pH} (scale=${scale})`);
             console.log(`[VIO]   Native: ${video.videoWidth}x${video.videoHeight}`);
             console.log(`[VIO]   ★ Focal: fx=${fxScaled.toFixed(1)}, fy=${fyScaled.toFixed(1)} (${fxMethod}, scaled from ${fx.toFixed(1)})`);
             console.log(`[VIO]   ★ fx/width=${(fxScaled/pW).toFixed(3)}, fx/max(w,h)=${(fxScaled/Math.max(pW,pH)).toFixed(3)}`);
@@ -656,12 +678,12 @@ class App {
             console.log(`[VIO]   t_ic: [${t_ic}]`);
             console.log(`[VIO]   IMU noise: acc_n=${config.acc_n}, acc_w=${config.acc_w}, gyr_n=${config.gyr_n}, gyr_w=${config.gyr_w}`);
             console.log(`[VIO]   Solver: time=${config.solver_time}s, iter=${config.num_iterations}, features=${config.max_features}`);
-            console.log(`[VIO]   Tracking: lk_window=${config.lk_window||21}, lk_pyramid=${config.lk_pyramid||3}, min_dist=${config.min_dist||20}, f_edge=${config.f_edge_factor||0}`);
+            console.log(`[VIO]   Tracking: lk_window=${config.lk_window||21}, lk_pyramid=${config.lk_pyramid||4}, min_dist=${config.min_dist||20}, f_edge=${config.f_edge_factor||0}`);
             console.log(`[VIO]   Rotation: ${this.camera.getRotateMode()}, DimsSwapped: ${this.camera.isDimsSwapped()}`);
             console.log(`[VIO]   URL overrides: fx=${URL_PARAMS.get('fx')||'(none)'}, config=${URL_PARAMS.get('config')||'(none)'}, fth=${URL_PARAMS.get('fth')||'(none)'}, rotate=${URL_PARAMS.get('rotate')||'(auto)'}`);
 
             // Remote log key params for mobile debugging
-            remoteLog('info', `VIO configured: ${pW}x${pH} (from ${width}x${height}, scale=${scale}) ` +
+            remoteLog('info', `VIO configured: ${pW}x${pH} (portrait ${portraitDims.width}x${portraitDims.height} → crop ${width}x${height}, scale=${scale}) ` +
                 `fx=${fxScaled.toFixed(1)} (${fxMethod}) ` +
                 `hFOV=${(2*Math.atan(pW/(2*fxScaled))*180/Math.PI).toFixed(1)}° ` +
                 `profile=${this.activeConfig} rotate=${this.camera.getRotateMode()}`);
@@ -866,22 +888,30 @@ class App {
             const gray = this.camera.captureGrayscale();
             if (gray) {
                 // Draw grayscale preview at capture resolution (debug visualization).
-                // Only render every 3rd frame to reduce main-thread load.
+                // Render every 5th frame to reduce main-thread load.
+                // Previous every-3rd at 30fps camera = ~10fps visual → still felt slow.
+                // Every 5th = ~6fps visual, but frees ~2ms/frame for VIO processing.
+                // The preview is purely diagnostic — SLAM accuracy is unaffected.
                 this._previewCounter = (this._previewCounter || 0) + 1;
-                if (this._grayPreviewCtx && (this._previewCounter % 3 === 0)) {
+                if (this._grayPreviewCtx && (this._previewCounter % 5 === 0)) {
                     const w = this.camera.width;
                     const h = this.camera.height;
-                    const imgData = this._grayPreviewCtx.createImageData(w, h);
-                    const d = imgData.data;
+                    // Reuse ImageData to avoid per-frame GC allocation (~700KB for 480x360)
+                    if (!this._previewImageData || this._previewImageData.width !== w || this._previewImageData.height !== h) {
+                        this._previewImageData = this._grayPreviewCtx.createImageData(w, h);
+                        // Pre-fill alpha channel (never changes)
+                        const d = this._previewImageData.data;
+                        for (let i = 3; i < d.length; i += 4) d[i] = 255;
+                    }
+                    const d = this._previewImageData.data;
                     for (let i = 0, j = 0; i < gray.length; i++, j += 4) {
                         d[j] = d[j + 1] = d[j + 2] = gray[i];
-                        d[j + 3] = 255;
                     }
-                    this._grayPreviewCtx.putImageData(imgData, 0, 0);
+                    this._grayPreviewCtx.putImageData(this._previewImageData, 0, 0);
 
                     // Draw version + rotation mode + processing info label
                     const mode = this.camera.getRotateMode();
-                    const label = `v8 ${mode} ${this._captureWidth}x${this._captureHeight}→${this._processWidth}x${this._processHeight}`;
+                    const label = `v10 ${mode} ${this._captureWidth}x${this._captureHeight}→${this._processWidth}x${this._processHeight}`;
                     this._grayPreviewCtx.fillStyle = 'rgba(0,0,0,0.6)';
                     this._grayPreviewCtx.fillRect(0, 0, w, 18);
                     this._grayPreviewCtx.fillStyle = '#0f8';
@@ -1108,7 +1138,7 @@ class App {
         if (config.lk_window !== undefined) {
             await this.vio.setTrackingParams(
                 config.lk_window,
-                config.lk_pyramid || 3,
+                config.lk_pyramid || 4,
                 config.min_dist || 20,
                 config.f_edge_factor || 0.0
             );

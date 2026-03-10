@@ -61,6 +61,11 @@ public:
     double prev_time;
 
     static int n_id;
+
+private:
+    // Cached CLAHE object — avoids per-frame allocation overhead.
+    // VINS-Mono creates CLAHE per frame; caching is a pure optimization.
+    cv::Ptr<cv::CLAHE> clahe_;
 };
 
 }  // namespace frontend
