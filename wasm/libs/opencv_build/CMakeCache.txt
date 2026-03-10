@@ -282,7 +282,7 @@ CMAKE_CONFIGURATION_TYPES:STRING=Debug;Release
 CMAKE_CROSSCOMPILING_EMULATOR:UNINITIALIZED=/home/park-ubuntu/emsdk/node/22.16.0_64bit/bin/node
 
 //Flags used by the CXX compiler during all build types.
-CMAKE_CXX_FLAGS:STRING=-O3
+CMAKE_CXX_FLAGS:STRING=-O3 -msimd128
 
 //Flags used by the CXX compiler during DEBUG builds.
 CMAKE_CXX_FLAGS_DEBUG:STRING=-g
@@ -300,7 +300,7 @@ CMAKE_CXX_FLAGS_RELWITHDEBINFO:STRING=-O2 -g -DNDEBUG
 CMAKE_CXX_STANDARD:UNINITIALIZED=17
 
 //Flags used by the C compiler during all build types.
-CMAKE_C_FLAGS:STRING=-O3
+CMAKE_C_FLAGS:STRING=-O3 -msimd128
 
 //Flags used by the C compiler during DEBUG builds.
 CMAKE_C_FLAGS_DEBUG:STRING=-g
@@ -480,8 +480,8 @@ CMAKE_STATIC_LINKER_FLAGS_RELWITHDEBINFO:STRING=
 //Path to a program.
 CMAKE_STRIP:FILEPATH=/usr/bin/strip
 
-//The CMake toolchain file
-CMAKE_TOOLCHAIN_FILE:FILEPATH=/home/park-ubuntu/emsdk/upstream/emscripten/cmake/Modules/Platform/Emscripten.cmake
+//No help, variable specified on the command line.
+CMAKE_TOOLCHAIN_FILE:UNINITIALIZED=/home/park-ubuntu/emsdk/upstream/emscripten/cmake/Modules/Platform/Emscripten.cmake
 
 //If this value is on, makefiles will be generated without the
 // .SILENT directive, and all commands will be echoed to the console
@@ -548,7 +548,7 @@ CPU_DISPATCH:STRING=
 CV_DISABLE_OPTIMIZATION:BOOL=OFF
 
 //Use intrinsic-based optimized code
-CV_ENABLE_INTRINSICS:BOOL=OFF
+CV_ENABLE_INTRINSICS:BOOL=ON
 
 //Enable OpenCV code trace
 CV_TRACE:BOOL=OFF
@@ -1369,7 +1369,7 @@ CPU_SSSE3_USAGE_COUNT:INTERNAL=0
 //If true, we are targeting Emscripten output.
 EMSCRIPTEN:INTERNAL=1
 //Details about finding PythonInterp
-FIND_PACKAGE_MESSAGE_DETAILS_PythonInterp:INTERNAL=[/home/park-ubuntu/miniconda3/bin/python3][v3.13.5(3.2)]
+FIND_PACKAGE_MESSAGE_DETAILS_PythonInterp:INTERNAL=[/home/park-ubuntu/miniconda3/bin/python][v3.13.5(2.7)]
 //Details about finding Threads
 FIND_PACKAGE_MESSAGE_DETAILS_Threads:INTERNAL=[TRUE][v()]
 //ADVANCED property for variable: GIT_EXECUTABLE

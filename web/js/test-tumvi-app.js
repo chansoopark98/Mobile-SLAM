@@ -423,7 +423,10 @@ class TUMVITestApp {
         this.log('Initializing WASM VIO engine...');
 
         try {
-            await this.vio.load('/vio_engine.js');
+            const urlParams = new URLSearchParams(window.location.search);
+            const wasmFile = urlParams.get('wasm') || 'vio_engine.js';
+            this.log(`Loading WASM: ${wasmFile}`);
+            await this.vio.load('/' + wasmFile);
 
             // Forward C++ stdout/stderr to log, filtering Ceres miniglog noise
             const _ceresNoise = /detect_structure|block_sparse_matrix|schur_eliminator|callbacks\.cc|trust_region_minimizer|Schur complement|Dynamic .* block size|Allocating values array|Terminating:/;

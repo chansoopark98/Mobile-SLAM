@@ -80,7 +80,7 @@ set(CPACK_IGNORE_FILES "/CVS/;/\\.svn/;/\\.bzr/;/\\.hg/;/\\.git/;\\.swp\$;\\.#;/
 set(CPACK_INSTALLED_DIRECTORIES "/home/park-ubuntu/park/SOLUTION/Mobile-SLAM/assets/references/AlvaAR/src/libs/opencv;/")
 set(CPACK_INSTALL_CMAKE_PROJECTS "")
 set(CPACK_INSTALL_PREFIX "/home/park-ubuntu/park/SOLUTION/Mobile-SLAM/wasm/libs/opencv")
-set(CPACK_MODULE_PATH "/home/park-ubuntu/emsdk/upstream/emscripten/cmake/Modules;/home/park-ubuntu/emsdk/upstream/emscripten/cmake/Modules;/home/park-ubuntu/emsdk/upstream/emscripten/cmake/Modules;/home/park-ubuntu/emsdk/upstream/emscripten/cmake/Modules;/home/park-ubuntu/emsdk/upstream/emscripten/cmake/Modules")
+set(CPACK_MODULE_PATH "/home/park-ubuntu/emsdk/upstream/emscripten/cmake/Modules;/home/park-ubuntu/emsdk/upstream/emscripten/cmake/Modules;/home/park-ubuntu/emsdk/upstream/emscripten/cmake/Modules;/home/park-ubuntu/emsdk/upstream/emscripten/cmake/Modules")
 set(CPACK_NSIS_DISPLAY_NAME "OpenCV 7796af5")
 set(CPACK_NSIS_INSTALLER_ICON_CODE "")
 set(CPACK_NSIS_INSTALLER_MUI_ICON_CODE "")

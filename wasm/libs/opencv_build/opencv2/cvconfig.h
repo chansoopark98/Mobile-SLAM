@@ -5,7 +5,7 @@
 /* #undef BUILD_SHARED_LIBS */
 
 /* OpenCV intrinsics optimized code */
-/* #undef CV_ENABLE_INTRINSICS */
+#define CV_ENABLE_INTRINSICS
 
 /* OpenCV additional optimized code */
 /* #undef CV_DISABLE_OPTIMIZATION */

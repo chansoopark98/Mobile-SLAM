@@ -1,6 +1,7 @@
 web/datasets
 build_wasm/
 wasm/dist/
+wasm/libs/opencv_build/
 
 # TLS certificates (dev server)
 web/.certs/
