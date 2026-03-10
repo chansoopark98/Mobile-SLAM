@@ -144,7 +144,10 @@ void FeatureTracker::detectAndTrack(const cv::Mat& _img, double _cur_time) {
 }
 
 void FeatureTracker::rejectWithFundamentalMatrix() {
-    if (next_pts.size() >= 8) {
+    // Require minimum 30 features for stable F-matrix estimation.
+    // With fewer points, RANSAC produces unreliable models that
+    // cascade-reject features (85→56→22→14 observed in mobile logs).
+    if (next_pts.size() >= 30) {
         const int before_count = static_cast<int>(next_pts.size());
         vector<cv::Point2f> undistorted_cur_pts(cur_pts.size()), undistorted_next_pts(next_pts.size());
 
@@ -296,8 +299,14 @@ void FeatureTracker::undistortedPoints() {
                 std::map<int, cv::Point2f>::iterator it;
                 it = prev_undistorted_pts_map.find(ids[i]);
                 if (it != prev_undistorted_pts_map.end()) {
-                    double v_x = (cur_undistorted_pts[i].x - it->second.x) / dt;
-                    double v_y = (cur_undistorted_pts[i].y - it->second.y) / dt;
+                    double v_x, v_y;
+                    if (dt > 1e-4) {
+                        v_x = (cur_undistorted_pts[i].x - it->second.x) / dt;
+                        v_y = (cur_undistorted_pts[i].y - it->second.y) / dt;
+                    } else {
+                        v_x = 0;
+                        v_y = 0;
+                    }
                     pts_velocity.push_back(cv::Point2f(v_x, v_y));
                 } else
                     pts_velocity.push_back(cv::Point2f(0, 0));

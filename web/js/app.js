@@ -49,19 +49,19 @@ const VIO_CONFIGS = {
     // Tightened to ~2-3x EuRoC level, appropriate for modern mobile MEMS.
     mobile_default: {
         label: 'Mobile Default',
-        acc_n: 1.0,       // accelerometer noise density (m/s²/√Hz)
-                          //   Mobile MEMS accelerometers are much noisier than research IMUs.
-                          //   High acc_n weakens IMU constraint → optimizer trusts visual more.
-                          //   Previous 0.15 made IMU dominant over weak visual (fx=232 → sqrt_info=155),
-                          //   causing optimizer to push Ba to 2+ m/s² to explain visual-IMU mismatch.
-                          //   1.0 lets visual constraints drive the solution.
+        acc_n: 0.3,       // accelerometer noise density (m/s²/√Hz)
+                          //   ~4x EuRoC (0.08). Mobile MEMS is noisier but not 12x.
+                          //   Previous 1.0 made IMU nearly weightless → no scale constraint,
+                          //   causing depth over-estimation and tracking loss on fast motion.
+                          //   Previous 0.08-0.15 caused Ba explosion, but that was due to
+                          //   timestamp error (now fixed: requestVideoFrameCallback) and
+                          //   low frame rate (now fixed: 30fps). 0.3 balances IMU/visual.
         acc_w: 0.001,     // accelerometer random walk
-                          //   Slightly increased from 0.0004 to allow faster Ba adaptation
-                          //   on mobile where bias drifts more than research-grade IMUs.
-        gyr_n: 0.05,      // gyroscope noise density (rad/s/√Hz)
-                          //   Mobile MEMS gyros: typical 0.01-0.05.
-                          //   Higher value reduces IMU rotational constraint weight,
-                          //   letting visual features correct rotational drift.
+                          //   ~25x EuRoC (0.00004). Allows faster Ba adaptation on mobile.
+        gyr_n: 0.02,      // gyroscope noise density (rad/s/√Hz)
+                          //   ~5x EuRoC (0.004). Moderate: gives IMU rotational constraint
+                          //   while tolerating mobile gyro noise. Helps maintain pose
+                          //   during brief feature loss from fast motion.
         gyr_w: 0.0005,    // gyroscope random walk
                           //   Increased from 0.0001 to allow faster Bg adaptation on mobile.
         g_norm: 9.81,
@@ -69,7 +69,7 @@ const VIO_CONFIGS = {
         modelType: 2,  // C++ enum: PINHOLE=2 (not 0)
         solver_time: 0.04,   // at 30fps need faster solve than 0.06
         num_iterations: 8,   // fewer iterations for faster turnaround at 30fps
-        max_features: 100,
+        max_features: 120,
         // Image downscale factor: 0.5 = half resolution (240x320).
         // Reduces computation ~3x (CLAHE, LK pyramid, corner detection all O(pixels)).
         // Also halves barrel distortion magnitude in pixels, reducing F-matrix
@@ -84,8 +84,10 @@ const VIO_CONFIGS = {
         min_dist: 15,
         // Edge distortion compensation: restores edge features rejected by F-matrix
         // due to unmodeled barrel distortion from PINHOLE model with zero distortion.
-        // 2.0 = edge features get up to 3x the base RANSAC threshold.
-        f_edge_factor: 2.0,
+        // 4.0 = edge features get up to 5x the base RANSAC threshold.
+        // Increased from 2.0: logs show F-matrix cascade (85→56→22→14) during
+        // fast motion, with edge recovery only restoring 1-12 per frame.
+        f_edge_factor: 4.0,
     },
     // Tuned for high-end phones (iPhone 14+, Pixel 7+, Galaxy S23+)
     mobile_highend: {
@@ -104,7 +106,7 @@ const VIO_CONFIGS = {
         lk_window: 17,
         lk_pyramid: 3,
         min_dist: 18,
-        f_edge_factor: 1.5,
+        f_edge_factor: 3.0,
     },
     // EuRoC MAV dataset (research-grade VI sensor)
     euroc: {
@@ -421,6 +423,7 @@ class App {
         this._lastVideoTime = -1;
         // Frame rate limiting: ensure enough IMU between VIO frames
         this._lastVIOFrameTime = 0;
+        this._lastFrameTimestamp = 0;
 
         // VIO initialization state (for adaptive frame rate)
         this._vioInitialized = false;
@@ -894,23 +897,30 @@ class App {
                         this._processWidth, this._processHeight);
                 }
 
-                // Flush all pending IMU right before the frame so the worker
-                // has the most up-to-date IMU data for pre-integration.
-                this._flushAndSendIMU();
+                // Skip degenerate baseline: actual capture interval too short for meaningful parallax
+                const captureIntervalMs = (frameTimestamp - this._lastFrameTimestamp) * 1000;
+                const degenerateBaseline = this._lastFrameTimestamp > 0 && captureIntervalMs < 20;
 
-                // Send frame only — worker drains its internal IMU buffer
-                this.vio.sendFrame(vioGray, frameTimestamp);
-                this.totalFrameCount++;
-                this.frameCount++;
+                if (!degenerateBaseline) {
+                    // Flush all pending IMU right before the frame so the worker
+                    // has the most up-to-date IMU data for pre-integration.
+                    this._flushAndSendIMU();
 
-                // Frame timing diagnostics (every 30 frames)
-                if (this.totalFrameCount % 30 === 0) {
-                    const elapsed = (now - (this._fpsStartTime || now)) / 1000;
-                    if (elapsed > 0 && this._fpsStartTime) {
-                        const fps = 30 / elapsed;
-                        console.log(`[VIO] Frame rate: ${fps.toFixed(1)}fps (${this.totalFrameCount} total)`);
+                    // Send frame only — worker drains its internal IMU buffer
+                    this.vio.sendFrame(vioGray, frameTimestamp);
+                    this._lastFrameTimestamp = frameTimestamp;
+                    this.totalFrameCount++;
+                    this.frameCount++;
+
+                    // Frame timing diagnostics (every 30 frames)
+                    if (this.totalFrameCount % 30 === 0) {
+                        const elapsed = (now - (this._fpsStartTime || now)) / 1000;
+                        if (elapsed > 0 && this._fpsStartTime) {
+                            const fps = 30 / elapsed;
+                            console.log(`[VIO] Frame rate: ${fps.toFixed(1)}fps (${this.totalFrameCount} total)`);
+                        }
+                        this._fpsStartTime = now;
                     }
-                    this._fpsStartTime = now;
                 }
             }
         }
@@ -1020,6 +1030,7 @@ class App {
             this.imuLogCount = 0;
             this._lastVideoTime = -1;  // Force next frame to be treated as new
             this._lastVIOFrameTime = 0;
+            this._lastFrameTimestamp = 0;
             console.log('[VIO] Tab visible — IMU flush resumed, stale data cleared');
         }
     }
@@ -1106,6 +1117,7 @@ class App {
         this.imuLogCount = 0;
         this._lastVideoTime = -1;
         this._lastVIOFrameTime = 0;
+        this._lastFrameTimestamp = 0;
         this._vioInitialized = false;
         this._initFrameCount = 0;
         console.log(`[VIO] Reconfigured for ${info.type}, process=${this._processWidth}x${this._processHeight}, R_ic:`, info.r_ic);
@@ -1121,6 +1133,7 @@ class App {
         this.imuLogCount = 0;
         this._lastVideoTime = -1;
         this._lastVIOFrameTime = 0;
+        this._lastFrameTimestamp = 0;
         this._vioInitialized = false;
         this._initFrameCount = 0;
         this.updateStatus('VIO reset');

@@ -77,6 +77,10 @@ bool VIOEngine::configure(int width, int height,
     cfg.estimator.solver_time = 0.04;
     cfg.estimator.num_iterations = 8;
     cfg.estimator.min_parallax = 10.0;
+    // Mobile indoor scenes: typical depth 0.3-3m.
+    // Default 5.0 places un-triangulated features too far, causing
+    // "features appear far away" when stationary (no parallax for triangulation).
+    cfg.estimator.init_depth = 2.0;
 
     // Create estimator and feature tracker
     estimator_ = std::make_unique<backend::Estimator>();

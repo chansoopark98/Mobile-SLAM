@@ -215,7 +215,7 @@ export class IMU {
 
         // Validate gyro bias magnitude — large bias indicates device was moving during calibration
         const biasMag = Math.sqrt(bias.x ** 2 + bias.y ** 2 + bias.z ** 2);
-        const MAX_BIAS_MAG = 0.2; // rad/s — typical MEMS gyro bias is 0.01-0.1
+        const MAX_BIAS_MAG = 0.35; // rad/s — mobile MEMS gyro bias can reach 0.2-0.3
         if (biasMag > MAX_BIAS_MAG) {
             console.warn(`[IMU] ⚠ Gyro bias too large: |bias|=${biasMag.toFixed(3)} rad/s (max=${MAX_BIAS_MAG}). Clamping.`);
             console.warn(`[IMU]   Device was likely moving during calibration. Keep phone still and retry.`);
