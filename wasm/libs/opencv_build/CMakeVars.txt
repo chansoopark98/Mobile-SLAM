@@ -104,6 +104,7 @@ BUILD_opencv_world=OFF
 CACHED_CPU_BASELINE_FLAGS= -fsigned-char -W -Wall -Werror=return-type -Werror=non-virtual-dtor -Werror=address -Werror=sequence-point -Wformat -Werror=format-security -Wmissing-declarations -Wmissing-prototypes -Wstrict-prototypes -Wundef -Winit-self -Wpointer-arith -Wshadow -Wsign-promo -Wuninitialized -Winconsistent-missing-override -Wno-delete-non-virtual-dtor -Wno-unnamed-type-template-args -Wno-comment -Wno-deprecated-enum-enum-conversion -Wno-deprecated-anon-enum-enum-conversion -fdiagnostics-show-option -Qunused-arguments -ffunction-sections -fdata-sections 
 CAN_BUILD_ANDROID_PROJECTS=FALSE
 CCACHE_PROGRAM=CCACHE_PROGRAM-NOTFOUND
+CHECK_INCLUDE_FILE_VAR=malloc.h
 CMAKE_ADDR2LINE=/usr/bin/addr2line
 CMAKE_AR=/home/park-ubuntu/emsdk/upstream/emscripten/emar
 CMAKE_AUTOGEN_ORIGIN_DEPENDS=ON
@@ -132,10 +133,6 @@ CMAKE_C99_COMPILE_FEATURES=c_std_99;c_restrict;c_variadic_macros
 CMAKE_C99_EXTENSION_COMPILE_OPTION=-std=gnu99
 CMAKE_C99_STANDARD_COMPILE_OPTION=-std=c99
 CMAKE_C99_STANDARD__HAS_FULL_SUPPORT=ON
-CMAKE_CACHEFILE_DIR=/home/park-ubuntu/park/SOLUTION/Mobile-SLAM/wasm/libs/opencv_build
-CMAKE_CACHE_MAJOR_VERSION=3
-CMAKE_CACHE_MINOR_VERSION=22
-CMAKE_CACHE_PATCH_VERSION=1
 CMAKE_CFG_INTDIR=.
 CMAKE_COLOR_MAKEFILE=ON
 CMAKE_COMMAND=/usr/bin/cmake
@@ -184,7 +181,9 @@ CMAKE_CXX_ARCHIVE_FINISH_IPO="/home/park-ubuntu/emsdk/upstream/emscripten/emranl
 CMAKE_CXX_BYTE_ORDER=LITTLE_ENDIAN
 CMAKE_CXX_CL_SHOWINCLUDES_PREFIX=
 CMAKE_CXX_COMPILER=/home/park-ubuntu/emsdk/upstream/emscripten/em++
+CMAKE_CXX_COMPILER=/home/park-ubuntu/emsdk/upstream/emscripten/em++
 CMAKE_CXX_COMPILER_ABI=
+CMAKE_CXX_COMPILER_AR=/home/park-ubuntu/emsdk/upstream/emscripten/emar
 CMAKE_CXX_COMPILER_AR=/home/park-ubuntu/emsdk/upstream/emscripten/emar
 CMAKE_CXX_COMPILER_ARG1=
 CMAKE_CXX_COMPILER_CLANG_SCAN_DEPS=/home/park-ubuntu/emsdk/upstream/emscripten/emscan-deps
@@ -193,8 +192,11 @@ CMAKE_CXX_COMPILER_FORCED=TRUE
 CMAKE_CXX_COMPILER_FRONTEND_VARIANT=GNU
 CMAKE_CXX_COMPILER_ID=Clang
 CMAKE_CXX_COMPILER_ID_RUN=TRUE
+CMAKE_CXX_COMPILER_ID_TEST_FLAGS=-c;--c++;--ec++;--target=arm-arm-none-eabi -mcpu=cortex-m3;-c -I__does_not_exist__
 CMAKE_CXX_COMPILER_LOADED=1
+CMAKE_CXX_COMPILER_NAMES=CC
 CMAKE_CXX_COMPILER_PREDEFINES_COMMAND=/home/park-ubuntu/emsdk/upstream/emscripten/em++;-dM;-E;-c;/usr/share/cmake-3.22/Modules/CMakeCXXCompilerABI.cpp
+CMAKE_CXX_COMPILER_RANLIB=/home/park-ubuntu/emsdk/upstream/emscripten/emranlib
 CMAKE_CXX_COMPILER_RANLIB=/home/park-ubuntu/emsdk/upstream/emscripten/emranlib
 CMAKE_CXX_COMPILER_VERSION=23.0.0
 CMAKE_CXX_COMPILER_VERSION_INTERNAL=
@@ -274,7 +276,9 @@ CMAKE_C_ARCHIVE_FINISH_IPO="/home/park-ubuntu/emsdk/upstream/emscripten/emranlib
 CMAKE_C_BYTE_ORDER=LITTLE_ENDIAN
 CMAKE_C_CL_SHOWINCLUDES_PREFIX=
 CMAKE_C_COMPILER=/home/park-ubuntu/emsdk/upstream/emscripten/emcc
+CMAKE_C_COMPILER=/home/park-ubuntu/emsdk/upstream/emscripten/emcc
 CMAKE_C_COMPILER_ABI=
+CMAKE_C_COMPILER_AR=/home/park-ubuntu/emsdk/upstream/emscripten/emar
 CMAKE_C_COMPILER_AR=/home/park-ubuntu/emsdk/upstream/emscripten/emar
 CMAKE_C_COMPILER_ARG1=
 CMAKE_C_COMPILER_ENV_VAR=CC
@@ -282,8 +286,11 @@ CMAKE_C_COMPILER_FORCED=TRUE
 CMAKE_C_COMPILER_FRONTEND_VARIANT=GNU
 CMAKE_C_COMPILER_ID=Clang
 CMAKE_C_COMPILER_ID_RUN=TRUE
+CMAKE_C_COMPILER_ID_TEST_FLAGS=-c;-Aa;-D__CLASSIC_C__;--target=arm-arm-none-eabi -mcpu=cortex-m3;-c -I__does_not_exist__
 CMAKE_C_COMPILER_LOADED=1
+CMAKE_C_COMPILER_NAMES=cc
 CMAKE_C_COMPILER_PREDEFINES_COMMAND=/home/park-ubuntu/emsdk/upstream/emscripten/emcc;-dM;-E;-c;/usr/share/cmake-3.22/Modules/CMakeCXXCompilerABI.cpp
+CMAKE_C_COMPILER_RANLIB=/home/park-ubuntu/emsdk/upstream/emscripten/emranlib
 CMAKE_C_COMPILER_RANLIB=/home/park-ubuntu/emsdk/upstream/emscripten/emranlib
 CMAKE_C_COMPILER_VERSION=23.0.0
 CMAKE_C_COMPILER_VERSION_INTERNAL=
@@ -369,7 +376,7 @@ CMAKE_EXTRA_GENERATOR=
 CMAKE_FILES_DIRECTORY=/CMakeFiles
 CMAKE_FIND_LIBRARY_PREFIXES=lib
 CMAKE_FIND_LIBRARY_SUFFIXES=.so;.a
-CMAKE_FIND_ROOT_PATH=/home/park-ubuntu/emsdk/upstream/emscripten/cache/sysroot;/home/park-ubuntu/emsdk/upstream/emscripten/cache/sysroot;/home/park-ubuntu/emsdk/upstream/emscripten/cache/sysroot;/home/park-ubuntu/emsdk/upstream/emscripten/cache/sysroot
+CMAKE_FIND_ROOT_PATH=/home/park-ubuntu/emsdk/upstream/emscripten/cache/sysroot;/home/park-ubuntu/emsdk/upstream/emscripten/cache/sysroot;/home/park-ubuntu/emsdk/upstream/emscripten/cache/sysroot;/home/park-ubuntu/emsdk/upstream/emscripten/cache/sysroot;/home/park-ubuntu/emsdk/upstream/emscripten/cache/sysroot
 CMAKE_FIND_ROOT_PATH_MODE_INCLUDE=ONLY
 CMAKE_FIND_ROOT_PATH_MODE_LIBRARY=ONLY
 CMAKE_FIND_ROOT_PATH_MODE_PACKAGE=ONLY
@@ -385,10 +392,10 @@ CMAKE_HAVE_SYS_PRCTL_H=1
 CMAKE_HAVE_THREADS_LIBRARY=1
 CMAKE_HAVE_UNISTD_H=1
 CMAKE_HOME_DIRECTORY=/home/park-ubuntu/park/SOLUTION/Mobile-SLAM/assets/references/AlvaAR/src/libs/opencv
-CMAKE_HOST_SYSTEM=Linux-6.8.0-90-generic
+CMAKE_HOST_SYSTEM=Linux-6.8.0-100-generic
 CMAKE_HOST_SYSTEM_NAME=Linux
 CMAKE_HOST_SYSTEM_PROCESSOR=x86_64
-CMAKE_HOST_SYSTEM_VERSION=6.8.0-90-generic
+CMAKE_HOST_SYSTEM_VERSION=6.8.0-100-generic
 CMAKE_HOST_UNIX=1
 CMAKE_INCLUDE_FLAG_C=-I
 CMAKE_INCLUDE_FLAG_CXX=-I
@@ -464,10 +471,9 @@ CMAKE_MODULE_LINKER_FLAGS_MINSIZEREL=
 CMAKE_MODULE_LINKER_FLAGS_RELEASE= 
 CMAKE_MODULE_LINKER_FLAGS_RELEASE= 
 CMAKE_MODULE_LINKER_FLAGS_RELWITHDEBINFO=
-CMAKE_MODULE_PATH=/home/park-ubuntu/emsdk/upstream/emscripten/cmake/Modules;/home/park-ubuntu/emsdk/upstream/emscripten/cmake/Modules;/home/park-ubuntu/emsdk/upstream/emscripten/cmake/Modules;/home/park-ubuntu/emsdk/upstream/emscripten/cmake/Modules
+CMAKE_MODULE_PATH=/home/park-ubuntu/emsdk/upstream/emscripten/cmake/Modules;/home/park-ubuntu/emsdk/upstream/emscripten/cmake/Modules;/home/park-ubuntu/emsdk/upstream/emscripten/cmake/Modules;/home/park-ubuntu/emsdk/upstream/emscripten/cmake/Modules;/home/park-ubuntu/emsdk/upstream/emscripten/cmake/Modules
 CMAKE_MT=
 CMAKE_NM=/home/park-ubuntu/emsdk/upstream/emscripten/emnm
-CMAKE_NUMBER_OF_MAKEFILES=44
 CMAKE_OBJCOPY=/usr/bin/objcopy
 CMAKE_OBJDUMP=/usr/bin/objdump
 CMAKE_PARENT_LIST_FILE=/home/park-ubuntu/park/SOLUTION/Mobile-SLAM/assets/references/AlvaAR/src/libs/opencv/CMakeLists.txt
@@ -535,7 +541,7 @@ CMAKE_SYSTEM=Emscripten-1
 CMAKE_SYSTEM_INFO_FILE=Platform/Emscripten
 CMAKE_SYSTEM_LOADED=1
 CMAKE_SYSTEM_NAME=Emscripten
-CMAKE_SYSTEM_PREFIX_PATH=/;/;/;/
+CMAKE_SYSTEM_PREFIX_PATH=/;/;/;/;/
 CMAKE_SYSTEM_PROCESSOR=x86
 CMAKE_SYSTEM_SPECIFIC_INFORMATION_LOADED=1
 CMAKE_SYSTEM_SPECIFIC_INITIALIZE_LOADED=1
@@ -550,6 +556,7 @@ CMAKE_USE_PTHREADS_INIT=1
 CMAKE_VERBOSE_MAKEFILE=FALSE
 CMAKE_VERSION=3.22.1
 CMAKE_WORDS_BIGENDIAN=0
+COMPILER_BASENAME=emcc
 CPACK_BINARY_DEB=OFF
 CPACK_BINARY_FREEBSD=OFF
 CPACK_BINARY_IFW=OFF
@@ -620,12 +627,12 @@ CPACK_IGNORE_FILES=/CVS/;/\\.svn/;/\\.bzr/;/\\.hg/;/\\.git/;\\.swp\$;\\.#;/#
 CPACK_INSTALLED_DIRECTORIES=/home/park-ubuntu/park/SOLUTION/Mobile-SLAM/assets/references/AlvaAR/src/libs/opencv;/
 CPACK_INSTALL_CMAKE_PROJECTS=
 CPACK_INSTALL_PREFIX=/home/park-ubuntu/park/SOLUTION/Mobile-SLAM/wasm/libs/opencv
-CPACK_MODULE_PATH=/home/park-ubuntu/emsdk/upstream/emscripten/cmake/Modules;/home/park-ubuntu/emsdk/upstream/emscripten/cmake/Modules;/home/park-ubuntu/emsdk/upstream/emscripten/cmake/Modules;/home/park-ubuntu/emsdk/upstream/emscripten/cmake/Modules
-CPACK_NSIS_DISPLAY_NAME=OpenCV 7796af5
+CPACK_MODULE_PATH=/home/park-ubuntu/emsdk/upstream/emscripten/cmake/Modules;/home/park-ubuntu/emsdk/upstream/emscripten/cmake/Modules;/home/park-ubuntu/emsdk/upstream/emscripten/cmake/Modules;/home/park-ubuntu/emsdk/upstream/emscripten/cmake/Modules;/home/park-ubuntu/emsdk/upstream/emscripten/cmake/Modules
+CPACK_NSIS_DISPLAY_NAME=OpenCV 7796af5-dirty
 CPACK_NSIS_INSTALLER_ICON_CODE=
 CPACK_NSIS_INSTALLER_MUI_ICON_CODE=
 CPACK_NSIS_INSTALL_ROOT=$PROGRAMFILES
-CPACK_NSIS_PACKAGE_NAME=OpenCV 7796af5
+CPACK_NSIS_PACKAGE_NAME=OpenCV 7796af5-dirty
 CPACK_NSIS_UNINSTALL_NAME=Uninstall
 CPACK_OUTPUT_CONFIG_FILE=/home/park-ubuntu/park/SOLUTION/Mobile-SLAM/wasm/libs/opencv_build/CPackConfig.cmake
 CPACK_PACKAGE_CONTACT=admin@opencv.org
@@ -637,13 +644,13 @@ machine perception in the commercial products. Being a BSD-licensed product,
 OpenCV makes it easy for businesses to utilize and modify the code.
 CPACK_PACKAGE_DESCRIPTION_FILE=/usr/share/cmake-3.22/Templates/CPack.GenericDescription.txt
 CPACK_PACKAGE_DESCRIPTION_SUMMARY=Open Computer Vision Library
-CPACK_PACKAGE_FILE_NAME=OpenCV-7796af5-x86
-CPACK_PACKAGE_INSTALL_DIRECTORY=OpenCV 7796af5
-CPACK_PACKAGE_INSTALL_REGISTRY_KEY=OpenCV 7796af5
+CPACK_PACKAGE_FILE_NAME=OpenCV-7796af5-dirty-x86
+CPACK_PACKAGE_INSTALL_DIRECTORY=OpenCV 7796af5-dirty
+CPACK_PACKAGE_INSTALL_REGISTRY_KEY=OpenCV 7796af5-dirty
 CPACK_PACKAGE_NAME=OpenCV
 CPACK_PACKAGE_RELOCATABLE=true
 CPACK_PACKAGE_VENDOR=OpenCV Foundation
-CPACK_PACKAGE_VERSION=7796af5
+CPACK_PACKAGE_VERSION=7796af5-dirty
 CPACK_PACKAGE_VERSION_MAJOR=4
 CPACK_PACKAGE_VERSION_MINOR=5
 CPACK_PACKAGE_VERSION_PATCH=5
@@ -666,7 +673,7 @@ CPACK_SOURCE_GENERATOR=TBZ2;TGZ;TXZ;TZ
 CPACK_SOURCE_IGNORE_FILES=/CVS/;/\\.svn/;/\\.bzr/;/\\.hg/;/\\.git/;\\.swp\$;\\.#;/#
 CPACK_SOURCE_INSTALLED_DIRECTORIES=/home/park-ubuntu/park/SOLUTION/Mobile-SLAM/assets/references/AlvaAR/src/libs/opencv;/
 CPACK_SOURCE_OUTPUT_CONFIG_FILE=/home/park-ubuntu/park/SOLUTION/Mobile-SLAM/wasm/libs/opencv_build/CPackSourceConfig.cmake
-CPACK_SOURCE_PACKAGE_FILE_NAME=OpenCV-7796af5-x86
+CPACK_SOURCE_PACKAGE_FILE_NAME=OpenCV-7796af5-dirty-x86
 CPACK_SOURCE_RPM=OFF
 CPACK_SOURCE_TBZ2=ON
 CPACK_SOURCE_TGZ=ON
@@ -831,7 +838,8 @@ ENABLE_PRECOMPILED_HEADERS=OFF
 ENABLE_SOLUTION_FOLDERS=OFF
 ENABLE_THIN_LTO=OFF
 EXECUTABLE_OUTPUT_PATH=/home/park-ubuntu/park/SOLUTION/Mobile-SLAM/wasm/libs/opencv_build/bin
-FIND_PACKAGE_MESSAGE_DETAILS_PythonInterp=[/home/park-ubuntu/miniconda3/bin/python][v3.13.5(2.7)]
+FILE=
+FIND_PACKAGE_MESSAGE_DETAILS_PythonInterp=[/home/park-ubuntu/miniconda3/bin/python3][v3.13.5(3.2)]
 FIND_PACKAGE_MESSAGE_DETAILS_Threads=[TRUE][v()]
 FIXED_ORDER_MODULES=core;imgproc;imgcodecs;videoio;highgui;video;calib3d;features2d;objdetect;dnn;ml;flann;photo;stitching
 GENERATE_ABI_DESCRIPTOR=OFF
@@ -968,6 +976,7 @@ HELP_OPENCV_DOWNLOAD_PATH=Cache directory for downloaded files
 HIGHGUI_ENABLE_PLUGINS=OFF
 HIGHGUI_PLUGIN_LIST=
 HIGHGUI_PLUGIN_LIST=
+INCLUDE_CMAKE_TOOLCHAIN_FILE_IF_REQUIRED=include("/home/park-ubuntu/emsdk/upstream/emscripten/cmake/Modules/Platform/Emscripten.cmake")
 INSTALL_CREATE_DISTRIB=OFF
 INSTALL_C_EXAMPLES=OFF
 INSTALL_PYTHON_EXAMPLES=OFF
@@ -1913,8 +1922,8 @@ OPENCV_SOVERSION=405
 OPENCV_SUPPRESS_DEPRECATIONS=1
 OPENCV_TEST_DATA_INSTALL_PATH=share/opencv4/testdata
 OPENCV_TEST_INSTALL_PATH=bin
-OPENCV_TIMESTAMP=2026-02-20T05:46:54Z
-OPENCV_VCSVERSION=7796af5
+OPENCV_TIMESTAMP=2026-03-10T02:56:15Z
+OPENCV_VCSVERSION=7796af5-dirty
 OPENCV_VERIFICATIONS=WITH_1394;WITH_AVFOUNDATION;WITH_CAP_IOS;WITH_CPUFEATURES;WITH_VTK;WITH_CUDA;WITH_CUFFT;WITH_CUBLAS;WITH_CUDNN;WITH_NVCUVID;WITH_EIGEN;WITH_FFMPEG;WITH_GSTREAMER;WITH_GTK;WITH_GTK_2_X;WITH_IPP;WITH_HALIDE;WITH_VULKAN;WITH_INF_ENGINE;WITH_NGRAPH;WITH_WEBNN;WITH_JASPER;WITH_OPENJPEG;WITH_JPEG;WITH_WEBP;WITH_OPENEXR;WITH_OPENGL;WITH_OPENVX;WITH_OPENNI;WITH_OPENNI2;WITH_PNG;WITH_GDCM;WITH_PVAPI;WITH_ARAVIS;WITH_QT;WITH_WIN32UI;WITH_TBB;WITH_HPX;WITH_OPENMP;WITH_PTHREADS_PF;WITH_TIFF;WITH_V4L;WITH_DSHOW;WITH_MSMF;WITH_MSMF_DXVA;WITH_XIMEA;WITH_UEYE;WITH_XINE;WITH_CLP;WITH_OPENCL;WITH_OPENCL_SVM;WITH_OPENCLAMDFFT;WITH_OPENCLAMDBLAS;WITH_DIRECTX;WITH_OPENCL_D3D11_NV;WITH_LIBREALSENSE;WITH_VA;WITH_VA_INTEL;WITH_MFX;WITH_GDAL;WITH_GPHOTO2;WITH_LAPACK;WITH_ITT;WITH_PROTOBUF;WITH_IMGCODEC_HDR;WITH_IMGCODEC_SUNRASTER;WITH_IMGCODEC_PXM;WITH_IMGCODEC_PFM;WITH_QUIRC;WITH_ANDROID_MEDIANDK;WITH_ANDROID_NATIVE_CAMERA;WITH_TENGINE;WITH_ONNX
 OPENCV_VERIFY_WITH_1394=HAVE_DC1394_2
 OPENCV_VERIFY_WITH_ANDROID_MEDIANDK=HAVE_ANDROID_MEDIANDK
@@ -2009,6 +2018,20 @@ OPENCV_WARNINGS_ARE_ERRORS=OFF
 OPENCV_WORLD_MODULES=
 OPT=
 OPT2=
+OUTPUT=Change Dir: /home/park-ubuntu/park/SOLUTION/Mobile-SLAM/wasm/libs/opencv_build/CMakeFiles/CMakeTmp
+
+Run Build Command(s):/usr/bin/gmake -f Makefile cmTC_567cd/fast && /usr/bin/gmake  -f CMakeFiles/cmTC_567cd.dir/build.make CMakeFiles/cmTC_567cd.dir/build
+gmake[1]: Entering directory '/home/park-ubuntu/park/SOLUTION/Mobile-SLAM/wasm/libs/opencv_build/CMakeFiles/CMakeTmp'
+Building C object CMakeFiles/cmTC_567cd.dir/CheckSymbolExists.c.o
+/home/park-ubuntu/emsdk/upstream/emscripten/emcc   -O3 -msimd128   -fsigned-char -W -Wall    -Wformat -Wmissing-declarations -Wmissing-prototypes -Wstrict-prototypes -Wundef -Winit-self -Wpointer-arith -Wshadow -Wsign-promo -Wuninitialized -Winconsistent-missing-override -Wno-delete-non-virtual-dtor -Wno-unnamed-type-template-args -Wno-comment -Wno-deprecated-enum-enum-conversion -Wno-deprecated-anon-enum-enum-conversion -fdiagnostics-show-option -Qunused-arguments -ffunction-sections -fdata-sections  -fvisibility=hidden -fvisibility-inlines-hidden  -O3 -DNDEBUG  -DNDEBUG -MD -MT CMakeFiles/cmTC_567cd.dir/CheckSymbolExists.c.o -MF CMakeFiles/cmTC_567cd.dir/CheckSymbolExists.c.o.d -o CMakeFiles/cmTC_567cd.dir/CheckSymbolExists.c.o -c /home/park-ubuntu/park/SOLUTION/Mobile-SLAM/wasm/libs/opencv_build/CMakeFiles/CMakeTmp/CheckSymbolExists.c
+Linking C executable cmTC_567cd.js
+/usr/bin/cmake -E cmake_link_script CMakeFiles/cmTC_567cd.dir/link.txt --verbose=1
+/home/park-ubuntu/emsdk/upstream/emscripten/emcc -O3 -msimd128   -fsigned-char -W -Wall    -Wformat -Wmissing-declarations -Wmissing-prototypes -Wstrict-prototypes -Wundef -Winit-self -Wpointer-arith -Wshadow -Wsign-promo -Wuninitialized -Winconsistent-missing-override -Wno-delete-non-virtual-dtor -Wno-unnamed-type-template-args -Wno-comment -Wno-deprecated-enum-enum-conversion -Wno-deprecated-anon-enum-enum-conversion -fdiagnostics-show-option -Qunused-arguments -ffunction-sections -fdata-sections  -fvisibility=hidden -fvisibility-inlines-hidden  -O3 -DNDEBUG  -DNDEBUG   -Wl,--gc-sections  @CMakeFiles/cmTC_567cd.dir/objects1.rsp -o cmTC_567cd.js 
+clang: warning: future releases of the clang compiler will prefer GCC installations containing libstdc++ include directories; '/usr/lib/gcc/x86_64-linux-gnu/11' would be chosen over '/usr/lib/gcc/x86_64-linux-gnu/12' [-Wgcc-install-dir-libstdcxx]
+gmake[1]: Leaving directory '/home/park-ubuntu/park/SOLUTION/Mobile-SLAM/wasm/libs/opencv_build/CMakeFiles/CMakeTmp'
+
+
+OUTPUT_LINES=Change Dir: /home/park-ubuntu/park/SOLUTION/Mobile-SLAM/wasm/libs/opencv_build/CMakeFiles/CMakeTmp;;Run Build Command(s):/usr/bin/gmake -f Makefile cmTC_52d7c/fast && /usr/bin/gmake  -f CMakeFiles/cmTC_52d7c.dir/build.make CMakeFiles/cmTC_52d7c.dir/build;gmake[1]: Entering directory '/home/park-ubuntu/park/SOLUTION/Mobile-SLAM/wasm/libs/opencv_build/CMakeFiles/CMakeTmp';Building C object CMakeFiles/cmTC_52d7c.dir/src.c.o;/home/park-ubuntu/emsdk/upstream/emscripten/emcc   -O3 -msimd128  -O3 -DNDEBUG    -fsigned-char -W -Wall -Werror=return-type -Werror=non-virtual-dtor -Werror=address -Werror=sequence-point -Wformat -Werror=format-security -Wmissing-declarations -Wmissing-prototypes -Wstrict-prototypes -Wundef -Winit-self -Wpointer-arith -Wshadow -Wsign-promo -Wuninitialized -Winconsistent-missing-override -Wno-delete-non-virtual-dtor -Wno-unnamed-type-template-args -Wno-comment -Wno-deprecated-enum-enum-conversion -Wno-deprecated-anon-enum-enum-conversion -fdiagnostics-show-option -Qunused-arguments -ffunction-sections -fdata-sections  -fvisibility=hidden  -fvisibility-inlines-hidden -MD -MT CMakeFiles/cmTC_52d7c.dir/src.c.o -MF CMakeFiles/cmTC_52d7c.dir/src.c.o.d -o CMakeFiles/cmTC_52d7c.dir/src.c.o -c /home/park-ubuntu/park/SOLUTION/Mobile-SLAM/wasm/libs/opencv_build/CMakeFiles/CMakeTmp/src.c;/home/park-ubuntu/park/SOLUTION/Mobile-SLAM/wasm/libs/opencv_build/CMakeFiles/CMakeTmp/src.c:1:8: warning: unknown pragma ignored [-Wunknown-pragmas];    1 | #pragma;      |        ^;1 warning generated.;Linking C executable cmTC_52d7c.js;/usr/bin/cmake -E cmake_link_script CMakeFiles/cmTC_52d7c.dir/link.txt --verbose=1;/home/park-ubuntu/emsdk/upstream/emscripten/emcc -O3 -msimd128  -O3 -DNDEBUG @CMakeFiles/cmTC_52d7c.dir/objects1.rsp -o cmTC_52d7c.js ;clang: warning: future releases of the clang compiler will prefer GCC installations containing libstdc++ include directories, '/usr/lib/gcc/x86_64-linux-gnu/11' would be chosen over '/usr/lib/gcc/x86_64-linux-gnu/12' [-Wgcc-install-dir-libstdcxx];gmake[1]: Leaving directory '/home/park-ubuntu/park/SOLUTION/Mobile-SLAM/wasm/libs/opencv_build/CMakeFiles/CMakeTmp';;
 OpenBLAS=
 OpenBLAS_FOUND=OFF
 OpenBLAS_INCLUDE_DIR=OpenBLAS_INCLUDE_DIR-NOTFOUND
@@ -2039,6 +2062,7 @@ PKG_CONFIG_FOUND=TRUE
 PKG_CONFIG_NAMES=pkg-config;pkgconf
 PKG_CONFIG_VERSION=1
 PKG_CONFIG_VERSION_STRING=0.29.2
+PRESET_CMAKE_SYSTEM_NAME=TRUE
 PROJECT_BINARY_DIR=/home/park-ubuntu/park/SOLUTION/Mobile-SLAM/wasm/libs/opencv_build
 PROJECT_DESCRIPTION=
 PROJECT_HOMEPAGE_URL=
@@ -2193,6 +2217,9 @@ _CMAKE_C_IPO_MAY_BE_SUPPORTED_BY_COMPILER=YES
 _CMAKE_C_IPO_SUPPORTED_BY_CMAKE=YES
 _CMAKE_C_PIE_MAY_BE_SUPPORTED_BY_LINKER=YES
 _CMAKE_LTO_THIN=TRUE
+_CMAKE_TOOLCHAIN_LOCATION=/home/park-ubuntu/emsdk/upstream/emscripten
+_CMAKE_USER_CXX_COMPILER_PATH=/home/park-ubuntu/emsdk/upstream/emscripten
+_CMAKE_USER_C_COMPILER_PATH=/home/park-ubuntu/emsdk/upstream/emscripten
 _CPACK_OTHER_VARIABLES_=
 set(CPACK_BINARY_DEB "OFF")
 set(CPACK_BINARY_FREEBSD "OFF")
@@ -2264,12 +2291,12 @@ set(CPACK_IGNORE_FILES "/CVS/;/\\.svn/;/\\.bzr/;/\\.hg/;/\\.git/;\\.swp\$;\\.#;/
 set(CPACK_INSTALLED_DIRECTORIES "/home/park-ubuntu/park/SOLUTION/Mobile-SLAM/assets/references/AlvaAR/src/libs/opencv;/")
 set(CPACK_INSTALL_CMAKE_PROJECTS "")
 set(CPACK_INSTALL_PREFIX "/home/park-ubuntu/park/SOLUTION/Mobile-SLAM/wasm/libs/opencv")
-set(CPACK_MODULE_PATH "/home/park-ubuntu/emsdk/upstream/emscripten/cmake/Modules;/home/park-ubuntu/emsdk/upstream/emscripten/cmake/Modules;/home/park-ubuntu/emsdk/upstream/emscripten/cmake/Modules;/home/park-ubuntu/emsdk/upstream/emscripten/cmake/Modules")
-set(CPACK_NSIS_DISPLAY_NAME "OpenCV 7796af5")
+set(CPACK_MODULE_PATH "/home/park-ubuntu/emsdk/upstream/emscripten/cmake/Modules;/home/park-ubuntu/emsdk/upstream/emscripten/cmake/Modules;/home/park-ubuntu/emsdk/upstream/emscripten/cmake/Modules;/home/park-ubuntu/emsdk/upstream/emscripten/cmake/Modules;/home/park-ubuntu/emsdk/upstream/emscripten/cmake/Modules")
+set(CPACK_NSIS_DISPLAY_NAME "OpenCV 7796af5-dirty")
 set(CPACK_NSIS_INSTALLER_ICON_CODE "")
 set(CPACK_NSIS_INSTALLER_MUI_ICON_CODE "")
 set(CPACK_NSIS_INSTALL_ROOT "$PROGRAMFILES")
-set(CPACK_NSIS_PACKAGE_NAME "OpenCV 7796af5")
+set(CPACK_NSIS_PACKAGE_NAME "OpenCV 7796af5-dirty")
 set(CPACK_NSIS_UNINSTALL_NAME "Uninstall")
 set(CPACK_OUTPUT_CONFIG_FILE "/home/park-ubuntu/park/SOLUTION/Mobile-SLAM/wasm/libs/opencv_build/CPackConfig.cmake")
 set(CPACK_PACKAGE_CONTACT "admin@opencv.org")
@@ -2281,13 +2308,13 @@ machine perception in the commercial products. Being a BSD-licensed product,
 OpenCV makes it easy for businesses to utilize and modify the code.")
 set(CPACK_PACKAGE_DESCRIPTION_FILE "/usr/share/cmake-3.22/Templates/CPack.GenericDescription.txt")
 set(CPACK_PACKAGE_DESCRIPTION_SUMMARY "Open Computer Vision Library")
-set(CPACK_PACKAGE_FILE_NAME "OpenCV-7796af5-x86")
-set(CPACK_PACKAGE_INSTALL_DIRECTORY "OpenCV 7796af5")
-set(CPACK_PACKAGE_INSTALL_REGISTRY_KEY "OpenCV 7796af5")
+set(CPACK_PACKAGE_FILE_NAME "OpenCV-7796af5-dirty-x86")
+set(CPACK_PACKAGE_INSTALL_DIRECTORY "OpenCV 7796af5-dirty")
+set(CPACK_PACKAGE_INSTALL_REGISTRY_KEY "OpenCV 7796af5-dirty")
 set(CPACK_PACKAGE_NAME "OpenCV")
 set(CPACK_PACKAGE_RELOCATABLE "true")
 set(CPACK_PACKAGE_VENDOR "OpenCV Foundation")
-set(CPACK_PACKAGE_VERSION "7796af5")
+set(CPACK_PACKAGE_VERSION "7796af5-dirty")
 set(CPACK_PACKAGE_VERSION_MAJOR "4")
 set(CPACK_PACKAGE_VERSION_MINOR "5")
 set(CPACK_PACKAGE_VERSION_PATCH "5")
@@ -2310,7 +2337,7 @@ set(CPACK_SOURCE_GENERATOR "TBZ2;TGZ;TXZ;TZ")
 set(CPACK_SOURCE_IGNORE_FILES "/CVS/;/\\.svn/;/\\.bzr/;/\\.hg/;/\\.git/;\\.swp\$;\\.#;/#")
 set(CPACK_SOURCE_INSTALLED_DIRECTORIES "/home/park-ubuntu/park/SOLUTION/Mobile-SLAM/assets/references/AlvaAR/src/libs/opencv;/")
 set(CPACK_SOURCE_OUTPUT_CONFIG_FILE "/home/park-ubuntu/park/SOLUTION/Mobile-SLAM/wasm/libs/opencv_build/CPackSourceConfig.cmake")
-set(CPACK_SOURCE_PACKAGE_FILE_NAME "OpenCV-7796af5-x86")
+set(CPACK_SOURCE_PACKAGE_FILE_NAME "OpenCV-7796af5-dirty-x86")
 set(CPACK_SOURCE_RPM "OFF")
 set(CPACK_SOURCE_TBZ2 "ON")
 set(CPACK_SOURCE_TGZ "ON")
@@ -2327,11 +2354,17 @@ set(CPACK_set_DESTDIR "on")
 _GNUInstallDirs_LAST_CMAKE_INSTALL_PREFIX=/home/park-ubuntu/park/SOLUTION/Mobile-SLAM/wasm/libs/opencv
 _INCLUDED_FILE=NOTFOUND
 _INCLUDED_SYSTEM_INFO_FILE=/home/park-ubuntu/emsdk/upstream/emscripten/cmake/Modules/Platform/Emscripten.cmake
+_INCLUDED_TOOLCHAIN_FILE=/home/park-ubuntu/emsdk/upstream/emscripten/cmake/Modules/Platform/Emscripten.cmake
 _IN_TC=0
+_LIBDIR_DEFAULT=lib
 _PKG_CONFIG_FAILURE_MESSAGE=
 _PKG_CONFIG_VERSION_ERROR=
 _POS=0
 _Python2_EXECUTABLE=Python2_EXECUTABLE-NOTFOUND
+_SET_CMAKE_CXX_COMPILER_ARCHITECTURE_ID=
+_SET_CMAKE_CXX_COMPILER_SYSROOT=
+_SET_CMAKE_C_COMPILER_ARCHITECTURE_ID=
+_SET_CMAKE_C_COMPILER_SYSROOT=
 _cmake_compiler_output=emcc (Emscripten gcc/clang-like replacement + linker emulating GNU ld) 5.0.0 (a7c5deabd7c88ba1c38ebe988112256775f944c6)
 clang version 23.0.0git (https:/github.com/llvm/llvm-project 358db292cc6a9a8a5448a296f643312289f328d7)
 Target: wasm32-unknown-emscripten
@@ -2342,12 +2375,14 @@ _cmake_compiler_result=0
 _dummy_unused=clang version 23.0.0
 _emcache_output=/home/park-ubuntu/emsdk/upstream/emscripten/cache
 _emcache_result=0
-_fname=
+_fname=/home/park-ubuntu/park/SOLUTION/Mobile-SLAM/wasm/libs/opencv_build/CMakeFiles/CMakeTmp/src.c
 _lang=C
 _libname=zlib
+_line=
 _list=
 _output=/home/park-ubuntu/park/SOLUTION/Mobile-SLAM/wasm/libs/opencv_build/3rdparty/lib
 _output_name=zlib
+_regex=
 _rev_deps=opencv_video;opencv_calib3d;opencv_features2d;opencv_imgproc;opencv_flann;opencv_core;opencv_calib3d;opencv_features2d;opencv_imgproc;opencv_flann;opencv_core
 _type=STATIC_LIBRARY
 _var=
@@ -2375,7 +2410,7 @@ item=
 lang=
 lst=
 m=
-mkl_root_paths=MKL_ROOT_DIR-NOTFOUND
+mkl_root_paths=
 mod=
 module=
 name=python_bindings_generator
@@ -2422,6 +2457,7 @@ parallel_status=none
 res=TRUE
 the_module=
 type=
+val=0
 var=
 zlib_BINARY_DIR=/home/park-ubuntu/park/SOLUTION/Mobile-SLAM/wasm/libs/opencv_build/3rdparty/zlib
 zlib_IS_TOP_LEVEL=OFF

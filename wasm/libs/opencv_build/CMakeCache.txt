@@ -480,8 +480,8 @@ CMAKE_STATIC_LINKER_FLAGS_RELWITHDEBINFO:STRING=
 //Path to a program.
 CMAKE_STRIP:FILEPATH=/usr/bin/strip
 
-//No help, variable specified on the command line.
-CMAKE_TOOLCHAIN_FILE:UNINITIALIZED=/home/park-ubuntu/emsdk/upstream/emscripten/cmake/Modules/Platform/Emscripten.cmake
+//The CMake toolchain file
+CMAKE_TOOLCHAIN_FILE:FILEPATH=/home/park-ubuntu/emsdk/upstream/emscripten/cmake/Modules/Platform/Emscripten.cmake
 
 //If this value is on, makefiles will be generated without the
 // .SILENT directive, and all commands will be echoed to the console
@@ -706,7 +706,7 @@ OPENCV_MATHJAX_RELPATH:STRING=https://cdnjs.cloudflare.com/ajax/libs/mathjax/2.7
 OPENCV_PYTHON3_VERSION:BOOL=OFF
 
 //Timestamp of OpenCV build configuration
-OPENCV_TIMESTAMP:STRING=2026-02-20T05:46:54Z
+OPENCV_TIMESTAMP:STRING=2026-03-10T02:56:15Z
 
 //Treat warnings as errors
 OPENCV_WARNINGS_ARE_ERRORS:BOOL=OFF
@@ -1369,7 +1369,7 @@ CPU_SSSE3_USAGE_COUNT:INTERNAL=0
 //If true, we are targeting Emscripten output.
 EMSCRIPTEN:INTERNAL=1
 //Details about finding PythonInterp
-FIND_PACKAGE_MESSAGE_DETAILS_PythonInterp:INTERNAL=[/home/park-ubuntu/miniconda3/bin/python][v3.13.5(2.7)]
+FIND_PACKAGE_MESSAGE_DETAILS_PythonInterp:INTERNAL=[/home/park-ubuntu/miniconda3/bin/python3][v3.13.5(3.2)]
 //Details about finding Threads
 FIND_PACKAGE_MESSAGE_DETAILS_Threads:INTERNAL=[TRUE][v()]
 //ADVANCED property for variable: GIT_EXECUTABLE

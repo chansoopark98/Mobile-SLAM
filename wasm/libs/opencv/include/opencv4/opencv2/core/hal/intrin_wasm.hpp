@@ -10,6 +10,13 @@
 #include <algorithm>
 #include "opencv2/core/saturate.hpp"
 
+// Fix for Emscripten >= 3.1.4: version macros moved to <emscripten/version.h>
+// Without this, __EMSCRIPTEN_major__ is 0 and all version guards break.
+// Backport of opencv PR #25909 (merged into 4.11.0, Oct 2024).
+#ifndef __EMSCRIPTEN_major__
+#include <emscripten/version.h>
+#endif
+
 #define CV_SIMD128 1
 #define CV_SIMD128_64F 0 // Now all implementation of f64 use fallback, so disable it.
 #define CV_SIMD128_FP16 0
