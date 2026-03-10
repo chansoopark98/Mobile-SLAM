@@ -8,11 +8,11 @@
  *   IMU buffer on each frame.
  * - This prevents IMU data loss when frames are dropped due to worker being busy.
  */
-import { VIOWrapper } from './vio-wrapper.js?v=10';
-import { Camera } from './camera.js?v=10';
-import { IMU } from './imu.js?v=10';
-import { Renderer } from './renderer.js?v=10';
-import { OrientationHandler } from './orientation.js?v=10';
+import { VIOWrapper } from './vio-wrapper.js?v=11';
+import { Camera } from './camera.js?v=11';
+import { IMU } from './imu.js?v=11';
+import { Renderer } from './renderer.js?v=11';
+import { OrientationHandler } from './orientation.js?v=11';
 
 /**
  * URL parameter overrides for rapid mobile testing.
@@ -56,8 +56,12 @@ const VIO_CONFIGS = {
                           //   Previous 0.08-0.15 caused Ba explosion, but that was due to
                           //   timestamp error (now fixed: requestVideoFrameCallback) and
                           //   low frame rate (now fixed: 30fps). 0.3 balances IMU/visual.
-        acc_w: 0.001,     // accelerometer random walk
-                          //   ~25x EuRoC (0.00004). Allows faster Ba adaptation on mobile.
+        acc_w: 0.003,     // accelerometer random walk (m/s²·s/√Hz)
+                          //   ~75x EuRoC (0.00004). Loosened from 0.001 to allow faster
+                          //   Ba convergence during initial motion. Ba is NOT estimated
+                          //   during initialization (only Bg is), so it starts at zero.
+                          //   At acc_w=0.001, Ba took ~200 frames to converge to -0.45,
+                          //   accumulating significant scale error. 0.003 ≈ 3x faster.
         gyr_n: 0.02,      // gyroscope noise density (rad/s/√Hz)
                           //   ~5x EuRoC (0.004). Moderate: gives IMU rotational constraint
                           //   while tolerating mobile gyro noise. Helps maintain pose
@@ -382,6 +386,50 @@ function downsampleGray(gray, srcW, srcH, dstW, dstH) {
     return out;
 }
 
+/**
+ * Convert deviceorientation Euler angles to quaternion (ZXY rotation order).
+ * Formula extracted from 8th Wall XR engine (LA function).
+ *
+ * @param {number} alpha - Compass heading (Z rotation, degrees)
+ * @param {number} beta  - Front-back tilt (X rotation, degrees)
+ * @param {number} gamma - Left-right tilt (Y rotation, degrees)
+ * @returns {{w: number, x: number, y: number, z: number}}
+ */
+function eulerToQuaternion(alpha, beta, gamma) {
+    const D2R = Math.PI / 180;
+    const hx = (beta  * D2R) / 2;
+    const hy = (gamma * D2R) / 2;
+    const hz = (alpha * D2R) / 2;
+    const cx = Math.cos(hx), sx = Math.sin(hx);
+    const cy = Math.cos(hy), sy = Math.sin(hy);
+    const cz = Math.cos(hz), sz = Math.sin(hz);
+    return {
+        w: cx * cy * cz - sx * sy * sz,
+        x: sx * cy * cz - cx * sy * sz,
+        y: cx * sy * cz + sx * cy * sz,
+        z: cx * cy * sz + sx * sy * cz,
+    };
+}
+
+/**
+ * Extract gravity direction from deviceorientation quaternion.
+ * W3C Earth frame is Z-up (East-North-Up), so gravity = (0, 0, -g).
+ * The deviceorientation quaternion q rotates device frame → earth frame.
+ * To get gravity in device frame: v_device = q_conj * (0, 0, -g) * q.
+ * Expanded: R^T * (0, 0, -g) where R is the rotation matrix of q.
+ *
+ * @param {{w,x,y,z}} q - Orientation quaternion from eulerToQuaternion
+ * @returns {{x: number, y: number, z: number}} Gravity in W3C device frame (m/s²)
+ */
+function gravityFromOrientation(q) {
+    const g = 9.81;
+    return {
+        x: -g * 2 * (q.x * q.z - q.w * q.y),
+        y: -g * 2 * (q.y * q.z + q.w * q.x),
+        z: -g * (q.w * q.w - q.x * q.x - q.y * q.y + q.z * q.z),
+    };
+}
+
 class App {
     constructor() {
         this.vio = new VIOWrapper();
@@ -427,6 +475,13 @@ class App {
 
         // IMU flush timer (independent of rAF)
         this._imuFlushTimer = null;
+
+        // deviceorientation gravity hint (8th Wall approach)
+        // Provides immediate gravity direction from device orientation sensor,
+        // used for initialization validation and future gravity seeding.
+        this._deviceOrientationHandler = null;
+        this._gravityHint = null;        // {x, y, z} gravity in VIO body frame
+        this._gravityHintRaw = null;     // {x, y, z} gravity in device frame
 
         // Frame deduplication: skip if video.currentTime hasn't changed
         this._lastVideoTime = -1;
@@ -721,6 +776,9 @@ class App {
             // Start independent IMU flush timer
             this._startIMUFlush();
 
+            // Start deviceorientation listener for gravity hint (8th Wall approach)
+            this._startDeviceOrientationListener();
+
             // Start listening for orientation changes (reconfigures VIO if phone rotates)
             this.orientation.startListening((info) => this._onOrientationChange(info));
 
@@ -820,6 +878,18 @@ class App {
                 } else {
                     console.warn(`[VIO] ⚠ |acc|=${accMag.toFixed(2)} (expected ~9.81). Device may be moving or sensor error.`);
                 }
+                // Log deviceorientation gravity hint for cross-validation
+                if (this._gravityHint) {
+                    const gh = this._gravityHint;
+                    const ghMag = Math.sqrt(gh.x * gh.x + gh.y * gh.y + gh.z * gh.z);
+                    console.log(`[VIO] Gravity hint (deviceorientation): (${gh.x.toFixed(2)}, ${gh.y.toFixed(2)}, ${gh.z.toFixed(2)}), |g|=${ghMag.toFixed(2)}`);
+                }
+                // Log LINEAR_ACCELERATION hardware gravity estimate
+                const imuGrav = this.imu.getGravityEstimate();
+                if (imuGrav) {
+                    const igMag = Math.sqrt(imuGrav.x * imuGrav.x + imuGrav.y * imuGrav.y + imuGrav.z * imuGrav.z);
+                    console.log(`[VIO] Gravity estimate (LINEAR_ACCEL): (${imuGrav.x.toFixed(2)}, ${imuGrav.y.toFixed(2)}, ${imuGrav.z.toFixed(2)}), |g|=${igMag.toFixed(2)}`);
+                }
             }
             this.imuLogCount++;
         }
@@ -849,6 +919,45 @@ class App {
             clearInterval(this._imuFlushTimer);
             this._imuFlushTimer = null;
         }
+    }
+
+    /**
+     * Start collecting deviceorientation for gravity hint.
+     * 8th Wall pattern: deviceorientation quaternion provides immediate
+     * gravity direction, avoiding the wait for accelerometer averaging.
+     */
+    _startDeviceOrientationListener() {
+        this._stopDeviceOrientationListener();
+        this._deviceOrientationHandler = (event) => {
+            const alpha = event.alpha ?? 0;
+            const beta = event.beta ?? 0;
+            const gamma = event.gamma ?? 0;
+
+            // Convert to quaternion (8th Wall ZXY formula)
+            const quat = eulerToQuaternion(alpha, beta, gamma);
+
+            // Extract gravity in W3C device frame
+            const gravDev = gravityFromOrientation(quat);
+            this._gravityHintRaw = gravDev;
+
+            // Transform to VIO body frame (same as IMU: x_v=x_d, y_v=-z_d, z_v=y_d)
+            this._gravityHint = {
+                x: gravDev.x,
+                y: -gravDev.z,
+                z: gravDev.y,
+            };
+        };
+        window.addEventListener('deviceorientation', this._deviceOrientationHandler, true);
+    }
+
+    /** Stop deviceorientation listener. */
+    _stopDeviceOrientationListener() {
+        if (this._deviceOrientationHandler) {
+            window.removeEventListener('deviceorientation', this._deviceOrientationHandler, true);
+            this._deviceOrientationHandler = null;
+        }
+        this._gravityHint = null;
+        this._gravityHintRaw = null;
     }
 
     processLoop() {
@@ -1052,11 +1161,13 @@ class App {
         if (document.hidden) {
             // Tab going to background: stop IMU flush to prevent stale accumulation
             this._stopIMUFlush();
+            this._stopDeviceOrientationListener();
             console.log('[VIO] Tab hidden — IMU flush paused');
         } else {
             // Tab returning: clear stale IMU data and restart
             this.imu.flush();  // Discard any stale buffered data
             this._startIMUFlush();
+            this._startDeviceOrientationListener();
             this.imuLogCount = 0;
             this._lastVideoTime = -1;  // Force next frame to be treated as new
             this._lastVIOFrameTime = 0;
@@ -1179,6 +1290,7 @@ class App {
     stop() {
         this.running = false;
         this._stopIMUFlush();
+        this._stopDeviceOrientationListener();
         this.orientation.stopListening();
         this.camera.stop();
         this.imu.stop();

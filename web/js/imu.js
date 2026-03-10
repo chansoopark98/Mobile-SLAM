@@ -110,6 +110,14 @@ export class IMU {
         // collecting samples while stationary and computing average gyro.
         this._gyroBias = { x: 0, y: 0, z: 0 };
         this._calibrated = false;
+
+        // Hardware gravity estimate from LINEAR_ACCELERATION
+        // gravity = accelerationIncludingGravity - acceleration (DeviceMotion only)
+        this._gravityEstimate = null;  // {x, y, z} in device frame, or null if unavailable
+        this._gravityEstimateCount = 0;
+        this._gravitySumX = 0;
+        this._gravitySumY = 0;
+        this._gravitySumZ = 0;
     }
 
     /**
@@ -251,6 +259,16 @@ export class IMU {
      */
     getGyroBias() {
         return { ...this._gyroBias };
+    }
+
+    /**
+     * Get hardware gravity estimate from LINEAR_ACCELERATION sensor.
+     * Available only on DeviceMotion path (iOS, Firefox, Android fallback).
+     * Computed as: gravity = accelerationIncludingGravity - acceleration
+     * @returns {{x: number, y: number, z: number} | null} Gravity in device frame, or null
+     */
+    getGravityEstimate() {
+        return this._gravityEstimate ? { ...this._gravityEstimate } : null;
     }
 
     /**
@@ -441,6 +459,26 @@ export class IMU {
                 (rot.gamma ?? 0) * DEG_TO_RAD,
                 (rot.alpha ?? 0) * DEG_TO_RAD
             );
+
+            // Compute hardware gravity estimate from LINEAR_ACCELERATION
+            // gravity = accelerationIncludingGravity - acceleration
+            const linAcc = event.acceleration;
+            if (linAcc && linAcc.x !== null && linAcc.y !== null && linAcc.z !== null) {
+                const gx = (acc.x ?? 0) * s - (linAcc.x ?? 0) * s;
+                const gy = (acc.y ?? 0) * s - (linAcc.y ?? 0) * s;
+                const gz = (acc.z ?? 0) * s - (linAcc.z ?? 0) * s;
+                this._gravitySumX += gx;
+                this._gravitySumY += gy;
+                this._gravitySumZ += gz;
+                this._gravityEstimateCount++;
+                // Running average (updated every sample for smoothness)
+                const n = this._gravityEstimateCount;
+                this._gravityEstimate = {
+                    x: this._gravitySumX / n,
+                    y: this._gravitySumY / n,
+                    z: this._gravitySumZ / n,
+                };
+            }
         };
 
         window.addEventListener('devicemotion', this._motionHandler, true);
@@ -452,6 +490,17 @@ export class IMU {
      * @private
      */
     _pushSample(timestamp, ax, ay, az, gx, gy, gz) {
+        // 8th Wall stale protection: discard all buffered data if oldest
+        // unread sample is >5s old (e.g., after tab switch or backgrounding)
+        const STALE_THRESHOLD_S = 5.0;
+        if (this._writeIdx > this._readIdx) {
+            const oldestSlot = (this._readIdx % RING_CAPACITY) * FIELDS_PER_READING;
+            if (timestamp - this._ring[oldestSlot] > STALE_THRESHOLD_S) {
+                console.warn(`[IMU] Stale data detected (${(timestamp - this._ring[oldestSlot]).toFixed(1)}s gap). Clearing ${this._writeIdx - this._readIdx} buffered readings.`);
+                this._readIdx = this._writeIdx;
+            }
+        }
+
         // Subtract calibrated gyroscope bias
         // Mobile MEMS gyros have persistent bias offsets that cause
         // VIO pre-integration drift if not compensated.
@@ -586,5 +635,10 @@ export class IMU {
         this._currentRate = 0;
         this._gyroBias = { x: 0, y: 0, z: 0 };
         this._calibrated = false;
+        this._gravityEstimate = null;
+        this._gravityEstimateCount = 0;
+        this._gravitySumX = 0;
+        this._gravitySumY = 0;
+        this._gravitySumZ = 0;
     }
 }
