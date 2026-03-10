@@ -39,6 +39,11 @@ export class Camera {
         this._nativeHeight = 0;
         // Whether output dims are swapped from native
         this._dimsSwapped = false;
+
+        // Cached output buffer — reused each frame to avoid GC pressure
+        this._grayBuffer = null;
+        // Capture timing counter
+        this._captureCount = 0;
     }
 
     /**
@@ -63,6 +68,7 @@ export class Camera {
                 facingMode: { exact: 'environment' },
                 width: { ideal: reqW },
                 height: { ideal: reqH },
+                frameRate: { ideal: 30, min: 20 },
             },
             audio: false,
         };
@@ -179,6 +185,8 @@ export class Camera {
             return null;
         }
 
+        const t0 = performance.now();
+
         if (this._rotateMode === 'cw') {
             this.ctx.save();
             this.ctx.translate(this.width, 0);
@@ -198,11 +206,24 @@ export class Camera {
 
         const imageData = this.ctx.getImageData(0, 0, this.width, this.height);
         const rgba = imageData.data;
-        const gray = new Uint8Array(this.width * this.height);
+
+        // Reuse output buffer to avoid per-frame allocation / GC pressure
+        const pixelCount = this.width * this.height;
+        if (!this._grayBuffer || this._grayBuffer.length !== pixelCount) {
+            this._grayBuffer = new Uint8Array(pixelCount);
+        }
+        const gray = this._grayBuffer;
 
         for (let i = 0, j = 0; i < rgba.length; i += 4, j++) {
             gray[j] = (rgba[i] * 77 + rgba[i + 1] * 150 + rgba[i + 2] * 29) >> 8;
         }
+
+        const dt = performance.now() - t0;
+        const n = this._captureCount;
+        if (n < 5 || n % 100 === 0) {
+            console.log(`[Camera] captureGrayscale: ${dt.toFixed(1)}ms (${this.width}x${this.height})`);
+        }
+        this._captureCount = n + 1;
 
         return gray;
     }
@@ -283,6 +304,53 @@ export class Camera {
             console.warn(`[Camera] ${CAMERA_VERSION} drawImage orientation detection failed:`, e.message);
             // Fallback: assume raw landscape (most common on Android)
             return true;
+        }
+    }
+
+    /**
+     * Re-detect orientation after screen rotation.
+     * The video stream stays the same, but drawImage behavior may change.
+     * Updates rotation mode, output dimensions, and offscreen canvas.
+     */
+    async redetectOrientation() {
+        if (!this.running || !this.video) return;
+
+        // URL override takes priority — never re-detect
+        const urlRotate = new URLSearchParams(window.location.search).get('rotate');
+        if (urlRotate && ['none', 'cw', 'ccw'].includes(urlRotate)) return;
+
+        // Re-read native dimensions (may have swapped after orientation change)
+        this._nativeWidth = this.video.videoWidth;
+        this._nativeHeight = this.video.videoHeight;
+        const nativeIsLandscape = this._nativeWidth > this._nativeHeight;
+
+        const oldMode = this._rotateMode;
+        if (nativeIsLandscape) {
+            const needsRotation = await this._detectDrawImageOrientation();
+            this._rotateMode = needsRotation ? 'ccw' : 'none';
+        } else {
+            this._rotateMode = 'none';
+        }
+
+        // Update output dimensions
+        if (this._rotateMode === 'cw' || this._rotateMode === 'ccw' || nativeIsLandscape) {
+            this.width = this._nativeHeight;
+            this.height = this._nativeWidth;
+            this._dimsSwapped = true;
+        } else {
+            this.width = this._nativeWidth;
+            this.height = this._nativeHeight;
+            this._dimsSwapped = false;
+        }
+
+        // Resize offscreen canvas if dimensions changed
+        if (this.canvas && (this.canvas.width !== this.width || this.canvas.height !== this.height)) {
+            this.canvas.width = this.width;
+            this.canvas.height = this.height;
+        }
+
+        if (oldMode !== this._rotateMode) {
+            console.log(`[Camera] ${CAMERA_VERSION} Orientation re-detected: ${oldMode}→${this._rotateMode}, output=${this.width}x${this.height}`);
         }
     }
 

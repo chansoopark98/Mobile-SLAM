@@ -18,10 +18,21 @@ const RING_CAPACITY = 512;
 const FIELDS_PER_READING = 7;
 /** Total Float64 elements in the ring buffer */
 const RING_ELEMENTS = RING_CAPACITY * FIELDS_PER_READING;
-/** Default sensor frequency to request (Hz).
- *  Chrome caps Generic Sensor API at 60Hz (security/privacy measure).
- *  Requesting >60Hz triggers a console warning and may cause the browser
- *  to deliver at a lower actual rate (~45Hz observed). Request exactly 60Hz. */
+/**
+ * Default sensor frequency to request (Hz).
+ *
+ * Platform caps (as of 2024):
+ *   Chrome Android  — Generic Sensor API hard-capped at 60Hz regardless of
+ *                     what you request.  Requesting >60Hz produces a console
+ *                     warning and Chrome still delivers ≤60Hz.
+ *   iOS Safari      — DeviceMotionEvent only; interval ≈16-10ms → 60-100Hz
+ *                     depending on device; no programmatic rate control.
+ *   Firefox Android — DeviceMotionEvent; ~60Hz, not configurable.
+ *
+ * We request 60Hz so Chrome delivers the full 60Hz without warnings.
+ * The `start(frequency)` parameter lets callers override for future-proofing
+ * or non-Chrome environments that honour higher rates.
+ */
 const DEFAULT_FREQUENCY = 60;
 
 const DEG_TO_RAD = Math.PI / 180;
@@ -202,6 +213,19 @@ export class IMU {
             console.warn(`[IMU] Calibration suspect: |acc|=${gravMag.toFixed(2)} (expected ~9.81). Device may be moving.`);
         }
 
+        // Validate gyro bias magnitude — large bias indicates device was moving during calibration
+        const biasMag = Math.sqrt(bias.x ** 2 + bias.y ** 2 + bias.z ** 2);
+        const MAX_BIAS_MAG = 0.2; // rad/s — typical MEMS gyro bias is 0.01-0.1
+        if (biasMag > MAX_BIAS_MAG) {
+            console.warn(`[IMU] ⚠ Gyro bias too large: |bias|=${biasMag.toFixed(3)} rad/s (max=${MAX_BIAS_MAG}). Clamping.`);
+            console.warn(`[IMU]   Device was likely moving during calibration. Keep phone still and retry.`);
+            // Clamp each component proportionally
+            const scale = MAX_BIAS_MAG / biasMag;
+            bias.x *= scale;
+            bias.y *= scale;
+            bias.z *= scale;
+        }
+
         this._gyroBias = bias;
         this._calibrated = true;
 
@@ -245,7 +269,9 @@ export class IMU {
      * The higher sample rate (100Hz vs 60Hz) is more valuable than perfect
      * synchronization for pre-integration quality.
      *
-     * @param {number} [frequency=100] Requested sensor frequency in Hz
+     * @param {number} [frequency=60] Requested sensor frequency in Hz.
+     *   Chrome Android will cap delivery at 60Hz regardless of this value.
+     *   Pass a higher value only for non-Chrome environments that honour it.
      */
     start(frequency = DEFAULT_FREQUENCY) {
         if (this.running) return;
@@ -298,17 +324,23 @@ export class IMU {
         }
 
         try {
-            // Chrome caps at 60Hz. Request exactly 60Hz to avoid warning.
-            const freq = Math.min(frequency, 60);
-            this._accel = new Accelerometer({ frequency: freq, referenceFrame: 'device' });
-            this._gyro = new Gyroscope({ frequency: freq, referenceFrame: 'device' });
+            // Chrome Android hard-caps Generic Sensor at 60Hz regardless of
+            // the requested value. Non-Chrome browsers (Chromium forks, future
+            // specs) may honour higher rates, so we pass the requested frequency
+            // through without clamping. Chrome will silently cap on its side.
+            this._accel = new Accelerometer({ frequency: frequency, referenceFrame: 'device' });
+            this._gyro = new Gyroscope({ frequency: frequency, referenceFrame: 'device' });
 
-            // Both sensors drive sampling independently for maximum rate.
-            // Each callback pushes a combined sample using its own fresh reading
-            // + the latest value from the other sensor.
-            // Dedup: skip if < 8ms since last sample (~125Hz max, prevents
-            // near-simultaneous events from both sensors creating duplicates).
-            const DEDUP_S = 0.008;
+            // Both sensors fire independently; push a combined sample on each
+            // event using the freshest reading from the other sensor.
+            //
+            // Dedup window: half the expected inter-sample interval, floored at
+            // 4ms.  At 60Hz → 8.3ms window (was hardcoded 8ms).  At 100Hz →
+            // 5ms window.  At 200Hz → 4ms (floor).  This prevents the accel and
+            // gyro callbacks from a single hardware tick (~1ms apart) from
+            // producing two near-duplicate samples while still accepting every
+            // valid reading at the requested rate.
+            const DEDUP_S = Math.max(0.004, 0.5 / frequency);
 
             this._accel.addEventListener('reading', () => {
                 if (!this.running) return;
@@ -445,14 +477,16 @@ export class IMU {
         this.latest.gyro_y = gy - by;
         this.latest.gyro_z = gz - bz;
 
-        // Rate measurement
+        // Rate measurement — reuse the timestamp already computed by the
+        // caller (converting from seconds back to ms) to avoid a second
+        // performance.now() call per sample.
         this._rateCount++;
-        const now = performance.now();
-        const elapsed = now - this._rateStartTime;
+        const nowMs = timestamp * 1000.0;
+        const elapsed = nowMs - this._rateStartTime;
         if (elapsed >= 1000) {
             this._currentRate = (this._rateCount / elapsed) * 1000;
             this._rateCount = 0;
-            this._rateStartTime = now;
+            this._rateStartTime = nowMs;
         }
     }
 

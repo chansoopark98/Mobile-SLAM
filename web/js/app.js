@@ -49,32 +49,38 @@ const VIO_CONFIGS = {
     // Tightened to ~2-3x EuRoC level, appropriate for modern mobile MEMS.
     mobile_default: {
         label: 'Mobile Default',
-        acc_n: 0.08,      // accelerometer noise density (m/s²/√Hz)
-                          //   Measured: Pixel 7 ~0.088, iPhone XR ~0.094
-                          //   Ref: Kalibr wiki recommends 10-20x inflate over datasheet
-        acc_w: 0.0004,    // accelerometer random walk — reduced from 0.002
-                          //   TUM VI BMI160: 0.0004. Previous 0.002 was 5x too high,
-                          //   causing unstable bias estimation → pre-integration divergence
-        gyr_n: 0.01,      // gyroscope noise density (rad/s/√Hz)
-                          //   Measured: Pixel 7 ~0.008, iPhone XR ~0.027
-        gyr_w: 0.0001,    // gyroscope random walk — reduced from 0.002
-                          //   TUM VI BMI160: 2e-5. Previous 0.002 was 100x too high,
-                          //   destabilizing gyro bias tracking → rotational drift
+        acc_n: 1.0,       // accelerometer noise density (m/s²/√Hz)
+                          //   Mobile MEMS accelerometers are much noisier than research IMUs.
+                          //   High acc_n weakens IMU constraint → optimizer trusts visual more.
+                          //   Previous 0.15 made IMU dominant over weak visual (fx=232 → sqrt_info=155),
+                          //   causing optimizer to push Ba to 2+ m/s² to explain visual-IMU mismatch.
+                          //   1.0 lets visual constraints drive the solution.
+        acc_w: 0.001,     // accelerometer random walk
+                          //   Slightly increased from 0.0004 to allow faster Ba adaptation
+                          //   on mobile where bias drifts more than research-grade IMUs.
+        gyr_n: 0.05,      // gyroscope noise density (rad/s/√Hz)
+                          //   Mobile MEMS gyros: typical 0.01-0.05.
+                          //   Higher value reduces IMU rotational constraint weight,
+                          //   letting visual features correct rotational drift.
+        gyr_w: 0.0005,    // gyroscope random walk
+                          //   Increased from 0.0001 to allow faster Bg adaptation on mobile.
         g_norm: 9.81,
         focalLengthFactor: null,  // null → estimate from FOV (see estimateFocalLength)
         modelType: 2,  // C++ enum: PINHOLE=2 (not 0)
-        solver_time: 0.04,
-        num_iterations: 8,
+        solver_time: 0.04,   // at 30fps need faster solve than 0.06
+        num_iterations: 8,   // fewer iterations for faster turnaround at 30fps
         max_features: 100,
         // Image downscale factor: 0.5 = half resolution (240x320).
         // Reduces computation ~3x (CLAHE, LK pyramid, corner detection all O(pixels)).
         // Also halves barrel distortion magnitude in pixels, reducing F-matrix
         // edge rejection that causes feature center clustering.
         processScale: 0.5,
-        // Mobile-optimized LK optical flow: smaller window + fewer pyramid levels.
-        // 15x15 window is sufficient at 240x320 resolution.
-        lk_window: 15,
-        lk_pyramid: 2,
+        // LK optical flow: 3 pyramid levels handle up to ~32px inter-frame
+        // displacement (4px/level × 2^3). At 80ms interval, moderate rotation
+        // (30°/s) causes ~20px shift at 240x320 → within 3-level range.
+        // 2 pyramid levels only handled ~8px → tracking loss on any motion.
+        lk_window: 21,
+        lk_pyramid: 3,
         min_dist: 15,
         // Edge distortion compensation: restores edge features rejected by F-matrix
         // due to unmodeled barrel distortion from PINHOLE model with zero distortion.
@@ -135,27 +141,35 @@ const IMU_FLUSH_INTERVAL_MS = 10;
 
 /**
  * Minimum interval between VIO frame processing (ms).
- * At 60Hz DeviceMotion IMU, processing at 20fps yields ~3 IMU readings
- * per frame — the minimum for reasonable VINS-Mono pre-integration.
- * Higher fps → fewer IMU samples → weaker pre-integration → divergence.
+ * Target: 30fps (33ms interval).
+ *
+ * Original VINS-Mono was designed for 20fps camera + 200Hz IMU.
+ * Mobile web has 60Hz IMU, so at 30fps: ~2 IMU readings per frame —
+ * minimum but workable with interpolation.
+ *
+ * 33ms interval = smaller pixel displacement between frames = better
+ * LK optical flow tracking. Previous 80ms (12.5fps) caused LARGER
+ * displacements, breaking LK tracking on moderate motion.
  */
-const MIN_FRAME_INTERVAL_MS = 50;
+const MIN_FRAME_INTERVAL_MS = 33;
 
 /**
  * Frame interval during VIO initialization phase (ms).
+ * Target: 10fps (100ms interval).
  *
  * VINS-Mono initialization requires:
  *   - Sufficient IMU pre-integration quality (needs 4+ readings/frame)
  *   - Enough parallax across the 10-frame sliding window (need 30px)
  *   - IMU excitation (gravity vector variance > 0.25)
  *
- * At 45Hz IMU (typical mobile):
- *   - 50ms interval (20fps): ~2.3 IMU/frame, 0.5s window → often fails
- *   - 100ms interval (10fps): ~4.5 IMU/frame, 1.0s window → much better
+ * At 60Hz IMU (mobile):
+ *   - 33ms interval (30fps): ~2 IMU/frame — too sparse for init
+ *   - 50ms interval (20fps): ~3 IMU/frame — marginal
+ *   - 100ms interval (10fps): ~6 IMU/frame — good pre-integration
  *
- * Wider window = more time for parallax. More IMU/frame = better
- * pre-integration. Both dramatically improve initialization success rate.
- * After initialization, we switch to MIN_FRAME_INTERVAL_MS for tracking.
+ * The 10-frame sliding window at 100ms spans 1.0 second, giving enough
+ * time for the user to generate sufficient parallax (translation).
+ * After initialization succeeds, we switch to MIN_FRAME_INTERVAL_MS (30fps).
  */
 const INIT_FRAME_INTERVAL_MS = 100;
 
@@ -360,6 +374,14 @@ function downsampleGray(gray, srcW, srcH, dstW, dstH) {
 class App {
     constructor() {
         this.vio = new VIOWrapper();
+        // Forward C++ stdout/stderr to browser console + remote log
+        this.vio.onWasmLog = (level, msg) => {
+            if (msg && msg.trim().length > 0) {
+                const text = `[WASM] ${msg}`;
+                if (level === 'warn') { console.warn(text); } else { console.log(text); }
+                remoteLog(level, text);
+            }
+        };
         this.camera = new Camera();
         this.imu = new IMU();
         this.orientation = new OrientationHandler();
@@ -677,6 +699,33 @@ class App {
             // Start listening for orientation changes (reconfigures VIO if phone rotates)
             this.orientation.startListening((info) => this._onOrientationChange(info));
 
+            // Register requestVideoFrameCallback for accurate capture timestamps.
+            // performance.now() (loop iteration time) lags actual capture by 30-100ms.
+            //
+            // IMPORTANT: We must use presentationTime (DOMHighResTimeStamp, same
+            // time base as performance.now()), NOT mediaTime. mediaTime is a media
+            // playback position that starts from 0 — completely different time base
+            // from the IMU timestamps which use performance.now()/1000.
+            if ('requestVideoFrameCallback' in HTMLVideoElement.prototype) {
+                const trackTimestamp = (now, metadata) => {
+                    // presentationTime: DOMHighResTimeStamp (ms), same base as performance.now()
+                    // Convert to seconds to match IMU timestamp convention
+                    if (metadata.presentationTime) {
+                        this._videoFrameTimestamp = metadata.presentationTime / 1000.0;
+                    } else {
+                        // Fallback: use the callback's 'now' parameter (also performance.now() based)
+                        this._videoFrameTimestamp = now / 1000.0;
+                    }
+                    video.requestVideoFrameCallback(trackTimestamp);
+                };
+                video.requestVideoFrameCallback(trackTimestamp);
+                console.log('[VIO] Using requestVideoFrameCallback for accurate frame timestamps');
+            }
+
+            // Wait for IMU buffer to accumulate before first frame
+            // Without this, Frame #0 gets imuCount=0 (race condition after calibration flush)
+            await new Promise(r => setTimeout(r, 200));
+
             // Start frame processing loop
             this.processLoop();
 
@@ -801,11 +850,22 @@ class App {
             this._lastVideoTime = videoTime;
             this._lastVIOFrameTime = now;
 
-            const frameTimestamp = now / 1000.0;
+            // Use accurate video frame timestamp if available, otherwise fall back to performance.now().
+            // performance.now() is the loop iteration time, NOT actual camera capture time.
+            // requestVideoFrameCallback's presentationTime is in the same time base as
+            // performance.now() (converted to seconds), matching IMU timestamps.
+            let frameTimestamp;
+            if (this._videoFrameTimestamp !== undefined && this._videoFrameTimestamp > 0) {
+                frameTimestamp = this._videoFrameTimestamp;
+            } else {
+                frameTimestamp = now / 1000.0;
+            }
             const gray = this.camera.captureGrayscale();
             if (gray) {
-                // Draw grayscale preview at capture resolution (debug visualization)
-                if (this._grayPreviewCtx) {
+                // Draw grayscale preview at capture resolution (debug visualization).
+                // Only render every 3rd frame to reduce main-thread load.
+                this._previewCounter = (this._previewCounter || 0) + 1;
+                if (this._grayPreviewCtx && (this._previewCounter % 3 === 0)) {
                     const w = this.camera.width;
                     const h = this.camera.height;
                     const imgData = this._grayPreviewCtx.createImageData(w, h);
@@ -842,6 +902,16 @@ class App {
                 this.vio.sendFrame(vioGray, frameTimestamp);
                 this.totalFrameCount++;
                 this.frameCount++;
+
+                // Frame timing diagnostics (every 30 frames)
+                if (this.totalFrameCount % 30 === 0) {
+                    const elapsed = (now - (this._fpsStartTime || now)) / 1000;
+                    if (elapsed > 0 && this._fpsStartTime) {
+                        const fps = 30 / elapsed;
+                        console.log(`[VIO] Frame rate: ${fps.toFixed(1)}fps (${this.totalFrameCount} total)`);
+                    }
+                    this._fpsStartTime = now;
+                }
             }
         }
 
@@ -958,6 +1028,10 @@ class App {
      * Handle screen orientation change.
      * Reconfigures VIO with updated camera-IMU extrinsic (R_ic).
      * IMU data stays in device body frame — only the camera image frame rotates.
+     *
+     * Also re-detects camera rotation mode because the browser may change
+     * how drawImage() renders the video after orientation change (some browsers
+     * auto-rotate pixel content, others don't).
      */
     async _onOrientationChange(info) {
         if (!this.running || !this._lastConfigParams) return;
@@ -973,8 +1047,37 @@ class App {
             this.renderer.clear();
         }
 
-        // Reconfigure with new R_ic for the new orientation
-        const params = { ...this._lastConfigParams, r_ic: info.r_ic };
+        // Re-detect camera rotation mode for the new orientation.
+        // Camera stream stays the same, but drawImage behavior may change.
+        await this.camera.redetectOrientation();
+        const newWidth = this.camera.width;
+        const newHeight = this.camera.height;
+        console.log(`[VIO] Camera after orientation change: ${newWidth}x${newHeight}, rotate=${this.camera.getRotateMode()}`);
+
+        // Update grayscale preview canvas if dimensions changed
+        if (this._grayPreviewCanvas &&
+            (this._grayPreviewCanvas.width !== newWidth || this._grayPreviewCanvas.height !== newHeight)) {
+            this._grayPreviewCanvas.width = newWidth;
+            this._grayPreviewCanvas.height = newHeight;
+            this._grayPreviewCtx = this._grayPreviewCanvas.getContext('2d');
+            console.log(`[VIO] Preview canvas resized to ${newWidth}x${newHeight}`);
+        }
+
+        // Recalculate processing dimensions
+        const config = VIO_CONFIGS[this.activeConfig];
+        const processScale = config.processScale || 1.0;
+        this._captureWidth = newWidth;
+        this._captureHeight = newHeight;
+        this._processWidth = Math.round(newWidth * processScale);
+        this._processHeight = Math.round(newHeight * processScale);
+        this._processScale = processScale;
+
+        // Reconfigure with new R_ic and potentially new dimensions.
+        // Focal length (fx/fy) is a lens property — stays the same.
+        // Principal point (cx/cy) must match new processing dimensions.
+        const params = { ...this._lastConfigParams, r_ic: info.r_ic,
+            width: this._processWidth, height: this._processHeight,
+            cx: this._processWidth / 2, cy: this._processHeight / 2 };
         const configured = await this.vio.configure(params);
         if (!configured) {
             console.error('[VIO] Reconfiguration failed after orientation change');
@@ -982,7 +1085,6 @@ class App {
         }
 
         // Re-apply mobile solver params
-        const config = VIO_CONFIGS[this.activeConfig];
         if (config.solver_time !== undefined) {
             await this.vio.setMobileParams(
                 config.solver_time,
@@ -1006,7 +1108,7 @@ class App {
         this._lastVIOFrameTime = 0;
         this._vioInitialized = false;
         this._initFrameCount = 0;
-        console.log(`[VIO] Reconfigured for ${info.type}, R_ic:`, info.r_ic);
+        console.log(`[VIO] Reconfigured for ${info.type}, process=${this._processWidth}x${this._processHeight}, R_ic:`, info.r_ic);
     }
 
     resetVIO() {

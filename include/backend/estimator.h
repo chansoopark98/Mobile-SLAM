@@ -36,6 +36,8 @@ public:
     common::MarginalizationFlag marginalization_flag_;
 
     std::vector<Eigen::Vector3d> getSlidingWindowMapPoints() const;
+    /** Log triangulation diagnostics: solve_flag counts, depth stats, velocity */
+    void logTriangulationDiag(int frame_num) const;
 
 private:
     void clearState();

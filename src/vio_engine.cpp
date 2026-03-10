@@ -279,6 +279,13 @@ bool VIOEngine::processFrame(const uint8_t* gray_image, int width, int height,
         latest_rotation_ = body_rot * estimator_->r_ic_;
         has_valid_pose_ = true;
 
+        // Periodic diagnostics: triangulation stats + velocity (every 20 frames)
+        static int diag_counter = 0;
+        if (diag_counter % 20 == 0) {
+            estimator_->logTriangulationDiag(diag_counter);
+        }
+        diag_counter++;
+
         // Write 4x4 transformation matrix (row-major) directly
         if (pose_output) {
             for (int r = 0; r < 3; r++) {

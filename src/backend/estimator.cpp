@@ -188,17 +188,26 @@ void Estimator::processImage(const common::ImageData& image, double timestamp) {
                 }
 
                 if (state_valid) {
+                    // Clamp unreasonable initial biases from visual-inertial alignment.
+                    // Bad SfM poses cause the alignment to absorb geometric error into
+                    // accelerometer bias, producing ba > 1 m/s² which corrupts scale.
+                    for (int i = 0; i <= WINDOW_SIZE; i++) {
+                        if (sliding_window_[i].Ba.norm() > 2.0) {
+                            sliding_window_[i].Ba *= 2.0 / sliding_window_[i].Ba.norm();
+                        }
+                        if (sliding_window_[i].Bg.norm() > 0.1) {
+                            sliding_window_[i].Bg *= 0.1 / sliding_window_[i].Bg.norm();
+                        }
+                    }
+
                     solver_flag_ = common::SolverFlag::NON_LINEAR;
-#ifndef NDEBUG
-                    std::cout << "VIO initialization SUCCESS" << std::endl;
-                    std::cout << "  gravity: " << g_.transpose()
+                    std::cout << "[VIO] Initialization SUCCESS" << std::endl;
+                    std::cout << "[VIO]   gravity: " << g_.transpose()
                               << " (norm=" << g_.norm() << ")" << std::endl;
-                    std::cout << "  P[0]: " << sliding_window_[0].P.transpose() << std::endl;
-                    std::cout << "  V[0]: " << sliding_window_[0].V.transpose()
+                    std::cout << "[VIO]   V[0]: " << sliding_window_[0].V.transpose()
                               << " (norm=" << sliding_window_[0].V.norm() << ")" << std::endl;
-                    std::cout << "  Ba[0]: " << sliding_window_[0].Ba.transpose() << std::endl;
-                    std::cout << "  Bg[0]: " << sliding_window_[0].Bg.transpose() << std::endl;
-#endif
+                    std::cout << "[VIO]   Ba[0]: " << sliding_window_[0].Ba.transpose() << std::endl;
+                    std::cout << "[VIO]   Bg[0]: " << sliding_window_[0].Bg.transpose() << std::endl;
                     solveOdometry();
                 } else {
 #ifndef NDEBUG
@@ -228,12 +237,29 @@ void Estimator::processImage(const common::ImageData& image, double timestamp) {
             }
         }
         if (state_corrupted) {
-#ifndef NDEBUG
-            std::cout << "Post-optimization NaN detected, performing full reset" << std::endl;
-#endif
+            std::cout << "[VIO] Post-optimization NaN detected, performing full reset" << std::endl;
             clearState();
             setParameter();
             return;
+        }
+
+        // Divergence detection: velocity, position, and bias sanity checks.
+        // A handheld phone in normal SLAM usage should not exceed these limits.
+        // Without this check, small errors create a positive feedback loop:
+        //   bad scale → bad poses → feature loss → pure IMU → more drift
+        {
+            const auto& latest = sliding_window_[WINDOW_SIZE];
+            double vel_norm = latest.V.norm();
+            double pos_norm = latest.P.norm();
+            double ba_norm = latest.Ba.norm();
+
+            if (vel_norm > 10.0 || pos_norm > 100.0) {
+                std::cout << "[VIO] DIVERGENCE detected: |vel|=" << vel_norm
+                          << " |pos|=" << pos_norm << " — full reset" << std::endl;
+                clearState();
+                setParameter();
+                return;
+            }
         }
 
         slideWindow();
@@ -365,6 +391,43 @@ std::vector<Eigen::Vector3d> Estimator::getSlidingWindowMapPoints() const {
         }
     }
     return new_points;
+}
+
+void Estimator::logTriangulationDiag(int frame_num) const {
+    int n_unsolved = 0, n_solved = 0, n_failed = 0, n_init_depth = 0;
+    double depth_sum = 0, depth_min = 1e9, depth_max = 0;
+    double init_d = utility::g_config.estimator.init_depth;
+    for (const auto& feat : feature_manager_.feature_bank_) {
+        if (!(feat.used_num >= 2 && feat.start_frame < WINDOW_SIZE - 2))
+            continue;
+        if (feat.solve_flag == 0) { n_unsolved++; }
+        else if (feat.solve_flag == 1) {
+            n_solved++;
+            double d = feat.estimated_depth;
+            depth_sum += d;
+            if (d < depth_min) depth_min = d;
+            if (d > depth_max) depth_max = d;
+            if (std::abs(d - init_d) < 0.01) n_init_depth++;
+        } else {
+            n_failed++;
+        }
+    }
+    Eigen::Vector3d vel = sliding_window_[WINDOW_SIZE].V;
+    Eigen::Vector3d pos = sliding_window_[WINDOW_SIZE].P;
+    Eigen::Vector3d ba = sliding_window_[WINDOW_SIZE].Ba;
+    Eigen::Vector3d bg = sliding_window_[WINDOW_SIZE].Bg;
+    double avg_depth = n_solved > 0 ? depth_sum / n_solved : 0;
+    std::cout << "[VIO DIAG] f=" << frame_num
+              << " tri: ok=" << n_solved << " wait=" << n_unsolved
+              << " fail=" << n_failed << " default=" << n_init_depth
+              << " depth: avg=" << avg_depth
+              << " min=" << (n_solved > 0 ? depth_min : 0)
+              << " max=" << (n_solved > 0 ? depth_max : 0)
+              << " |vel|=" << vel.norm()
+              << " vel=(" << vel.x() << "," << vel.y() << "," << vel.z() << ")"
+              << " ba=(" << ba.x() << "," << ba.y() << "," << ba.z() << ")"
+              << " bg=(" << bg.x() << "," << bg.y() << "," << bg.z() << ")"
+              << std::endl;
 }
 
 }  // namespace backend

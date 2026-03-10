@@ -15,6 +15,34 @@ let wasm = null;
 let engine = null;
 let configured = false;
 
+// Module-level diagnostics state (initialized once, not checked every frame)
+let _diagLogCount = 0;
+let _diagLastLogTime = 0;
+let _diagFirstFrameTime = 0;
+let _diagWasInitialized = false;
+let _diagTrackCount = 0;
+let _diagLastFeatureCount = 0;
+
+function resetDiagnostics() {
+    _diagLogCount = 0;
+    _diagLastLogTime = 0;
+    _diagFirstFrameTime = 0;
+    _diagWasInitialized = false;
+    _diagTrackCount = 0;
+    _diagLastFeatureCount = 0;
+}
+
+// Pre-allocated result object (reused each frame to avoid GC pressure)
+const _frameResult = {
+    pose: null,
+    initialized: false,
+    featureCount: 0,
+    statusCode: 0,
+    imuCount: 0,
+    mapPoints: null,
+    mapPointCount: 0,
+};
+
 // Shared memory buffers (allocated on WASM heap)
 let memImage = null;
 let memIMU = null;
@@ -92,12 +120,30 @@ function drainIMUToWasm(frameTs) {
         }
     }
 
-    const available = imuRingWriteIdx - imuRingReadIdx;
+    // Find how many readings are available up to (and including one past) frameTs.
+    // Readings with timestamps AFTER frameTs are preserved for the next frame.
+    let endIdx = imuRingReadIdx;
+    let pastFrameCount = 0;
+    for (let idx = imuRingReadIdx; idx < imuRingWriteIdx; idx++) {
+        const slot = (idx % IMU_RING_CAPACITY) * IMU_FIELDS;
+        if (imuRing[slot] <= frameTs) {
+            endIdx = idx + 1;
+        } else {
+            // Include one reading past frameTs for interpolation boundary
+            if (pastFrameCount === 0) {
+                endIdx = idx + 1;
+                pastFrameCount++;
+            }
+            break;
+        }
+    }
+
+    const available = endIdx - imuRingReadIdx;
     if (available <= 0) return 0;
 
-    // Clamp to ring capacity and max WASM buffer
+    // Clamp to max WASM buffer
     const count = Math.min(available, IMU_RING_CAPACITY, maxIMUReadings);
-    const startIdx = imuRingWriteIdx - count;
+    const startIdx = endIdx - count;
 
     // Write directly into WASM heap (memIMU is Float64, 7 fields per reading)
     // Access wasm.HEAPF64 directly each time to handle memory growth
@@ -114,7 +160,7 @@ function drainIMUToWasm(frameTs) {
         wasm.HEAPF64[dstBase + 6] = imuRing[srcSlot + 6];
     }
 
-    imuRingReadIdx = imuRingWriteIdx;
+    imuRingReadIdx = endIdx;  // Only consume up to endIdx, preserve future readings
     return count;
 }
 
@@ -219,28 +265,25 @@ function processFrame(gray, timestamp) {
     const imuCount = drainIMUToWasm(timestamp);
 
     // Diagnostic: log IMU density per VIO frame
-    if (typeof processFrame._logCount === 'undefined') processFrame._logCount = 0;
-    if (typeof processFrame._lastLogTime === 'undefined') processFrame._lastLogTime = 0;
-    if (processFrame._logCount < 20) {
-        console.log(`[VIO Worker] Frame #${processFrame._logCount}: imuCount=${imuCount}, t=${timestamp.toFixed(3)}`);
+    if (_diagFirstFrameTime === 0) _diagFirstFrameTime = timestamp;
+    if (_diagLogCount < 10) {
+        console.log(`[VIO Worker] Frame #${_diagLogCount}: imuCount=${imuCount}, t=${timestamp.toFixed(3)}`);
         if (imuCount < 2) {
             console.warn(`[VIO Worker] Low IMU density: ${imuCount} readings — pre-integration may be unreliable`);
         }
-        processFrame._logCount++;
-    } else if (timestamp - processFrame._lastLogTime > 5.0) {
-        // Periodic log every 5s for ongoing diagnostics
+        _diagLogCount++;
+    } else if (timestamp - _diagLastLogTime > 10.0) {
+        // Periodic log every 10s for ongoing diagnostics
         const isInit = engine.isInitialized();
         console.log(`[VIO Worker] Status: imuCount=${imuCount}, initialized=${isInit}, features=${engine.getFeaturePointCount()}`);
-        processFrame._lastLogTime = timestamp;
+        _diagLastLogTime = timestamp;
         // Detect init transition
-        if (isInit && !processFrame._wasInitialized) {
-            const elapsed = (timestamp - processFrame._firstFrameTime).toFixed(1);
-            console.log(`[VIO Worker] ★ INITIALIZED after ${processFrame._logCount} worker frames (${elapsed}s)`);
+        if (isInit && !_diagWasInitialized) {
+            const elapsed = (timestamp - _diagFirstFrameTime).toFixed(1);
+            console.log(`[VIO Worker] INITIALIZED after ${_diagLogCount} worker frames (${elapsed}s)`);
         }
-        processFrame._wasInitialized = isInit;
+        _diagWasInitialized = isInit;
     }
-    if (typeof processFrame._firstFrameTime === 'undefined') processFrame._firstFrameTime = timestamp;
-    if (typeof processFrame._wasInitialized === 'undefined') processFrame._wasInitialized = false;
 
     // Guard: skip frame if no IMU data available (pre-integration impossible).
     // This commonly happens on the very first frame before IMU pipeline starts.
@@ -252,6 +295,7 @@ function processFrame(gray, timestamp) {
     // Process frame
     let hasPose = false;
     try {
+        const t0 = performance.now();
         hasPose = engine.processFrame(
             memImage.ptr,
             imageWidth, imageHeight,
@@ -260,6 +304,10 @@ function processFrame(gray, timestamp) {
             timestamp,
             memPose.ptr
         );
+        const dt = performance.now() - t0;
+        if (_diagLogCount < 10 || _diagTrackCount % 30 === 0) {
+            console.log(`[VIO Worker] processFrame: ${dt.toFixed(1)}ms`);
+        }
     } catch (e) {
         console.error('[VIO Worker] processFrame error:', e.message);
         try {
@@ -270,33 +318,38 @@ function processFrame(gray, timestamp) {
         return { pose: null, initialized: false, featureCount: 0, statusCode: 3, mapPoints: null, mapPointCount: 0 };
     }
 
-    const result = {
-        pose: null,
-        initialized: engine.isInitialized(),
-        featureCount: engine.getFeaturePointCount(),
-        statusCode: engine.getStatusCode(),
-        imuCount: imuCount,
-        mapPoints: null,
-        mapPointCount: 0,
-    };
+    _frameResult.pose = null;
+    _frameResult.initialized = engine.isInitialized();
+    _frameResult.featureCount = engine.getFeaturePointCount();
+    _frameResult.statusCode = engine.getStatusCode();
+    _frameResult.imuCount = imuCount;
+    _frameResult.mapPoints = null;
+    _frameResult.mapPointCount = 0;
 
     if (hasPose) {
         const poseData = memPose.read(16);
-        result.pose = new Float64Array(poseData);
+        _frameResult.pose = new Float64Array(poseData);
 
         // Divergence detection: log pose position for first 20 tracking frames
         // and whenever position magnitude exceeds threshold
-        if (typeof processFrame._trackCount === 'undefined') processFrame._trackCount = 0;
-        if (result.initialized) {
+        if (_frameResult.initialized) {
             const px = poseData[3], py = poseData[7], pz = poseData[11];
             const posMag = Math.sqrt(px*px + py*py + pz*pz);
-            if (processFrame._trackCount < 20) {
-                console.log(`[VIO Worker] Track #${processFrame._trackCount}: pos=(${px.toFixed(3)}, ${py.toFixed(3)}, ${pz.toFixed(3)}) |pos|=${posMag.toFixed(3)} feat=${result.featureCount}`);
+            if (_diagTrackCount < 20) {
+                console.log(`[VIO Worker] Track #${_diagTrackCount}: pos=(${px.toFixed(3)}, ${py.toFixed(3)}, ${pz.toFixed(3)}) |pos|=${posMag.toFixed(3)} feat=${_frameResult.featureCount}`);
             }
             if (posMag > 10.0) {
-                console.warn(`[VIO Worker] ⚠ DIVERGENCE: |pos|=${posMag.toFixed(1)} at track #${processFrame._trackCount} pos=(${px.toFixed(2)}, ${py.toFixed(2)}, ${pz.toFixed(2)})`);
+                console.warn(`[VIO Worker] DIVERGENCE: |pos|=${posMag.toFixed(1)} at track #${_diagTrackCount} pos=(${px.toFixed(2)}, ${py.toFixed(2)}, ${pz.toFixed(2)})`);
             }
-            processFrame._trackCount++;
+            // Feature tracking loss diagnostic: detect sudden drops
+            if (_diagLastFeatureCount > 0 && _frameResult.featureCount < _diagLastFeatureCount * 0.4) {
+                console.warn(`[VIO Worker] Feature drop: ${_diagLastFeatureCount}→${_frameResult.featureCount} (${((1 - _frameResult.featureCount/_diagLastFeatureCount)*100).toFixed(0)}% lost) at track #${_diagTrackCount}`);
+            }
+            if (_frameResult.featureCount < 15 && _diagTrackCount > 5) {
+                console.warn(`[VIO Worker] Low features: ${_frameResult.featureCount} — tracking may be unstable`);
+            }
+            _diagLastFeatureCount = _frameResult.featureCount;
+            _diagTrackCount++;
         }
     }
 
@@ -305,14 +358,14 @@ function processFrame(gray, timestamp) {
         const count = engine.getMapPoints(memMapPoints.ptr, maxMapPoints);
         if (count > 0) {
             const pointsData = memMapPoints.read(count * 3);
-            result.mapPoints = new Float64Array(pointsData);
-            result.mapPointCount = count;
+            _frameResult.mapPoints = new Float64Array(pointsData);
+            _frameResult.mapPointCount = count;
         }
     } catch (e) {
         // Non-fatal
     }
 
-    return result;
+    return _frameResult;
 }
 
 // Message handler
@@ -466,7 +519,7 @@ self.onmessage = async function(e) {
             imuRingWriteIdx = 0;
             imuRingReadIdx = 0;
             lastFrameTimestamp = 0;
-            processFrame._logCount = 0;
+            resetDiagnostics();
             self.postMessage({ type: 'reset', success: true });
             break;
         }
