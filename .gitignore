@@ -10,6 +10,7 @@ build/
 data/
 logs/
 
+.claude/
 .omc/
 WORKS.md
 ARCHITECTURE_ANALYSIS.md
@@ -18,6 +19,7 @@ CLAUDE.md
 assets/datasets/
 assets/references/
 assets/keys/
+assets/paper
 
 # Dataset files (large)
 data/EuRoC/MH_*/

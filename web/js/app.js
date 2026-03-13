@@ -152,6 +152,13 @@ const VIO_CONFIGS = {
 const IMU_FLUSH_INTERVAL_MS = 10;
 
 /**
+ * Number of camera frames to skip at startup to allow auto-exposure
+ * and white-balance to settle before VIO processing begins.
+ * 8th Wall pattern: loading-module.js FIRST_FRAME_DELAY=5.
+ */
+const CAMERA_WARMUP_FRAMES = 5;
+
+/**
  * Minimum interval between VIO frame processing (ms).
  * Target: 30fps (33ms interval).
  *
@@ -507,6 +514,17 @@ class App {
         this._processHeight = 0;    // VIO processing height (after scale)
         this._captureWidth = 0;     // Camera capture width (before scale)
         this._captureHeight = 0;    // Camera capture height (before scale)
+
+        // Camera warmup: skip first N frames to allow AE/AWB to settle.
+        // 8th Wall pattern: loading-module.js FIRST_FRAME_DELAY=5.
+        this._frameWarmupCount = 0;
+
+        // Window blur/focus lifecycle (8th Wall pauseonblur.js pattern).
+        // Catches edge cases (dropdown menus, permission dialogs) that don't
+        // trigger visibilitychange.
+        this._blurPaused = false;
+        this._onWindowBlur = null;
+        this._onWindowFocus = null;
     }
 
     async initialize() {
@@ -558,6 +576,11 @@ class App {
                 this.renderer.resize(container.clientWidth, container.clientHeight);
                 canvas3d.width = container.clientWidth;
                 canvas3d.height = container.clientHeight;
+                // iOS: scroll to stable position after resize to suppress address bar bounce
+                // 8th Wall pattern: full-window-canvas-module.ts
+                if (/iPad|iPhone|iPod/.test(navigator.userAgent)) {
+                    setTimeout(() => window.scrollTo(0, (window.scrollY + 1) % 2), 300);
+                }
             });
         }
     }
@@ -602,6 +625,18 @@ class App {
                 this._grayPreviewCanvas.height = height;
                 this._grayPreviewCanvas.style.display = 'block';
                 this._grayPreviewCtx = this._grayPreviewCanvas.getContext('2d');
+            }
+
+            // iOS viewport stabilization (8th Wall full-window-canvas-module.ts pattern).
+            // Prevents iOS address bar from resizing the viewport during VIO, which
+            // causes layout reflows and disrupts canvas rendering.
+            const isIOS = /iPad|iPhone|iPod/.test(navigator.userAgent);
+            if (isIOS) {
+                document.body.style.overflowY = 'scroll';
+                document.documentElement.style.overflow = 'hidden';
+                // Scroll to stable position to prevent address bar toggle
+                setTimeout(() => window.scrollTo(0, 1), 300);
+                console.log('[VIO] iOS viewport stabilization applied');
             }
 
             // Get active config profile
@@ -743,6 +778,29 @@ class App {
                 `hFOV=${(2*Math.atan(pW/(2*fxScaled))*180/Math.PI).toFixed(1)}° ` +
                 `profile=${this.activeConfig} rotate=${this.camera.getRotateMode()}`);
 
+            // DeviceMotion pre-check (8th Wall loading-module.js pattern).
+            // Verify that devicemotion events are actually firing before starting the
+            // VIO pipeline. A 3-second timeout catches broken/missing IMU hardware
+            // early and logs a warning for remote debugging.
+            await new Promise((resolve) => {
+                let motionDetected = false;
+                const onMotion = () => {
+                    motionDetected = true;
+                    window.removeEventListener('devicemotion', onMotion);
+                    console.log('[VIO] DeviceMotion pre-check: events firing OK');
+                    resolve();
+                };
+                window.addEventListener('devicemotion', onMotion);
+                setTimeout(() => {
+                    window.removeEventListener('devicemotion', onMotion);
+                    if (!motionDetected) {
+                        console.warn('[VIO] WARNING: No devicemotion events detected. IMU may not be available.');
+                        this.updateStatus('WARNING: No IMU events — check permissions');
+                    }
+                    resolve();
+                }, 3000);
+            });
+
             // Request IMU permission and start
             if (IMU.isAvailable()) {
                 const granted = await this.imu.requestPermission();
@@ -775,6 +833,26 @@ class App {
 
             // Start independent IMU flush timer
             this._startIMUFlush();
+
+            // Window blur/focus lifecycle (8th Wall pauseonblur.js pattern).
+            // Catches edge cases (dropdown menus, permission dialogs) that don't
+            // trigger visibilitychange. Uses a _blurPaused flag so focus resumption
+            // only undoes blur-pauses, not visibility-pauses.
+            this._onWindowBlur = () => {
+                if (!this.running || this._blurPaused) return;
+                this._blurPaused = true;
+                this._stopIMUFlush();
+                console.log('[VIO] Window blur — pausing IMU flush');
+            };
+            this._onWindowFocus = () => {
+                if (!this.running || !this._blurPaused) return;
+                this._blurPaused = false;
+                this.imu.flush();  // Discard stale data accumulated during blur
+                this._startIMUFlush();
+                console.log('[VIO] Window focus — resuming IMU flush');
+            };
+            window.addEventListener('blur', this._onWindowBlur);
+            window.addEventListener('focus', this._onWindowFocus);
 
             // Start deviceorientation listener for gravity hint (8th Wall approach)
             this._startDeviceOrientationListener();
@@ -1026,6 +1104,16 @@ class App {
                     this._grayPreviewCtx.fillStyle = '#0f8';
                     this._grayPreviewCtx.font = '14px monospace';
                     this._grayPreviewCtx.fillText(label, 4, 14);
+                }
+
+                // Camera warmup: skip first CAMERA_WARMUP_FRAMES frames to allow
+                // auto-exposure and white-balance to settle before VIO begins.
+                // 8th Wall pattern: loading-module.js FIRST_FRAME_DELAY=5.
+                if (this._frameWarmupCount < CAMERA_WARMUP_FRAMES) {
+                    this._frameWarmupCount++;
+                    console.log(`[VIO] Camera warmup frame ${this._frameWarmupCount}/${CAMERA_WARMUP_FRAMES}, skipping`);
+                    requestAnimationFrame(() => this.processLoop());
+                    return;
                 }
 
                 // Downscale for VIO processing if processScale < 1.0
@@ -1295,6 +1383,15 @@ class App {
         this.camera.stop();
         this.imu.stop();
         this.vio.dispose();
+        // Remove window blur/focus listeners (8th Wall pauseonblur.js pattern)
+        if (this._onWindowBlur) {
+            window.removeEventListener('blur', this._onWindowBlur);
+            this._onWindowBlur = null;
+        }
+        if (this._onWindowFocus) {
+            window.removeEventListener('focus', this._onWindowFocus);
+            this._onWindowFocus = null;
+        }
     }
 }
 

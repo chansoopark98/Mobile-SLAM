@@ -128,6 +128,10 @@
         <div class="controls">
             <button id="btn-start" disabled>Start</button>
             <button id="btn-reset" disabled>Reset</button>
+            <button id="btn-log" style="display:none" onclick="
+    var d = document.getElementById('debug-log');
+    d.style.display = d.style.display === 'none' ? 'block' : 'none';
+">Log</button>
         </div>
     </div>
     <div class="main">
@@ -180,6 +184,82 @@
         </div>
     </div>
     <div id="status">Loading...</div>
+
+    <!-- On-screen debug log (8th Wall pattern: debug-web-views.js) -->
+    <div id="debug-log" style="
+        display: none;
+        position: fixed;
+        bottom: 0;
+        left: 0;
+        right: 0;
+        height: 30vh;
+        background: rgba(0, 0, 0, 0.9);
+        color: #00ff88;
+        font-family: monospace;
+        font-size: 10px;
+        line-height: 1.4;
+        overflow-y: auto;
+        z-index: 9999;
+        padding: 4px 8px;
+        border-top: 1px solid #00ff88;
+        pointer-events: auto;
+        -webkit-overflow-scrolling: touch;
+    "></div>
+
+    <script>
+        // On-screen debug log (8th Wall debug-web-views.js pattern)
+        // Activate with ?debug=1 URL parameter
+        if (new URLSearchParams(window.location.search).has('debug')) {
+            const logDiv = document.getElementById('debug-log');
+            logDiv.style.display = 'block';
+            const MAX_LINES = 200;
+            let lineCount = 0;
+
+            const origLog = console.log;
+            const origWarn = console.warn;
+            const origError = console.error;
+
+            function appendLog(msg, color) {
+                const line = document.createElement('div');
+                line.style.color = color;
+                line.textContent = msg;
+                logDiv.appendChild(line);
+                lineCount++;
+                while (lineCount > MAX_LINES && logDiv.firstChild) {
+                    logDiv.removeChild(logDiv.firstChild);
+                    lineCount--;
+                }
+                logDiv.scrollTop = logDiv.scrollHeight;
+            }
+
+            function argsToString(args) {
+                return args.map(a => typeof a === 'string' ? a : JSON.stringify(a)).join(' ');
+            }
+
+            console.log = function(...args) {
+                origLog.apply(console, args);
+                appendLog(argsToString(args), '#00ff88');
+            };
+            console.warn = function(...args) {
+                origWarn.apply(console, args);
+                appendLog(argsToString(args), '#ffaa00');
+            };
+            console.error = function(...args) {
+                origError.apply(console, args);
+                appendLog(argsToString(args), '#ff4444');
+            };
+
+            window.addEventListener('error', (e) => {
+                appendLog('UNCAUGHT: ' + e.message + ' at ' + e.filename + ':' + e.lineno, '#ff4444');
+            });
+
+            // Show Log toggle button
+            const logBtn = document.getElementById('btn-log');
+            if (logBtn) logBtn.style.display = 'inline-block';
+
+            console.log('[Debug] On-screen log enabled (?debug=1)');
+        }
+    </script>
 
     <script>
         // Set canvas size before loading modules
