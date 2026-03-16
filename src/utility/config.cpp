@@ -85,6 +85,10 @@ bool Config::loadFromYaml(const std::string& yaml_path) {
             feature_tracker.equalize = config["equalize"].as<int>();
         if (config["fisheye"])
             feature_tracker.fisheye = config["fisheye"].as<int>();
+        if (config["lk_iterations"])
+            feature_tracker.lk_iterations = config["lk_iterations"].as<int>();
+        if (config["lk_eps"])
+            feature_tracker.lk_eps = config["lk_eps"].as<double>();
 
         // Load estimator configuration (top level parameters)
         if (config["max_solver_time"])

@@ -49,16 +49,16 @@ min_dist: 20            # min distance between two features
 F_threshold: 1.0        # ransac threshold (pixel)
 show_track: 1           # publish tracking image as topic
 equalize: 1             # equalize image brightness
-fisheye: 0              # not using circular fisheye mask
+fisheye: 1              # use circular mask to exclude fisheye border ring
 
 #optimization parameters
 max_solver_time: 0.1    # max solver iteration time (s)
 max_num_iterations: 10  # max solver iterations
 keyframe_parallax: 10.0 # keyframe selection threshold (pixel)
 
-#imu parameters (from TUM-VI imu_config.yaml - inflated values)
-acc_n: 0.0028           # accelerometer measurement noise standard deviation
-gyr_n: 0.00016          # gyroscope measurement noise standard deviation
-acc_w: 0.00086          # accelerometer bias random walk noise standard deviation
-gyr_w: 0.000022         # gyroscope bias random walk noise standard deviation
+#imu parameters (tuned for VINS-Mono TUM-VI — larger than hardware spec for correct IMU/vision balance)
+acc_n: 0.04             # accelerometer measurement noise std (hardware: 0.0028, VINS-Mono: 0.04)
+gyr_n: 0.004            # gyroscope measurement noise std (hardware: 0.00016, VINS-Mono: 0.004)
+acc_w: 0.0004           # accelerometer bias random walk noise std (VINS-Mono: 0.0004)
+gyr_w: 2.0e-5           # gyroscope bias random walk noise std (VINS-Mono: 2.0e-5)
 g_norm: 9.81007         # gravity magnitude

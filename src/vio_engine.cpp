@@ -377,10 +377,15 @@ void VIOEngine::setTrackingParams(int lk_window, int lk_pyramid, int min_dist, d
     if (f_edge_factor >= 0.0) {
         cfg.f_threshold_edge_factor = f_edge_factor;
     }
+    // Mobile-optimized TermCriteria: faster convergence at low resolution (240x180).
+    // Native TUM VI (512x512) uses defaults (30/0.01) set via config struct.
+    cfg.lk_iterations = 20;
+    cfg.lk_eps = 0.03;
     std::cout << "[VIOEngine] Tracking params: lk_window=" << cfg.lk_window_size
               << " lk_pyramid=" << cfg.lk_pyramid_levels
               << " min_dist=" << cfg.min_dist
-              << " f_edge_factor=" << cfg.f_threshold_edge_factor << std::endl;
+              << " f_edge_factor=" << cfg.f_threshold_edge_factor
+              << " lk_criteria=" << cfg.lk_iterations << "/" << cfg.lk_eps << std::endl;
 }
 
 void VIOEngine::reset() {

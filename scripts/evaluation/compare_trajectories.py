@@ -1,503 +1,621 @@
 #!/usr/bin/env python3
 """
-Trajectory Comparison Script for VINS
+Trajectory Evaluation Script — ATE + RPE for TUM VI / EuRoC
+============================================================
+Computes standard VIO evaluation metrics against ground truth.
 
-This script compares the optimized pose trajectory from VINS with the ground truth trajectory
-from the Euroc dataset. It provides visualization and error metrics.
+ATE (Absolute Trajectory Error):
+  - Umeyama Sim(3) alignment (rotation + translation + scale)
+  - RMSE / mean / median / std / max of per-pose position error
+
+RPE (Relative Pose Error):
+  - SE(3) relative pose errors at delta = 1s and 5s sub-sequences
+  - Translation RMSE [m] and rotation RMSE [deg]
+
+Frame conventions:
+  - VIO output: camera frame  (body_pos + body_rot * t_ic)
+  - GT (mocap0 / state_gt): IMU/body frame
+  => VIO must be converted to body frame before comparison.
 
 Usage:
     python compare_trajectories.py [experiment_path] [--save] [--no-display]
 
-Arguments:
-    experiment_path: Optional. Path to the experiment results directory (e.g., logs/TIMESTAMP).
-                     If not provided, the script will automatically use the latest
-                     directory in 'logs/'.
-
-Flags:
-    --save:        Save comparison plots and results to files in the experiment directory.
-    --no-display:  Do not show plots in an interactive window.
-
-Example:
-    # Compare with latest run, automatically finding paths
-    python scripts/compare_trajectories.py
-
-    # Compare with a specific result directory
-    python scripts/compare_trajectories.py logs/20250623_120815
-
-    # Compare with a specific run and save results without showing plots
-    python scripts/compare_trajectories.py logs/20250623_120815 --save --no-display
+    experiment_path: path to logs/TIMESTAMP/ directory.
+                     Auto-selects latest in logs/ if omitted.
 """
 
 import os
 import sys
+import argparse
+import warnings
 import numpy as np
 import pandas as pd
+import matplotlib
+matplotlib.use('Agg')  # non-interactive backend — safe for headless servers
 import matplotlib.pyplot as plt
 from mpl_toolkits.mplot3d import Axes3D
-import argparse
-from scipy.spatial.transform import Rotation as R
-from scipy.interpolate import interp1d
+from scipy.spatial.transform import Rotation
 import yaml
-import warnings
+
 warnings.filterwarnings('ignore')
 
-class TrajectoryComparator:
-    def __init__(self, dataset_path, optimized_pose_file, output_dir="."):
-        self.dataset_path = dataset_path
-        self.optimized_pose_file = optimized_pose_file
-        self.output_dir = output_dir
-        self.gt_file = os.path.join(dataset_path, "mav0/state_groundtruth_estimate0/data.csv")
-        
-        # Load extrinsic parameters
-        self.t_ic = None
-        self.r_ic = None
-        self.load_extrinsic_parameters()
-        
-        # Load data
-        self.gt_data = None
-        self.opt_data = None
-        self.load_data()
-        
-    def load_extrinsic_parameters(self):
-        # No extrinsic transform needed for translation alignment only
-        self.r_ic = np.eye(3)
-        self.t_ic = np.zeros(3)
-        return
 
-    def load_data(self):
-        """Load ground truth and optimized pose data"""
-        print("📊 Loading trajectory data...")
-        
-        # Load ground truth data
-        if not os.path.exists(self.gt_file):
-            raise FileNotFoundError(f"Ground truth file not found: {self.gt_file}")
-        
-        try:
-            # Always use the first line starting with '#' as header
-            with open(self.gt_file, 'r') as f:
-                for line in f:
-                    if line.startswith('#'):
-                        header = line.replace('#', '').strip().split(',')
-                        header = [h.strip() for h in header]
-                        break
-            self.gt_data = pd.read_csv(self.gt_file, names=header, skiprows=1)
-            self.gt_data.columns = [c.strip() for c in self.gt_data.columns]
-            print(f"✅ Ground truth data loaded: {len(self.gt_data)} poses")
-        except Exception as e:
-            raise Exception(f"Error loading ground truth data: {e}")
-        
-        # Load optimized pose data
-        if not os.path.exists(self.optimized_pose_file):
-            raise FileNotFoundError(f"Optimized pose file not found: {self.optimized_pose_file}")
-        
-        try:
-            self.opt_data = self.parse_optimized_pose_file()
-            print(f"✅ Optimized pose data loaded: {len(self.opt_data)} poses")
-            # No extrinsic transform, just keep as is
-        except Exception as e:
-            raise Exception(f"Error loading optimized pose data: {e}")
-    
-    def parse_optimized_pose_file(self):
-        """Parse the optimized pose file (TUM format: timestamp tx ty tz qx qy qz qw)."""
-        data = []
-        with open(self.optimized_pose_file, 'r') as f:
-            for line in f:
-                line = line.strip()
-                if not line or line.startswith('#'):
-                    continue
-                
-                parts = line.split()
-                if len(parts) != 8:
-                    print(f"⚠️ Skipping malformed line in pose file: {line}")
-                    continue
-                
-                try:
-                    # timestamp tx ty tz qx qy qz qw
-                    row = [float(p) for p in parts]
-                    data.append(row)
-                except ValueError:
-                    print(f"⚠️ Could not parse values in line: {line}")
+# ---------------------------------------------------------------------------
+# YAML loading helper (handles OpenCV %YAML:1.0 + !!opencv-matrix tags)
+# ---------------------------------------------------------------------------
+class _IgnoreTags(yaml.SafeLoader):
+    pass
 
-        return pd.DataFrame(data, columns=['timestamp', 'x', 'y', 'z', 'qx', 'qy', 'qz', 'qw'])
-    
-    def align_trajectories(self):
-        """Align trajectories by timestamp and coordinate frame (rotation and translation)"""
-        print("🔄 Aligning trajectories...")
-        
-        # Convert ground truth timestamps to seconds (from nanoseconds)
-        self.gt_data['timestamp_sec'] = self.gt_data['timestamp'] / 1e9 if 'timestamp' in self.gt_data.columns else self.gt_data.iloc[:,0] / 1e9
-        
-        # Find common time range
-        gt_start = self.gt_data['timestamp_sec'].min()
-        gt_end = self.gt_data['timestamp_sec'].max()
-        opt_start = self.opt_data['timestamp'].min()
-        opt_end = self.opt_data['timestamp'].max()
-        
-        print(f"Ground truth time range: {gt_start:.3f} - {gt_end:.3f}")
-        print(f"Optimized time range: {opt_start:.3f} - {opt_end:.3f}")
-        
-        # Find overlapping time range
-        start_time = max(gt_start, opt_start)
-        end_time = min(gt_end, opt_end)
-        
-        if start_time >= end_time:
-            raise ValueError("No overlapping time range between trajectories")
-        
-        print(f"Overlapping time range: {start_time:.3f} - {end_time:.3f}")
-        
-        # Filter data to overlapping range
-        gt_filtered = self.gt_data[
-            (self.gt_data['timestamp_sec'] >= start_time) & 
-            (self.gt_data['timestamp_sec'] <= end_time)
-        ].copy()
-        
-        opt_filtered = self.opt_data[
-            (self.opt_data['timestamp'] >= start_time) & 
-            (self.opt_data['timestamp'] <= end_time)
-        ].copy()
-        
-        # Use exact column names for position
-        x_col = 'p_RS_R_x [m]'
-        y_col = 'p_RS_R_y [m]'
-        z_col = 'p_RS_R_z [m]'
-        if not (x_col in self.gt_data.columns and y_col in self.gt_data.columns and z_col in self.gt_data.columns):
-            raise Exception('Position columns not found in ground truth data')
-        gt_interp = interp1d(
-            gt_filtered['timestamp_sec'], 
-            gt_filtered[[x_col, y_col, z_col]].values,
-            axis=0, 
-            bounds_error=False, 
-            fill_value='extrapolate'
-        )
-        
-        gt_positions_interp = gt_interp(opt_filtered['timestamp'])
-        
-        # Align: shift predicted trajectory so its first position matches gt's first position
-        pred_xyz = opt_filtered[['x','y','z']].values
-        gt_xyz = gt_positions_interp
+_IgnoreTags.add_constructor(None, lambda loader, node: None)
 
-        if len(pred_xyz) < 2 or len(gt_xyz) < 2:
-            print("⚠️ Not enough data points for rotation alignment, using translation only.")
-            if len(pred_xyz) > 0 and len(gt_xyz) > 0:
-                translation = gt_xyz[0] - pred_xyz[0]
-                pred_xyz_aligned = pred_xyz + translation
-            else:
-                pred_xyz_aligned = pred_xyz
+
+def _load_yaml(path: str) -> dict:
+    with open(path, 'r') as f:
+        content = f.read()
+    if content.startswith('%YAML:1.0'):
+        content = '\n'.join(content.splitlines()[1:])
+    return yaml.load(content, Loader=_IgnoreTags) or {}
+
+
+def _parse_opencv_matrix(path: str, key: str) -> np.ndarray | None:
+    """
+    Manually parse an !!opencv-matrix node from a YAML file.
+    Handles:
+      key: !!opencv-matrix
+         rows: R
+         cols: C
+         dt: d
+         data: [v0, v1, ...]
+    Returns ndarray of shape (R, C), or None if not found.
+    """
+    import re
+    with open(path) as f:
+        text = f.read()
+
+    # Find the block starting at 'key:'
+    pattern = re.compile(
+        r'^' + re.escape(key) + r'\s*:.*?data\s*:\s*\[([^\]]*)\]',
+        re.MULTILINE | re.DOTALL
+    )
+    m = pattern.search(text)
+    if not m:
+        return None
+
+    data_str = m.group(1)
+    vals = [float(v.strip()) for v in data_str.split(',') if v.strip()]
+
+    # Also get rows/cols from the same block
+    block = m.group(0)
+    rows_m = re.search(r'rows\s*:\s*(\d+)', block)
+    cols_m = re.search(r'cols\s*:\s*(\d+)', block)
+    if rows_m and cols_m:
+        rows = int(rows_m.group(1))
+        cols = int(cols_m.group(1))
+    else:
+        # Guess square
+        n = len(vals)
+        side = int(round(n ** 0.5))
+        rows = cols = side
+
+    return np.array(vals).reshape(rows, cols)
+
+
+# ---------------------------------------------------------------------------
+# Pose utilities
+# ---------------------------------------------------------------------------
+def quat_to_rot(q_xyzw: np.ndarray) -> np.ndarray:
+    """[qx, qy, qz, qw] → 3×3 rotation matrix."""
+    return Rotation.from_quat(q_xyzw).as_matrix()
+
+
+def rot_to_quat(R: np.ndarray) -> np.ndarray:
+    """3×3 → [qx, qy, qz, qw]."""
+    return Rotation.from_matrix(R).as_quat()
+
+
+def pose_inverse(R: np.ndarray, t: np.ndarray):
+    """Invert SE(3): (R, t) → (R^T, -R^T t)."""
+    Ri = R.T
+    ti = -Ri @ t
+    return Ri, ti
+
+
+def pose_compose(R1, t1, R2, t2):
+    """Compose SE(3): T1 * T2."""
+    return R1 @ R2, R1 @ t2 + t1
+
+
+# ---------------------------------------------------------------------------
+# Umeyama similarity alignment  (Sim(3): scale + rotation + translation)
+# ---------------------------------------------------------------------------
+def umeyama_alignment(src: np.ndarray, dst: np.ndarray, with_scale: bool = True):
+    """
+    Align src trajectory to dst using the Umeyama method.
+
+    src, dst: (N, 3) position arrays
+    Returns: scale s, rotation R (3×3), translation t (3,)
+    such that dst ≈ s * R @ src + t
+    """
+    assert src.shape == dst.shape and src.ndim == 2 and src.shape[1] == 3
+
+    n = src.shape[0]
+    mu_src = src.mean(axis=0)
+    mu_dst = dst.mean(axis=0)
+
+    src_c = src - mu_src
+    dst_c = dst - mu_dst
+
+    sigma_src = (src_c ** 2).sum() / n
+    cov = (dst_c.T @ src_c) / n
+
+    U, D, Vt = np.linalg.svd(cov)
+    S = np.eye(3)
+    if np.linalg.det(U) * np.linalg.det(Vt) < 0:
+        S[2, 2] = -1
+
+    R = U @ S @ Vt
+    if with_scale and sigma_src > 1e-10:
+        scale = (D * S.diagonal()).sum() / sigma_src
+    else:
+        scale = 1.0
+
+    t = mu_dst - scale * R @ mu_src
+    return scale, R, t
+
+
+# ---------------------------------------------------------------------------
+# Data loading
+# ---------------------------------------------------------------------------
+def load_vio_trajectory(path: str) -> pd.DataFrame:
+    """
+    Load VIO output file.
+    Format: # timestamp tx ty tz qx qy qz qw
+    Returns DataFrame with columns: timestamp, x, y, z, qx, qy, qz, qw
+    """
+    rows = []
+    with open(path) as f:
+        for line in f:
+            line = line.strip()
+            if not line or line.startswith('#'):
+                continue
+            parts = line.split()
+            if len(parts) != 8:
+                continue
+            rows.append([float(p) for p in parts])
+    df = pd.DataFrame(rows, columns=['timestamp', 'x', 'y', 'z', 'qx', 'qy', 'qz', 'qw'])
+    print(f"  VIO: {len(df)} poses, t=[{df.timestamp.min():.3f}, {df.timestamp.max():.3f}]s")
+    return df
+
+
+def _find_gt_file(dataset_path: str) -> str:
+    """Locate ground-truth CSV (TUM VI or EuRoC)."""
+    candidates = [
+        os.path.join(dataset_path, 'mav0', 'mocap0', 'data.csv'),           # TUM VI
+        os.path.join(dataset_path, 'mav0', 'state_groundtruth_estimate0', 'data.csv'),  # EuRoC
+        os.path.join(dataset_path, 'dso', 'gt_imu.csv'),                    # TUM VI DSO
+    ]
+    for c in candidates:
+        if os.path.exists(c):
+            return c
+    raise FileNotFoundError(f"No GT file found in {dataset_path}. Tried: {candidates}")
+
+
+def load_ground_truth(dataset_path: str) -> pd.DataFrame:
+    """
+    Load GT from TUM VI (mocap0) or EuRoC (state_groundtruth_estimate0).
+    Returns DataFrame: timestamp[s], x, y, z, qx, qy, qz, qw
+    """
+    gt_path = _find_gt_file(dataset_path)
+    print(f"  GT file: {gt_path}")
+
+    rows = []
+    with open(gt_path) as f:
+        for line in f:
+            line = line.strip()
+            if not line or line.startswith('#'):
+                continue
+            # Split by comma or whitespace
+            parts = line.replace(',', ' ').split()
+            if len(parts) < 8:
+                continue
+            try:
+                vals = [float(p) for p in parts[:8]]
+            except ValueError:
+                continue
+
+            # Detect nanosecond timestamps (> 1e15)
+            ts = vals[0]
+            if ts > 1e15:
+                ts /= 1e9  # ns → s
+
+            # Detect column order: mocap0/state_gt use qw-first after position
+            # Format: timestamp px py pz qw qx qy qz
+            # Reorder to qx qy qz qw for internal consistency
+            px, py, pz = vals[1], vals[2], vals[3]
+            qw, qx, qy, qz = vals[4], vals[5], vals[6], vals[7]
+
+            rows.append([ts, px, py, pz, qx, qy, qz, qw])
+
+    df = pd.DataFrame(rows, columns=['timestamp', 'x', 'y', 'z', 'qx', 'qy', 'qz', 'qw'])
+    df.sort_values('timestamp', inplace=True)
+    df.reset_index(drop=True, inplace=True)
+    print(f"  GT:  {len(df)} poses, t=[{df.timestamp.min():.3f}, {df.timestamp.max():.3f}]s")
+    return df
+
+
+# ---------------------------------------------------------------------------
+# Frame transform: VIO camera → IMU/body
+# ---------------------------------------------------------------------------
+def load_extrinsics(config_path: str):
+    """
+    Load R_ic (camera→IMU rotation) and t_ic (camera translation in IMU frame)
+    from VIO config yaml.  Handles !!opencv-matrix tags via direct text parsing.
+    Returns (R_ic [3×3], t_ic [3,]) or (None, None) if not found.
+    """
+    r_ic = _parse_opencv_matrix(config_path, 'extrinsicRotation')
+    t_mat = _parse_opencv_matrix(config_path, 'extrinsicTranslation')
+    t_ic = t_mat.flatten() if t_mat is not None else None
+
+    if r_ic is not None and t_ic is not None:
+        print(f"  R_ic loaded, t_ic=[{t_ic[0]:.4f}, {t_ic[1]:.4f}, {t_ic[2]:.4f}]")
+    else:
+        print("  WARNING: extrinsics not found in config, skipping frame transform")
+
+    return r_ic, t_ic
+
+
+def transform_camera_to_body(vio_df: pd.DataFrame, r_ic: np.ndarray, t_ic: np.ndarray) -> pd.DataFrame:
+    """
+    Convert VIO camera-frame poses to body/IMU frame.
+
+    VIO saves:  P_cam = P_body + R_body * t_ic
+                R_cam = R_body * R_ic
+
+    Inverse:    R_body = R_cam * R_ic^T
+                P_body = P_cam - R_body * t_ic
+    """
+    r_ic_T = r_ic.T
+    out_rows = []
+    for _, row in vio_df.iterrows():
+        R_cam = quat_to_rot(np.array([row.qx, row.qy, row.qz, row.qw]))
+        P_cam = np.array([row.x, row.y, row.z])
+
+        R_body = R_cam @ r_ic_T
+        P_body = P_cam - R_body @ t_ic
+
+        q = rot_to_quat(R_body)  # [qx, qy, qz, qw]
+        out_rows.append([row.timestamp, P_body[0], P_body[1], P_body[2],
+                         q[0], q[1], q[2], q[3]])
+
+    return pd.DataFrame(out_rows, columns=['timestamp', 'x', 'y', 'z', 'qx', 'qy', 'qz', 'qw'])
+
+
+# ---------------------------------------------------------------------------
+# Trajectory association
+# ---------------------------------------------------------------------------
+def associate_trajectories(est_df: pd.DataFrame, gt_df: pd.DataFrame,
+                            max_dt: float = 0.05):
+    """
+    Associate estimated and GT poses by nearest timestamp.
+    Returns (est_matched, gt_matched) as (N,) arrays of indices.
+    """
+    gt_ts = gt_df['timestamp'].values
+    est_ts = est_df['timestamp'].values
+
+    est_idx = []
+    gt_idx = []
+
+    for i, t in enumerate(est_ts):
+        j = np.searchsorted(gt_ts, t)
+        # Check neighbors
+        candidates = [j - 1, j, j + 1]
+        best_j, best_dt = -1, max_dt + 1
+        for c in candidates:
+            if 0 <= c < len(gt_ts):
+                dt = abs(gt_ts[c] - t)
+                if dt < best_dt:
+                    best_dt, best_j = dt, c
+        if best_j >= 0 and best_dt <= max_dt:
+            est_idx.append(i)
+            gt_idx.append(best_j)
+
+    print(f"  Associated {len(est_idx)} pairs (max_dt={max_dt}s)")
+    return np.array(est_idx), np.array(gt_idx)
+
+
+# ---------------------------------------------------------------------------
+# ATE
+# ---------------------------------------------------------------------------
+def compute_ate(est_pos: np.ndarray, gt_pos: np.ndarray):
+    """
+    Compute ATE with Umeyama Sim(3) alignment.
+    est_pos, gt_pos: (N, 3)
+    Returns dict with RMSE, mean, median, std, max, scale.
+    """
+    scale, R, t = umeyama_alignment(est_pos, gt_pos, with_scale=True)
+    est_aligned = scale * (R @ est_pos.T).T + t
+
+    errors = np.linalg.norm(est_aligned - gt_pos, axis=1)
+    return {
+        'rmse':   float(np.sqrt(np.mean(errors ** 2))),
+        'mean':   float(errors.mean()),
+        'median': float(np.median(errors)),
+        'std':    float(errors.std()),
+        'max':    float(errors.max()),
+        'scale':  float(scale),
+        'n':      len(errors),
+        'aligned_est': est_aligned,
+    }
+
+
+# ---------------------------------------------------------------------------
+# RPE
+# ---------------------------------------------------------------------------
+def compute_rpe(est_df: pd.DataFrame, gt_df: pd.DataFrame,
+                gt_idx: np.ndarray, est_idx: np.ndarray,
+                delta: float = 1.0, tol: float = 0.1):
+    """
+    Compute RPE at sub-sequence length delta [seconds].
+
+    Uses the matched index arrays so we know which GT row corresponds
+    to each estimated pose.
+
+    Returns dict with rmse_trans [m], rmse_rot [deg], n.
+    """
+    est_ts = est_df['timestamp'].values
+
+    trans_errors = []
+    rot_errors_deg = []
+
+    for k, i in enumerate(est_idx):
+        # Find j in est_idx such that est_ts[j] - est_ts[i] ≈ delta
+        target_t = est_ts[i] + delta
+        best_k2 = -1
+        best_dt = tol + 1
+        for k2 in range(k + 1, len(est_idx)):
+            j = est_idx[k2]
+            dt = abs(est_ts[j] - target_t)
+            if dt < best_dt:
+                best_dt = dt
+                best_k2 = k2
+            if est_ts[est_idx[k2]] > target_t + tol:
+                break
+
+        if best_k2 < 0 or best_dt > tol:
+            continue
+
+        k2 = best_k2
+        i2 = est_idx[k2]
+        gi, gi2 = gt_idx[k], gt_idx[k2]
+
+        # Estimated relative pose
+        row_ei = est_df.iloc[i]
+        row_ej = est_df.iloc[i2]
+        R_ei = quat_to_rot(np.array([row_ei.qx, row_ei.qy, row_ei.qz, row_ei.qw]))
+        t_ei = np.array([row_ei.x, row_ei.y, row_ei.z])
+        R_ej = quat_to_rot(np.array([row_ej.qx, row_ej.qy, row_ej.qz, row_ej.qw]))
+        t_ej = np.array([row_ej.x, row_ej.y, row_ej.z])
+
+        # GT relative pose
+        row_gi = gt_df.iloc[gi]
+        row_gj = gt_df.iloc[gi2]
+        R_gi = quat_to_rot(np.array([row_gi.qx, row_gi.qy, row_gi.qz, row_gi.qw]))
+        t_gi = np.array([row_gi.x, row_gi.y, row_gi.z])
+        R_gj = quat_to_rot(np.array([row_gj.qx, row_gj.qy, row_gj.qz, row_gj.qw]))
+        t_gj = np.array([row_gj.x, row_gj.y, row_gj.z])
+
+        # Relative transforms
+        R_ei_inv, t_ei_inv = pose_inverse(R_ei, t_ei)
+        R_est_rel, t_est_rel = pose_compose(R_ei_inv, t_ei_inv, R_ej, t_ej)
+
+        R_gi_inv, t_gi_inv = pose_inverse(R_gi, t_gi)
+        R_gt_rel, t_gt_rel = pose_compose(R_gi_inv, t_gi_inv, R_gj, t_gj)
+
+        # Error: E = T_gt_rel^{-1} * T_est_rel
+        R_gt_inv, t_gt_inv = pose_inverse(R_gt_rel, t_gt_rel)
+        R_err, t_err = pose_compose(R_gt_inv, t_gt_inv, R_est_rel, t_est_rel)
+
+        trans_errors.append(np.linalg.norm(t_err))
+
+        # Rotation error in degrees
+        angle = Rotation.from_matrix(R_err).magnitude()
+        rot_errors_deg.append(np.degrees(angle))
+
+    if not trans_errors:
+        return {'rmse_trans': float('nan'), 'rmse_rot': float('nan'), 'n': 0, 'delta': delta}
+
+    te = np.array(trans_errors)
+    re = np.array(rot_errors_deg)
+    return {
+        'rmse_trans': float(np.sqrt(np.mean(te ** 2))),
+        'mean_trans': float(te.mean()),
+        'rmse_rot':   float(np.sqrt(np.mean(re ** 2))),
+        'mean_rot':   float(re.mean()),
+        'n':          len(te),
+        'delta':      delta,
+    }
+
+
+# ---------------------------------------------------------------------------
+# Plotting
+# ---------------------------------------------------------------------------
+def plot_trajectories(gt_pos: np.ndarray, est_raw: np.ndarray,
+                      est_aligned: np.ndarray, output_dir: str,
+                      save: bool, show: bool, tag: str = ''):
+    fig = plt.figure(figsize=(18, 6))
+
+    titles = ['3D', 'XY (top)', 'XZ (side)']
+    for col, (i1, i2, zlabel) in enumerate([(0,1,'Y'), (0,2,'Z'), (1,2,'Z')]):
+        ax = fig.add_subplot(1, 3, col + 1,
+                             projection='3d' if col == 0 else None)
+        if col == 0:
+            ax.plot(gt_pos[:,0], gt_pos[:,1], gt_pos[:,2],
+                    'b-', lw=1.5, label='GT', alpha=0.8)
+            ax.plot(est_aligned[:,0], est_aligned[:,1], est_aligned[:,2],
+                    'r-', lw=1.5, label='VIO (aligned)', alpha=0.8)
+            ax.set_xlabel('X'); ax.set_ylabel('Y'); ax.set_zlabel('Z')
         else:
-            # Align using Z-axis rotation and translation
-            vec_pred = pred_xyz[1] - pred_xyz[0]
-            vec_gt = gt_xyz[1] - gt_xyz[0]
-            
-            # Project vectors onto XY plane
-            vec_pred_xy = vec_pred[:2]
-            vec_gt_xy = vec_gt[:2]
-            
-            if np.linalg.norm(vec_pred_xy) < 1e-8 or np.linalg.norm(vec_gt_xy) < 1e-8:
-                print("⚠️ Initial XY movement vector is too small for Z-axis rotation, falling back to translation only.")
-                translation = gt_xyz[0] - pred_xyz[0]
-                pred_xyz_aligned = pred_xyz + translation
-            else:
-                # Calculate angles on XY plane
-                angle_pred = np.arctan2(vec_pred_xy[1], vec_pred_xy[0])
-                angle_gt = np.arctan2(vec_gt_xy[1], vec_gt_xy[0])
-                
-                # Calculate angle difference for Z-axis rotation
-                angle_diff = angle_gt - angle_pred
-                
-                # Create rotation object for Z-axis rotation
-                rotation = R.from_euler('z', angle_diff)
-                
-                # Center the predicted trajectory at its start point
-                pred_xyz_centered = pred_xyz - pred_xyz[0]
-                
-                # Rotate the centered trajectory
-                pred_xyz_rotated = rotation.apply(pred_xyz_centered)
-                
-                # Translate the rotated trajectory to the start point of the ground truth
-                pred_xyz_aligned = pred_xyz_rotated + gt_xyz[0]
-        
-        # Create aligned dataframes
-        self.aligned_gt = pd.DataFrame({
-            'timestamp': opt_filtered['timestamp'],
-            'x': gt_xyz[:, 0],
-            'y': gt_xyz[:, 1],
-            'z': gt_xyz[:, 2]
-        })
-        self.aligned_opt = pd.DataFrame({
-            'timestamp': opt_filtered['timestamp'],
-            'x': pred_xyz_aligned[:, 0],
-            'y': pred_xyz_aligned[:, 1],
-            'z': pred_xyz_aligned[:, 2]
-        })
-        
-        print(f"✅ Aligned trajectories: {len(self.aligned_gt)} poses")
-        
-        return start_time, end_time
-    
-    def calculate_errors(self):
-        """Calculate trajectory errors"""
-        print("📈 Calculating error metrics...")
-        
-        # Calculate position errors
-        position_errors = np.sqrt(
-            (self.aligned_opt['x'] - self.aligned_gt['x'])**2 +
-            (self.aligned_opt['y'] - self.aligned_gt['y'])**2 +
-            (self.aligned_opt['z'] - self.aligned_gt['z'])**2
-        )
-        
-        # Calculate individual axis errors
-        x_errors = np.abs(self.aligned_opt['x'] - self.aligned_gt['x'])
-        y_errors = np.abs(self.aligned_opt['y'] - self.aligned_gt['y'])
-        z_errors = np.abs(self.aligned_opt['z'] - self.aligned_gt['z'])
-        
-        # Calculate statistics
-        stats = {
-            'mean_position_error': np.mean(position_errors),
-            'std_position_error': np.std(position_errors),
-            'max_position_error': np.max(position_errors),
-            'median_position_error': np.median(position_errors),
-            'rmse_position': np.sqrt(np.mean(position_errors**2)),
-            'mean_x_error': np.mean(x_errors),
-            'mean_y_error': np.mean(y_errors),
-            'mean_z_error': np.mean(z_errors),
-            'std_x_error': np.std(x_errors),
-            'std_y_error': np.std(y_errors),
-            'std_z_error': np.std(z_errors)
-        }
-        
-        print("📊 Error Statistics:")
-        print(f"  Mean Position Error: {stats['mean_position_error']:.4f} m")
-        print(f"  Std Position Error: {stats['std_position_error']:.4f} m")
-        print(f"  Max Position Error: {stats['max_position_error']:.4f} m")
-        print(f"  RMSE Position: {stats['rmse_position']:.4f} m")
-        print(f"  Mean X Error: {stats['mean_x_error']:.4f} m")
-        print(f"  Mean Y Error: {stats['mean_y_error']:.4f} m")
-        print(f"  Mean Z Error: {stats['mean_z_error']:.4f} m")
-        
-        return stats, position_errors, x_errors, y_errors, z_errors
-    
-    def visualize_trajectories(self, save_plots=True, show_plots=True):
-        """Visualize both trajectories"""
-        print("🎨 Creating visualizations...")
-        
-        # Create figure with subplots - only top row plots
-        fig = plt.figure(figsize=(20, 8))
-        
-        # 3D trajectory plot
-        ax1 = fig.add_subplot(1, 3, 1, projection='3d')
-        ax1.plot(self.aligned_gt['x'], self.aligned_gt['y'], self.aligned_gt['z'], 
-                'b-', label='Ground Truth', linewidth=2, alpha=0.8)
-        ax1.plot(self.aligned_opt['x'], self.aligned_opt['y'], self.aligned_opt['z'], 
-                'r-', label='Optimized', linewidth=2, alpha=0.8)
-        ax1.set_xlabel('X [m]')
-        ax1.set_ylabel('Y [m]')
-        ax1.set_zlabel('Z [m]')
-        ax1.set_title('3D Trajectory Comparison')
-        ax1.legend()
-        ax1.grid(True)
+            ax.plot(gt_pos[:,i1], gt_pos[:,i2], 'b-', lw=1.5, label='GT', alpha=0.8)
+            ax.plot(est_aligned[:,i1], est_aligned[:,i2],
+                    'r-', lw=1.5, label='VIO (aligned)', alpha=0.8)
+            ax.set_xlabel('XYZ'[i1]); ax.set_ylabel('XYZ'[i2])
+            ax.axis('equal'); ax.grid(True)
 
-        xlim = ax1.get_xlim3d()
-        ylim = ax1.get_ylim3d()
-        zlim = ax1.get_zlim3d()
-        xmid = 0.5 * (xlim[0] + xlim[1])
-        ymid = 0.5 * (ylim[0] + ylim[1])
-        zmid = 0.5 * (zlim[0] + zlim[1])
-        max_range = max(xlim[1]-xlim[0], ylim[1]-ylim[0], zlim[1]-zlim[0]) / 2
-        ax1.set_xlim3d([xmid - max_range, xmid + max_range])
-        ax1.set_ylim3d([ymid - max_range, ymid + max_range])
-        ax1.set_zlim3d([zmid - max_range, zmid + max_range])
+        ax.set_title(titles[col])
+        ax.legend(fontsize=8)
 
-        # XY projection
-        ax2 = fig.add_subplot(1, 3, 2)
-        ax2.plot(self.aligned_gt['x'], self.aligned_gt['y'], 'b-', label='Ground Truth', linewidth=2)
-        ax2.plot(self.aligned_opt['x'], self.aligned_opt['y'], 'r-', label='Optimized', linewidth=2)
-        ax2.set_xlabel('X [m]')
-        ax2.set_ylabel('Y [m]')
-        ax2.set_title('XY Projection')
-        ax2.legend()
-        ax2.grid(True)
-        ax2.axis('equal')
-        
-        # XZ projection
-        ax3 = fig.add_subplot(1, 3, 3)
-        ax3.plot(self.aligned_gt['x'], self.aligned_gt['z'], 'b-', label='Ground Truth', linewidth=2)
-        ax3.plot(self.aligned_opt['x'], self.aligned_opt['z'], 'r-', label='Optimized', linewidth=2)
-        ax3.set_xlabel('X [m]')
-        ax3.set_ylabel('Z [m]')
-        ax3.set_title('XZ Projection')
-        ax3.legend()
-        ax3.grid(True)
-        ax3.axis('equal')
-        
-        plt.tight_layout()
-        
-        if save_plots:
-            plot_filename = os.path.join(self.output_dir, f"trajectory_comparison_{os.path.basename(self.dataset_path)}.png")
-            plt.savefig(plot_filename, dpi=300, bbox_inches='tight')
-            print(f"✅ Visualization saved as: {plot_filename}")
-        
-        if show_plots:
-            plt.show()
-        else:
-            plt.close()
-        
-        # Calculate basic error statistics for results saving
-        stats, _, _, _, _ = self.calculate_errors()
-        return stats
-    
-    def save_comparison_results(self, stats, output_file=None):
-        """Save comparison results to file"""
-        if output_file is None:
-            output_file = os.path.join(self.output_dir, f"trajectory_comparison_results_{os.path.basename(self.dataset_path)}.txt")
-        
-        with open(output_file, 'w') as f:
-            f.write("VINS Trajectory Comparison Results\n")
-            f.write("=" * 50 + "\n\n")
-            f.write(f"Dataset: {self.dataset_path}\n")
-            f.write(f"Optimized pose file: {self.optimized_pose_file}\n")
-            f.write(f"Ground truth file: {self.gt_file}\n\n")
-            
-            f.write("Trajectory Statistics:\n")
-            f.write(f"  Number of poses (optimized): {len(self.aligned_opt)}\n")
-            f.write(f"  Number of poses (ground truth): {len(self.aligned_gt)}\n")
-            f.write(f"  Time range: {self.aligned_opt['timestamp'].min():.3f} - {self.aligned_opt['timestamp'].max():.3f} s\n\n")
-            
-            f.write("Error Metrics:\n")
-            f.write(f"  Mean Position Error: {stats['mean_position_error']:.6f} m\n")
-            f.write(f"  Std Position Error: {stats['std_position_error']:.6f} m\n")
-            f.write(f"  Max Position Error: {stats['max_position_error']:.6f} m\n")
-            f.write(f"  Median Position Error: {stats['median_position_error']:.6f} m\n")
-            f.write(f"  RMSE Position: {stats['rmse_position']:.6f} m\n")
-            f.write(f"  Mean X Error: {stats['mean_x_error']:.6f} m\n")
-            f.write(f"  Mean Y Error: {stats['mean_y_error']:.6f} m\n")
-            f.write(f"  Mean Z Error: {stats['mean_z_error']:.6f} m\n")
-            f.write(f"  Std X Error: {stats['std_x_error']:.6f} m\n")
-            f.write(f"  Std Y Error: {stats['std_y_error']:.6f} m\n")
-            f.write(f"  Std Z Error: {stats['std_z_error']:.6f} m\n")
-        
-        print(f"✅ Results saved to: {output_file}")
-    
-    def run_comparison(self, save_plots=False, save_results=False, show_plots=True):
-        """Run complete trajectory comparison"""
-        print("🚀 Starting trajectory comparison...")
-        print(f"Dataset path: {self.dataset_path}")
-        print(f"Optimized pose file: {self.optimized_pose_file}")
-        
-        # Align trajectories
-        start_time, end_time = self.align_trajectories()
-        
-        # Calculate errors and visualize
-        stats = self.visualize_trajectories(save_plots=save_plots, show_plots=show_plots)
-        
-        # Save results
-        if save_results:
-            self.save_comparison_results(stats)
-        
-        print("✅ Trajectory comparison completed!")
-        return stats
+    plt.suptitle(f'Trajectory Comparison{" — " + tag if tag else ""}', fontsize=11)
+    plt.tight_layout()
+
+    if save:
+        out = os.path.join(output_dir, 'trajectory_comparison.png')
+        plt.savefig(out, dpi=150, bbox_inches='tight')
+        print(f"  Plot saved: {out}")
+
+    if show:
+        plt.show()
+    else:
+        plt.close()
+
+
+# ---------------------------------------------------------------------------
+# Main entry point
+# ---------------------------------------------------------------------------
+def evaluate(experiment_path: str, save: bool = False, show: bool = True):
+    print(f"\n{'='*60}")
+    print(f"  Experiment: {experiment_path}")
+    print(f"{'='*60}")
+
+    # --- locate files ---
+    traj_file = os.path.join(experiment_path, 'trajectory_pose.txt')
+    if not os.path.exists(traj_file):
+        raise FileNotFoundError(f"Trajectory not found: {traj_file}")
+
+    config_files = [f for f in os.listdir(experiment_path)
+                    if f.endswith(('.yaml', '.yml'))]
+    if not config_files:
+        raise FileNotFoundError(f"No yaml config in {experiment_path}")
+    config_file = os.path.join(experiment_path, config_files[0])
+
+    cfg = _load_yaml(config_file)
+    dataset_path = cfg.get('dataset_path')
+    if not dataset_path:
+        raise ValueError(f"'dataset_path' not in {config_file}")
+    print(f"  Dataset: {dataset_path}")
+
+    # --- load data ---
+    print("\n[1] Loading trajectories...")
+    vio_df   = load_vio_trajectory(traj_file)
+    gt_df    = load_ground_truth(dataset_path)
+
+    # --- frame transform: camera → body ---
+    print("\n[2] Transforming VIO to body frame...")
+    r_ic, t_ic = load_extrinsics(config_file)
+    if r_ic is not None and t_ic is not None:
+        body_df = transform_camera_to_body(vio_df, r_ic, t_ic)
+    else:
+        print("  Skipping frame transform (no extrinsics)")
+        body_df = vio_df.copy()
+
+    # --- associate ---
+    print("\n[3] Associating trajectories...")
+    est_idx, gt_idx = associate_trajectories(body_df, gt_df, max_dt=0.05)
+    if len(est_idx) < 10:
+        raise ValueError(f"Too few associations ({len(est_idx)}). Check timestamp alignment.")
+
+    est_pos = body_df[['x','y','z']].values[est_idx]
+    gt_pos  = gt_df[['x','y','z']].values[gt_idx]
+
+    # --- ATE ---
+    print("\n[4] Computing ATE...")
+    ate = compute_ate(est_pos, gt_pos)
+    print(f"  Scale:  {ate['scale']:.4f}")
+    print(f"  RMSE:   {ate['rmse']:.4f} m")
+    print(f"  Mean:   {ate['mean']:.4f} m")
+    print(f"  Median: {ate['median']:.4f} m")
+    print(f"  Std:    {ate['std']:.4f} m")
+    print(f"  Max:    {ate['max']:.4f} m")
+    print(f"  N:      {ate['n']}")
+
+    # --- RPE ---
+    print("\n[5] Computing RPE...")
+    rpe_results = {}
+    for delta in [1.0, 5.0]:
+        rpe = compute_rpe(body_df, gt_df, gt_idx, est_idx, delta=delta)
+        rpe_results[delta] = rpe
+        print(f"  delta={delta:.0f}s: trans RMSE={rpe['rmse_trans']:.4f}m  "
+              f"rot RMSE={rpe['rmse_rot']:.2f}deg  N={rpe['n']}")
+
+    # --- plot ---
+    print("\n[6] Plotting...")
+    plot_trajectories(
+        gt_pos, est_pos, ate['aligned_est'],
+        experiment_path, save=save, show=show,
+        tag=os.path.basename(experiment_path)
+    )
+
+    # --- save results ---
+    if save:
+        out = os.path.join(experiment_path, 'evaluation.txt')
+        with open(out, 'w') as f:
+            f.write("Trajectory Evaluation\n")
+            f.write("=====================\n\n")
+            f.write(f"Dataset:    {dataset_path}\n")
+            f.write(f"Trajectory: {traj_file}\n")
+            f.write(f"N poses:    {ate['n']}\n\n")
+            f.write("ATE (Umeyama Sim(3) alignment):\n")
+            f.write(f"  Scale:  {ate['scale']:.6f}\n")
+            f.write(f"  RMSE:   {ate['rmse']:.6f} m\n")
+            f.write(f"  Mean:   {ate['mean']:.6f} m\n")
+            f.write(f"  Median: {ate['median']:.6f} m\n")
+            f.write(f"  Std:    {ate['std']:.6f} m\n")
+            f.write(f"  Max:    {ate['max']:.6f} m\n\n")
+            f.write("RPE:\n")
+            for delta, rpe in rpe_results.items():
+                f.write(f"  delta={delta:.0f}s: trans_rmse={rpe['rmse_trans']:.6f}m  "
+                        f"rot_rmse={rpe['rmse_rot']:.4f}deg  N={rpe['n']}\n")
+        print(f"  Results saved: {out}")
+
+    return ate, rpe_results
+
 
 def main():
-    parser = argparse.ArgumentParser(
-        description=__doc__,
-        formatter_class=argparse.RawTextHelpFormatter
-    )
-    parser.add_argument('experiment_path', nargs='?', default=None,
-                       help='Path to an experiment results directory.\nIf not provided, the latest directory in "logs/" is used.')
-    parser.add_argument('--save', action='store_true',
-                       help='Save plots and result summary to files in the experiment directory.')
-    parser.add_argument('--no-display', action='store_true',
-                       help='Do not display plots in an interactive window.')
-    
+    parser = argparse.ArgumentParser(description=__doc__,
+                                     formatter_class=argparse.RawTextHelpFormatter)
+    parser.add_argument('experiment_path', nargs='?', default=None)
+    parser.add_argument('--save', action='store_true')
+    parser.add_argument('--no-display', action='store_true')
     args = parser.parse_args()
-    
-    experiment_path = args.experiment_path
 
-    # If no path is provided, find the latest log directory
-    if not experiment_path:
+    exp_path = args.experiment_path
+    if not exp_path:
         log_root = 'logs'
-        if os.path.isdir(log_root):
-            all_log_dirs = [os.path.join(log_root, d) for d in os.listdir(log_root) if os.path.isdir(os.path.join(log_root, d))]
-            if all_log_dirs:
-                experiment_path = max(all_log_dirs, key=os.path.getmtime)
-                print(f"ℹ️ No experiment path provided, using latest: {experiment_path}")
-            else:
-                print(f"❌ Error: 'logs' directory is empty or does not exist.")
-                sys.exit(1)
-        else:
-            print(f"❌ Error: 'logs' directory not found.")
-            sys.exit(1)
+        if not os.path.isdir(log_root):
+            print("ERROR: 'logs/' not found"); sys.exit(1)
+        dirs = [os.path.join(log_root, d) for d in os.listdir(log_root)
+                if os.path.isdir(os.path.join(log_root, d))]
+        if not dirs:
+            print("ERROR: 'logs/' is empty"); sys.exit(1)
+        exp_path = max(dirs, key=os.path.getmtime)
+        print(f"Using latest log: {exp_path}")
 
-    if not os.path.isdir(experiment_path):
-        print(f"❌ Error: Provided path is not a directory: {experiment_path}")
-        sys.exit(1)
+    if not os.path.isdir(exp_path):
+        print(f"ERROR: not a directory: {exp_path}"); sys.exit(1)
 
-    # Find config file inside experiment_path
-    config_files = [f for f in os.listdir(experiment_path) if f.endswith(('.yaml', '.yml'))]
-    if not config_files:
-        print(f"❌ Error: No .yaml config file found in {experiment_path}")
-        sys.exit(1)
-    if len(config_files) > 1:
-        print(f"⚠️ Warning: Multiple .yaml files found in {experiment_path}. Using '{config_files[0]}'.")
-    
-    config_file = os.path.join(experiment_path, config_files[0])
-    optimized_pose_file = os.path.join(experiment_path, 'trajectory_pose.txt')
-    output_dir = experiment_path
+    ate, rpe = evaluate(exp_path, save=args.save, show=not args.no_display)
 
-    if not os.path.exists(optimized_pose_file):
-        print(f"❌ Error: Pose file not found: {optimized_pose_file}")
-        sys.exit(1)
-
-    # Read dataset_path from the config file
-    try:
-        with open(config_file, 'r') as f:
-            content = f.read()
-            # Remove problematic YAML directive if it exists
-            if content.startswith('%YAML:1.0'):
-                content = content.splitlines()[1:]
-                content = "\n".join(content)
-            
-            # Use a loader that ignores unknown tags like !!opencv-matrix
-            class IgnoreUnknownTagsLoader(yaml.SafeLoader):
-                def __init__(self, *args, **kwargs):
-                    super(IgnoreUnknownTagsLoader, self).__init__(*args, **kwargs)
-                    self.add_constructor(None, self.ignore_unknown)
-                
-                def ignore_unknown(self, loader, node):
-                    return None
-
-            config_data = yaml.load(content, Loader=IgnoreUnknownTagsLoader)
-            
-        dataset_path = config_data.get('dataset_path')
-        if not dataset_path:
-            print(f"❌ Error: 'dataset_path' not found in {config_file}")
-            sys.exit(1)
-        print(f"ℹ️ Found dataset_path in config: {dataset_path}")
-    except yaml.YAMLError as e:
-        print(f"❌ Error parsing YAML config file {config_file}: {e}")
-        sys.exit(1)
-    except Exception as e:
-        print(f"❌ Error reading config file {config_file}: {e}")
-        sys.exit(1)
-
-    # Create comparator and run comparison
-    comparator = TrajectoryComparator(dataset_path, optimized_pose_file, output_dir)
-    stats = comparator.run_comparison(
-        save_plots=args.save,
-        save_results=args.save,
-        show_plots=not args.no_display
-    )
-
-    # Print summary
-    print("\n" + "="*60)
+    print(f"\n{'='*60}")
     print("SUMMARY")
-    print("="*60)
-    print(f"Dataset: {os.path.basename(dataset_path)}")
-    print(f"Experiment: {os.path.basename(experiment_path)}")
-    print(f"Mean Position Error: {stats['mean_position_error']:.4f} m")
-    print(f"RMSE Position: {stats['rmse_position']:.4f} m")
-    print(f"Max Position Error: {stats['max_position_error']:.4f} m")
-    print("="*60)
+    print(f"{'='*60}")
+    print(f"ATE RMSE:          {ate['rmse']:.4f} m  (scale={ate['scale']:.3f})")
+    rpe1 = rpe.get(1.0, {})
+    rpe5 = rpe.get(5.0, {})
+    print(f"RPE(1s) trans:     {rpe1.get('rmse_trans', float('nan')):.4f} m  "
+          f"rot: {rpe1.get('rmse_rot', float('nan')):.2f} deg")
+    print(f"RPE(5s) trans:     {rpe5.get('rmse_trans', float('nan')):.4f} m  "
+          f"rot: {rpe5.get('rmse_rot', float('nan')):.2f} deg")
+    print(f"{'='*60}\n")
 
 
-if __name__ == "__main__":
-    main() 
+if __name__ == '__main__':
+    main()

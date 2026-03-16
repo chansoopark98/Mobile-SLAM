@@ -102,13 +102,6 @@ void FeatureManager::setDepth(const VectorXd& x) {
         double depth = 1.0 / x(++feature_index);
         if (depth < 0) {
             it_per_id.solve_flag = 2;
-        } else if (depth < 0.1 || depth > 20.0) {
-            // Depth outside physically plausible range [0.1m, 20m].
-            // Reset to init_depth to let re-triangulation correct it,
-            // rather than letting extreme values corrupt the optimization.
-            // Upper bound: mobile indoor scenes ~10m, with margin for corridors.
-            it_per_id.estimated_depth = g_config.estimator.init_depth;
-            it_per_id.solve_flag = 1;
         } else {
             it_per_id.estimated_depth = depth;
             it_per_id.solve_flag = 1;
@@ -130,11 +123,7 @@ void FeatureManager::clearDepth(const VectorXd& x) {
         it_per_id.used_num = it_per_id.feature_per_frame.size();
         if (!(it_per_id.used_num >= 2 && it_per_id.start_frame < WINDOW_SIZE - 2))
             continue;
-        double depth = 1.0 / x(++feature_index);
-        // Clamp to plausible range; extreme depths corrupt next optimization
-        if (depth < 0.1 || depth > 20.0)
-            depth = g_config.estimator.init_depth;
-        it_per_id.estimated_depth = depth;
+        it_per_id.estimated_depth = 1.0 / x(++feature_index);
     }
 }
 
@@ -198,7 +187,7 @@ void FeatureManager::triangulateAcrossAllViews(const backend::SlidingWindow& sli
         it_per_id.estimated_depth = svd_method;
         // it_per_id->estimated_depth = INIT_DEPTH;
 
-        if (it_per_id.estimated_depth < 0.1 || it_per_id.estimated_depth > 20.0) {
+        if (it_per_id.estimated_depth < 0.1) {
             it_per_id.estimated_depth = g_config.estimator.init_depth;
         }
     }
@@ -234,7 +223,7 @@ void FeatureManager::removeBackShiftDepth(Eigen::Matrix3d marg_R, Eigen::Vector3
                 Eigen::Vector3d w_pts_i = marg_R * pts_i + marg_P;
                 Eigen::Vector3d pts_j = new_R.transpose() * (w_pts_i - new_P);
                 double dep_j = pts_j(2);
-                if (dep_j > 0.1 && dep_j < 20.0)
+                if (dep_j > 0)
                     it->estimated_depth = dep_j;
                 else
                     it->estimated_depth = g_config.estimator.init_depth;

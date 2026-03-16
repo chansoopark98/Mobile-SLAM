@@ -227,11 +227,7 @@ bool Initializer::relativePose(Matrix3d& relative_R, Vector3d& relative_T, int& 
             // Parallax in "virtual pixels" = average_parallax * focal_length
             // Threshold 30 "virtual pixels" — same as VINS-Mono reference
             double focal = g_config.camera.focal_length;
-            // Scale threshold proportionally to focal length so angular parallax
-            // requirement is consistent across cameras (~3.7° = 0.065 rad).
-            // EuRoC (focal≈460): threshold≈30, Mobile (focal≈232): threshold≈15.
-            double init_parallax_threshold = 0.065 * focal;
-            if (average_parallax * focal > init_parallax_threshold &&
+            if (average_parallax * focal > 30 &&
                 motion_estimator_->solveRelativeRT(corres, relative_R, relative_T)) {
                 l = i;
 #ifndef NDEBUG

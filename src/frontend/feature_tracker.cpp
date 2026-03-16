@@ -36,9 +36,29 @@ void filterByStatus(vector<int>& v, vector<uchar> status) {
 FeatureTracker::FeatureTracker() {}
 
 void FeatureTracker::setMask() {
-    if (g_config.feature_tracker.fisheye)
+    if (g_config.feature_tracker.fisheye) {
+        // Lazily initialize fisheye mask on first use.
+        if (fisheye_mask.empty()) {
+            const std::string& mask_path = g_config.feature_tracker.fisheye_mask;
+#ifndef __EMSCRIPTEN__
+            if (!mask_path.empty()) {
+                fisheye_mask = cv::imread(mask_path, cv::IMREAD_GRAYSCALE);
+            }
+#else
+            (void)mask_path;  // No file I/O in WASM — always use generated mask
+#endif
+            if (fisheye_mask.empty()) {
+                // Auto-generate circular mask: exclude black border ring of fisheye image.
+                fisheye_mask = cv::Mat(g_config.camera.row, g_config.camera.col, CV_8UC1, cv::Scalar(0));
+                const double cx = g_config.camera.col / 2.0;
+                const double cy = g_config.camera.row / 2.0;
+                const double radius = std::min({cx, cy, g_config.camera.col - cx, g_config.camera.row - cy}) * 0.95;
+                cv::circle(fisheye_mask, cv::Point(static_cast<int>(cx), static_cast<int>(cy)),
+                           static_cast<int>(radius), cv::Scalar(255), -1);
+            }
+        }
         mask = fisheye_mask.clone();
-    else
+    } else
         mask = cv::Mat(g_config.camera.row, g_config.camera.col, CV_8UC1, cv::Scalar(255));
 
     // prefer to keep features that are tracked for long time
@@ -107,10 +127,9 @@ void FeatureTracker::detectAndTrack(const cv::Mat& _img, double _cur_time) {
     if (cur_pts.size() > 0) {
         vector<uchar> status;
         vector<float> err;
-        // TermCriteria: 20 iterations (default 30), 0.03 eps (default 0.01).
-        // At 240x180 resolution, sub-pixel refinement converges faster due to
-        // smoother gradients. Most features converge in 10-15 iterations.
-        cv::TermCriteria lk_criteria(cv::TermCriteria::COUNT | cv::TermCriteria::EPS, 20, 0.03);
+        cv::TermCriteria lk_criteria(cv::TermCriteria::COUNT | cv::TermCriteria::EPS,
+                                     g_config.feature_tracker.lk_iterations,
+                                     g_config.feature_tracker.lk_eps);
         // Use cached pyramids: cur_pyramid_ from previous frame, next_pyramid_ just built.
         // On the very first tracking frame, cur_pyramid_ was built from cur_img below.
         cv::calcOpticalFlowPyrLK(cur_pyramid_, next_pyramid_, cur_pts, next_pts,

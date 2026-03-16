@@ -42,6 +42,8 @@ struct FeatureTrackerConfig {
     // LK optical flow parameters
     int lk_window_size = 21;    // Lucas-Kanade window size (must be odd)
     int lk_pyramid_levels = 3;  // Number of pyramid levels for LK flow
+    int lk_iterations = 30;     // LK termination: max iterations (mobile: 20)
+    double lk_eps = 0.01;       // LK termination: convergence epsilon (mobile: 0.03)
 
     // Distance-aware F-matrix rejection for unmodeled lens distortion.
     // When enabled, edge features get a larger RANSAC threshold to

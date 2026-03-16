@@ -188,18 +188,6 @@ void Estimator::processImage(const common::ImageData& image, double timestamp) {
                 }
 
                 if (state_valid) {
-                    // Clamp unreasonable initial biases from visual-inertial alignment.
-                    // Bad SfM poses cause the alignment to absorb geometric error into
-                    // accelerometer bias, producing ba > 1 m/s² which corrupts scale.
-                    for (int i = 0; i <= WINDOW_SIZE; i++) {
-                        if (sliding_window_[i].Ba.norm() > 2.0) {
-                            sliding_window_[i].Ba *= 2.0 / sliding_window_[i].Ba.norm();
-                        }
-                        if (sliding_window_[i].Bg.norm() > 0.1) {
-                            sliding_window_[i].Bg *= 0.1 / sliding_window_[i].Bg.norm();
-                        }
-                    }
-
                     solver_flag_ = common::SolverFlag::NON_LINEAR;
                     std::cout << "[VIO] Initialization SUCCESS" << std::endl;
                     std::cout << "[VIO]   gravity: " << g_.transpose()
