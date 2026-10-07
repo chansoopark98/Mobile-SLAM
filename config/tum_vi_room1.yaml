@@ -37,11 +37,12 @@ extrinsicRotation: !!opencv-matrix
 
 # Translation from camera frame to imu frame, imu^T_cam
 # t_imu_cam = -R_cam_imu^T * t_cam_imu
+# Source: dataset-room1_512_16/dso/camchain.yaml cam0 T_cam_imu inverse; identical room4 calibration
 extrinsicTranslation: !!opencv-matrix
    rows: 3
    cols: 1
    dt: d
-   data: [0.04517590, 0.07251590, -0.04395990]
+   data: [0.045574835649698026, -0.07116180183799704, -0.04468125411714437]
 
 #feature tracker parameters
 max_cnt: 150            # max feature number in feature tracking

@@ -1,0 +1,68 @@
+{
+  "scope": "secondary existing Python formulas, independently coded loader/body transform/Umeyama/RPE; association helper shared; no fully independent GT or field validation claim",
+  "tolerance": 1e-09,
+  "results": [
+    {
+      "label": "native_full",
+      "se3_rmse_secondary_m": 0.5552530339846091,
+      "se3_rmse_audit_m": 0.5552530339846091,
+      "rpe_secondary": {
+        "rmse_trans": 0.1602784182237667,
+        "mean_trans": 0.13701001341253433,
+        "rmse_rot": 0.7431113709670185,
+        "mean_rot": 0.6189458671766814,
+        "n": 2655,
+        "delta": 1
+      },
+      "rpe_audit": {
+        "delta_s": 1.0,
+        "tolerance_s": 0.05,
+        "pairs": 2655,
+        "translation_m": {
+          "rmse": 0.16027841822376673,
+          "median": 0.13344615059529374,
+          "p95": 0.28772245487304127,
+          "max": 0.37556480166505557
+        },
+        "rotation_deg": {
+          "rmse": 0.7431113709670184,
+          "median": 0.5437080139047323,
+          "p95": 1.2583377425797555,
+          "max": 6.140497728136389
+        }
+      },
+      "camera_body_position_max_delta_m": 4.440892098500626e-16
+    },
+    {
+      "label": "active_browser_601",
+      "se3_rmse_secondary_m": 0.2829621258026923,
+      "se3_rmse_audit_m": 0.2829621258026923,
+      "rpe_secondary": {
+        "rmse_trans": 0.07806970665992295,
+        "mean_trans": 0.05972879365054797,
+        "rmse_rot": 0.8818035619229044,
+        "mean_rot": 0.6569867718751553,
+        "n": 537,
+        "delta": 1
+      },
+      "rpe_audit": {
+        "delta_s": 1.0,
+        "tolerance_s": 0.05,
+        "pairs": 537,
+        "translation_m": {
+          "rmse": 0.07806970665992297,
+          "median": 0.051517414906075344,
+          "p95": 0.1626692308319512,
+          "max": 0.2460894542844845
+        },
+        "rotation_deg": {
+          "rmse": 0.8818035619229044,
+          "median": 0.5069381841426075,
+          "p95": 1.949622104029588,
+          "max": 4.41483665101416
+        }
+      },
+      "camera_body_position_max_delta_m": 2.220446049250313e-16
+    }
+  ]
+}

@@ -1,0 +1,82 @@
+-- The C compiler identification is GNU 11.4.0
+-- The CXX compiler identification is GNU 11.4.0
+-- Detecting C compiler ABI info
+-- Detecting C compiler ABI info - done
+-- Check for working C compiler: /usr/bin/cc - skipped
+-- Detecting C compile features
+-- Detecting C compile features - done
+-- Detecting CXX compiler ABI info
+-- Detecting CXX compiler ABI info - done
+-- Check for working CXX compiler: /usr/bin/c++ - skipped
+-- Detecting CXX compile features
+-- Detecting CXX compile features - done
+-- ccache not found, builds will not be cached
+-- Found OpenCV: /usr (found version "4.5.4") 
+-- Looking for pthread.h
+-- Looking for pthread.h - found
+-- Performing Test CMAKE_HAVE_LIBC_PTHREAD
+-- Performing Test CMAKE_HAVE_LIBC_PTHREAD - Success
+-- Found Threads: TRUE  
+-- Found OpenGL: /usr/lib/x86_64-linux-gnu/libOpenGL.so  found components: OpenGL 
+-- Found PkgConfig: /usr/bin/pkg-config (found version "0.29.2") 
+-- Checking for module 'yaml-cpp'
+--   Found yaml-cpp, version 0.7.0
+-- Performing Test HAVE_BIGOBJ
+-- Performing Test HAVE_BIGOBJ - Failed
+-- Looking for pow in m
+-- Looking for pow in m - found
+-- Detected Ceres version: 2.2.0 from /home/park-ubuntu/park/SOLUTION/Mobile-SLAM/build/_deps/ceres-solver-src/include/ceres/version.h
+-- Found Eigen version 3.4.0: /usr/share/eigen3/cmake
+-- Enabling use of Eigen as a sparse linear algebra library.
+-- Found CUDA version 12.8.93 installed in: /usr/local/cuda-12.8
+-- The CUDA compiler identification is NVIDIA 12.8.93
+-- Detecting CUDA compiler ABI info
+-- Detecting CUDA compiler ABI info - done
+-- Check for working CUDA compiler: /usr/local/cuda-12.8/bin/nvcc - skipped
+-- Detecting CUDA compile features
+-- Detecting CUDA compile features - done
+-- Setting CUDA Architecture to 50;60;70;80
+-- Building without LAPACK.
+-- Building without SuiteSparse.
+-- Could NOT find METIS (missing: METIS_INCLUDE_DIR METIS_LIBRARY) 
+-- Did not find METIS, disabling Eigen METIS support.
+-- Building without Apple's Accelerate sparse support.
+-- Use of gflags disabled - no tests or tools will be built!
+-- Compiling minimal glog substitute into Ceres.
+-- Using minimal glog substitute (include): internal/ceres/miniglog
+-- Max log level for minimal glog substitute: 2
+-- Disabling Schur specializations (faster compiles)
+-- Building Ceres as a static library.
+-- Performing Test CHECK_CXX_FLAG_Wmissing_declarations
+-- Performing Test CHECK_CXX_FLAG_Wmissing_declarations - Success
+-- Performing Test CHECK_CXX_FLAG_Wno_unknown_pragmas
+-- Performing Test CHECK_CXX_FLAG_Wno_unknown_pragmas - Success
+-- Performing Test CHECK_CXX_FLAG_Wno_sign_compare
+-- Performing Test CHECK_CXX_FLAG_Wno_sign_compare - Success
+-- Performing Test CHECK_CXX_FLAG_Wno_unused_parameter
+-- Performing Test CHECK_CXX_FLAG_Wno_unused_parameter - Success
+-- Performing Test CHECK_CXX_FLAG_Wno_missing_field_initializers
+-- Performing Test CHECK_CXX_FLAG_Wno_missing_field_initializers - Success
+-- Creating configured Ceres config.h output directory: /home/park-ubuntu/park/SOLUTION/Mobile-SLAM/build/audit-native/_deps/ceres-solver-build/include/ceres/internal
+-- Enabling CERES_USE_EIGEN_SPARSE in Ceres config.h
+-- Enabling CERES_NO_LAPACK in Ceres config.h
+-- Enabling CERES_NO_SUITESPARSE in Ceres config.h
+-- Enabling CERES_NO_ACCELERATE_SPARSE in Ceres config.h
+-- Enabling CERES_RESTRICT_SCHUR_SPECIALIZATION in Ceres config.h
+-- Enabling CERES_NO_CHOLMOD_PARTITION in Ceres config.h
+-- Enabling CERES_NO_EIGEN_METIS in Ceres config.h
+-- Performing Test CHECK_CXX_FLAG_Wno_missing_declarations
+-- Performing Test CHECK_CXX_FLAG_Wno_missing_declarations - Success
+-- Performing Test COMPILER_HAS_HIDDEN_VISIBILITY
+-- Performing Test COMPILER_HAS_HIDDEN_VISIBILITY - Success
+-- Performing Test COMPILER_HAS_HIDDEN_INLINE_VISIBILITY
+-- Performing Test COMPILER_HAS_HIDDEN_INLINE_VISIBILITY - Success
+-- Performing Test COMPILER_HAS_DEPRECATED_ATTR
+-- Performing Test COMPILER_HAS_DEPRECATED_ATTR - Success
+-- Do not build any example.
+-- Ceres: 2.2.0 (FetchContent)
+-- Found Python3: /usr/bin/python3.10 (found version "3.10.12") found components: Interpreter 
+-- GoogleTest: 1.14.0 (FetchContent)
+-- Configuring done
+-- Generating done
+-- Build files have been written to: /home/park-ubuntu/park/SOLUTION/Mobile-SLAM/build/audit-native

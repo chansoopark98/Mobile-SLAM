@@ -1,14 +1,109 @@
-#include <thread>
-
 #include "backend/factor/marginalization_factor.h"
+#include <Eigen/QR>
+#include <chrono>
+#include <iomanip>
+#include <limits>
+#include <memory>
+#include <new>
+#include <sstream>
 
 namespace backend {
 namespace factor {
 
-void ResidualBlockInfo::Evaluate() {
+namespace {
+constexpr Eigen::Index kDiagnosticMatrixCells = 65536;
+constexpr Eigen::Index kDiagnosticVectorRows = 1000;
+bool diagnosticSquareFits(int dimension) {
+    const auto size = static_cast<std::size_t>(dimension);
+    return !size || size <= static_cast<std::size_t>(kDiagnosticMatrixCells) / size;
+}
+void diagnosticNumber(std::ostream& out, double value) {
+    if (std::isfinite(value)) out << std::setprecision(17) << value;
+    else out << "null";
+}
+void diagnosticMatrix(std::ostream& out, const Eigen::MatrixXd& matrix) {
+    const bool truncated = matrix.size() > kDiagnosticMatrixCells;
+    out << "{\"rows\":" << matrix.rows() << ",\"cols\":" << matrix.cols()
+        << ",\"cellLimit\":" << kDiagnosticMatrixCells << ",\"truncated\":" << (truncated ? "true" : "false")
+        << ",\"nonfinite\":" << (matrix.allFinite() ? "false" : "true") << ",\"values\":";
+    if (truncated) out << "null";
+    else {
+        out << '[';
+        for (Eigen::Index row = 0; row < matrix.rows(); ++row) for (Eigen::Index col = 0; col < matrix.cols(); ++col) {
+            if (row || col) out << ',';
+            diagnosticNumber(out, matrix(row, col));
+        }
+        out << ']';
+    }
+    out << '}';
+}
+void diagnosticSpectrum(std::ostream& out, const Eigen::MatrixXd& matrix,
+                        const Eigen::SelfAdjointEigenSolver<Eigen::MatrixXd>& eigen) {
+    const auto& values = eigen.eigenvalues();
+    const double scale = values.size() ? values.cwiseAbs().maxCoeff() : 0;
+    const double cutoff = matrix.rows() * std::numeric_limits<double>::epsilon() * scale;
+    out << "{\"dimension\":" << matrix.rows() << ",\"eigenInfo\":" << int(eigen.info())
+        << ",\"rankUsedToFormPrior\":false,\"rankThresholdDiagnosticOnly\":"; diagnosticNumber(out, cutoff);
+    out << ",\"frobeniusNorm\":"; diagnosticNumber(out, matrix.norm());
+    out << ",\"symmetryDefectNorm\":"; diagnosticNumber(out, (matrix - matrix.transpose()).norm());
+    out << ",\"spectralNormFromActualEigenvalues\":"; diagnosticNumber(out, scale);
+    out << ",\"dimensionEpsilonScaleNotUsedForRank\":";
+    diagnosticNumber(out, matrix.rows() * std::numeric_limits<double>::epsilon() * scale);
+    out << ",\"retainedRankDiagnosticOnly\":" << (values.array() > cutoff).count()
+        << ",\"negativeEigenvalues\":" << (values.array() < 0).count()
+        << ",\"nonfinite\":" << (matrix.allFinite() && values.allFinite() && eigen.eigenvectors().allFinite() ? "false" : "true")
+        << ",\"eigenvaluesTruncated\":" << (values.size() > kDiagnosticVectorRows ? "true" : "false")
+        << ",\"eigenvalues\":[";
+    for (Eigen::Index i = 0; i < std::min(values.size(), kDiagnosticVectorRows); ++i) {
+        if (i) out << ',';
+        diagnosticNumber(out, values[i]);
+    }
+    out << "]";
+    const bool truncated = matrix.size() > kDiagnosticMatrixCells;
+    out << ",\"residualMetricsTruncated\":" << (truncated ? "true" : "false") << ",\"eigenResidualRelative\":";
+    if (truncated) out << "null";
+    else {
+        // Eigen's actual operation uses the lower self-adjoint triangle.
+        const Eigen::MatrixXd effective = matrix.selfadjointView<Eigen::Lower>();
+        diagnosticNumber(out, (effective * eigen.eigenvectors() - eigen.eigenvectors() * values.asDiagonal()).norm() /
+                              std::max(1.0, effective.norm()));
+    }
+    out << ",\"matrix\":"; diagnosticMatrix(out, matrix); out << '}';
+}
+}  // namespace
+
+void MarginalizationInfo::setDiagnosticCapture(bool enabled) {
+    diagnostic_capture_ = enabled;
+    if (!enabled) diagnostic_json_ = "{\"enabled\":false}";
+}
+
+std::string MarginalizationInfo::getPriorNormalDiagnostics(const std::vector<double*>& parameters) {
+    if (!diagnostic_capture_) return "{\"enabled\":false}";
+    if (linearized_jacobians.size() > kDiagnosticMatrixCells || parameters.size() != keep_block_size.size())
+        return "{\"enabled\":true,\"truncated\":true,\"evaluationAvailable\":false}";
+    Eigen::VectorXd current_residual(n);
+    MarginalizationFactor prior(this);
+    const bool evaluated = prior.Evaluate(parameters.data(), current_residual.data(), nullptr);
+    const Eigen::MatrixXd normal = linearized_jacobians.transpose() * linearized_jacobians;
+    const Eigen::VectorXd current_gradient = linearized_jacobians.transpose() * current_residual;
+    const Eigen::VectorXd reference_gradient = linearized_jacobians.transpose() * linearized_residuals;
+    std::ostringstream out;
+    out << "{\"enabled\":true,\"truncated\":false,\"evaluationAvailable\":" << (evaluated ? "true" : "false")
+        << ",\"nonfinite\":" << (normal.allFinite() && current_gradient.allFinite() && reference_gradient.allFinite() ? "false" : "true")
+        << ",\"currentParameterResidualNorm\":"; diagnosticNumber(out, current_residual.norm());
+    out << ",\"normal\":"; diagnosticMatrix(out, normal);
+    out << ",\"currentParameterGradient\":"; diagnosticMatrix(out, current_gradient);
+    out << ",\"linearizationReferenceGradient\":"; diagnosticMatrix(out, reference_gradient);
+    out << '}';
+    return out.str();
+}
+
+bool ResidualBlockInfo::Evaluate() {
     residuals.resize(cost_function->num_residuals());
 
     std::vector<int> block_sizes = cost_function->parameter_block_sizes();
+    delete[] raw_jacobians;
+    raw_jacobians = nullptr;
     raw_jacobians = new double*[block_sizes.size()];
     jacobians.resize(block_sizes.size());
 
@@ -17,7 +112,7 @@ void ResidualBlockInfo::Evaluate() {
         raw_jacobians[i] = jacobians[i].data();
         // dim += block_sizes[i] == 7 ? 6 : block_sizes[i];
     }
-    cost_function->Evaluate(parameter_blocks.data(), residuals.data(), raw_jacobians);
+    if (!cost_function->Evaluate(parameter_blocks.data(), residuals.data(), raw_jacobians)) return false;
 
     if (loss_function) {
         double residual_scaling_, alpha_sq_norm_;
@@ -48,6 +143,7 @@ void ResidualBlockInfo::Evaluate() {
 
         residuals *= residual_scaling_;
     }
+    return true;
 }
 
 MarginalizationInfo::~MarginalizationInfo() {
@@ -72,6 +168,8 @@ void MarginalizationInfo::addResidualBlockInfo(ResidualBlockInfo* residual_block
     for (int i = 0; i < static_cast<int>(residual_block_info->parameter_blocks.size()); i++) {
         double* addr = parameter_blocks[i];
         int size = parameter_block_sizes[i];
+        if (parameter_block_size.find(reinterpret_cast<long>(addr)) == parameter_block_size.end())
+            parameter_block_order_.push_back(reinterpret_cast<long>(addr));
         parameter_block_size[reinterpret_cast<long>(addr)] = size;
     }
 
@@ -82,19 +180,31 @@ void MarginalizationInfo::addResidualBlockInfo(ResidualBlockInfo* residual_block
 }
 
 void MarginalizationInfo::preMarginalize() {
-    for (auto it : factors) {
-        it->Evaluate();
-
-        std::vector<int> block_sizes = it->cost_function->parameter_block_sizes();
-        for (int i = 0; i < static_cast<int>(block_sizes.size()); i++) {
-            long addr = reinterpret_cast<long>(it->parameter_blocks[i]);
-            int size = block_sizes[i];
-            if (parameter_block_data.find(addr) == parameter_block_data.end()) {
-                double* data = new double[size];
-                memcpy(data, it->parameter_blocks[i], sizeof(double) * size);
-                parameter_block_data[addr] = data;
+    statistics_ = MarginalizationStatistics{};
+    failure_reason_.clear();
+    linearized_jacobians.resize(0, 0);
+    linearized_residuals.resize(0);
+    try {
+        if (!prepareWorkspace()) return;
+        for (auto* factor : factors) {
+            if (!factor->Evaluate()) {
+                failure_reason_ = "marginalization_factor_evaluation_failed";
+                return;
+            }
+            const auto& block_sizes = factor->cost_function->parameter_block_sizes();
+            for (std::size_t i = 0; i < block_sizes.size(); ++i) {
+                const long address = reinterpret_cast<long>(factor->parameter_blocks[i]);
+                const int size = block_sizes[i];
+                if (parameter_block_data.find(address) == parameter_block_data.end()) {
+                    auto data = std::make_unique<double[]>(size);
+                    std::memcpy(data.get(), factor->parameter_blocks[i], sizeof(double) * size);
+                    parameter_block_data.emplace(address, data.get());
+                    (void)data.release();
+                }
             }
         }
+    } catch (const std::bad_alloc&) {
+        failure_reason_ = "marginalization_allocation_failed";
     }
 }
 
@@ -106,139 +216,182 @@ int MarginalizationInfo::globalSize(int size) const {
     return size == 6 ? 7 : size;
 }
 
-void* ThreadsConstructA(void* threadsstruct) {
-    ThreadsStruct* p = ((ThreadsStruct*)threadsstruct);
-    for (auto it : p->sub_factors) {
-        for (int i = 0; i < static_cast<int>(it->parameter_blocks.size()); i++) {
-            int idx_i = p->parameter_block_idx[reinterpret_cast<long>(it->parameter_blocks[i])];
-            int size_i = p->parameter_block_size[reinterpret_cast<long>(it->parameter_blocks[i])];
-            if (size_i == 7)
-                size_i = 6;
-            Eigen::MatrixXd jacobian_i = it->jacobians[i].leftCols(size_i);
-            for (int j = i; j < static_cast<int>(it->parameter_blocks.size()); j++) {
-                int idx_j = p->parameter_block_idx[reinterpret_cast<long>(it->parameter_blocks[j])];
-                int size_j = p->parameter_block_size[reinterpret_cast<long>(it->parameter_blocks[j])];
-                if (size_j == 7)
-                    size_j = 6;
-                Eigen::MatrixXd jacobian_j = it->jacobians[j].leftCols(size_j);
-                if (i == j)
-                    p->A.block(idx_i, idx_j, size_i, size_j) += jacobian_i.transpose() * jacobian_j;
-                else {
-                    p->A.block(idx_i, idx_j, size_i, size_j) += jacobian_i.transpose() * jacobian_j;
-                    p->A.block(idx_j, idx_i, size_j, size_i) = p->A.block(idx_i, idx_j, size_i, size_j).transpose();
-                }
-            }
-            p->b.segment(idx_i, size_i) += jacobian_i.transpose() * it->residuals;
-        }
+bool MarginalizationInfo::prepareWorkspace() {
+    auto reject = [&](const char* reason) {
+        failure_reason_ = reason;
+        return false;
+    };
+    m = n = 0;
+    parameter_block_idx.clear();
+    for (const auto* factor : factors) for (int index : factor->drop_set)
+        parameter_block_idx[reinterpret_cast<long>(factor->parameter_blocks[index])] = 0;
+    int pos = 0;
+    for (long address : parameter_block_order_) {
+        auto dropped = parameter_block_idx.find(address);
+        if (dropped == parameter_block_idx.end()) continue;
+        const int size = localSize(parameter_block_size.at(address));
+        if (size <= 0 || size > std::numeric_limits<int>::max() - pos)
+            return reject("marginalization_dimension_overflow");
+        dropped->second = pos;
+        pos += size;
     }
-    return threadsstruct;
+    m = pos;
+    for (long address : parameter_block_order_) {
+        if (parameter_block_idx.find(address) != parameter_block_idx.end()) continue;
+        const int size = localSize(parameter_block_size.at(address));
+        if (size <= 0 || size > std::numeric_limits<int>::max() - pos)
+            return reject("marginalization_dimension_overflow");
+        parameter_block_idx[address] = pos;
+        pos += size;
+    }
+    n = pos - m;
+    for (const auto* factor : factors) {
+        const auto rows = static_cast<std::size_t>(factor->cost_function->num_residuals());
+        if (rows > static_cast<std::size_t>(std::numeric_limits<Eigen::Index>::max()) - statistics_.inputRows)
+            return reject("marginalization_dimension_overflow");
+        statistics_.inputRows += rows;
+    }
+    if (!n || !statistics_.inputRows) return reject("marginalization_empty_system");
+
+    // Combined bound includes evaluated ambient factor J/r and saved parameters, then
+    // D/CPQR, augmented kept/transform/reduced/kept-QR, outputs and scratch. No dense Q.
+    auto add_cells = [&](std::size_t rows, std::size_t cols, std::size_t copies) {
+        const auto limit = std::numeric_limits<std::size_t>::max();
+        if ((cols && rows > limit / cols) || (rows * cols && copies > limit / (rows * cols)) ||
+            rows * cols * copies > limit - statistics_.denseWorkspaceCells) {
+            statistics_.workspaceEstimateOverflow = true;
+            return false;
+        }
+        statistics_.denseWorkspaceCells += rows * cols * copies;
+        return true;
+    };
+    for (const auto* factor : factors) {
+        const std::size_t rows = static_cast<std::size_t>(factor->cost_function->num_residuals());
+        if (!add_cells(rows, 1, 1)) return reject("marginalization_dimension_overflow");
+        for (int size : factor->cost_function->parameter_block_sizes())
+            if (!add_cells(rows, size, 1)) return reject("marginalization_dimension_overflow");
+    }
+    for (long address : parameter_block_order_)
+        if (!add_cells(parameter_block_size.at(address), 1, 1))
+            return reject("marginalization_dimension_overflow");
+    if (!add_cells(statistics_.inputRows, m, 2) || !add_cells(statistics_.inputRows, std::size_t(n) + 1, 3) ||
+        !add_cells(n, n, 4) || !add_cells(statistics_.inputRows, 1, 16) ||
+        !add_cells(m, 1, 16) || !add_cells(std::size_t(n) + 1, 1, 16))
+        return reject("marginalization_dimension_overflow");
+    if (diagnostic_capture_ &&
+        ((diagnosticSquareFits(m) && !add_cells(m, m, 8)) ||
+         (diagnosticSquareFits(n) && !add_cells(n, n, 8))))
+        return reject("marginalization_dimension_overflow");
+    if (statistics_.denseWorkspaceCells > kMarginalizationDenseWorkspaceCellBudget)
+        return reject("marginalization_dense_budget_exceeded");
+
+    return true;
 }
 
-void MarginalizationInfo::marginalize() {
-    int pos = 0;
-    for (auto& it : parameter_block_idx) {
-        it.second = pos;
-        pos += localSize(parameter_block_size[it.first]);
-    }
-
-    m = pos;
-
-    for (const auto& it : parameter_block_size) {
-        if (parameter_block_idx.find(it.first) == parameter_block_idx.end()) {
-            parameter_block_idx[it.first] = pos;
-            pos += localSize(it.second);
+bool MarginalizationInfo::marginalize() {
+    linearized_jacobians.resize(0, 0);
+    linearized_residuals.resize(0);
+    const auto started = diagnostic_capture_ ? std::chrono::steady_clock::now() : std::chrono::steady_clock::time_point{};
+    Eigen::MatrixXd diagnostic_amm;
+    auto finish = [&](bool success) {
+        if (!diagnostic_capture_) return success;
+        statistics_.timingAvailable = true;
+        statistics_.elapsedMilliseconds = std::chrono::duration<double, std::milli>(
+            std::chrono::steady_clock::now() - started).count();
+        std::ostringstream out;
+        out << "{\"enabled\":true,\"method\":\"square_root_qr\",\"success\":" << (success ? "true" : "false")
+            << ",\"failureReason\":\"" << failure_reason_ << "\",\"assemblyThreads\":" << kMarginalizationAssemblyThreads
+            << ",\"inputRows\":" << statistics_.inputRows << ",\"droppedDimension\":" << m
+            << ",\"keptDimension\":" << n << ",\"droppedRank\":" << statistics_.droppedRank
+            << ",\"denseWorkspaceCellBudget\":" << kMarginalizationDenseWorkspaceCellBudget
+            << ",\"workspaceEstimateOverflow\":" << (statistics_.workspaceEstimateOverflow ? "true" : "false")
+            << ",\"denseWorkspaceCells\":";
+        if (statistics_.workspaceEstimateOverflow) out << "null";
+        else out << statistics_.denseWorkspaceCells;
+        out << ",\"timingAvailable\":true,\"assemblyAndQrMilliseconds\":";
+        diagnosticNumber(out, statistics_.elapsedMilliseconds);
+        out << ",\"normalMatricesDiagnosticOnly\":true,\"AmmDiagnosticTruncated\":"
+            << (!diagnosticSquareFits(m) ? "true" : "false")
+            << ",\"SchurDiagnosticTruncated\":" << (linearized_jacobians.size() > kDiagnosticMatrixCells ? "true" : "false")
+            << ",\"nonfinite\":" << (failure_reason_ == "marginalization_nonfinite_input" ||
+                                      failure_reason_ == "marginalization_nonfinite_prior" ? "true" : "false")
+            << ",\"Amm\":";
+        if (!success || diagnostic_amm.rows() == 0) out << "null";
+        else {
+            Eigen::SelfAdjointEigenSolver<Eigen::MatrixXd> eigen(diagnostic_amm);
+            diagnosticSpectrum(out, diagnostic_amm, eigen);
         }
-    }
-
-    n = pos - m;
-
-    // ROS_DEBUG("marginalization, pos: %d, m: %d, n: %d, size: %d", pos, m, n,
-    // (int)parameter_block_idx.size());
-
-    Eigen::MatrixXd A(pos, pos);
-    Eigen::VectorXd b(pos);
-    A.setZero();
-    b.setZero();
-
-#ifdef __EMSCRIPTEN__
-    // Single-threaded: run all factors sequentially
-    ThreadsStruct threadsstruct_single;
-    threadsstruct_single.A = Eigen::MatrixXd::Zero(pos, pos);
-    threadsstruct_single.b = Eigen::VectorXd::Zero(pos);
-    threadsstruct_single.parameter_block_size = parameter_block_size;
-    threadsstruct_single.parameter_block_idx = parameter_block_idx;
-    for (auto it : factors) {
-        threadsstruct_single.sub_factors.push_back(it);
-    }
-    ThreadsConstructA((void*)&threadsstruct_single);
-    A += threadsstruct_single.A;
-    b += threadsstruct_single.b;
-#else
-    pthread_t tids[NUM_THREADS];
-    ThreadsStruct threadsstruct[NUM_THREADS];
-    int i = 0;
-    for (auto it : factors) {
-        threadsstruct[i].sub_factors.push_back(it);
-        i++;
-        i = i % NUM_THREADS;
-    }
-    for (int i = 0; i < NUM_THREADS; i++) {
-        threadsstruct[i].A = Eigen::MatrixXd::Zero(pos, pos);
-        threadsstruct[i].b = Eigen::VectorXd::Zero(pos);
-        threadsstruct[i].parameter_block_size = parameter_block_size;
-        threadsstruct[i].parameter_block_idx = parameter_block_idx;
-        int ret = pthread_create(&tids[i], NULL, ThreadsConstructA, (void*)&(threadsstruct[i]));
-        if (ret != 0) {
-            std::cout << "pthread_create error" << std::endl;
-            // ROS_BREAK();
+        out << ",\"Schur\":";
+        if (!success || linearized_jacobians.size() > kDiagnosticMatrixCells) out << "null";
+        else {
+            const Eigen::MatrixXd normal = linearized_jacobians.transpose() * linearized_jacobians;
+            Eigen::SelfAdjointEigenSolver<Eigen::MatrixXd> eigen(normal);
+            diagnosticSpectrum(out, normal, eigen);
         }
+        out << ",\"SchurGradient\":";
+        if (!success || linearized_jacobians.size() > kDiagnosticMatrixCells) out << "null";
+        else diagnosticMatrix(out, linearized_jacobians.transpose() * linearized_residuals);
+        out << '}';
+        diagnostic_json_ = out.str();
+        return success;
+    };
+    auto fail = [&](const char* reason) {
+        failure_reason_ = reason;
+        linearized_jacobians.resize(0, 0);
+        linearized_residuals.resize(0);
+        return finish(false);
+    };
+
+    if (!failure_reason_.empty()) return finish(false);
+    if (!n || !statistics_.inputRows) return fail("marginalization_empty_system");
+
+    try {
+        const Eigen::Index rows = static_cast<Eigen::Index>(statistics_.inputRows);
+        Eigen::MatrixXd dropped = Eigen::MatrixXd::Zero(rows, m);
+        Eigen::MatrixXd kept = Eigen::MatrixXd::Zero(rows, Eigen::Index(n) + 1);
+        Eigen::Index row = 0;
+        for (const auto* factor : factors) {
+            const Eigen::Index count = factor->residuals.size();
+            kept.block(row, n, count, 1) = factor->residuals;
+            for (std::size_t i = 0; i < factor->parameter_blocks.size(); ++i) {
+                const long address = reinterpret_cast<long>(factor->parameter_blocks[i]);
+                const int column = parameter_block_idx.at(address);
+                const int size = localSize(parameter_block_size.at(address));
+                if (column < m) dropped.block(row, column, count, size) += factor->jacobians[i].leftCols(size);
+                else kept.block(row, column - m, count, size) += factor->jacobians[i].leftCols(size);
+            }
+            row += count;
+        }
+        if (!dropped.allFinite() || !kept.allFinite()) return fail("marginalization_nonfinite_input");
+        if (diagnostic_capture_ && m && diagnosticSquareFits(m))
+            diagnostic_amm = dropped.transpose() * dropped;
+        if (m) {
+            Eigen::ColPivHouseholderQR<Eigen::MatrixXd> qr(dropped);
+            // Eigen3.4 default: diagonalSize*epsilon, relative to the largest pivot.
+            // Only dropped-column rank is determined; kept information is never thresholded.
+            statistics_.droppedRank = static_cast<int>(qr.rank());
+            kept = (qr.householderQ().adjoint() * kept).eval();
+        }
+        dropped.resize(0, 0);
+        Eigen::MatrixXd reduced = kept.bottomRows(rows - statistics_.droppedRank);
+        kept.resize(0, 0);
+        linearized_jacobians = Eigen::MatrixXd::Zero(n, n);
+        linearized_residuals = Eigen::VectorXd::Zero(n);
+        if (reduced.rows()) {
+            // Unpivoted kept QR preserves column semantics and all weak observable modes.
+            Eigen::HouseholderQR<Eigen::MatrixXd> qr(reduced.leftCols(n));
+            const Eigen::VectorXd residual = qr.householderQ().adjoint() * reduced.col(n);
+            const Eigen::Index retained_rows = std::min(reduced.rows(), Eigen::Index(n));
+            linearized_jacobians.topRows(retained_rows) =
+                qr.matrixQR().topRows(retained_rows).template triangularView<Eigen::Upper>();
+            linearized_residuals.head(retained_rows) = residual.head(retained_rows);
+        }
+        if (!linearized_jacobians.allFinite() || !linearized_residuals.allFinite())
+            return fail("marginalization_nonfinite_prior");
+        return finish(true);
+    } catch (const std::bad_alloc&) {
+        return fail("marginalization_allocation_failed");
     }
-    for (int i = NUM_THREADS - 1; i >= 0; i--) {
-        pthread_join(tids[i], NULL);
-        A += threadsstruct[i].A;
-        b += threadsstruct[i].b;
-    }
-#endif
-
-    // TODO
-    Eigen::MatrixXd Amm = 0.5 * (A.block(0, 0, m, m) + A.block(0, 0, m, m).transpose());
-    Eigen::SelfAdjointEigenSolver<Eigen::MatrixXd> saes(Amm);
-
-    // ROS_ASSERT_MSG(saes.eigenvalues().minCoeff() >= -1e-4, "min eigenvalue %f",
-    // saes.eigenvalues().minCoeff());
-
-    Eigen::MatrixXd Amm_inv =
-        saes.eigenvectors() *
-        Eigen::VectorXd((saes.eigenvalues().array() > eps).select(saes.eigenvalues().array().inverse(), 0))
-            .asDiagonal() *
-        saes.eigenvectors().transpose();
-    // printf("error1: %f\n", (Amm * Amm_inv - Eigen::MatrixXd::Identity(m,
-    // m)).sum());
-
-    Eigen::VectorXd bmm = b.segment(0, m);
-    Eigen::MatrixXd Amr = A.block(0, m, m, n);
-    Eigen::MatrixXd Arm = A.block(m, 0, n, m);
-    Eigen::MatrixXd Arr = A.block(m, m, n, n);
-    Eigen::VectorXd brr = b.segment(m, n);
-    A = Arr - Arm * Amm_inv * Amr;
-    b = brr - Arm * Amm_inv * bmm;
-
-    Eigen::SelfAdjointEigenSolver<Eigen::MatrixXd> saes2(A);
-    Eigen::VectorXd S = Eigen::VectorXd((saes2.eigenvalues().array() > eps).select(saes2.eigenvalues().array(), 0));
-    Eigen::VectorXd S_inv =
-        Eigen::VectorXd((saes2.eigenvalues().array() > eps).select(saes2.eigenvalues().array().inverse(), 0));
-
-    Eigen::VectorXd S_sqrt = S.cwiseSqrt();
-    Eigen::VectorXd S_inv_sqrt = S_inv.cwiseSqrt();
-
-    linearized_jacobians = S_sqrt.asDiagonal() * saes2.eigenvectors().transpose();
-    linearized_residuals = S_inv_sqrt.asDiagonal() * saes2.eigenvectors().transpose() * b;
-    // std::cout << A << std::endl
-    //          << std::endl;
-    // std::cout << linearized_jacobians << std::endl;
-    // printf("error2: %f %f\n", (linearized_jacobians.transpose() *
-    // linearized_jacobians - A).sum(),
-    //      (linearized_jacobians.transpose() * linearized_residuals - b).sum());
 }
 
 std::vector<double*> MarginalizationInfo::getParameterBlocks(std::unordered_map<long, double*>& addr_shift) {
@@ -247,12 +400,12 @@ std::vector<double*> MarginalizationInfo::getParameterBlocks(std::unordered_map<
     keep_block_idx.clear();
     keep_block_data.clear();
 
-    for (const auto& it : parameter_block_idx) {
-        if (it.second >= m) {
-            keep_block_size.push_back(parameter_block_size[it.first]);
-            keep_block_idx.push_back(parameter_block_idx[it.first]);
-            keep_block_data.push_back(parameter_block_data[it.first]);
-            keep_block_addr.push_back(addr_shift[it.first]);
+    for (long address : parameter_block_order_) {
+        if (parameter_block_idx.at(address) >= m) {
+            keep_block_size.push_back(parameter_block_size.at(address));
+            keep_block_idx.push_back(parameter_block_idx.at(address));
+            keep_block_data.push_back(parameter_block_data.at(address));
+            keep_block_addr.push_back(addr_shift.at(address));
         }
     }
     sum_block_size = std::accumulate(std::begin(keep_block_size), std::end(keep_block_size), 0);

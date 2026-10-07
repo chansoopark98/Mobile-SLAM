@@ -1,0 +1,74 @@
+# Shared core source groups: consumed by native and WASM.
+get_filename_component(MOBILE_SLAM_SOURCE_ROOT "${CMAKE_CURRENT_LIST_DIR}/.." ABSOLUTE)
+set(MOBILE_SLAM_UTILITY_SOURCES
+    "${MOBILE_SLAM_SOURCE_ROOT}/src/utility/utility.cpp"
+    "${MOBILE_SLAM_SOURCE_ROOT}/src/utility/config.cpp"
+)
+set(MOBILE_SLAM_POSE_LOCAL_PARAMETERIZATION_SOURCES
+    "${MOBILE_SLAM_SOURCE_ROOT}/src/backend/factor/pose_local_parameterization.cpp"
+)
+set(MOBILE_SLAM_MARGINALIZATION_FACTOR_SOURCES
+    "${MOBILE_SLAM_SOURCE_ROOT}/src/backend/factor/marginalization_factor.cpp"
+)
+set(MOBILE_SLAM_PROJECTION_FACTOR_SOURCES
+    "${MOBILE_SLAM_SOURCE_ROOT}/src/backend/factor/projection_factor.cpp"
+)
+set(MOBILE_SLAM_PERSPECTIVE_FACTOR_SOURCES
+    "${MOBILE_SLAM_SOURCE_ROOT}/src/backend/factor/perspective_factor.cpp"
+)
+set(MOBILE_SLAM_OPTIMIZER_SOURCES
+    "${MOBILE_SLAM_SOURCE_ROOT}/src/backend/optimizer.cpp"
+)
+set(MOBILE_SLAM_PNP_FRONTEND_SOURCES
+    "${MOBILE_SLAM_SOURCE_ROOT}/src/frontend/pnp_frontend.cpp"
+)
+set(MOBILE_SLAM_FAILURE_DETECTOR_SOURCES
+    "${MOBILE_SLAM_SOURCE_ROOT}/src/frontend/failure_detector.cpp"
+)
+set(MOBILE_SLAM_INITIALIZER_SOURCES
+    "${MOBILE_SLAM_SOURCE_ROOT}/src/frontend/initialization/initializer.cpp"
+    "${MOBILE_SLAM_SOURCE_ROOT}/src/frontend/initialization/initial_alignment.cpp"
+    "${MOBILE_SLAM_SOURCE_ROOT}/src/frontend/initialization/initial_sfm.cpp"
+    "${MOBILE_SLAM_SOURCE_ROOT}/src/frontend/initialization/solve_5pts.cpp"
+)
+set(MOBILE_SLAM_GPL_SOURCES
+    "${MOBILE_SLAM_SOURCE_ROOT}/src/common/gpl/gpl.cc"
+    "${MOBILE_SLAM_SOURCE_ROOT}/src/common/gpl/EigenQuaternionParameterization.cc"
+)
+set(MOBILE_SLAM_CAMERA_MODELS_SOURCES
+    "${MOBILE_SLAM_SOURCE_ROOT}/src/common/camera_models/CameraFactory.cc"
+    "${MOBILE_SLAM_SOURCE_ROOT}/src/common/camera_models/CataCamera.cc"
+    "${MOBILE_SLAM_SOURCE_ROOT}/src/common/camera_models/PinholeCamera.cc"
+    "${MOBILE_SLAM_SOURCE_ROOT}/src/common/camera_models/Camera.cc"
+    "${MOBILE_SLAM_SOURCE_ROOT}/src/common/camera_models/EquidistantCamera.cc"
+    "${MOBILE_SLAM_SOURCE_ROOT}/src/common/camera_models/ScaramuzzaCamera.cc"
+    "${MOBILE_SLAM_SOURCE_ROOT}/src/common/camera_models/CostFunctionFactory.cc"
+)
+set(MOBILE_SLAM_FEATURE_TRACKER_SOURCES
+    "${MOBILE_SLAM_SOURCE_ROOT}/src/frontend/feature_tracker.cpp"
+)
+set(MOBILE_SLAM_ESTIMATOR_SOURCES
+    "${MOBILE_SLAM_SOURCE_ROOT}/src/backend/estimator.cpp"
+    "${MOBILE_SLAM_SOURCE_ROOT}/src/common/frame.cpp"
+    "${MOBILE_SLAM_SOURCE_ROOT}/src/frontend/feature_manager.cpp"
+    "${MOBILE_SLAM_SOURCE_ROOT}/src/backend/sliding_window.cpp"
+)
+set(MOBILE_SLAM_VIO_ENGINE_SOURCES
+    "${MOBILE_SLAM_SOURCE_ROOT}/src/vio_engine.cpp"
+)
+set(MOBILE_SLAM_CORE_SOURCES
+    ${MOBILE_SLAM_UTILITY_SOURCES}
+    ${MOBILE_SLAM_POSE_LOCAL_PARAMETERIZATION_SOURCES}
+    ${MOBILE_SLAM_MARGINALIZATION_FACTOR_SOURCES}
+    ${MOBILE_SLAM_PROJECTION_FACTOR_SOURCES}
+    ${MOBILE_SLAM_PERSPECTIVE_FACTOR_SOURCES}
+    ${MOBILE_SLAM_OPTIMIZER_SOURCES}
+    ${MOBILE_SLAM_PNP_FRONTEND_SOURCES}
+    ${MOBILE_SLAM_FAILURE_DETECTOR_SOURCES}
+    ${MOBILE_SLAM_INITIALIZER_SOURCES}
+    ${MOBILE_SLAM_GPL_SOURCES}
+    ${MOBILE_SLAM_CAMERA_MODELS_SOURCES}
+    ${MOBILE_SLAM_FEATURE_TRACKER_SOURCES}
+    ${MOBILE_SLAM_ESTIMATOR_SOURCES}
+    ${MOBILE_SLAM_VIO_ENGINE_SOURCES}
+)

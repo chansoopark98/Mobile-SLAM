@@ -1,0 +1,33 @@
+=== WASM Integration Test ===
+
+[1] Module Loading
+  PASS: VIOWasm is a function
+  PASS: WASM instance created
+  PASS: _malloc available
+  PASS: _free available
+  PASS: HEAPU8 available
+  PASS: HEAPF64 available
+
+[2] Engine Creation
+  PASS: VIOEngine created
+  PASS: Not initialized initially
+  PASS: Zero features initially
+
+[3] Configuration
+  PASS: Configure succeeded
+
+[4] Multi-frame Processing
+  PASS: Frame 0: no pose yet (expected)
+  INFO: 20 frames processed, avg 3.2ms/frame
+  PASS: Processing took 64ms total
+
+[5] Map Points
+  PASS: getMapPoints returned 0 points
+
+[6] Reset
+  PASS: Not initialized after reset
+
+[7] Re-configure After Reset
+  PASS: Re-configure after reset succeeded
+
+=== Results: 15 passed, 0 failed ===

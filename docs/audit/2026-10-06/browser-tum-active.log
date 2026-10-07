@@ -1,0 +1,72 @@
+{
+  "output": "/home/park-ubuntu/park/SOLUTION/Mobile-SLAM/build/audit-browser/tum-active-600/browser-baseline.json",
+  "browser": "144.0.7559.96",
+  "synthetic": {
+    "crossOriginIsolated": true,
+    "secureContext": true,
+    "parameterResults": {
+      "setMobileParams": true,
+      "setFThreshold": true,
+      "setTrackingParams": true,
+      "setPnPParams": true
+    },
+    "loadMs": 53.9099999666214,
+    "configured": true,
+    "mainThreadTicks": 42,
+    "invalidImageStatus": 3,
+    "frameGapStatus": 1,
+    "mapPointCount": 0,
+    "classicWorkerBuild": {
+      "loaded": false,
+      "error": "VIOWasmFactory is not a function"
+    },
+    "roundTripMs": {
+      "p50": 2.5449999570846558,
+      "p95": 8.699999988079071,
+      "p99": 13.085000038146973,
+      "max": 13.085000038146973
+    },
+    "initializedFrames": 0,
+    "poseFrames": 0,
+    "coverage": {
+      "load": true,
+      "configure": true,
+      "parameterMethods": true,
+      "completeFrames": true,
+      "initializedTracking": false,
+      "finitePoseOutputs": false
+    }
+  },
+  "pages": [
+    {
+      "pathname": "/",
+      "ready": true,
+      "status": "WASM loaded. Ready to start."
+    },
+    {
+      "pathname": "/test-tumvi.html",
+      "ready": true,
+      "status": "WASM loaded. Click Start to begin.",
+      "afterStart": "Processing...",
+      "replaySummary": {
+        "count": 601,
+        "initializedFrames": 556,
+        "poseFrames": 556,
+        "firstPoseFrame": 45,
+        "nonfinitePoses": 0,
+        "statusCounts": {
+          "1": 45,
+          "2": 556
+        },
+        "roundTripMs": {
+          "p50": 22.67500001192093,
+          "p95": 30.73499995470047,
+          "p99": 40.09999996423721,
+          "max": 122.82499998807907
+        },
+        "datasetDurationS": 30.001023054122925,
+        "limits": "Submitted-frame roundtrip only; excludes image decode, camera capture latency, playback wait, and physical sensor clocks. Max-speed serial replay is not live pacing."
+      }
+    }
+  ]
+}

@@ -1,0 +1,507 @@
+[openssl]
+{
+  "command": [
+    "openssl",
+    "version"
+  ],
+  "exit_code": 0,
+  "stdout": "OpenSSL 3.0.16 11 Feb 2025 (Library: OpenSSL 3.0.16 11 Feb 2025)\n",
+  "stderr": ""
+}
+
+[revision]
+"b2826c037a50036d286329b1a56daa1a75ba57a3"
+
+[hostname_trust_clean]
+[
+  {
+    "command": [
+      "openssl",
+      "verify",
+      "-purpose",
+      "sslserver",
+      "-verify_hostname",
+      "serdic.com",
+      "-CAfile",
+      "/etc/ssl/certs/ca-certificates.crt",
+      "-no-CApath",
+      "-no-CAstore",
+      "-untrusted",
+      "assets/keys/serdic_com_chain_cert.crt",
+      "assets/keys/serdic_com_cert.crt"
+    ],
+    "exit_code": 0,
+    "stdout": "assets/keys/serdic_com_cert.crt: OK\n",
+    "stderr": ""
+  },
+  {
+    "command": [
+      "openssl",
+      "verify",
+      "-purpose",
+      "sslserver",
+      "-verify_hostname",
+      "www.serdic.com",
+      "-CAfile",
+      "/etc/ssl/certs/ca-certificates.crt",
+      "-no-CApath",
+      "-no-CAstore",
+      "-untrusted",
+      "assets/keys/serdic_com_chain_cert.crt",
+      "assets/keys/serdic_com_cert.crt"
+    ],
+    "exit_code": 0,
+    "stdout": "assets/keys/serdic_com_cert.crt: OK\n",
+    "stderr": ""
+  },
+  {
+    "command": [
+      "openssl",
+      "verify",
+      "-purpose",
+      "sslserver",
+      "-verify_hostname",
+      "slam.serdic.com",
+      "-CAfile",
+      "/etc/ssl/certs/ca-certificates.crt",
+      "-no-CApath",
+      "-no-CAstore",
+      "-untrusted",
+      "assets/keys/serdic_com_chain_cert.crt",
+      "assets/keys/serdic_com_cert.crt"
+    ],
+    "exit_code": 0,
+    "stdout": "assets/keys/serdic_com_cert.crt: OK\n",
+    "stderr": ""
+  },
+  {
+    "command": [
+      "openssl",
+      "verify",
+      "-purpose",
+      "sslserver",
+      "-verify_hostname",
+      "localhost",
+      "-CAfile",
+      "/etc/ssl/certs/ca-certificates.crt",
+      "-no-CApath",
+      "-no-CAstore",
+      "-untrusted",
+      "assets/keys/serdic_com_chain_cert.crt",
+      "assets/keys/serdic_com_cert.crt"
+    ],
+    "exit_code": 2,
+    "stdout": "",
+    "stderr": "CN = *.serdic.com\nerror 62 at 0 depth lookup: hostname mismatch\nerror assets/keys/serdic_com_cert.crt: verification failed\n"
+  },
+  {
+    "command": [
+      "openssl",
+      "verify",
+      "-purpose",
+      "sslserver",
+      "-verify_ip",
+      "192.168.0.35",
+      "-CAfile",
+      "/etc/ssl/certs/ca-certificates.crt",
+      "-no-CApath",
+      "-no-CAstore",
+      "-untrusted",
+      "assets/keys/serdic_com_chain_cert.crt",
+      "assets/keys/serdic_com_cert.crt"
+    ],
+    "exit_code": 2,
+    "stdout": "",
+    "stderr": "CN = *.serdic.com\nerror 64 at 0 depth lookup: IP address mismatch\nerror assets/keys/serdic_com_cert.crt: verification failed\n"
+  }
+]
+
+[leaf_only_trust_clean]
+{
+  "command": [
+    "openssl",
+    "verify",
+    "-purpose",
+    "sslserver",
+    "-CAfile",
+    "/etc/ssl/certs/ca-certificates.crt",
+    "-no-CApath",
+    "-no-CAstore",
+    "assets/keys/serdic_com_cert.crt"
+  ],
+  "exit_code": 2,
+  "stdout": "",
+  "stderr": "CN = *.serdic.com\nerror 20 at 0 depth lookup: unable to get local issuer certificate\nerror assets/keys/serdic_com_cert.crt: verification failed\n"
+}
+
+[dns]
+[
+  {
+    "command": [
+      "getent",
+      "ahosts",
+      "serdic.com"
+    ],
+    "exit_code": 0,
+    "stdout": "198.49.23.145   STREAM serdic.com\n198.49.23.145   DGRAM  \n198.49.23.145   RAW    \n198.185.159.144 STREAM \n198.185.159.144 DGRAM  \n198.185.159.144 RAW    \n198.185.159.145 STREAM \n198.185.159.145 DGRAM  \n198.185.159.145 RAW    \n198.49.23.144   STREAM \n198.49.23.144   DGRAM  \n198.49.23.144   RAW    \n",
+    "stderr": ""
+  },
+  {
+    "command": [
+      "getent",
+      "ahosts",
+      "www.serdic.com"
+    ],
+    "exit_code": 0,
+    "stdout": "198.185.159.145 STREAM ext-cust.squarespace.com\n198.185.159.145 DGRAM  \n198.185.159.145 RAW    \n198.185.159.144 STREAM \n198.185.159.144 DGRAM  \n198.185.159.144 RAW    \n198.49.23.144   STREAM \n198.49.23.144   DGRAM  \n198.49.23.144   RAW    \n198.49.23.145   STREAM \n198.49.23.145   DGRAM  \n198.49.23.145   RAW    \n",
+    "stderr": ""
+  },
+  {
+    "command": [
+      "getent",
+      "ahosts",
+      "slam.serdic.com"
+    ],
+    "exit_code": 2,
+    "stdout": "",
+    "stderr": ""
+  }
+]
+
+[curl_before]
+[
+  {
+    "command": [
+      "curl",
+      "--noproxy",
+      "*",
+      "--connect-timeout",
+      "3",
+      "--max-time",
+      "5",
+      "--cacert",
+      "/etc/ssl/certs/ca-certificates.crt",
+      "--head",
+      "--silent",
+      "--show-error",
+      "--write-out",
+      "\nhttp_code=%{http_code} remote_ip=%{remote_ip} ssl_verify_result=%{ssl_verify_result}\n",
+      "https://127.0.0.1:7002/"
+    ],
+    "exit_code": 7,
+    "stdout": "\nhttp_code=000 remote_ip= ssl_verify_result=0\n",
+    "stderr": "curl: (7) Failed to connect to 127.0.0.1 port 7002 after 0 ms: Connection refused\n"
+  },
+  {
+    "command": [
+      "curl",
+      "--noproxy",
+      "*",
+      "--connect-timeout",
+      "3",
+      "--max-time",
+      "5",
+      "--cacert",
+      "/etc/ssl/certs/ca-certificates.crt",
+      "--head",
+      "--silent",
+      "--show-error",
+      "--write-out",
+      "\nhttp_code=%{http_code} remote_ip=%{remote_ip} ssl_verify_result=%{ssl_verify_result}\n",
+      "https://192.168.0.35:7002/"
+    ],
+    "exit_code": 7,
+    "stdout": "\nhttp_code=000 remote_ip= ssl_verify_result=0\n",
+    "stderr": "curl: (7) Failed to connect to 192.168.0.35 port 7002 after 0 ms: Connection refused\n"
+  },
+  {
+    "command": [
+      "curl",
+      "--noproxy",
+      "*",
+      "--connect-timeout",
+      "3",
+      "--max-time",
+      "5",
+      "--cacert",
+      "/etc/ssl/certs/ca-certificates.crt",
+      "--head",
+      "--silent",
+      "--show-error",
+      "--write-out",
+      "\nhttp_code=%{http_code} remote_ip=%{remote_ip} ssl_verify_result=%{ssl_verify_result}\n",
+      "https://192.168.0.170:7002/"
+    ],
+    "exit_code": 7,
+    "stdout": "\nhttp_code=000 remote_ip= ssl_verify_result=0\n",
+    "stderr": "curl: (7) Failed to connect to 192.168.0.170 port 7002 after 0 ms: Connection refused\n"
+  },
+  {
+    "command": [
+      "curl",
+      "--noproxy",
+      "*",
+      "--connect-timeout",
+      "3",
+      "--max-time",
+      "5",
+      "--cacert",
+      "/etc/ssl/certs/ca-certificates.crt",
+      "--head",
+      "--silent",
+      "--show-error",
+      "--write-out",
+      "\nhttp_code=%{http_code} remote_ip=%{remote_ip} ssl_verify_result=%{ssl_verify_result}\n",
+      "https://serdic.com:7002/"
+    ],
+    "exit_code": 28,
+    "stdout": "\nhttp_code=000 remote_ip= ssl_verify_result=0\n",
+    "stderr": "curl: (28) Failed to connect to serdic.com port 7002 after 2814 ms: Connection timed out\n"
+  },
+  {
+    "command": [
+      "curl",
+      "--noproxy",
+      "*",
+      "--connect-timeout",
+      "3",
+      "--max-time",
+      "5",
+      "--cacert",
+      "/etc/ssl/certs/ca-certificates.crt",
+      "--head",
+      "--silent",
+      "--show-error",
+      "--write-out",
+      "\nhttp_code=%{http_code} remote_ip=%{remote_ip} ssl_verify_result=%{ssl_verify_result}\n",
+      "https://www.serdic.com:7002/"
+    ],
+    "exit_code": 28,
+    "stdout": "\nhttp_code=000 remote_ip= ssl_verify_result=0\n",
+    "stderr": "curl: (28) Failed to connect to www.serdic.com port 7002 after 2814 ms: Connection timed out\n"
+  },
+  {
+    "command": [
+      "curl",
+      "--noproxy",
+      "*",
+      "--connect-timeout",
+      "3",
+      "--max-time",
+      "5",
+      "--cacert",
+      "/etc/ssl/certs/ca-certificates.crt",
+      "--head",
+      "--silent",
+      "--show-error",
+      "--write-out",
+      "\nhttp_code=%{http_code} remote_ip=%{remote_ip} ssl_verify_result=%{ssl_verify_result}\n",
+      "https://slam.serdic.com:7002/"
+    ],
+    "exit_code": 6,
+    "stdout": "\nhttp_code=000 remote_ip= ssl_verify_result=0\n",
+    "stderr": "curl: (6) Could not resolve host: slam.serdic.com\n"
+  }
+]
+
+[listener_before]
+{
+  "command": [
+    "ss",
+    "-ltnp",
+    "sport = :7002"
+  ],
+  "exit_code": 0,
+  "stdout": "State Recv-Q Send-Q Local Address:Port Peer Address:PortProcess\n",
+  "stderr": ""
+}
+
+[ufw_read_only]
+{
+  "command": [
+    "sudo",
+    "-n",
+    "ufw",
+    "status",
+    "verbose"
+  ],
+  "exit_code": 1,
+  "stdout": "",
+  "stderr": "sudo: a password is required\n"
+}
+
+
+[hostname_followup]
+{
+  "at_utc": "2026-10-06T08:37:02.530963+00:00",
+  "user_hostname": "dev.serdic.com",
+  "scope": "Read-only follow-up; server not started; DNS/router/UFW unchanged",
+  "resolver_a": {
+    "command": [
+      "dig",
+      "+time=3",
+      "+tries=1",
+      "+noall",
+      "+comments",
+      "+answer",
+      "+authority",
+      "dev.serdic.com",
+      "A"
+    ],
+    "exit_code": 0,
+    "stdout": ";; Got answer:\n;; ->>HEADER<<- opcode: QUERY, status: NOERROR, id: 52807\n;; flags: qr rd ra; QUERY: 1, ANSWER: 1, AUTHORITY: 0, ADDITIONAL: 1\n\n;; OPT PSEUDOSECTION:\n; EDNS: version: 0, flags:; udp: 65494\n;; ANSWER SECTION:\ndev.serdic.com.\t\t127\tIN\tA\t183.98.179.103\n\n",
+    "stderr": ""
+  },
+  "resolver_aaaa": {
+    "command": [
+      "dig",
+      "+time=3",
+      "+tries=1",
+      "+noall",
+      "+comments",
+      "+answer",
+      "+authority",
+      "dev.serdic.com",
+      "AAAA"
+    ],
+    "exit_code": 0,
+    "stdout": ";; Got answer:\n;; ->>HEADER<<- opcode: QUERY, status: NOERROR, id: 54982\n;; flags: qr rd ra; QUERY: 1, ANSWER: 0, AUTHORITY: 1, ADDITIONAL: 1\n\n;; OPT PSEUDOSECTION:\n; EDNS: version: 0, flags:; udp: 65494\n;; AUTHORITY SECTION:\nserdic.com.\t\t6697\tIN\tSOA\tns.gabia.co.kr. hosting.gabia.com. 2025080810 1800 600 1209600 86400\n\n",
+    "stderr": ""
+  },
+  "zone_ns": {
+    "command": [
+      "dig",
+      "+time=3",
+      "+tries=1",
+      "+noall",
+      "+comments",
+      "+answer",
+      "+authority",
+      "serdic.com",
+      "NS"
+    ],
+    "exit_code": 0,
+    "stdout": ";; Got answer:\n;; ->>HEADER<<- opcode: QUERY, status: NOERROR, id: 45314\n;; flags: qr rd ra; QUERY: 1, ANSWER: 3, AUTHORITY: 0, ADDITIONAL: 5\n\n;; OPT PSEUDOSECTION:\n; EDNS: version: 0, flags:; udp: 65494\n;; ANSWER SECTION:\nserdic.com.\t\t7169\tIN\tNS\tns.gabia.co.kr.\nserdic.com.\t\t7169\tIN\tNS\tns1.gabia.co.kr.\nserdic.com.\t\t7169\tIN\tNS\tns.gabia.net.\n\n",
+    "stderr": ""
+  },
+  "authoritative_a": [
+    {
+      "command": [
+        "dig",
+        "@ns.gabia.co.kr",
+        "+time=3",
+        "+tries=1",
+        "+norecurse",
+        "+noall",
+        "+comments",
+        "+answer",
+        "+authority",
+        "dev.serdic.com",
+        "A"
+      ],
+      "exit_code": 0,
+      "stdout": ";; Got answer:\n;; ->>HEADER<<- opcode: QUERY, status: NOERROR, id: 8437\n;; flags: qr aa; QUERY: 1, ANSWER: 1, AUTHORITY: 3, ADDITIONAL: 1\n\n;; OPT PSEUDOSECTION:\n; EDNS: version: 0, flags:; udp: 4096\n; COOKIE: e83af99ef5f06ff9708023e56ac4b32e1af84a7bae76d24f (good)\n;; ANSWER SECTION:\ndev.serdic.com.\t\t600\tIN\tA\t183.98.179.103\n\n;; AUTHORITY SECTION:\nserdic.com.\t\t86400\tIN\tNS\tns.gabia.co.kr.\nserdic.com.\t\t86400\tIN\tNS\tns1.gabia.co.kr.\nserdic.com.\t\t86400\tIN\tNS\tns.gabia.net.\n\n",
+      "stderr": ""
+    },
+    {
+      "command": [
+        "dig",
+        "@ns1.gabia.co.kr",
+        "+time=3",
+        "+tries=1",
+        "+norecurse",
+        "+noall",
+        "+comments",
+        "+answer",
+        "+authority",
+        "dev.serdic.com",
+        "A"
+      ],
+      "exit_code": 0,
+      "stdout": ";; Got answer:\n;; ->>HEADER<<- opcode: QUERY, status: NOERROR, id: 20231\n;; flags: qr aa; QUERY: 1, ANSWER: 1, AUTHORITY: 3, ADDITIONAL: 1\n\n;; OPT PSEUDOSECTION:\n; EDNS: version: 0, flags:; udp: 4096\n; COOKIE: ffd175d8c89e62645324bc016ac4b32e499a00e52617929d (good)\n;; ANSWER SECTION:\ndev.serdic.com.\t\t600\tIN\tA\t183.98.179.103\n\n;; AUTHORITY SECTION:\nserdic.com.\t\t86400\tIN\tNS\tns.gabia.co.kr.\nserdic.com.\t\t86400\tIN\tNS\tns1.gabia.co.kr.\nserdic.com.\t\t86400\tIN\tNS\tns.gabia.net.\n\n",
+      "stderr": ""
+    },
+    {
+      "command": [
+        "dig",
+        "@ns.gabia.net",
+        "+time=3",
+        "+tries=1",
+        "+norecurse",
+        "+noall",
+        "+comments",
+        "+answer",
+        "+authority",
+        "dev.serdic.com",
+        "A"
+      ],
+      "exit_code": 0,
+      "stdout": ";; Got answer:\n;; ->>HEADER<<- opcode: QUERY, status: NOERROR, id: 40555\n;; flags: qr aa; QUERY: 1, ANSWER: 1, AUTHORITY: 3, ADDITIONAL: 1\n\n;; OPT PSEUDOSECTION:\n; EDNS: version: 0, flags:; udp: 4096\n; COOKIE: 0a47553546dd026bca56d2346ac4b32ef72ada1ff7b41776 (good)\n;; ANSWER SECTION:\ndev.serdic.com.\t\t600\tIN\tA\t183.98.179.103\n\n;; AUTHORITY SECTION:\nserdic.com.\t\t86400\tIN\tNS\tns.gabia.co.kr.\nserdic.com.\t\t86400\tIN\tNS\tns1.gabia.co.kr.\nserdic.com.\t\t86400\tIN\tNS\tns.gabia.net.\n\n",
+      "stderr": ""
+    }
+  ],
+  "hostname_trust": {
+    "command": [
+      "openssl",
+      "verify",
+      "-purpose",
+      "sslserver",
+      "-verify_hostname",
+      "dev.serdic.com",
+      "-CAfile",
+      "/etc/ssl/certs/ca-certificates.crt",
+      "-no-CApath",
+      "-no-CAstore",
+      "-untrusted",
+      "assets/keys/serdic_com_chain_cert.crt",
+      "assets/keys/serdic_com_cert.crt"
+    ],
+    "exit_code": 0,
+    "stdout": "assets/keys/serdic_com_cert.crt: OK\n",
+    "stderr": ""
+  },
+  "listener_before": {
+    "command": [
+      "ss",
+      "-ltnp",
+      "sport = :7002"
+    ],
+    "exit_code": 0,
+    "stdout": "State Recv-Q Send-Q Local Address:Port Peer Address:PortProcess\n",
+    "stderr": ""
+  },
+  "dns_route": {
+    "command": [
+      "ip",
+      "route",
+      "get",
+      "183.98.179.103"
+    ],
+    "exit_code": 0,
+    "stdout": "183.98.179.103 via 192.168.0.1 dev eno2 src 192.168.0.35 uid 1000 \n    cache \n",
+    "stderr": ""
+  },
+  "curl_before": {
+    "command": [
+      "curl",
+      "--noproxy",
+      "*",
+      "--connect-timeout",
+      "3",
+      "--max-time",
+      "5",
+      "--cacert",
+      "/etc/ssl/certs/ca-certificates.crt",
+      "--head",
+      "--silent",
+      "--show-error",
+      "--write-out",
+      "\nhttp_code=%{http_code} remote_ip=%{remote_ip} ssl_verify_result=%{ssl_verify_result}\n",
+      "https://dev.serdic.com:7002/"
+    ],
+    "exit_code": 7,
+    "stdout": "\nhttp_code=000 remote_ip= ssl_verify_result=0\n",
+    "stderr": "curl: (7) Failed to connect to dev.serdic.com port 7002 after 6 ms: Connection refused\n"
+  },
+  "limits": "No listening server; TCP connection refused from this server host before TLS. No off-LAN inbound proof; DNS A ownership/router WAN match and NAT loopback behavior not independently confirmed."
+}

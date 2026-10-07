@@ -43,46 +43,8 @@ file(GLOB LIB_CERES
 )
 
 # ── VIO Engine sources (no visualization, no file I/O, no threading) ──
-set(VIO_SOURCES
-    # VIO Engine (headless wrapper)
-    ${PROJECT_SRC_ROOT}/src/vio_engine.cpp
-
-    # Backend
-    ${PROJECT_SRC_ROOT}/src/backend/estimator.cpp
-    ${PROJECT_SRC_ROOT}/src/backend/optimizer.cpp
-    ${PROJECT_SRC_ROOT}/src/backend/sliding_window.cpp
-    ${PROJECT_SRC_ROOT}/src/backend/factor/marginalization_factor.cpp
-    ${PROJECT_SRC_ROOT}/src/backend/factor/projection_factor.cpp
-    ${PROJECT_SRC_ROOT}/src/backend/factor/pose_local_parameterization.cpp
-
-    # Frontend
-    ${PROJECT_SRC_ROOT}/src/frontend/feature_tracker.cpp
-    ${PROJECT_SRC_ROOT}/src/frontend/feature_manager.cpp
-    ${PROJECT_SRC_ROOT}/src/frontend/failure_detector.cpp
-    ${PROJECT_SRC_ROOT}/src/frontend/initialization/initializer.cpp
-    ${PROJECT_SRC_ROOT}/src/frontend/initialization/initial_alignment.cpp
-    ${PROJECT_SRC_ROOT}/src/frontend/initialization/initial_sfm.cpp
-    ${PROJECT_SRC_ROOT}/src/frontend/initialization/solve_5pts.cpp
-
-    # Common
-    ${PROJECT_SRC_ROOT}/src/common/frame.cpp
-    ${PROJECT_SRC_ROOT}/src/common/gpl/gpl.cc
-    ${PROJECT_SRC_ROOT}/src/common/gpl/EigenQuaternionParameterization.cc
-    ${PROJECT_SRC_ROOT}/src/common/camera_models/CameraFactory.cc
-    ${PROJECT_SRC_ROOT}/src/common/camera_models/Camera.cc
-    ${PROJECT_SRC_ROOT}/src/common/camera_models/PinholeCamera.cc
-    ${PROJECT_SRC_ROOT}/src/common/camera_models/EquidistantCamera.cc
-    ${PROJECT_SRC_ROOT}/src/common/camera_models/CataCamera.cc
-    ${PROJECT_SRC_ROOT}/src/common/camera_models/ScaramuzzaCamera.cc
-    ${PROJECT_SRC_ROOT}/src/common/camera_models/CostFunctionFactory.cc
-
-    # Utility (config only, no file I/O heavy parts)
-    ${PROJECT_SRC_ROOT}/src/utility/utility.cpp
-    ${PROJECT_SRC_ROOT}/src/utility/config.cpp
-
-    # Embind bindings
-    ${CMAKE_CURRENT_SOURCE_DIR}/vio_bindings.cpp
-)
+include("${PROJECT_SRC_ROOT}/cmake/SLAMCoreSources.cmake")
+set(VIO_SOURCES ${MOBILE_SLAM_CORE_SOURCES} "${CMAKE_CURRENT_SOURCE_DIR}/vio_bindings.cpp")
 
 add_compile_definitions(
     __EMSCRIPTEN__
@@ -94,6 +56,7 @@ add_compile_definitions(
 
 # ── Build as WASM module ──
 add_executable(vio_engine ${VIO_SOURCES})
+target_compile_options(vio_engine PRIVATE -O3 -msimd128 -fno-fast-math)
 
 target_link_libraries(vio_engine
     ${LIB_OPENCV}
@@ -114,13 +77,14 @@ set(EM_LINK_FLAGS
     "-s INITIAL_MEMORY=256MB"
     "-s MAXIMUM_MEMORY=512MB"
     "-s ALLOW_MEMORY_GROWTH=1"
+    "-s WASM_BIGINT=1"
     "-s ALLOW_TABLE_GROWTH=1"
     "-s STACK_SIZE=8MB"
     "-s EXPORTED_FUNCTIONS=['_malloc','_free']"
     "-s EXPORTED_RUNTIME_METHODS=['HEAPU8','HEAPF64','HEAPF32','HEAP32','HEAPU32','wasmMemory']"
     "-s DISABLE_EXCEPTION_CATCHING=0"
-    "-s ERROR_ON_UNDEFINED_SYMBOLS=0"
-    "-s ASSERTIONS=0"
+    "-s ERROR_ON_UNDEFINED_SYMBOLS=1"
+    "-s ASSERTIONS=1"
     "-s USE_ZLIB=1"
     "--bind"
     "--no-entry"
@@ -137,6 +101,7 @@ set_target_properties(vio_engine PROPERTIES
 
 # ── Worker-compatible build target ──
 add_executable(vio_engine_worker ${VIO_SOURCES})
+target_compile_options(vio_engine_worker PRIVATE -O3 -msimd128 -fno-fast-math)
 
 target_link_libraries(vio_engine_worker
     ${LIB_OPENCV}
@@ -153,13 +118,14 @@ set(EM_WORKER_LINK_FLAGS
     "-s INITIAL_MEMORY=256MB"
     "-s MAXIMUM_MEMORY=512MB"
     "-s ALLOW_MEMORY_GROWTH=1"
+    "-s WASM_BIGINT=1"
     "-s ALLOW_TABLE_GROWTH=1"
     "-s STACK_SIZE=8MB"
     "-s EXPORTED_FUNCTIONS=['_malloc','_free']"
     "-s EXPORTED_RUNTIME_METHODS=['HEAPU8','HEAPF64','HEAPF32','HEAP32','HEAPU32','wasmMemory']"
     "-s DISABLE_EXCEPTION_CATCHING=0"
-    "-s ERROR_ON_UNDEFINED_SYMBOLS=0"
-    "-s ASSERTIONS=0"
+    "-s ERROR_ON_UNDEFINED_SYMBOLS=1"
+    "-s ASSERTIONS=1"
     "-s USE_ZLIB=1"
     "--bind"
     "--no-entry"

@@ -1,6 +1,17 @@
 #include "frontend/failure_detector.h"
+#include <algorithm>
+#include <cmath>
 
 namespace frontend {
+
+std::string FailureDetector::getMeasuredFailureReason(const Vector3d& last_P_end, const Matrix3d& last_R_end) {
+    if (detectFeatureFailure()) return "tracked_feature_threshold";
+    if (detectIMUAccBiasFailure()) return "acc_bias_threshold";
+    if (detectIMUGyrBiasFailure()) return "gyro_bias_threshold";
+    if (detectTranslationFailure(last_P_end)) return "relative_translation_threshold";
+    if (detectRotationFailure(last_R_end)) return "relative_rotation_threshold";
+    return {};
+}
 
 FailureDetector::FailureDetector(backend::SlidingWindow* sliding_window, FeatureManager* feature_manager)
     : sliding_window_(sliding_window),
@@ -49,6 +60,7 @@ bool FailureDetector::detectFeatureFailure() {
 #ifndef NDEBUG
         std::cout << " little feature " << feature_manager_->last_track_num_ << std::endl;
 #endif
+        return true;  // FIX: was returning false (bug — detection existed but never triggered)
     }
     return false;
 }
@@ -99,12 +111,16 @@ bool FailureDetector::detectRotationFailure(const Matrix3d& last_R_end) {
     Matrix3d tmp_R = sliding_window_->back().R;
     Matrix3d delta_R = tmp_R.transpose() * last_R_end;
     Quaterniond delta_Q(delta_R);
-    double delta_angle = acos(delta_Q.w()) * 2.0 / 3.14 * 180.0;
+    if (!delta_Q.coeffs().allFinite() || delta_Q.norm() <= 1e-12) return true;
+    delta_Q.normalize();
+    const double cosine = std::clamp(std::abs(delta_Q.w()), 0.0, 1.0);
+    double delta_angle = std::acos(cosine) * 2.0 / std::acos(-1.0) * 180.0;
 
     if (delta_angle > rotation_threshold_) {
 #ifndef NDEBUG
         std::cout << " big delta_angle " << std::endl;
 #endif
+        return true;  // FIX: was returning false (bug — detection existed but never triggered)
     }
     return false;
 }

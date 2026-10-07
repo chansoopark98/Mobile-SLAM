@@ -1,0 +1,18 @@
+# Host-local paths: update cwd and launcher path after moving the checkout.
+# Dependencies are pinned in scripts/dev/package-lock.json; no npx @latest.
+[mcp_servers.mobile_slam_playwright]
+command = "bash"
+args = ["/home/park-ubuntu/park/SOLUTION/Mobile-SLAM/scripts/dev/mcp-server.sh", "playwright"]
+cwd = "/home/park-ubuntu/park/SOLUTION/Mobile-SLAM"
+enabled = true
+startup_timeout_sec = 20
+tool_timeout_sec = 60
+
+[mcp_servers.mobile_slam_context7]
+command = "bash"
+args = ["/home/park-ubuntu/park/SOLUTION/Mobile-SLAM/scripts/dev/mcp-server.sh", "context7"]
+cwd = "/home/park-ubuntu/park/SOLUTION/Mobile-SLAM"
+env_vars = ["CONTEXT7_API_KEY"]
+enabled = true
+startup_timeout_sec = 20
+tool_timeout_sec = 60

@@ -1,0 +1,56 @@
+{
+  "version": 3,
+  "cmakeMinimumRequired": {
+    "major": 3,
+    "minor": 21,
+    "patch": 0
+  },
+  "configurePresets": [
+    {
+      "name": "native-dev",
+      "displayName": "Native development and regression tests",
+      "generator": "Ninja",
+      "binaryDir": "${sourceDir}/build/dev-native",
+      "cacheVariables": {
+        "CMAKE_BUILD_TYPE": "Release",
+        "CMAKE_EXPORT_COMPILE_COMMANDS": true,
+        "MOBILE_SLAM_BUILD_VIEWER": "OFF"
+      }
+    }
+  ],
+  "buildPresets": [
+    {
+      "name": "native-tests",
+      "configurePreset": "native-dev",
+      "jobs": 2,
+      "targets": [
+        "test_integration_base",
+        "test_sliding_window",
+        "test_trajectory_evaluator",
+        "test_config_validation",
+        "test_measurement_robustness",
+        "test_vio_engine_parity",
+        "test_engine_contracts",
+        "test_numerical_contracts",
+        "test_initial_sfm_contracts",
+        "test_native_adapter",
+        "native_replay",
+        "tiny_vins_mono"
+      ]
+    }
+  ],
+  "testPresets": [
+    {
+      "name": "native-tests",
+      "configurePreset": "native-dev",
+      "output": {
+        "outputOnFailure": true
+      },
+      "execution": {
+        "jobs": 2,
+        "timeout": 180,
+        "noTestsAction": "error"
+      }
+    }
+  ]
+}

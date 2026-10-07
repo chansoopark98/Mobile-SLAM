@@ -1,0 +1,11 @@
+$ build/audit-baseline/native-replay/native-replay
+Usage: native-replay DATASET CONFIG OUTPUT [MAX_FRAMES=600] [IMU_POLICY=bracket|until-image] [PNP=0|1] [CV_THREADS=1]
+exit=2
+$ build/audit-baseline/native-replay/native-replay /home/park-ubuntu/park/SOLUTION/Mobile-SLAM/build/audit-baseline/missing-dataset config/tum_vi_room1.yaml build/audit-baseline/native-replay/preflight-missing 1 until-image 0 1
+Loading configuration from: /home/park-ubuntu/park/SOLUTION/Mobile-SLAM/config/tum_vi_room1.yaml
+Configuration loaded successfully from: /home/park-ubuntu/park/SOLUTION/Mobile-SLAM/config/tum_vi_room1.yaml
+[Replay] Cannot open camera CSV
+exit=2
+$ build/audit-baseline/native-replay/native-replay missing config/tum_vi_room1.yaml build/audit-baseline/native-replay/preflight-invalid 0
+[Replay] Invalid replay option
+exit=2

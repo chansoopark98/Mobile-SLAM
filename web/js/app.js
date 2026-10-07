@@ -9,7 +9,7 @@
  * - This prevents IMU data loss when frames are dropped due to worker being busy.
  */
 import { VIOWrapper } from './vio-wrapper.js?v=11';
-import { Camera } from './camera.js?v=11';
+import { Camera, validateCameraProfile, transformCameraProfile, processingDimensions } from './camera.js?v=11';
 import { IMU } from './imu.js?v=11';
 import { Renderer } from './renderer.js?v=11';
 import { OrientationHandler } from './orientation.js?v=11';
@@ -48,56 +48,43 @@ const VIO_CONFIGS = {
     // Result: visual-only tracking → rapid divergence on fast motion.
     // Tightened to ~2-3x EuRoC level, appropriate for modern mobile MEMS.
     mobile_default: {
-        label: 'Mobile Default',
-        acc_n: 0.3,       // accelerometer noise density (m/s²/√Hz)
-                          //   ~4x EuRoC (0.08). Mobile MEMS is noisier but not 12x.
-                          //   Previous 1.0 made IMU nearly weightless → no scale constraint,
-                          //   causing depth over-estimation and tracking loss on fast motion.
-                          //   Previous 0.08-0.15 caused Ba explosion, but that was due to
-                          //   timestamp error (now fixed: requestVideoFrameCallback) and
-                          //   low frame rate (now fixed: 30fps). 0.3 balances IMU/visual.
-        acc_w: 0.003,     // accelerometer random walk (m/s²·s/√Hz)
-                          //   ~75x EuRoC (0.00004). Loosened from 0.001 to allow faster
-                          //   Ba convergence during initial motion. Ba is NOT estimated
-                          //   during initialization (only Bg is), so it starts at zero.
-                          //   At acc_w=0.001, Ba took ~200 frames to converge to -0.45,
-                          //   accumulating significant scale error. 0.003 ≈ 3x faster.
-        gyr_n: 0.02,      // gyroscope noise density (rad/s/√Hz)
-                          //   ~5x EuRoC (0.004). Moderate: gives IMU rotational constraint
-                          //   while tolerating mobile gyro noise. Helps maintain pose
-                          //   during brief feature loss from fast motion.
-        gyr_w: 0.0005,    // gyroscope random walk
-                          //   Increased from 0.0001 to allow faster Bg adaptation on mobile.
+        label: 'Mobile Default (VINS-Mobile)',
+        // IMU noise — VINS-Mobile baseline (ACC_N=0.5, GYR_N=0.2)
+        // Mobile MEMS IMU is significantly noisier than research-grade sensors.
+        // Higher noise values → larger pre-integration covariance → lower IMU weight
+        // → visual measurements dominate → more robust to IMU noise/bias errors.
+        acc_n: 0.5,       // VINS-Mobile: 0.5. Was 0.3. Higher = trust IMU less.
+        acc_w: 0.003,     // Ba random walk. Allows fast Ba convergence from zero.
+        gyr_n: 0.2,       // VINS-Mobile: 0.2. Matches VINS-Mobile exactly.
+                          // Higher gyr_n → larger pre-integration covariance → lower IMU weight.
+                          // At 0.1 (previous), gyro was still over-trusted for mobile MEMS.
+        gyr_w: 0.0002,    // VINS-Mobile: 4e-5. Reduced from 0.0005 to stabilize Bg.
+                          // Smaller gyr_w = Bg changes slowly = more stable pre-integration.
         g_norm: 9.81,
         focalLengthFactor: null,  // null → estimate from FOV (see estimateFocalLength)
         modelType: 2,  // C++ enum: PINHOLE=2 (not 0)
-        solver_time: 0.04,   // 40ms Ceres budget — MUST NOT reduce below this.
-                             // At 25ms/6iter, Ba/Bg never update → velocity diverges monotonically.
-                             // VINS-Mono needs sufficient iterations for bias convergence.
-        num_iterations: 8,   // 8 iterations required for bias (Ba, Bg) convergence in DOGLEG.
-                             // 6 iterations: optimizer terminates before reaching bias parameters
-                             // → Ba=(0,0,0) throughout → ~1 m/s² drift → divergence in ~7s.
-        max_features: 100,   // Proportional to 240x180 resolution (VINS-Mono uses 150 for 512x512).
-                             // Fewer features = fewer Ceres residuals = faster optimization.
-                             // 100 features at 240x180 ≈ same density as 150 at 512x512.
-        // Image downscale factor: 0.5 = half resolution (240x320).
-        // Reduces computation ~3x (CLAHE, LK pyramid, corner detection all O(pixels)).
-        // Also halves barrel distortion magnitude in pixels, reducing F-matrix
-        // edge rejection that causes feature center clustering.
-        processScale: 0.5,
-        // LK optical flow: 4 pyramid levels handle up to ~80px inter-frame
-        // displacement (10px/level × 2^3). At 50ms init / 33ms tracking,
-        // fast rotation (200°/s) causes ~40px shift at 240x180 → within range.
-        // 3 pyramid levels only handled ~40px → tracking loss on fast motion.
+        // Solver — VINS-Mobile: SOLVER_TIME=0.06, max_iterations=10
+        solver_time: 0.06,   // VINS-Mobile default. 60ms budget allows bias convergence.
+                             // Adaptive: reduced under processing load (see VINS-Mobile pattern).
+                             // MUST NOT reduce below 0.04 (bias convergence fails).
+        num_iterations: 10,  // VINS-Mobile default. 10 iterations for full bias convergence.
+                             // MUST NOT reduce below 8.
+        max_features: 120,   // 480x640 resolution: VINS-Mobile uses 70, but WASM benefits
+                             // from more features for triangulation quality. 120 balances cost/quality.
+        // Image scale: 1.0 = full 480x640 portrait (VINS-Mobile native resolution).
+        // Previous 0.5 → 240x180 was too low resolution for reliable feature tracking.
+        // 480x640 enables: better triangulation, F_THRESHOLD=1.0, direct VINS-Mobile params.
+        processScale: 1.0,
+        // LK optical flow: 3 pyramid levels at 480x640 (VINS-Mobile default).
+        // At 480x640, 3 levels handle ~40px displacement (sufficient for 30fps).
+        // Was 4 levels for 240x180 to compensate for low resolution.
         lk_window: 21,
-        lk_pyramid: 4,
-        min_dist: 15,
-        // Edge distortion compensation: restores edge features rejected by F-matrix
-        // due to unmodeled barrel distortion from PINHOLE model with zero distortion.
-        // 4.0 = edge features get up to 5x the base RANSAC threshold.
-        // Increased from 2.0: logs show F-matrix cascade (85→56→22→14) during
-        // fast motion, with edge recovery only restoring 1-12 per frame.
-        f_edge_factor: 4.0,
+        lk_pyramid: 3,
+        min_dist: 30,      // VINS-Mobile: 30. Wider spacing for uniform distribution at 480x640.
+        // Edge distortion compensation: disabled at 480x640.
+        // At full resolution with f_threshold=1.0, edge recovery is not needed.
+        // VINS-Mobile does not use edge recovery (F_THRESHOLD=1.0 is sufficient).
+        f_edge_factor: 0.0,
     },
     // Tuned for high-end phones (iPhone 14+, Pixel 7+, Galaxy S23+)
     mobile_highend: {
@@ -370,12 +357,12 @@ function downsampleGray(gray, srcW, srcH, dstW, dstH) {
     const xRatio = srcW / dstW;
     const yRatio = srcH / dstH;
     for (let y = 0; y < dstH; y++) {
-        const srcY = y * yRatio;
+        const srcY = Math.max(0, Math.min(srcH - 1, (y + 0.5) * yRatio - 0.5));
         const sy = Math.floor(srcY);
         const fy = srcY - sy;
         const sy1 = Math.min(sy + 1, srcH - 1);
         for (let x = 0; x < dstW; x++) {
-            const srcX = x * xRatio;
+            const srcX = Math.max(0, Math.min(srcW - 1, (x + 0.5) * xRatio - 0.5));
             const sx = Math.floor(srcX);
             const fx = srcX - sx;
             const sx1 = Math.min(sx + 1, srcW - 1);
@@ -456,6 +443,11 @@ class App {
         this.running = false;
         this.frameCount = 0;
         this.totalFrameCount = 0;
+        this.frameMetrics = { captured: 0, attempted: 0, accepted: 0, completed: 0, dropped: 0 };
+        this._renderResultKey = null;
+        this._renderEpoch = null;
+        this._cameraProfile = null;
+        this.calibrationProvenance = { status: 'heuristic_unverified' };
         this.lastFPSTime = 0;
         this.fps = 0;
         this.imuLogCount = 0;
@@ -508,7 +500,7 @@ class App {
         // Stored config for reconfiguration on orientation change
         this._lastConfigParams = null;
 
-        // Image downscaling for mobile performance + distortion reduction
+        // Image downscaling with matching pixel-center calibration
         this._processScale = 1.0;   // Set from config.processScale
         this._processWidth = 0;     // VIO processing width (after scale)
         this._processHeight = 0;    // VIO processing height (after scale)
@@ -571,6 +563,7 @@ class App {
         const canvas3d = document.getElementById('canvas-3d');
         if (canvas3d) {
             this.renderer = new Renderer(canvas3d);
+            this.renderer.render();
             window.addEventListener('resize', () => {
                 const container = canvas3d.parentElement;
                 this.renderer.resize(container.clientWidth, container.clientHeight);
@@ -587,9 +580,21 @@ class App {
 
     async start() {
         this.startBtn.disabled = true;
-        this.updateStatus('Requesting camera...');
+        // Calling the async adapter invokes the native permission method before
+        // its first await. Do this directly in the Start gesture, before camera,
+        // orientation, profile fetch or timer work can consume activation.
+        const permissionPromise = this.imu.requestPermission();
+        this.updateStatus('Requesting camera / motion permission...');
 
         try {
+            const profilePath = URL_PARAMS.get('cameraProfile');
+            if (profilePath) {
+                const url = new URL(profilePath, window.location.href);
+                if (url.origin !== new URL(window.location.href).origin) throw new Error('Camera profile must be same-origin');
+                const response = await fetch(url);
+                if (!response.ok) throw new Error(`Camera profile HTTP ${response.status}`);
+                this._cameraProfile = validateCameraProfile(await response.json());
+            }
             // Try to lock portrait orientation (simplest for VIO)
             await this.orientation.tryLockPortrait();
             const orientationType = this.orientation.getType();
@@ -599,11 +604,10 @@ class App {
             // Then crop to landscape 4:3 for VIO processing.
             await this.camera.initialize(640, 480);
 
-            // Crop portrait to landscape 4:3 (width > height).
-            // VIO works better with landscape: wider horizontal FOV for parallax,
-            // standard SLAM assumption, fewer wasted floor/ceiling pixels.
-            // 480x640 portrait → 480x360 landscape (4:3)
-            this.camera.enableLandscapeCrop();
+            // VINS-Mobile: use portrait 480x640 directly (no landscape crop).
+            // Full vertical FOV provides more features for triangulation.
+            // Previous landscape crop (480x360) discarded 44% of pixels.
+            if (URL_PARAMS.get('crop') === 'landscape_4_3') this.camera.enableLandscapeCrop();
             const width = this.camera.width;
             const height = this.camera.height;
             this.updateStatus(`Camera: ${width}x${height}`);
@@ -645,7 +649,7 @@ class App {
             // Get orientation-aware camera-IMU extrinsic rotation (R_ic).
             // Camera v9 outputs landscape 4:3 crop, but R_ic is a physical rotation
             // (camera→body), unchanged by crop since camera axes stay the same.
-            const r_ic = this.orientation.getRIC();
+            let r_ic = this.orientation.getRIC();
 
             // Log coordinate system configuration
             const video = this.camera.getVideoElement();
@@ -656,7 +660,6 @@ class App {
             console.log(`[VIO] Camera portrait: ${portraitDims.width}x${portraitDims.height} (rotate=${this.camera.getRotateMode()})`);
             console.log(`[VIO] Camera crop: ${width}x${height} (${width > height ? 'LANDSCAPE' : 'PORTRAIT'} ${(width/height).toFixed(2)})`);
             console.log(`[VIO] Config profile: ${this.activeConfig} (${config.label})`);
-            console.log(`[VIO] R_ic: [${r_ic.map(v => v.toFixed(1)).join(', ')}]`);
             console.log('[VIO] Camera frame (OpenCV): x=right, y=down, z=forward');
             console.log('[VIO] IMU frame (DeviceMotion): x=right-edge, y=top-edge, z=out-of-screen');
             console.log('[VIO] VIO body frame: x=right, y=forward, z=up');
@@ -664,14 +667,13 @@ class App {
 
             // Determine processing scale and dimensions
             // Downscaling reduces computation (O(pixels) for CLAHE, LK, corner detection)
-            // and halves barrel distortion magnitude, preventing F-matrix edge rejection.
             const scale = config.processScale || 1.0;
             this._processScale = scale;
             this._captureWidth = width;
             this._captureHeight = height;
-            // Ensure even dimensions for 2x downsample path
-            this._processWidth = (scale === 1.0) ? width : (Math.round(width * scale) & ~1);
-            this._processHeight = (scale === 1.0) ? height : (Math.round(height * scale) & ~1);
+            const dimensions = processingDimensions(width, height, scale);
+            this._processWidth = dimensions.width;
+            this._processHeight = dimensions.height;
             const pW = this._processWidth;
             const pH = this._processHeight;
 
@@ -688,46 +690,34 @@ class App {
                 fxMethod += ' (corrected)';
             }
             // Scale focal length to processing resolution
-            const fxScaled = fx * scale;
-            const fyScaled = fxScaled;
+            let fxScaled = fx * (pW / width);
+            let fyScaled = fx * (pH / height);
 
             // Camera-IMU translation offset in VIO body frame
             // VIO body frame: X=right, Y=forward, Z=up
             // Camera ~2cm below IMU center along Z_vio (gravity direction)
-            const t_ic = [0, 0, -0.02];
-
-            const configured = await this.vio.configure({
-                width: pW,
-                height: pH,
-                fx: fxScaled,
-                fy: fyScaled,
-                cx: pW / 2,
-                cy: pH / 2,
-                modelType: config.modelType,
-                r_ic: r_ic,
-                t_ic: t_ic,
-                acc_n: config.acc_n,
-                acc_w: config.acc_w,
-                gyr_n: config.gyr_n,
-                gyr_w: config.gyr_w,
-                g_norm: config.g_norm,
-            });
-
-            if (!configured) {
-                this.updateStatus('VIO configuration failed');
-                return;
+            let t_ic = [0, 0, -0.02];
+            let calibration = { width: pW, height: pH, fx: fxScaled, fy: fyScaled,
+                cx: (pW - 1) / 2, cy: (pH - 1) / 2, modelType: config.modelType,
+                k2: 0, k3: 0, k4: 0, k5: 0, r_ic, t_ic };
+            this.calibrationProvenance = { status: 'heuristic_unverified', intrinsics: fxMethod,
+                extrinsic: 'orientation table and assumed 2cm lever arm; no device calibration', distortion: 'assumed zero' };
+            if (this._cameraProfile) {
+                calibration = this._profileCalibration(this._cameraProfile, orientationType, pW, pH);
+                this.calibrationProvenance = { status: 'supplied_calibration_unverified', provenance: this._cameraProfile.provenance,
+                    profilePath: URL_PARAMS.get('cameraProfile'), pixelFrame: this._cameraProfile.pixelFrame,
+                    transform: this.camera.getPixelTransform(pW, pH) };
+                fxMethod = 'supplied calibration';
+                fxScaled = calibration.fx; fyScaled = calibration.fy;
+                r_ic = calibration.r_ic; t_ic = calibration.t_ic;
             }
-
-            // Store config for reconfiguration on orientation change
-            this._lastConfigParams = {
-                width: pW, height: pH, fx: fxScaled, fy: fyScaled,
-                cx: pW / 2, cy: pH / 2,
-                modelType: config.modelType,
-                t_ic,
-                acc_n: config.acc_n, acc_w: config.acc_w,
-                gyr_n: config.gyr_n, gyr_w: config.gyr_w,
-                g_norm: config.g_norm,
-            };
+            const params = { ...calibration, acc_n: config.acc_n, acc_w: config.acc_w,
+                gyr_n: config.gyr_n, gyr_w: config.gyr_w, g_norm: config.g_norm };
+            const configured = await this.vio.configure(params);
+            if (!configured) throw new Error('VIO configuration failed');
+            this._lastConfigParams = params;
+            console.log('[VIO] Calibration provenance', this.calibrationProvenance);
+            console.log(`[VIO] R_ic: [${params.r_ic.join(', ')}]`);
 
             // Apply mobile solver parameters if present in config
             if (config.solver_time !== undefined) {
@@ -748,6 +738,19 @@ class App {
                 );
             }
 
+            // PnP dual-rate pipeline (30Hz PnP + ~10Hz backend)
+            // Disabled by default until fully verified. Enable with ?pnp=1
+            // URL override: ?pnp=1 to enable, ?freq=N to set FREQ
+            {
+                const urlPnP = URL_PARAMS.get('pnp');
+                const urlFreq = URL_PARAMS.get('freq');
+                const enablePnP = urlPnP === '1';  // disabled by default, opt-in with ?pnp=1
+                const freq = (urlFreq && parseInt(urlFreq) >= 1 && parseInt(urlFreq) <= 10)
+                    ? parseInt(urlFreq) : 3;
+                await this.vio.setPnPParams(enablePnP, freq);
+                console.log(`[VIO] PnP: ${enablePnP ? 'enabled' : 'disabled'}, FREQ=${freq}`);
+            }
+
             // Apply f_threshold override from URL (?fth=N.N)
             const urlFth = URL_PARAMS.get('fth');
             if (urlFth) {
@@ -761,11 +764,11 @@ class App {
             console.log(`[VIO] ═══════ VIO Engine Configured ═══════`);
             console.log(`[VIO]   Portrait: ${portraitDims.width}x${portraitDims.height} → Crop: ${width}x${height} → Process: ${pW}x${pH} (scale=${scale})`);
             console.log(`[VIO]   Native: ${video.videoWidth}x${video.videoHeight}`);
-            console.log(`[VIO]   ★ Focal: fx=${fxScaled.toFixed(1)}, fy=${fyScaled.toFixed(1)} (${fxMethod}, scaled from ${fx.toFixed(1)})`);
+            console.log(`[VIO]   ★ Focal: fx=${params.fx.toFixed(1)}, fy=${params.fy.toFixed(1)} (${fxMethod}${this._cameraProfile ? '' : `, scaled from ${fx.toFixed(1)}`})`);
             console.log(`[VIO]   ★ fx/width=${(fxScaled/pW).toFixed(3)}, fx/max(w,h)=${(fxScaled/Math.max(pW,pH)).toFixed(3)}`);
-            console.log(`[VIO]   Principal: cx=${(pW/2).toFixed(1)}, cy=${(pH/2).toFixed(1)}`);
+            console.log(`[VIO]   Principal: cx=${params.cx.toFixed(1)}, cy=${params.cy.toFixed(1)}`);
             console.log(`[VIO]   hFOV=${(2*Math.atan(pW/(2*fxScaled))*180/Math.PI).toFixed(1)}°, vFOV=${(2*Math.atan(pH/(2*fxScaled))*180/Math.PI).toFixed(1)}°`);
-            console.log(`[VIO]   t_ic: [${t_ic}]`);
+            console.log(`[VIO]   t_ic: [${params.t_ic}]`);
             console.log(`[VIO]   IMU noise: acc_n=${config.acc_n}, acc_w=${config.acc_w}, gyr_n=${config.gyr_n}, gyr_w=${config.gyr_w}`);
             console.log(`[VIO]   Solver: time=${config.solver_time}s, iter=${config.num_iterations}, features=${config.max_features}`);
             console.log(`[VIO]   Tracking: lk_window=${config.lk_window||21}, lk_pyramid=${config.lk_pyramid||4}, min_dist=${config.min_dist||20}, f_edge=${config.f_edge_factor||0}`);
@@ -778,53 +781,16 @@ class App {
                 `hFOV=${(2*Math.atan(pW/(2*fxScaled))*180/Math.PI).toFixed(1)}° ` +
                 `profile=${this.activeConfig} rotate=${this.camera.getRotateMode()}`);
 
-            // DeviceMotion pre-check (8th Wall loading-module.js pattern).
-            // Verify that devicemotion events are actually firing before starting the
-            // VIO pipeline. A 3-second timeout catches broken/missing IMU hardware
-            // early and logs a warning for remote debugging.
-            await new Promise((resolve) => {
-                let motionDetected = false;
-                const onMotion = () => {
-                    motionDetected = true;
-                    window.removeEventListener('devicemotion', onMotion);
-                    console.log('[VIO] DeviceMotion pre-check: events firing OK');
-                    resolve();
-                };
-                window.addEventListener('devicemotion', onMotion);
-                setTimeout(() => {
-                    window.removeEventListener('devicemotion', onMotion);
-                    if (!motionDetected) {
-                        console.warn('[VIO] WARNING: No devicemotion events detected. IMU may not be available.');
-                        this.updateStatus('WARNING: No IMU events — check permissions');
-                    }
-                    resolve();
-                }, 3000);
-            });
-
-            // Request IMU permission and start
-            if (IMU.isAvailable()) {
-                const granted = await this.imu.requestPermission();
-                if (granted) {
-                    this.imu.start(60);  // Chrome caps Generic Sensor API at 60Hz
-                    console.log(`[VIO] IMU started: sensor=${this.imu.getSensorType()}`);
-
-                    // Calibrate gyroscope bias while device is stationary.
-                    // Mobile MEMS gyros have large bias offsets (0.01-0.1 rad/s)
-                    // that cause VIO divergence if not compensated.
+            const granted = await permissionPromise;
+            if (granted) {
+                this.imu.start(60);
+                if (this.imu.running) {
                     this.updateStatus('Calibrating gyro bias (keep still)...');
-                    const calResult = await this.imu.calibrate(1500);
-                    if (calResult) {
-                        const b = calResult.bias;
-                        console.log(`[VIO] Gyro bias: (${b.x.toFixed(5)}, ${b.y.toFixed(5)}, ${b.z.toFixed(5)}) rad/s, |acc|=${calResult.gravMag.toFixed(3)}`);
-                    }
-
-                    this.updateStatus('Camera + IMU active');
-                } else {
-                    this.updateStatus('Camera active (no IMU permission)');
-                }
-            } else {
-                this.updateStatus('Camera active (no IMU sensor)');
-            }
+                    const calibration = await this.imu.calibrate(1500);
+                    this._inputStatus = calibration ? 'IMU active' : 'IMU active / bias unverified';
+                } else this._inputStatus = `IMU ${this.imu.getDiagnostics().status}`;
+            } else this._inputStatus = `IMU permission ${this.imu.permission.state}`;
+            this.updateStatus(`${this._inputStatus} · ${this.calibrationProvenance.status}`);
 
             this.running = true;
             this.imuLogCount = 0;
@@ -847,7 +813,8 @@ class App {
             this._onWindowFocus = () => {
                 if (!this.running || !this._blurPaused) return;
                 this._blurPaused = false;
-                this.imu.flush();  // Discard stale data accumulated during blur
+                this.imu.discard('focus_resume');
+                this.resetVIO();
                 this._startIMUFlush();
                 console.log('[VIO] Window focus — resuming IMU flush');
             };
@@ -858,29 +825,24 @@ class App {
             this._startDeviceOrientationListener();
 
             // Start listening for orientation changes (reconfigures VIO if phone rotates)
-            this.orientation.startListening((info) => this._onOrientationChange(info));
+            this.orientation.startListening(info => this._onOrientationChange(info).catch(error => {
+                this._reconfiguring = false; this.updateStatus(`Orientation error: ${error.message}`); this.stop();
+            }));
 
-            // Register requestVideoFrameCallback for accurate capture timestamps.
-            // performance.now() (loop iteration time) lags actual capture by 30-100ms.
-            //
-            // IMPORTANT: We must use presentationTime (DOMHighResTimeStamp, same
-            // time base as performance.now()), NOT mediaTime. mediaTime is a media
-            // playback position that starts from 0 — completely different time base
-            // from the IMU timestamps which use performance.now()/1000.
+            // presentationTime is a compositor timestamp proxy, not exposure.
+            // Keep metadata and callback arrival distinct; never invent captureTime.
             if ('requestVideoFrameCallback' in HTMLVideoElement.prototype) {
                 const trackTimestamp = (now, metadata) => {
-                    // presentationTime: DOMHighResTimeStamp (ms), same base as performance.now()
-                    // Convert to seconds to match IMU timestamp convention
-                    if (metadata.presentationTime) {
-                        this._videoFrameTimestamp = metadata.presentationTime / 1000.0;
-                    } else {
-                        // Fallback: use the callback's 'now' parameter (also performance.now() based)
-                        this._videoFrameTimestamp = now / 1000.0;
-                    }
-                    video.requestVideoFrameCallback(trackTimestamp);
+                    if (!this.running) return;
+                    const source = Number.isFinite(metadata.presentationTime) ? 'video_presentation' : 'video_callback_arrival';
+                    this._videoFrameTiming = { timestampS: (source === 'video_presentation' ? metadata.presentationTime : now) / 1000,
+                        source, callbackArrivalMs: performance.now(), mediaTimeS: metadata.mediaTime,
+                        captureTimeMs: Number.isFinite(metadata.captureTime) ? metadata.captureTime : null,
+                        presentationTimeMs: Number.isFinite(metadata.presentationTime) ? metadata.presentationTime : null,
+                        timeOriginMs: performance.timeOrigin, physicalExposureVerified: false };
+                    this._videoFrameCallbackHandle = video.requestVideoFrameCallback(trackTimestamp);
                 };
-                video.requestVideoFrameCallback(trackTimestamp);
-                console.log('[VIO] Using requestVideoFrameCallback for accurate frame timestamps');
+                this._videoFrameCallbackHandle = video.requestVideoFrameCallback(trackTimestamp);
             }
 
             // Wait for IMU buffer to accumulate before first frame
@@ -893,8 +855,17 @@ class App {
         } catch (e) {
             this.updateStatus(`Error: ${e.message}`);
             console.error(e);
+            this.camera.stop();
+            this.imu.stop();
             this.startBtn.disabled = false;
         }
+    }
+
+    _profileCalibration(profile, orientationType, width, height) {
+        const transform = this.camera.getPixelTransform(width, height);
+        if (profile.orientationType !== orientationType) throw new Error('Measured camera profile orientation mismatch');
+        if (profile.width !== transform.sourceWidth || profile.height !== transform.sourceHeight) throw new Error('Measured camera profile drawImage dimension mismatch');
+        return transformCameraProfile(profile, transform);
     }
 
     /**
@@ -1040,6 +1011,10 @@ class App {
 
     processLoop() {
         if (!this.running) return;
+        if (document.hidden || this._blurPaused || this._reconfiguring) {
+            requestAnimationFrame(() => this.processLoop());
+            return;
+        }
 
         const now = performance.now();
 
@@ -1062,18 +1037,16 @@ class App {
             this._lastVideoTime = videoTime;
             this._lastVIOFrameTime = now;
 
-            // Use accurate video frame timestamp if available, otherwise fall back to performance.now().
-            // performance.now() is the loop iteration time, NOT actual camera capture time.
-            // requestVideoFrameCallback's presentationTime is in the same time base as
-            // performance.now() (converted to seconds), matching IMU timestamps.
-            let frameTimestamp;
-            if (this._videoFrameTimestamp !== undefined && this._videoFrameTimestamp > 0) {
-                frameTimestamp = this._videoFrameTimestamp;
-            } else {
-                frameTimestamp = now / 1000.0;
-            }
+            // Associate cached callback metadata only with that media frame.
+            const timing = this._videoFrameTiming;
+            const matched = timing && Math.abs(timing.mediaTimeS - videoTime) < 1e-6;
+            const frameTimestamp = matched ? timing.timestampS : now / 1000;
+            this.lastFrameTiming = matched ? { ...timing } : { timestampS: frameTimestamp,
+                source: 'canvas_read_arrival', callbackArrivalMs: now, captureTimeMs: null,
+                timeOriginMs: performance.timeOrigin, physicalExposureVerified: false };
             const gray = this.camera.captureGrayscale();
             if (gray) {
+                this.frameMetrics.captured++;
                 // Draw grayscale preview at capture resolution (debug visualization).
                 // Render every 5th frame to reduce main-thread load.
                 // Previous every-3rd at 30fps camera = ~10fps visual → still felt slow.
@@ -1134,10 +1107,14 @@ class App {
                     this._flushAndSendIMU();
 
                     // Send frame only — worker drains its internal IMU buffer
-                    this.vio.sendFrame(vioGray, frameTimestamp);
-                    this._lastFrameTimestamp = frameTimestamp;
-                    this.totalFrameCount++;
-                    this.frameCount++;
+                    this.frameMetrics.attempted++;
+                    const accepted = this.vio.sendFrame(vioGray, frameTimestamp);
+                    if (accepted) {
+                        this._lastFrameTimestamp = frameTimestamp;
+                        this.totalFrameCount++;
+                        this.frameCount++;
+                        this.frameMetrics.accepted++;
+                    } else this.frameMetrics.dropped++;
 
                     // Frame timing diagnostics (every 30 frames)
                     if (this.totalFrameCount % 30 === 0) {
@@ -1155,63 +1132,19 @@ class App {
         // Read latest result from worker (non-blocking)
         const result = this.vio.getLatestResult();
 
-        // Update UI
-        if (result) {
-            if (this.featureEl) {
-                this.featureEl.textContent = result.featureCount;
-            }
-            if (this.frameEl) {
-                this.frameEl.textContent = this.totalFrameCount;
-            }
-
-            // Track VIO initialization state for adaptive frame rate
-            if (result.initialized && !this._vioInitialized) {
-                this._vioInitialized = true;
-                this._initFrameCount = 0;
-                console.log(`[VIO] ✓ Initialized! Switching to ${MIN_FRAME_INTERVAL_MS}ms frame interval (tracking mode)`);
-            } else if (!result.initialized && this._vioInitialized) {
-                // Lost tracking, revert to init mode
-                this._vioInitialized = false;
-                this._initFrameCount = 0;
-                console.log(`[VIO] Tracking lost — reverting to ${INIT_FRAME_INTERVAL_MS}ms frame interval (init mode)`);
-            }
-
-            // Update status based on status code
-            let statusMsg;
-            if (result.statusCode === 1 || (!result.initialized && result.statusCode !== 0)) {
-                this._initFrameCount++;
-                statusMsg = `Initializing VIO... (${this._initFrameCount} frames, move phone slowly)`;
-            } else {
-                const statusMessages = {
-                    0: 'Not configured',
-                    2: 'Tracking',
-                    3: 'Lost - recovering...',
-                    4: 'Cooldown - stabilizing...',
-                };
-                statusMsg = statusMessages[result.statusCode] ||
-                    (result.initialized ? 'Tracking' : 'Initializing VIO...');
-            }
-            this.updateStatus(statusMsg);
-
-            // Update 3D rendering
-            if (this.renderer) {
-                if (result.pose) {
-                    this.renderer.updateCameraPose(result.pose);
-                }
-                const mapData = this.vio.getMapPoints();
-                if (mapData.count > 0) {
-                    this.renderer.updateMapPoints(mapData.points, mapData.count);
-                }
-                this.renderer.render();
-            }
-        }
+        this._consumeResult(result);
+        if (this.renderer) this.renderer.render();
 
         // Update FPS + IMU rate
         const nowFps = performance.now();
         if (nowFps - this.lastFPSTime >= 1000) {
             this.fps = Math.round(this.frameCount / ((nowFps - this.lastFPSTime) / 1000));
             if (this.fpsEl) this.fpsEl.textContent = this.fps;
-            if (this.imuRateEl) this.imuRateEl.textContent = Math.round(this.imu.getRate());
+            if (this.imuRateEl) {
+                this.imuRateEl.textContent = Math.round(this.imu.getRate());
+                const imu = this.imu.getDiagnostics();
+                this.imuRateEl.title = `${imu.status}; drops ${Object.entries(imu.drops).map(([reason,count]) => `${reason}:${count}`).join(', ')}`;
+            }
             this.lastFPSTime = nowFps;
             this.frameCount = 0;
         }
@@ -1223,6 +1156,38 @@ class App {
         }
 
         requestAnimationFrame(() => this.processLoop());
+    }
+
+    _consumeResult(result) {
+        if (!result) return;
+        const epoch = `${result.clientEpoch}:${result.engineEpoch}`;
+        const key = `${epoch}:${result.sequence}`;
+        if (key === this._renderResultKey) return;
+        if (this._renderEpoch !== null && epoch !== this._renderEpoch) this.renderer?.clear();
+        this._renderEpoch = epoch;
+        this._renderResultKey = key;
+        this.frameMetrics.completed++;
+        const metrics = this.vio.getMetrics?.();
+        if (this.featureEl) this.featureEl.textContent = result.featureCount;
+        if (this.frameEl) this.frameEl.textContent = `${metrics?.framesSubmitted ?? this.frameMetrics.accepted}/${metrics?.framesCompleted ?? this.frameMetrics.completed}/${metrics?.framesDropped ?? this.frameMetrics.dropped}`;
+        this._vioInitialized = !!result.initialized;
+        const fresh = result.poseFresh && result.poseValid && Number.isFinite(result.poseTimestamp) && result.poseTimestamp >= 0 &&
+            result.pose?.length === 16 && Array.from(result.pose).every(Number.isFinite);
+        const names = { 0: 'Not configured', 1: 'Initializing', 2: 'Tracking', 3: 'Lost', 4: 'Cooldown' };
+        const imu = this.imu.getDiagnostics();
+        const sourceFresh = imu.lastSample && performance.now() / 1000 - imu.lastSample.timestampS <= 0.5;
+        if (!['denied', 'error'].includes(imu.permission.state)) this._inputStatus = this.imu.running && sourceFresh ?
+            (this.imu.isCalibrated() ? 'IMU active' : 'IMU active / bias unverified') : `IMU ${this.imu.running ? 'waiting for data' : imu.status}`;
+        const source = this.lastFrameTiming?.source || 'camera time proxy';
+        const ageMs = fresh ? performance.now() - result.poseTimestamp * 1000 : null;
+        this.updateStatus(`${this._inputStatus || 'IMU'} · ${names[result.statusCode] || 'Unknown'}${result.reason ? ` / ${result.reason}` : ''} · ${this.calibrationProvenance.status}${ageMs !== null ? ` · pose age ${Math.round(ageMs)}ms (${source})` : ''}`);
+        if (this.renderer) {
+            if (fresh) {
+                this.renderer.updateCameraPose(result.pose);
+                const map = this.vio.getMapPoints();
+                this.renderer.updateMapPoints(map.points, map.count);
+            } else this.renderer.clear();
+        }
     }
 
     /** Update IMU sensor data overlay display */
@@ -1253,7 +1218,8 @@ class App {
             console.log('[VIO] Tab hidden — IMU flush paused');
         } else {
             // Tab returning: clear stale IMU data and restart
-            this.imu.flush();  // Discard any stale buffered data
+            this.imu.discard('visibility_resume');
+            this.resetVIO();
             this._startIMUFlush();
             this._startDeviceOrientationListener();
             this.imuLogCount = 0;
@@ -1279,7 +1245,8 @@ class App {
         console.log(`[VIO] Orientation changed to ${info.type} — resetting VIO`);
 
         // Flush stale IMU data
-        this.imu.flush();
+        this._reconfiguring = true;
+        this.imu.discard('orientation_change');
 
         // Reset VIO state (visual feature tracks become invalid after rotation)
         this.vio.reset();
@@ -1308,19 +1275,32 @@ class App {
         const processScale = config.processScale || 1.0;
         this._captureWidth = newWidth;
         this._captureHeight = newHeight;
-        this._processWidth = Math.round(newWidth * processScale);
-        this._processHeight = Math.round(newHeight * processScale);
+        const dimensions = processingDimensions(newWidth, newHeight, processScale);
+        this._processWidth = dimensions.width;
+        this._processHeight = dimensions.height;
         this._processScale = processScale;
 
         // Reconfigure with new R_ic and potentially new dimensions.
         // Focal length (fx/fy) is a lens property — stays the same.
         // Principal point (cx/cy) must match new processing dimensions.
-        const params = { ...this._lastConfigParams, r_ic: info.r_ic,
-            width: this._processWidth, height: this._processHeight,
-            cx: this._processWidth / 2, cy: this._processHeight / 2 };
+        let params;
+        if (this._cameraProfile) {
+            // A per-orientation measured profile cannot silently become a heuristic.
+            try { params = { ...this._lastConfigParams, ...this._profileCalibration(this._cameraProfile, info.type, this._processWidth, this._processHeight) }; }
+            catch (error) { this.updateStatus(error.message); this._reconfiguring = false; this.stop(); return; }
+        } else {
+            const track = this.camera.getVideoTrack();
+            const portrait = this.camera.getPortraitDimensions();
+            const focal = estimateFocalLength(track, portrait.width, portrait.height, config.focalLengthFactor).fx;
+            params = { ...this._lastConfigParams, r_ic: info.r_ic, width: this._processWidth, height: this._processHeight,
+                fx: focal * this._processWidth / newWidth, fy: focal * this._processHeight / newHeight,
+                cx: (this._processWidth - 1) / 2, cy: (this._processHeight - 1) / 2 };
+        }
         const configured = await this.vio.configure(params);
         if (!configured) {
-            console.error('[VIO] Reconfiguration failed after orientation change');
+            this.updateStatus('Reconfiguration failed after orientation change');
+            this._reconfiguring = false;
+            this.stop();
             return;
         }
 
@@ -1343,17 +1323,33 @@ class App {
             );
         }
 
+        // Re-apply PnP params
+        {
+            const urlPnP = URL_PARAMS.get('pnp');
+            const urlFreq = URL_PARAMS.get('freq');
+            const enablePnP = urlPnP === '1';
+            const freq = (urlFreq && parseInt(urlFreq) >= 1 && parseInt(urlFreq) <= 10)
+                ? parseInt(urlFreq) : 3;
+            await this.vio.setPnPParams(enablePnP, freq);
+        }
+
         this.imuLogCount = 0;
         this._lastVideoTime = -1;
         this._lastVIOFrameTime = 0;
         this._lastFrameTimestamp = 0;
         this._vioInitialized = false;
         this._initFrameCount = 0;
-        console.log(`[VIO] Reconfigured for ${info.type}, process=${this._processWidth}x${this._processHeight}, R_ic:`, info.r_ic);
+        this._lastConfigParams = params;
+        this._reconfiguring = false;
+        console.log(`[VIO] Reconfigured for ${info.type}, process=${this._processWidth}x${this._processHeight}, R_ic:`, params.r_ic);
     }
 
     resetVIO() {
         this.vio.reset();
+        this.imu.discard('engine_reset');
+        this._renderResultKey = null;
+        this._renderEpoch = null;
+        this._videoFrameTiming = null;
         if (this.renderer) {
             this.renderer.clear();
         }
@@ -1377,6 +1373,9 @@ class App {
 
     stop() {
         this.running = false;
+        this.camera.getVideoElement()?.cancelVideoFrameCallback?.(this._videoFrameCallbackHandle);
+        this._videoFrameTiming = null;
+        this.renderer?.clear();
         this._stopIMUFlush();
         this._stopDeviceOrientationListener();
         this.orientation.stopListening();
@@ -1397,4 +1396,6 @@ class App {
 
 // Initialize on page load
 const app = new App();
+window.__mobileSLAM = { app, diagnostics: () => ({ frames: { ...app.frameMetrics }, transport: app.vio.getMetrics(),
+    imu: app.imu.getDiagnostics(), calibration: app.calibrationProvenance, cameraTiming: app.lastFrameTiming ?? null }) };
 document.addEventListener('DOMContentLoaded', () => app.initialize());

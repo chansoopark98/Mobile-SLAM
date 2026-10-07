@@ -4,6 +4,7 @@
 #include <Eigen/Dense>
 #include <iostream>
 #include <memory>
+#include <cstdint>
 #ifndef __EMSCRIPTEN__
 #include <mutex>
 #endif
@@ -26,6 +27,14 @@ public:
 
     void processIMU(double dt, const Eigen::Vector3d& linear_acceleration, const Eigen::Vector3d& angular_velocity);
     void processImage(const common::ImageData& image, double timestamp);
+    void reset();
+    bool hasUsableLatestImageUpdate() const { return latest_image_update_usable_; }
+    uint64_t getResetGeneration() const { return reset_generation_; }
+    const SolverDiagnostics& getLastSolverDiagnostics() const { return last_solver_diagnostics_; }
+    void setDiagnosticCapture(bool enabled) { optimizer_.setDiagnosticCapture(enabled); }
+    const std::string& getBackendDiagnostics() const { return optimizer_.getBackendDiagnostics(); }
+    void setBenchmarkSolverProfile(bool enabled) { optimizer_.setBenchmarkSolverProfile(enabled); }
+    bool getBenchmarkSolverProfile() const { return optimizer_.getBenchmarkSolverProfile(); }
 
     Eigen::Matrix3d r_ic_;
     Eigen::Vector3d t_ic_;
@@ -38,6 +47,12 @@ public:
     std::vector<Eigen::Vector3d> getSlidingWindowMapPoints() const;
     /** Log triangulation diagnostics: solve_flag counts, depth stats, velocity */
     void logTriangulationDiag(int frame_num) const;
+
+    // PnP Frontend data extraction (VINS-Mobile pattern)
+    /** Extract well-triangulated features as SolvedFeature list for PnP frontend */
+    std::vector<common::SolvedFeature> getSolvedFeatures() const;
+    /** Get latest backend solution as VINSResult for PnP frontend initialization */
+    common::VINSResult getLatestVINSResult() const;
 
 private:
     void clearState();
@@ -61,6 +76,9 @@ private:
     double initial_timestamp_;
     Eigen::Vector3d prev_acc_, prev_gyro_;
     int frame_count_;
+    bool latest_image_update_usable_ = false;
+    uint64_t reset_generation_ = 0;
+    SolverDiagnostics last_solver_diagnostics_;
 
     Eigen::Vector3d g_;
 

@@ -1,4 +1,5 @@
 #include "backend/factor/projection_factor.h"
+#include <cmath>
 #include "utility/utility.h"
 
 namespace backend {
@@ -10,6 +11,11 @@ ProjectionFactor::ProjectionFactor(const Eigen::Vector3d& _pts_i, const Eigen::V
     : pts_i(_pts_i), pts_j(_pts_j){};
 
 bool ProjectionFactor::Evaluate(double const* const* parameters, double* residuals, double** jacobians) const {
+    if (!pts_i.allFinite() || !pts_j.allFinite() || pts_i.z() <= 1e-10 || pts_j.z() <= 1e-10 ||
+        !sqrt_info.allFinite()) return false;
+    for (int i = 0; i < 3; ++i)
+        for (int j = 0; j < 7; ++j)
+            if (!std::isfinite(parameters[i][j])) return false;
     Eigen::Vector3d Pi(parameters[0][0], parameters[0][1], parameters[0][2]);
     Eigen::Quaterniond Qi(parameters[0][6], parameters[0][3], parameters[0][4], parameters[0][5]);
 
@@ -20,6 +26,8 @@ bool ProjectionFactor::Evaluate(double const* const* parameters, double* residua
     Eigen::Quaterniond q_ic(parameters[2][6], parameters[2][3], parameters[2][4], parameters[2][5]);
 
     double inv_dep_i = parameters[3][0];
+    if (!std::isfinite(inv_dep_i) || inv_dep_i <= 1e-10 || Qi.squaredNorm() <= 1e-12 ||
+        Qj.squaredNorm() <= 1e-12 || q_ic.squaredNorm() <= 1e-12) return false;
 
     Eigen::Vector3d pts_camera_i = pts_i / inv_dep_i;
     Eigen::Vector3d pts_imu_i = q_ic * pts_camera_i + t_ic;
@@ -29,9 +37,11 @@ bool ProjectionFactor::Evaluate(double const* const* parameters, double* residua
     Eigen::Map<Eigen::Vector2d> residual(residuals);
 
     double dep_j = pts_camera_j.z();
+    if (!pts_camera_j.allFinite() || dep_j <= 1e-10) return false;
     residual = (pts_camera_j / dep_j).head<2>() - pts_j.head<2>();
 
     residual = sqrt_info * residual;
+    if (!residual.allFinite()) return false;
 
     if (jacobians) {
         Eigen::Matrix3d Ri = Qi.toRotationMatrix();
@@ -81,6 +91,12 @@ bool ProjectionFactor::Evaluate(double const* const* parameters, double* residua
         }
     }
 
+    if (jacobians) {
+        const int sizes[] = {7, 7, 7, 1};
+        for (int block = 0; block < 4; ++block)
+            if (jacobians[block] && !Eigen::Map<const Eigen::VectorXd>(jacobians[block], 2 * sizes[block]).allFinite())
+                return false;
+    }
     return true;
 }
 

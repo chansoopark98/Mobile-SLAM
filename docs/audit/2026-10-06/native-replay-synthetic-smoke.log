@@ -1,0 +1,6 @@
+Loading configuration from: /home/park-ubuntu/park/SOLUTION/Mobile-SLAM/config/tum_vi_room1.yaml
+Configuration loaded successfully from: /home/park-ubuntu/park/SOLUTION/Mobile-SLAM/config/tum_vi_room1.yaml
+[VIOEngine] PnP params: enable=0 freq=3
+[Replay] complete: 0/20 valid poses; 0 invalid; 94.4516 ms wall
+
+Expected no-motion fixture exit=4; JSON/CSV shape checks passed; not VIO accuracy or speed evidence

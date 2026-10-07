@@ -1,0 +1,184 @@
+{
+  "scope": "Desktop fake camera and mocked sensors, not physical phone accuracy evidence",
+  "assertions": [
+    "unchanged existing app module identity/hashes",
+    "HTTPS secure context",
+    "manual existing camera Start",
+    "fake-camera capture/crop/config and mocked raw/device/transformed sensor observations",
+    "missing output timestamp explicitly retained",
+    "bounded local JSON download",
+    "beacon blocked/no browser writes",
+    "stop prevents subsequent rows",
+    "no pageerror"
+  ],
+  "summary": {
+    "frameAttempts": 13,
+    "framesAccepted": 13,
+    "framesDropped": 0,
+    "completed": 12,
+    "finitePoseOutputs": 0,
+    "missingOutputTimestamp": 12,
+    "explicitResetCalls": 0,
+    "trackingInterruptions": 0,
+    "poseJumpMarkers": 0,
+    "roundTripMs": {
+      "p50": 7.310000002384186,
+      "p95": 26.12000000476837,
+      "p99": 26.12000000476837
+    },
+    "imu": {
+      "samples": 166,
+      "intervalP50Ms": 16.000000000000014,
+      "intervalP95Ms": 17.13999998569493,
+      "gapOver50Ms": 0,
+      "nonMonotonicIntervals": 0,
+      "rateHz": 61.29875340729188
+    }
+  },
+  "observerOverhead": {
+    "pushCalls": 1218,
+    "pushTotalMs": 9.059997379779816,
+    "maxPushMs": 0.06000000238418579,
+    "limits": "Push/copy overhead only; wrapper/listener/summary/GC overhead not fully measured. Compare with normal app on the same physical device."
+  },
+  "browser": "144.0.7559.96",
+  "report": "/home/park-ubuntu/park/SOLUTION/Mobile-SLAM/build/dev-mobile-audit/mobile-audit-mock.json",
+  "requests": [
+    {
+      "method": "GET",
+      "url": "https://127.0.0.1:8766/audit-mobile.html"
+    },
+    {
+      "method": "GET",
+      "url": "https://127.0.0.1:8766/js/audit-mobile.js"
+    },
+    {
+      "method": "GET",
+      "url": "https://127.0.0.1:8766/index.html"
+    },
+    {
+      "method": "GET",
+      "url": "https://127.0.0.1:8766/js/app.js?v=11"
+    },
+    {
+      "method": "GET",
+      "url": "https://127.0.0.1:8766/js/vio-wrapper.js?v=11"
+    },
+    {
+      "method": "GET",
+      "url": "https://127.0.0.1:8766/js/camera.js?v=11"
+    },
+    {
+      "method": "GET",
+      "url": "https://127.0.0.1:8766/js/imu.js?v=11"
+    },
+    {
+      "method": "GET",
+      "url": "https://127.0.0.1:8766/js/renderer.js?v=11"
+    },
+    {
+      "method": "GET",
+      "url": "https://127.0.0.1:8766/js/orientation.js?v=11"
+    },
+    {
+      "method": "GET",
+      "url": "https://cdn.jsdelivr.net/npm/three@0.170.0/build/three.module.js"
+    },
+    {
+      "method": "GET",
+      "url": "https://cdn.jsdelivr.net/npm/three@0.170.0/examples/jsm/controls/OrbitControls.js"
+    },
+    {
+      "method": "GET",
+      "url": "https://127.0.0.1:8766/js/vio-worker.js"
+    },
+    {
+      "method": "GET",
+      "url": "https://127.0.0.1:8766/js/audit-mobile.js?audit-realm=1"
+    },
+    {
+      "method": "GET",
+      "url": "https://127.0.0.1:8766/js/app.js?v=11"
+    },
+    {
+      "method": "GET",
+      "url": "https://127.0.0.1:8766/vio_engine.js"
+    },
+    {
+      "method": "GET",
+      "url": "https://127.0.0.1:8766/index.html"
+    },
+    {
+      "method": "GET",
+      "url": "https://127.0.0.1:8766/js/app.js?v=11"
+    },
+    {
+      "method": "GET",
+      "url": "https://127.0.0.1:8766/js/camera.js?v=11"
+    },
+    {
+      "method": "GET",
+      "url": "https://127.0.0.1:8766/js/imu.js?v=11"
+    },
+    {
+      "method": "GET",
+      "url": "https://127.0.0.1:8766/js/vio-wrapper.js?v=11"
+    },
+    {
+      "method": "GET",
+      "url": "https://127.0.0.1:8766/js/vio-worker.js"
+    },
+    {
+      "method": "GET",
+      "url": "https://127.0.0.1:8766/vio_engine.js"
+    }
+  ],
+  "serverWriteProbe": {
+    "method": "POST",
+    "path": "/log",
+    "status": 405,
+    "scope": "Audit server rejects writes; no product server execution"
+  },
+  "privatePathProbes": [
+    {
+      "method": "GET",
+      "path": "/.certs/key.pem",
+      "status": 403
+    },
+    {
+      "method": "GET",
+      "path": "/%2ecerts/key.pem",
+      "status": 403
+    },
+    {
+      "method": "GET",
+      "path": "/%2Ecerts%2fkey.pem",
+      "status": 403
+    },
+    {
+      "method": "GET",
+      "path": "/%2e%2e/secret.js",
+      "status": 403
+    },
+    {
+      "method": "HEAD",
+      "path": "/.certs/key.pem",
+      "status": 403
+    },
+    {
+      "method": "HEAD",
+      "path": "/%2ecerts/key.pem",
+      "status": 403
+    },
+    {
+      "method": "HEAD",
+      "path": "/%2Ecerts%2fkey.pem",
+      "status": 403
+    },
+    {
+      "method": "HEAD",
+      "path": "/%2e%2e/secret.js",
+      "status": 403
+    }
+  ]
+}

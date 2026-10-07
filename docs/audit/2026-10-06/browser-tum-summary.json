@@ -1,0 +1,71 @@
+[
+  {
+    "count": 601,
+    "initializedFrames": 556,
+    "poseFrames": 556,
+    "firstPoseFrame": 45,
+    "nonfinitePoses": 0,
+    "statusCounts": {
+      "1": 45,
+      "2": 556
+    },
+    "roundTripMs": {
+      "p50": 22.67500001192093,
+      "p95": 30.73499995470047,
+      "p99": 40.09999996423721,
+      "max": 122.82499998807907
+    },
+    "datasetDurationS": 30.001023054122925,
+    "limits": "Submitted-frame roundtrip only; excludes image decode, camera capture latency, playback wait, and physical sensor clocks. Max-speed serial replay is not live pacing.",
+    "variant": "active",
+    "tracking_only_roundtrip_ms": {
+      "p50": 22.967500001192093,
+      "p95": 30.833749994635582,
+      "p99": 40.33174998462202,
+      "max": 122.82499998807907
+    },
+    "imu_count_min_max": [
+      3,
+      10
+    ],
+    "feature_min_max": [
+      0,
+      150
+    ]
+  },
+  {
+    "count": 601,
+    "initializedFrames": 556,
+    "poseFrames": 556,
+    "firstPoseFrame": 45,
+    "nonfinitePoses": 0,
+    "statusCounts": {
+      "1": 45,
+      "2": 556
+    },
+    "roundTripMs": {
+      "p50": 21.789999961853027,
+      "p95": 28.75,
+      "p99": 40.110000014305115,
+      "max": 96.60500001907349
+    },
+    "datasetDurationS": 30.001023054122925,
+    "wallDurationS": 19.6422349999547,
+    "limits": "Submitted-frame roundtrip only; excludes image decode, camera capture latency, playback wait, and physical sensor clocks. Max-speed serial replay is not live pacing.",
+    "variant": "fresh",
+    "tracking_only_roundtrip_ms": {
+      "p50": 22.064999997615814,
+      "p95": 28.833749994635582,
+      "p99": 42.36900000572227,
+      "max": 96.60500001907349
+    },
+    "imu_count_min_max": [
+      3,
+      10
+    ],
+    "feature_min_max": [
+      0,
+      150
+    ]
+  }
+]

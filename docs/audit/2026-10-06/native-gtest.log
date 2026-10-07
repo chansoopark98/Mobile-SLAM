@@ -1,0 +1,252 @@
+$ build/audit-native/test_integration_base --gtest_output=xml:build/audit-native/test_integration_base.xml
+Running main() from /home/park-ubuntu/park/SOLUTION/Mobile-SLAM/build/_deps/googletest-src/googletest/src/gtest_main.cc
+[==========] Running 3 tests from 1 test suite.
+[----------] Global test environment set-up.
+[----------] 3 tests from IntegrationBaseTest
+[ RUN      ] IntegrationBaseTest.ConstructorInitializesCorrectly
+[       OK ] IntegrationBaseTest.ConstructorInitializesCorrectly (0 ms)
+[ RUN      ] IntegrationBaseTest.PropagateSingleStep
+[       OK ] IntegrationBaseTest.PropagateSingleStep (0 ms)
+[ RUN      ] IntegrationBaseTest.RepropagateMaintainsConsistency
+[       OK ] IntegrationBaseTest.RepropagateMaintainsConsistency (0 ms)
+[----------] 3 tests from IntegrationBaseTest (0 ms total)
+
+[----------] Global test environment tear-down
+[==========] 3 tests from 1 test suite ran. (0 ms total)
+[  PASSED  ] 3 tests.
+
+exit=0 wall_seconds=0.0017256150022149086
+$ build/audit-native/test_sliding_window --gtest_output=xml:build/audit-native/test_sliding_window.xml
+Running main() from /home/park-ubuntu/park/SOLUTION/Mobile-SLAM/build/_deps/googletest-src/googletest/src/gtest_main.cc
+[==========] Running 5 tests from 1 test suite.
+[----------] Global test environment set-up.
+[----------] 5 tests from SlidingWindowTest
+[ RUN      ] SlidingWindowTest.ClearSlidingWindow
+[       OK ] SlidingWindowTest.ClearSlidingWindow (0 ms)
+[ RUN      ] SlidingWindowTest.CopyFrame
+[       OK ] SlidingWindowTest.CopyFrame (0 ms)
+[ RUN      ] SlidingWindowTest.SwapFrame
+[       OK ] SlidingWindowTest.SwapFrame (0 ms)
+[ RUN      ] SlidingWindowTest.PushBackBuffer
+[       OK ] SlidingWindowTest.PushBackBuffer (0 ms)
+[ RUN      ] SlidingWindowTest.CreateNewPreintegration
+[       OK ] SlidingWindowTest.CreateNewPreintegration (0 ms)
+[----------] 5 tests from SlidingWindowTest (0 ms total)
+
+[----------] Global test environment tear-down
+[==========] 5 tests from 1 test suite ran. (0 ms total)
+[  PASSED  ] 5 tests.
+
+exit=0 wall_seconds=0.0013540820218622684
+$ build/audit-native/test_trajectory_evaluator --gtest_output=xml:build/audit-native/test_trajectory_evaluator.xml
+Running main() from /home/park-ubuntu/park/SOLUTION/Mobile-SLAM/build/_deps/googletest-src/googletest/src/gtest_main.cc
+[==========] Running 7 tests from 1 test suite.
+[----------] Global test environment set-up.
+[----------] 7 tests from TrajectoryEvaluatorTest
+[ RUN      ] TrajectoryEvaluatorTest.IdenticalTrajectoriesGiveZeroATE
+[INFO ] trajectory_evaluator.cpp:39 Loaded 100 VIO poses from /tmp/trajectory_eval_test/vio.txt
+[INFO ] trajectory_evaluator.cpp:84 Loaded 100 GT poses from /tmp/trajectory_eval_test/gt.csv
+[INFO ] trajectory_evaluator.cpp:143 Associated 100 pose pairs (tolerance: 0.01s)
+[INFO ] trajectory_evaluator.cpp:177 Trajectory alignment complete (scale included)
+[       OK ] TrajectoryEvaluatorTest.IdenticalTrajectoriesGiveZeroATE (2 ms)
+[ RUN      ] TrajectoryEvaluatorTest.KnownTranslationOffset
+[INFO ] trajectory_evaluator.cpp:39 Loaded 50 VIO poses from /tmp/trajectory_eval_test/vio.txt
+[INFO ] trajectory_evaluator.cpp:84 Loaded 50 GT poses from /tmp/trajectory_eval_test/gt.csv
+[INFO ] trajectory_evaluator.cpp:143 Associated 50 pose pairs (tolerance: 0.01s)
+[INFO ] trajectory_evaluator.cpp:177 Trajectory alignment complete (scale included)
+[       OK ] TrajectoryEvaluatorTest.KnownTranslationOffset (2 ms)
+[ RUN      ] TrajectoryEvaluatorTest.KnownScaleAndRotation
+[INFO ] trajectory_evaluator.cpp:39 Loaded 50 VIO poses from /tmp/trajectory_eval_test/vio.txt
+[INFO ] trajectory_evaluator.cpp:84 Loaded 50 GT poses from /tmp/trajectory_eval_test/gt.csv
+[INFO ] trajectory_evaluator.cpp:143 Associated 50 pose pairs (tolerance: 0.01s)
+[INFO ] trajectory_evaluator.cpp:177 Trajectory alignment complete (scale included)
+[       OK ] TrajectoryEvaluatorTest.KnownScaleAndRotation (2 ms)
+[ RUN      ] TrajectoryEvaluatorTest.QuaternionConventionHandling
+[INFO ] trajectory_evaluator.cpp:39 Loaded 2 VIO poses from /tmp/trajectory_eval_test/vio_quat.txt
+[INFO ] trajectory_evaluator.cpp:84 Loaded 2 GT poses from /tmp/trajectory_eval_test/gt_quat.csv
+[       OK ] TrajectoryEvaluatorTest.QuaternionConventionHandling (1 ms)
+[ RUN      ] TrajectoryEvaluatorTest.TimestampAssociation
+[INFO ] trajectory_evaluator.cpp:39 Loaded 20 VIO poses from /tmp/trajectory_eval_test/vio_assoc.txt
+[INFO ] trajectory_evaluator.cpp:84 Loaded 120 GT poses from /tmp/trajectory_eval_test/gt_assoc.csv
+[INFO ] trajectory_evaluator.cpp:143 Associated 20 pose pairs (tolerance: 0.01s)
+[INFO ] trajectory_evaluator.cpp:39 Loaded 20 VIO poses from /tmp/trajectory_eval_test/vio_assoc.txt
+[INFO ] trajectory_evaluator.cpp:84 Loaded 120 GT poses from /tmp/trajectory_eval_test/gt_assoc2.csv
+[INFO ] trajectory_evaluator.cpp:143 Associated 20 pose pairs (tolerance: 0.01s)
+[INFO ] trajectory_evaluator.cpp:39 Loaded 20 VIO poses from /tmp/trajectory_eval_test/vio_assoc.txt
+[INFO ] trajectory_evaluator.cpp:84 Loaded 120 GT poses from /tmp/trajectory_eval_test/gt_assoc2.csv
+[INFO ] trajectory_evaluator.cpp:143 Associated 5 pose pairs (tolerance: 0.001s)
+[       OK ] TrajectoryEvaluatorTest.TimestampAssociation (2 ms)
+[ RUN      ] TrajectoryEvaluatorTest.RPEComputationStraightLine
+[INFO ] trajectory_evaluator.cpp:39 Loaded 100 VIO poses from /tmp/trajectory_eval_test/vio_rpe.txt
+[INFO ] trajectory_evaluator.cpp:84 Loaded 100 GT poses from /tmp/trajectory_eval_test/gt_rpe.csv
+[INFO ] trajectory_evaluator.cpp:143 Associated 100 pose pairs (tolerance: 0.01s)
+[INFO ] trajectory_evaluator.cpp:177 Trajectory alignment complete (scale included)
+[       OK ] TrajectoryEvaluatorTest.RPEComputationStraightLine (2 ms)
+[ RUN      ] TrajectoryEvaluatorTest.FrameTransformRoundTrip
+[INFO ] trajectory_evaluator.cpp:39 Loaded 10 VIO poses from /tmp/trajectory_eval_test/vio_rt.txt
+[INFO ] trajectory_evaluator.cpp:101 Transformed 10 VIO poses to body frame
+[INFO ] trajectory_evaluator.cpp:84 Loaded 10 GT poses from /tmp/trajectory_eval_test/gt_rt.csv
+[INFO ] trajectory_evaluator.cpp:143 Associated 10 pose pairs (tolerance: 0.01s)
+[INFO ] trajectory_evaluator.cpp:177 Trajectory alignment complete (scale included)
+[       OK ] TrajectoryEvaluatorTest.FrameTransformRoundTrip (1 ms)
+[----------] 7 tests from TrajectoryEvaluatorTest (14 ms total)
+
+[----------] Global test environment tear-down
+[==========] 7 tests from 1 test suite ran. (14 ms total)
+[  PASSED  ] 7 tests.
+
+exit=0 wall_seconds=0.016202658007387072
+$ build/audit-native/test_config_validation --gtest_output=xml:build/audit-native/test_config_validation.xml
+Running main() from /home/park-ubuntu/park/SOLUTION/Mobile-SLAM/build/_deps/googletest-src/googletest/src/gtest_main.cc
+[==========] Running 4 tests from 1 test suite.
+[----------] Global test environment set-up.
+[----------] 4 tests from ConfigValidationTest
+[ RUN      ] ConfigValidationTest.ValidConfigPasses
+[       OK ] ConfigValidationTest.ValidConfigPasses (0 ms)
+[ RUN      ] ConfigValidationTest.ZeroFxFails
+[       OK ] ConfigValidationTest.ZeroFxFails (0 ms)
+[ RUN      ] ConfigValidationTest.NegativeWindowSizeFails
+[       OK ] ConfigValidationTest.NegativeWindowSizeFails (0 ms)
+[ RUN      ] ConfigValidationTest.ZeroMaxCntFails
+[       OK ] ConfigValidationTest.ZeroMaxCntFails (0 ms)
+[----------] 4 tests from ConfigValidationTest (0 ms total)
+
+[----------] Global test environment tear-down
+[==========] 4 tests from 1 test suite ran. (0 ms total)
+[  PASSED  ] 4 tests.
+
+exit=0 wall_seconds=0.0012845509918406606
+$ build/audit-native/test_measurement_robustness --gtest_output=xml:build/audit-native/test_measurement_robustness.xml
+Running main() from /home/park-ubuntu/park/SOLUTION/Mobile-SLAM/build/_deps/googletest-src/googletest/src/gtest_main.cc
+[==========] Running 5 tests from 1 test suite.
+[----------] Global test environment set-up.
+[----------] 5 tests from MeasurementRobustnessTest
+[ RUN      ] MeasurementRobustnessTest.MalformedImuLineSkipped
+[INFO ] measurement_processor.cpp:54 1. Loading IMU data...
+[WARN ] measurement_processor.cpp:98 Skipping malformed IMU line: stod
+[INFO ] measurement_processor.cpp:104 Loaded 2 IMU data entries
+[       OK ] MeasurementRobustnessTest.MalformedImuLineSkipped (2 ms)
+[ RUN      ] MeasurementRobustnessTest.EmptyFieldsHandled
+[INFO ] measurement_processor.cpp:54 1. Loading IMU data...
+[WARN ] measurement_processor.cpp:98 Skipping malformed IMU line: stod
+[INFO ] measurement_processor.cpp:104 Loaded 1 IMU data entries
+[       OK ] MeasurementRobustnessTest.EmptyFieldsHandled (1 ms)
+[ RUN      ] MeasurementRobustnessTest.PathTraversalRejected
+[WARN ] measurement_processor.cpp:165 Path traversal detected in filename: ../../etc/passwd
+[       OK ] MeasurementRobustnessTest.PathTraversalRejected (1 ms)
+[ RUN      ] MeasurementRobustnessTest.AbsolutePathRejected
+[WARN ] measurement_processor.cpp:171 Absolute path rejected in filename: /etc/passwd
+[       OK ] MeasurementRobustnessTest.AbsolutePathRejected (1 ms)
+[ RUN      ] MeasurementRobustnessTest.NormalFilenamePreserved
+[       OK ] MeasurementRobustnessTest.NormalFilenamePreserved (1 ms)
+[----------] 5 tests from MeasurementRobustnessTest (9 ms total)
+
+[----------] Global test environment tear-down
+[==========] 5 tests from 1 test suite ran. (9 ms total)
+[  PASSED  ] 5 tests.
+
+exit=0 wall_seconds=0.060200801002793014
+$ build/audit-native/test_vio_engine_parity --gtest_output=xml:build/audit-native/test_vio_engine_parity.xml
+[==========] Running 3 tests from 1 test suite.
+[----------] Global test environment set-up.
+[----------] 3 tests from VIOParityTest
+[ RUN      ] VIOParityTest.BothProduceTrajectories
+/home/park-ubuntu/park/SOLUTION/Mobile-SLAM/tests/test_vio_engine_parity.cpp:120: Failure
+Value of: std::ifstream(DATASET_PATH + "/mav0/cam0/data.csv").good()
+  Actual: false
+Expected: true
+TUM VI dataset not found at: ./assets/datasets/tum/dataset-room1_512_16
+
+[  FAILED  ] VIOParityTest.BothProduceTrajectories (0 ms)
+[ RUN      ] VIOParityTest.TrajectoryComparison
+/home/park-ubuntu/park/SOLUTION/Mobile-SLAM/tests/test_vio_engine_parity.cpp:120: Failure
+Value of: std::ifstream(DATASET_PATH + "/mav0/cam0/data.csv").good()
+  Actual: false
+Expected: true
+TUM VI dataset not found at: ./assets/datasets/tum/dataset-room1_512_16
+
+[  FAILED  ] VIOParityTest.TrajectoryComparison (0 ms)
+[ RUN      ] VIOParityTest.VIOEngineSanity
+/home/park-ubuntu/park/SOLUTION/Mobile-SLAM/tests/test_vio_engine_parity.cpp:120: Failure
+Value of: std::ifstream(DATASET_PATH + "/mav0/cam0/data.csv").good()
+  Actual: false
+Expected: true
+TUM VI dataset not found at: ./assets/datasets/tum/dataset-room1_512_16
+
+[  FAILED  ] VIOParityTest.VIOEngineSanity (0 ms)
+[----------] 3 tests from VIOParityTest (0 ms total)
+
+[----------] Global test environment tear-down
+[==========] 3 tests from 1 test suite ran. (0 ms total)
+[  PASSED  ] 0 tests.
+[  FAILED  ] 3 tests, listed below:
+[  FAILED  ] VIOParityTest.BothProduceTrajectories
+[  FAILED  ] VIOParityTest.TrajectoryComparison
+[  FAILED  ] VIOParityTest.VIOEngineSanity
+
+ 3 FAILED TESTS
+
+exit=1 wall_seconds=0.1526048940140754
+
+[
+  {
+    "target": "test_integration_base",
+    "exit": 0,
+    "wall_seconds": 0.0017,
+    "tests": "3",
+    "failures": "0",
+    "disabled": "0",
+    "errors": "0",
+    "time": "0."
+  },
+  {
+    "target": "test_sliding_window",
+    "exit": 0,
+    "wall_seconds": 0.0014,
+    "tests": "5",
+    "failures": "0",
+    "disabled": "0",
+    "errors": "0",
+    "time": "0."
+  },
+  {
+    "target": "test_trajectory_evaluator",
+    "exit": 0,
+    "wall_seconds": 0.0162,
+    "tests": "7",
+    "failures": "0",
+    "disabled": "0",
+    "errors": "0",
+    "time": "0.014"
+  },
+  {
+    "target": "test_config_validation",
+    "exit": 0,
+    "wall_seconds": 0.0013,
+    "tests": "4",
+    "failures": "0",
+    "disabled": "0",
+    "errors": "0",
+    "time": "0."
+  },
+  {
+    "target": "test_measurement_robustness",
+    "exit": 0,
+    "wall_seconds": 0.0602,
+    "tests": "5",
+    "failures": "0",
+    "disabled": "0",
+    "errors": "0",
+    "time": "0.009"
+  },
+  {
+    "target": "test_vio_engine_parity",
+    "exit": 1,
+    "wall_seconds": 0.1526,
+    "tests": "3",
+    "failures": "3",
+    "disabled": "0",
+    "errors": "0",
+    "time": "0."
+  }
+]

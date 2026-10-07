@@ -2,6 +2,7 @@
 #define FRONTEND__INITIALIZATION__INITIAL_SFM_H
 
 #include <ceres/ceres.h>
+#include <ceres/jet.h>
 #include <ceres/rotation.h>
 #include <cstdlib>
 #include <deque>
@@ -35,11 +36,13 @@ struct ReprojectionError3D {
         p[0] += camera_T[0];
         p[1] += camera_T[1];
         p[2] += camera_T[2];
+        if (!ceres::isfinite(p[0]) || !ceres::isfinite(p[1]) || !ceres::isfinite(p[2]) || p[2] <= T(0))
+            return false;
         T xp = p[0] / p[2];
         T yp = p[1] / p[2];
         residuals[0] = xp - T(observed_u);
         residuals[1] = yp - T(observed_v);
-        return true;
+        return ceres::isfinite(residuals[0]) && ceres::isfinite(residuals[1]);
     }
 
     static ceres::CostFunction* Create(const double observed_x, const double observed_y) {
@@ -60,7 +63,7 @@ public:
 private:
     bool solveFrameByPnP(Matrix3d& R_initial, Vector3d& P_initial, int i, vector<SFMFeature>& sfm_f);
 
-    void triangulatePoint(Eigen::Matrix<double, 3, 4>& Pose0, Eigen::Matrix<double, 3, 4>& Pose1, Vector2d& point0,
+    bool triangulatePoint(Eigen::Matrix<double, 3, 4>& Pose0, Eigen::Matrix<double, 3, 4>& Pose1, Vector2d& point0,
                           Vector2d& point1, Vector3d& point_3d);
     void triangulateTwoFrames(int frame0, Eigen::Matrix<double, 3, 4>& Pose0, int frame1,
                               Eigen::Matrix<double, 3, 4>& Pose1, vector<SFMFeature>& sfm_f);

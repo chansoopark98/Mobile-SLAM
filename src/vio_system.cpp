@@ -1,341 +1,118 @@
 #include "vio_system.h"
 #include "utility/logging.h"
-#include <iostream>
-#include <iomanip>
-#include <cmath>
+#include <algorithm>
 #include <chrono>
 
-using namespace Eigen;
-
-VIOSystem::VIOSystem(std::shared_ptr<utility::Config> config)
-    : config_(config) {
-    measurement_processor_ = std::make_unique<MeasurementProcessor>();
-    vio_estimator_ = std::make_unique<backend::Estimator>();
-#ifndef __EMSCRIPTEN__
-    visualizer_ = std::make_unique<Visualizer>();
-    imu_graph_visualizer_ = std::make_unique<utility::IMUGraphVisualizer>();
-#endif
-    result_logger_ = std::make_unique<utility::TestResultLogger>();
-}
-
-VIOSystem::~VIOSystem() {
-    shutdown();
-}
+VIOSystem::VIOSystem(std::shared_ptr<utility::Config> config, bool headless)
+    : config_(std::move(config)), measurement_processor_(std::make_unique<utility::MeasurementProcessor>()),
+      headless_(headless), result_logger_(std::make_unique<utility::TestResultLogger>()) {}
+VIOSystem::~VIOSystem() { shutdown(); }
 
 bool VIOSystem::initialize() {
-    if (!config_) {
-        LOG_ERROR("Configuration not provided");
+    if (!config_) { LOG_ERROR("Configuration not provided"); return false; }
+#ifndef MOBILE_SLAM_WITH_VIEWER
+    if (!headless_) { LOG_ERROR("Viewer unavailable in this build; use --headless"); return false; }
+#endif
+    const auto root = config_->dataset_path + "/mav0/";
+    if (!measurement_processor_->initialize(root+"imu0/data.csv",root+"cam0/data.csv",root+"cam0/data",config_->config_filepath))
         return false;
+#ifndef __EMSCRIPTEN__
+    if (!engine_.configureFromConfig(*config_,config_->config_filepath)) {
+        LOG_ERROR("Engine configuration failed: " << engine_.getLastReason()); return false;
     }
-    
-    vioInitialize();
-    return true;
+#ifdef MOBILE_SLAM_WITH_VIEWER
+    if (!headless_) {
+        visualizer_ = std::make_unique<utility::Visualizer>();
+        imu_graph_visualizer_ = std::make_unique<utility::IMUGraphVisualizer>();
+        if (!visualizer_->initialize() || !imu_graph_visualizer_->initialize(1024,768,300)) return false;
+        imu_graph_visualizer_->start();
+    }
+#endif
+#else
+    return false; // Browser callers configure and call the engine directly, without dataset file I/O.
+#endif
+    return result_logger_->initialize(config_->config_filepath);
 }
 
 void VIOSystem::processSequence() {
-#ifndef __EMSCRIPTEN__
-    vio_process_thread_ = std::make_unique<std::thread>([this]() {
-        this->vioProcess();
-    });
-
-    // Wait for visualizer to be initialized
-    std::this_thread::sleep_for(std::chrono::milliseconds(500));
-
-    LOG_INFO("Starting Visualizer in main thread...");
-    visualizer_->pangolinViewerThread();
-
-    LOG_INFO("All measurement files processed!");
-    if (vio_process_thread_ && vio_process_thread_->joinable()) {
-        vio_process_thread_->join();
-    }
-
-    // Stop IMU graph visualizer before destruction
-    if (imu_graph_visualizer_) {
-        imu_graph_visualizer_->stop();
-    }
-
-    LOG_INFO("Process thread joined");
-#else
-    // WASM: single-threaded execution
-    vioProcess();
-#endif
-}
-
-void VIOSystem::shutdown() {
-#ifndef __EMSCRIPTEN__
-    if (imu_graph_visualizer_) {
-        imu_graph_visualizer_->stop();
-    }
-    if (vio_process_thread_ && vio_process_thread_->joinable()) {
-        vio_process_thread_->join();
-    }
-#endif
-}
-
-void VIOSystem::vioInitialize() {
-    const std::string imu_filepath = config_->dataset_path + "/mav0/imu0/data.csv";
-    const std::string image_csv_filepath = config_->dataset_path + "/mav0/cam0/data.csv";
-    const std::string image_dirpath = config_->dataset_path + "/mav0/cam0/data";
-    const std::string config_filepath = config_->config_filepath;
-
-    LOG_INFO("IMU file: " << imu_filepath);
-    LOG_INFO("Image CSV file: " << image_csv_filepath);
-    LOG_INFO("Image directory: " << image_dirpath);
-    LOG_INFO("Config file: " << config_filepath);
-
-    measurement_processor_->initialize(imu_filepath, image_csv_filepath, image_dirpath, config_filepath);
-    vio_estimator_->setParameter();
-#ifndef __EMSCRIPTEN__
-    visualizer_->initialize();
-    imu_graph_visualizer_->initialize(1024, 768, 300);
-    imu_graph_visualizer_->start();
-#endif
-    result_logger_->initialize(config_filepath);
-}
-
-
-void VIOSystem::onFrameProcessed(const utility::MeasurementMsg& measurement, double& current_time, int32_t measurement_id) {
-    auto imu_msg = measurement.imu_msg;
-    auto image_msg = measurement.image_feature_msg;
-
-    // Process IMU data
-    processIMUData(imu_msg, image_msg, current_time);
-
-    // Process image data
-    processImageData(image_msg);
-
-    // Update visualization
-    updateVisualization(image_msg.timestamp);
-}
-
-void VIOSystem::onSequenceComplete() {
-    LOG_INFO("Saving final complete trajectory...");
-    result_logger_->saveTrajectoryToFile();
-
-    // Auto-evaluate if ground truth exists
-    std::string gt_path = config_->dataset_path + "/mav0/mocap0/data.csv";
-    std::string traj_path = result_logger_->getLogDirectory() + "/trajectory_pose.txt";
-
-    utility::TrajectoryEvaluator evaluator;
-    if (evaluator.loadVioTrajectory(traj_path) && evaluator.loadGroundTruth(gt_path)) {
-        evaluator.transformVioToBodyFrame(vio_estimator_->r_ic_, vio_estimator_->t_ic_);
-        evaluator.associateTrajectories(0.01);
-        evaluator.alignTrajectories();
-        auto ate = evaluator.computeATE();
-        auto rpe = evaluator.computeRPE(1.0);
-        evaluator.printResults(ate, rpe);
-        evaluator.saveResults(result_logger_->getLogDirectory() + "/evaluation.txt", ate, rpe);
-    }
-}
-
-void VIOSystem::vioProcess() {
-    const auto& image_file_data = measurement_processor_->getImageFileData();
-    double current_time = -1;
-    int32_t measurement_id = 0;
-    
-    // Get frame range parameters
-    int start_frame = config_->start_frame;
-    int end_frame = config_->end_frame;
-    int total_frames = static_cast<int>(image_file_data.size());
-    
-    // Validate frame range parameters
-    if (start_frame < 0) {
-        start_frame = 0;
-        LOG_WARN("start_frame < 0, setting to 0");
-    }
-    if (end_frame < 0 || end_frame >= total_frames) {
-        end_frame = total_frames - 1;
-        LOG_INFO("end_frame set to " << end_frame << " (total frames: " << total_frames << ")");
-    }
-    if (start_frame > end_frame) {
-        LOG_ERROR("start_frame (" << start_frame << ") > end_frame (" << end_frame << ")");
+#ifdef MOBILE_SLAM_WITH_VIEWER
+    if (!headless_) {
+        vio_process_thread_ = std::make_unique<std::thread>([this]{ vioProcess(); });
+        std::this_thread::sleep_for(std::chrono::milliseconds(500));
+        visualizer_->pangolinViewerThread();
+        if (vio_process_thread_->joinable()) vio_process_thread_->join();
+        if (imu_graph_visualizer_) imu_graph_visualizer_->stop();
         return;
     }
-    
-    LOG_INFO("Processing frames " << start_frame << " to " << end_frame << " (total: " << (end_frame - start_frame + 1) << " frames)");
-    
-    for (int frame_idx = 0; frame_idx < total_frames; ++frame_idx) {
-        // Skip frames outside the specified range
-        if (frame_idx < start_frame || frame_idx > end_frame) {
-            continue;
-        }
-        
-        const auto& image_file_data_item = image_file_data[frame_idx];
-        LOG_DEBUG("Processing file: " << image_file_data_item.filename << " (frame " << frame_idx << "/" << total_frames - 1 << ")");
-        
-        if (measurement_id++ % (config_->frame_skip + 1) != 0) {
-            LOG_DEBUG("skip frame " << (measurement_id - 1));
-            continue;
-        }
-
-        utility::MeasurementMsg measurement = measurement_processor_->createMeasurementMsg(measurement_id, image_file_data_item);
-        onFrameProcessed(measurement, current_time, measurement_id);
-    }
-
+#endif
+    vioProcess();
+}
+void VIOSystem::shutdown() {
+#ifdef MOBILE_SLAM_WITH_VIEWER
+    if (visualizer_) visualizer_->stop();
+    if (imu_graph_visualizer_) imu_graph_visualizer_->stop();
+#endif
+    if (vio_process_thread_ && vio_process_thread_->joinable()) vio_process_thread_->join();
+}
+void VIOSystem::vioProcess() {
+    const auto& images=measurement_processor_->getImageFileData();
+    const int total=static_cast<int>(images.size());
+    const int start=std::max(0,config_->start_frame);
+    const int end=config_->end_frame<0 ? total-1 : std::min(total-1,config_->end_frame);
+    if(start>end) { LOG_ERROR("Empty or invalid frame range"); return; }
+    const int skip=std::max(0,config_->frame_skip)+1;
+    if(start>0) measurement_processor_->beginAtImageTimestamp(images[start].timestamp);
+    for(int i=start;i<=end;i+=skip)
+        onFrameProcessed(measurement_processor_->createRawMeasurementMsg(i,images[i]));
     onSequenceComplete();
 }
-
-void VIOSystem::processIMUData(const std::vector<utility::IMUMsg>& imu_msg, const utility::ImageFeatureMsg& image_msg, double& current_time) {
-    Vector3d prev_acc = Vector3d::Zero();
-    Vector3d prev_gyro = Vector3d::Zero();
-    Vector3d curr_acc, curr_gyro;
-
-    for (const auto& imu_data : imu_msg) {
-        const double imu_time = imu_data.timestamp;
-        const double image_time = image_msg.timestamp;
-
-        if (imu_time <= image_time) {
-            if (current_time < 0.0) {
-                current_time = imu_time;
-            }
-            const double dt = imu_time - current_time;
-            current_time = imu_time;
-            
-            curr_acc = extractAcceleration(imu_data);
-            curr_gyro = extractAngularVelocity(imu_data);
-
-#ifndef __EMSCRIPTEN__
-            // Update IMU graph visualization
-            if (imu_graph_visualizer_ && imu_graph_visualizer_->isRunning()) {
-                imu_graph_visualizer_->addIMUData(imu_time, curr_acc, curr_gyro);
-            }
+void VIOSystem::onFrameProcessed(const utility::RawMeasurementMsg& measurement) {
+    if(measurement.gray_image.empty()) LOG_WARN("Cannot decode dataset frame " << measurement.measurement_id);
+    std::vector<IMUReading> imu;
+    imu.reserve(measurement.imu_msg.size());
+    for(const auto& value:measurement.imu_msg) {
+        imu.push_back({value.timestamp,value.linear_acc_x,value.linear_acc_y,value.linear_acc_z,
+                       value.angular_vel_x,value.angular_vel_y,value.angular_vel_z});
+#ifdef MOBILE_SLAM_WITH_VIEWER
+        if(imu_graph_visualizer_ && imu_graph_visualizer_->isRunning())
+            imu_graph_visualizer_->addIMUData(value.timestamp,
+                Eigen::Vector3d(value.linear_acc_x,value.linear_acc_y,value.linear_acc_z),
+                Eigen::Vector3d(value.angular_vel_x,value.angular_vel_y,value.angular_vel_z));
 #endif
-            
-            vio_estimator_->processIMU(dt, curr_acc, curr_gyro);
-        } else {
-            const double dt_to_image = image_time - current_time;
-            current_time = image_time;
-            
-            interpolateIMUData(prev_acc, prev_gyro, imu_data, dt_to_image, imu_time - image_time, curr_acc, curr_gyro);
-
-#ifndef __EMSCRIPTEN__
-            // Update IMU graph visualization with interpolated data
-            if (imu_graph_visualizer_ && imu_graph_visualizer_->isRunning()) {
-                imu_graph_visualizer_->addIMUData(image_time, curr_acc, curr_gyro);
-            }
-#endif
-            
-            vio_estimator_->processIMU(dt_to_image, curr_acc, curr_gyro);
-        }
-
-        prev_acc = curr_acc;
-        prev_gyro = curr_gyro;
     }
-}
-
-void VIOSystem::processImageData(const utility::ImageFeatureMsg& image_msg) {
-    common::ImageData image_data;
-    for (unsigned int i = 0; i < image_msg.points_count; i++) {
-        int feature_id = image_msg.channel_data[0][i];
-        double r_x = image_msg.ray_vectors[i].x;
-        double r_y = image_msg.ray_vectors[i].y;
-        double r_z = image_msg.ray_vectors[i].z;
-        double p_u = image_msg.channel_data[1][i];
-        double p_v = image_msg.channel_data[2][i];
-        double v_x = image_msg.channel_data[3][i];
-        double v_y = image_msg.channel_data[4][i];
-        Eigen::Matrix<double, 7, 1> ray_obs_vel;
-        ray_obs_vel << r_x, r_y, r_z, p_u, p_v, v_x, v_y;
-        image_data[feature_id] = ray_obs_vel;
-    }
-    if (!image_data.empty()) {
-        vio_estimator_->processImage(image_data, image_msg.timestamp);
-    } else {
-        LOG_WARN("Empty image_data");
-    }
-}
-
-void VIOSystem::updateVisualization(double timestamp) {
-    updateCameraPose(timestamp);
-    updateFeaturePoints3D();
-}
-
-void VIOSystem::updateCameraPose(double timestamp) {
-    if (vio_estimator_->solver_flag_ == common::SolverFlag::NON_LINEAR) {
-        int window_size = config_->estimator.window_size;
-        Eigen::Vector3d body_position = vio_estimator_->sliding_window_[window_size].P;
-        Eigen::Matrix3d body_rotation = vio_estimator_->sliding_window_[window_size].R;
-        if (!body_position.allFinite() || !body_rotation.allFinite()) {
-            LOG_WARN("Invalid pose data detected, skipping...");
-            return;
-        }
-        
-        // Camera pose (body + camera offset)
-        Eigen::Vector3d camera_position = body_position + body_rotation * vio_estimator_->t_ic_;
-        Eigen::Matrix3d camera_rotation = body_rotation * vio_estimator_->r_ic_;
-
-        // IMU pose (body frame - IMU is typically at body origin)
-        Eigen::Vector3d imu_position = body_position;
-        Eigen::Matrix3d imu_rotation = body_rotation;
-
-#ifndef __EMSCRIPTEN__
-        if (visualizer_->isRunning()) {
-            visualizer_->updateCameraPose(camera_position, camera_rotation, timestamp);
-            visualizer_->updateIMUPose(imu_position, imu_rotation, timestamp);
-        }
-#endif
-
-        result_logger_->addPose(camera_position, camera_rotation, timestamp);
-
-        static size_t last_printed_count = 0;
-        static std::vector<Eigen::Vector3d> temp_poses;
-        temp_poses.push_back(camera_position);
-        if (temp_poses.size() > last_printed_count && temp_poses.size() % 5 == 0) {
-            LOG_INFO("Frame " << temp_poses.size() << " | Time: " << std::fixed << std::setprecision(3)
-                      << timestamp << " | Cam Pos: [" << std::fixed << std::setprecision(2) << camera_position.x()
-                      << ", " << camera_position.y() << ", " << camera_position.z() << "]");
-            last_printed_count = temp_poses.size();
-        }
-        static size_t last_saved_count = 0;
-        if (temp_poses.size() > last_saved_count && temp_poses.size() % 50 == 0) {
-            result_logger_->saveTrajectoryToFile();
-            last_saved_count = temp_poses.size();
-        }
-    }
-}
-
-Vector3d VIOSystem::extractAcceleration(const utility::IMUMsg& imu_data) {
-    return Vector3d(imu_data.linear_acc_x, imu_data.linear_acc_y, imu_data.linear_acc_z);
-}
-
-Vector3d VIOSystem::extractAngularVelocity(const utility::IMUMsg& imu_data) {
-    return Vector3d(imu_data.angular_vel_x, imu_data.angular_vel_y, imu_data.angular_vel_z);
-}
-
-void VIOSystem::interpolateIMUData(const Vector3d& prev_acc, const Vector3d& prev_gyro, 
-                                   const utility::IMUMsg& current_imu, 
-                                   double dt1, double dt2, 
-                                   Vector3d& interp_acc, Vector3d& interp_gyro) {
-    const double total_dt = dt1 + dt2;
-    if (total_dt < 1e-12) {
-        interp_acc = extractAcceleration(current_imu);
-        interp_gyro = extractAngularVelocity(current_imu);
-        return;
-    }
-    const double w1 = dt2 / total_dt;
-    const double w2 = dt1 / total_dt;
-    
-    const Vector3d current_acc = extractAcceleration(current_imu);
-    const Vector3d current_gyro = extractAngularVelocity(current_imu);
-    
-    interp_acc = w1 * prev_acc + w2 * current_acc;
-    interp_gyro = w1 * prev_gyro + w2 * current_gyro;
-}
-
-void VIOSystem::updateFeaturePoints3D() {
-    std::vector<Eigen::Vector3d> new_points;
-    if (vio_estimator_->solver_flag_ == common::SolverFlag::NON_LINEAR) {
-        new_points = vio_estimator_->getSlidingWindowMapPoints();
-    }
-    std::vector<Eigen::Vector3d> valid_points;
-    for (const auto& pt : new_points) {
-        if (pt.allFinite() && !std::isnan(pt.x()) && !std::isnan(pt.y()) && !std::isnan(pt.z())) {
-            valid_points.push_back(pt);
-        }
-    }
-#ifndef __EMSCRIPTEN__
-    if (visualizer_->isRunning()) {
-        visualizer_->updateFeaturePoints3D(valid_points);
+    double pose[16];
+    if(!engine_.processFrame(measurement.gray_image.data,measurement.gray_image.cols,measurement.gray_image.rows,
+                            imu.data(),static_cast<int>(imu.size()),measurement.timestamp,pose)) return;
+    const Eigen::Matrix4d camera=Eigen::Map<const Eigen::Matrix<double,4,4,Eigen::RowMajor>>(pose);
+    const Eigen::Vector3d position=camera.block<3,1>(0,3);
+    const Eigen::Matrix3d rotation=camera.block<3,3>(0,0);
+    const double timestamp=engine_.getPoseTimestamp();
+    result_logger_->addPose(position,rotation,timestamp);
+#ifdef MOBILE_SLAM_WITH_VIEWER
+    if(visualizer_ && visualizer_->isRunning()) {
+        visualizer_->updateCameraPose(position,rotation,timestamp);
+        const Eigen::Matrix3d body_rotation=rotation*config_->camera.r_ic.transpose();
+        const Eigen::Vector3d body_position=position-body_rotation*config_->camera.t_ic;
+        visualizer_->updateIMUPose(body_position,body_rotation,timestamp);
+        double map[3*utility::NUM_OF_FEATURES];
+        const int count=engine_.getMapPoints(map,utility::NUM_OF_FEATURES);
+        std::vector<Eigen::Vector3d> points;
+        for(int i=0;i<count;++i) points.emplace_back(map[3*i],map[3*i+1],map[3*i+2]);
+        visualizer_->updateFeaturePoints3D(points);
     }
 #endif
+    if(result_logger_->getPoseCount()%50==0) result_logger_->saveTrajectoryToFile();
+}
+void VIOSystem::onSequenceComplete() {
+    result_logger_->saveTrajectoryToFile();
+    utility::TrajectoryEvaluator evaluator;
+    if(evaluator.loadVioTrajectory(result_logger_->getLogDirectory()+"/trajectory_pose.txt") &&
+       evaluator.loadGroundTruth(config_->dataset_path+"/mav0/mocap0/data.csv")) {
+        evaluator.transformVioToBodyFrame(config_->camera.r_ic,config_->camera.t_ic);
+        evaluator.associateTrajectories(.01);
+        evaluator.alignTrajectories();
+        const auto ate=evaluator.computeATE(); const auto rpe=evaluator.computeRPE(1.0);
+        evaluator.printResults(ate,rpe);
+        evaluator.saveResults(result_logger_->getLogDirectory()+"/evaluation.txt",ate,rpe);
+    }
 }

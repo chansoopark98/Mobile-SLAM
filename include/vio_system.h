@@ -1,63 +1,38 @@
 #ifndef VIO_SYSTEM_H
 #define VIO_SYSTEM_H
-
 #include <memory>
 #include <thread>
-#include <vector>
-#include <Eigen/Dense>
-
-#include "backend/estimator.h"
-#include "utility/config.h"
+#include "vio_engine.h"
 #include "utility/measurement_processor.h"
 #include "utility/test_result_logger.h"
 #include "utility/trajectory_evaluator.h"
-#ifndef __EMSCRIPTEN__
+#ifdef MOBILE_SLAM_WITH_VIEWER
 #include "utility/visualizer.h"
 #include "utility/imu_graph_visualizer.h"
 #endif
 
+// Dataset and viewer adapter. Estimation, feature tracking and IMU boundaries live in VIOEngine.
 class VIOSystem {
 public:
-    VIOSystem(std::shared_ptr<utility::Config> config);
+    explicit VIOSystem(std::shared_ptr<utility::Config> config, bool headless = false);
     ~VIOSystem();
-
     bool initialize();
     void processSequence();
     void shutdown();
-
+    const VIOEngine& getEngine() const { return engine_; }
 private:
-    // Core components
     std::shared_ptr<utility::Config> config_;
-    std::unique_ptr<MeasurementProcessor> measurement_processor_;
-    std::unique_ptr<backend::Estimator> vio_estimator_;
-#ifndef __EMSCRIPTEN__
-    std::unique_ptr<Visualizer> visualizer_;
+    std::unique_ptr<utility::MeasurementProcessor> measurement_processor_;
+    VIOEngine engine_;
+    bool headless_;
+#ifdef MOBILE_SLAM_WITH_VIEWER
+    std::unique_ptr<utility::Visualizer> visualizer_;
     std::unique_ptr<utility::IMUGraphVisualizer> imu_graph_visualizer_;
 #endif
     std::unique_ptr<utility::TestResultLogger> result_logger_;
-
-    // Processing thread
     std::unique_ptr<std::thread> vio_process_thread_;
-
-    // Private methods
-    void vioInitialize();
     void vioProcess();
-    void onFrameProcessed(const utility::MeasurementMsg& measurement, double& current_time, int32_t measurement_id);
+    void onFrameProcessed(const utility::RawMeasurementMsg& measurement);
     void onSequenceComplete();
-    
-    void processIMUData(const std::vector<utility::IMUMsg>& imu_msg, const utility::ImageFeatureMsg& image_msg, double& current_time);
-    void processImageData(const utility::ImageFeatureMsg& image_msg);
-    void updateVisualization(double timestamp);
-    void updateCameraPose(double timestamp);
-    void updateFeaturePoints3D();
-    
-    // IMU data processing helpers
-    Eigen::Vector3d extractAcceleration(const utility::IMUMsg& imu_data);
-    Eigen::Vector3d extractAngularVelocity(const utility::IMUMsg& imu_data);
-    void interpolateIMUData(const Eigen::Vector3d& prev_acc, const Eigen::Vector3d& prev_gyro,
-                           const utility::IMUMsg& current_imu,
-                           double dt1, double dt2,
-                           Eigen::Vector3d& interp_acc, Eigen::Vector3d& interp_gyro);
 };
-
-#endif // VIO_SYSTEM_H
+#endif

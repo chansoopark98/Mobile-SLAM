@@ -19,14 +19,19 @@ namespace frontend {
 
 bool inBorder(const cv::Point2f& pt);
 
-void filterByStatus(std::vector<cv::Point2f>& v, std::vector<uchar> status);
-void filterByStatus(std::vector<int>& v, std::vector<uchar> status);
+void filterByStatus(std::vector<cv::Point2f>& v, const std::vector<uchar>& status);
+void filterByStatus(std::vector<int>& v, const std::vector<uchar>& status);
 
 class FeatureTracker {
 public:
     FeatureTracker();
+    void reset();
+    void setDiagnosticCapture(bool enabled);
+    const std::string& getFeatureDiagnostics() const { return diagnostic_json_; }
 
-    void detectAndTrack(const cv::Mat& _img, double _cur_time);
+    // backend_frame=true: full pipeline (track + detect new features + setMask)
+    // backend_frame=false: track-only (LK flow + F-matrix rejection, no new features)
+    void detectAndTrack(const cv::Mat& _img, double _cur_time, bool backend_frame = true);
 
     void setMask();
 
@@ -37,7 +42,7 @@ public:
     void readIntrinsicParameter(const std::string& calib_file);
 
     // Direct camera model initialization (no file I/O, for WASM)
-    void setIntrinsicParameter(int model_type, int width, int height,
+    bool setIntrinsicParameter(int model_type, int width, int height,
                                double fx, double fy, double cx, double cy,
                                double k2, double k3, double k4, double k5);
 
@@ -63,6 +68,11 @@ public:
     static int n_id;
 
 private:
+    void pruneTrackedPoints(const std::vector<uchar>& status);
+    void recordDiagnostic(const char* name, const std::string& json);
+    bool diagnostic_capture_ = false;
+    std::string diagnostic_stages_;
+    std::string diagnostic_json_;
     // Cached CLAHE object — avoids per-frame allocation overhead.
     // VINS-Mono creates CLAHE per frame; caching is a pure optimization.
     cv::Ptr<cv::CLAHE> clahe_;

@@ -1,0 +1,1306 @@
+{
+  "createdAt": "2026-10-06T07:35:39.670Z",
+  "framesRequested": 60,
+  "fingerprints": {
+    "web/vio_engine.js": {
+      "bytes": 4071701,
+      "sha256": "f683f7d6341105c28cab4e5724f5250a5b9356000a9017c138150c4e6979afce"
+    },
+    "web/js/vio_engine_worker.js": {
+      "bytes": 3514487,
+      "sha256": "fa5f5ec9835b884a5dd1b6069976a09fc4045339778daeaa30346c06f5240796"
+    },
+    "wasm/build/vio_engine.js": {
+      "bytes": 4071701,
+      "sha256": "f683f7d6341105c28cab4e5724f5250a5b9356000a9017c138150c4e6979afce"
+    },
+    "wasm/build/vio_engine_worker.js": {
+      "bytes": 4072636,
+      "sha256": "5f2a6119754973a4fd6c0d4dd775d19fb2ea93570de55685fb06bd3b6c9dfab1"
+    },
+    "wasm/dist/vio_engine.js": {
+      "bytes": 3557010,
+      "sha256": "d89643d02056a5fb193286e995a0fc88f79a614312a28f88a6b6a9e75e7ecda0"
+    }
+  },
+  "requests": [
+    {
+      "path": "/js/vio-wrapper.js",
+      "status": 200
+    },
+    {
+      "path": "/js/vio-worker.js",
+      "status": 200
+    },
+    {
+      "path": "/vio_engine.js",
+      "status": 200
+    },
+    {
+      "path": "/js/vio-worker.js",
+      "status": 200
+    },
+    {
+      "path": "/js/vio_engine_worker.js",
+      "status": 200
+    },
+    {
+      "path": "/",
+      "status": 200
+    },
+    {
+      "path": "/js/app.js",
+      "status": 200
+    },
+    {
+      "path": "/js/vio-wrapper.js",
+      "status": 200
+    },
+    {
+      "path": "/js/camera.js",
+      "status": 200
+    },
+    {
+      "path": "/js/imu.js",
+      "status": 200
+    },
+    {
+      "path": "/js/renderer.js",
+      "status": 200
+    },
+    {
+      "path": "/js/orientation.js",
+      "status": 200
+    },
+    {
+      "path": "/js/vio-worker.js",
+      "status": 200
+    },
+    {
+      "path": "/vio_engine.js",
+      "status": 200
+    },
+    {
+      "path": "/test-tumvi.html",
+      "status": 200
+    },
+    {
+      "path": "/js/test-tumvi-app.js",
+      "status": 200
+    },
+    {
+      "path": "/js/vio-wrapper.js",
+      "status": 200
+    },
+    {
+      "path": "/js/renderer.js",
+      "status": 200
+    },
+    {
+      "path": "/js/vio-worker.js",
+      "status": 200
+    },
+    {
+      "path": "/vio_engine.js",
+      "status": 200
+    },
+    {
+      "path": "/datasets/tum/dataset-room1_512_16/mav0/cam0/data.csv",
+      "status": 404
+    },
+    {
+      "path": "/datasets/tum/dataset-room1_512_16/mav0/imu0/data.csv",
+      "status": 404
+    },
+    {
+      "path": "/datasets/tum/dataset-room1_512_16/mav0/mocap0/data.csv",
+      "status": 404
+    }
+  ],
+  "limits": [
+    "Desktop headless browser; no real phone sensors, thermal endurance, or independent trajectory accuracy evidence.",
+    "Synthetic replay does not establish VIO initialization, convergence, tracking accuracy, or production latency."
+  ],
+  "browser": "144.0.7559.96",
+  "synthetic": {
+    "crossOriginIsolated": true,
+    "secureContext": true,
+    "frameResults": [
+      {
+        "frame": 0,
+        "accepted": true,
+        "busyDrop": true,
+        "roundTripMs": 13.245000004768372,
+        "initialized": false,
+        "status": 1,
+        "features": 0,
+        "imuCount": 10,
+        "hasPose": false,
+        "finitePose": null,
+        "timestampPresent": false
+      },
+      {
+        "frame": 1,
+        "accepted": true,
+        "busyDrop": null,
+        "roundTripMs": 4.320000052452087,
+        "initialized": false,
+        "status": 1,
+        "features": 57,
+        "imuCount": 10,
+        "hasPose": false,
+        "finitePose": null,
+        "timestampPresent": false
+      },
+      {
+        "frame": 2,
+        "accepted": true,
+        "busyDrop": null,
+        "roundTripMs": 3.25,
+        "initialized": false,
+        "status": 1,
+        "features": 85,
+        "imuCount": 10,
+        "hasPose": false,
+        "finitePose": null,
+        "timestampPresent": false
+      },
+      {
+        "frame": 3,
+        "accepted": true,
+        "busyDrop": null,
+        "roundTripMs": 2.6399999856948853,
+        "initialized": false,
+        "status": 1,
+        "features": 91,
+        "imuCount": 10,
+        "hasPose": false,
+        "finitePose": null,
+        "timestampPresent": false
+      },
+      {
+        "frame": 4,
+        "accepted": true,
+        "busyDrop": null,
+        "roundTripMs": 6.5799999833106995,
+        "initialized": false,
+        "status": 1,
+        "features": 96,
+        "imuCount": 10,
+        "hasPose": false,
+        "finitePose": null,
+        "timestampPresent": false
+      },
+      {
+        "frame": 5,
+        "accepted": true,
+        "busyDrop": null,
+        "roundTripMs": 2.7649999856948853,
+        "initialized": false,
+        "status": 1,
+        "features": 101,
+        "imuCount": 10,
+        "hasPose": false,
+        "finitePose": null,
+        "timestampPresent": false
+      },
+      {
+        "frame": 6,
+        "accepted": true,
+        "busyDrop": null,
+        "roundTripMs": 2.809999942779541,
+        "initialized": false,
+        "status": 1,
+        "features": 101,
+        "imuCount": 10,
+        "hasPose": false,
+        "finitePose": null,
+        "timestampPresent": false
+      },
+      {
+        "frame": 7,
+        "accepted": true,
+        "busyDrop": null,
+        "roundTripMs": 2.7300000190734863,
+        "initialized": false,
+        "status": 1,
+        "features": 101,
+        "imuCount": 10,
+        "hasPose": false,
+        "finitePose": null,
+        "timestampPresent": false
+      },
+      {
+        "frame": 8,
+        "accepted": true,
+        "busyDrop": null,
+        "roundTripMs": 2.630000054836273,
+        "initialized": false,
+        "status": 1,
+        "features": 101,
+        "imuCount": 10,
+        "hasPose": false,
+        "finitePose": null,
+        "timestampPresent": false
+      },
+      {
+        "frame": 9,
+        "accepted": true,
+        "busyDrop": null,
+        "roundTripMs": 2.740000009536743,
+        "initialized": false,
+        "status": 1,
+        "features": 107,
+        "imuCount": 10,
+        "hasPose": false,
+        "finitePose": null,
+        "timestampPresent": false
+      },
+      {
+        "frame": 10,
+        "accepted": true,
+        "busyDrop": null,
+        "roundTripMs": 2.825000047683716,
+        "initialized": false,
+        "status": 1,
+        "features": 101,
+        "imuCount": 10,
+        "hasPose": false,
+        "finitePose": null,
+        "timestampPresent": false
+      },
+      {
+        "frame": 11,
+        "accepted": true,
+        "busyDrop": null,
+        "roundTripMs": 2.7149999737739563,
+        "initialized": false,
+        "status": 1,
+        "features": 101,
+        "imuCount": 10,
+        "hasPose": false,
+        "finitePose": null,
+        "timestampPresent": false
+      },
+      {
+        "frame": 12,
+        "accepted": true,
+        "busyDrop": null,
+        "roundTripMs": 2.75,
+        "initialized": false,
+        "status": 1,
+        "features": 107,
+        "imuCount": 10,
+        "hasPose": false,
+        "finitePose": null,
+        "timestampPresent": false
+      },
+      {
+        "frame": 13,
+        "accepted": true,
+        "busyDrop": null,
+        "roundTripMs": 2.7450000047683716,
+        "initialized": false,
+        "status": 1,
+        "features": 108,
+        "imuCount": 10,
+        "hasPose": false,
+        "finitePose": null,
+        "timestampPresent": false
+      },
+      {
+        "frame": 14,
+        "accepted": true,
+        "busyDrop": null,
+        "roundTripMs": 10.410000026226044,
+        "initialized": false,
+        "status": 1,
+        "features": 108,
+        "imuCount": 10,
+        "hasPose": false,
+        "finitePose": null,
+        "timestampPresent": false
+      },
+      {
+        "frame": 15,
+        "accepted": true,
+        "busyDrop": null,
+        "roundTripMs": 3.009999990463257,
+        "initialized": false,
+        "status": 1,
+        "features": 108,
+        "imuCount": 10,
+        "hasPose": false,
+        "finitePose": null,
+        "timestampPresent": false
+      },
+      {
+        "frame": 16,
+        "accepted": true,
+        "busyDrop": null,
+        "roundTripMs": 3.400000035762787,
+        "initialized": false,
+        "status": 1,
+        "features": 108,
+        "imuCount": 10,
+        "hasPose": false,
+        "finitePose": null,
+        "timestampPresent": false
+      },
+      {
+        "frame": 17,
+        "accepted": true,
+        "busyDrop": null,
+        "roundTripMs": 2.8450000286102295,
+        "initialized": false,
+        "status": 1,
+        "features": 108,
+        "imuCount": 10,
+        "hasPose": false,
+        "finitePose": null,
+        "timestampPresent": false
+      },
+      {
+        "frame": 18,
+        "accepted": true,
+        "busyDrop": null,
+        "roundTripMs": 2.685000002384186,
+        "initialized": false,
+        "status": 1,
+        "features": 108,
+        "imuCount": 10,
+        "hasPose": false,
+        "finitePose": null,
+        "timestampPresent": false
+      },
+      {
+        "frame": 19,
+        "accepted": true,
+        "busyDrop": null,
+        "roundTripMs": 2.7799999713897705,
+        "initialized": false,
+        "status": 1,
+        "features": 108,
+        "imuCount": 10,
+        "hasPose": false,
+        "finitePose": null,
+        "timestampPresent": false
+      },
+      {
+        "frame": 20,
+        "accepted": true,
+        "busyDrop": null,
+        "roundTripMs": 3.699999988079071,
+        "initialized": false,
+        "status": 1,
+        "features": 97,
+        "imuCount": 10,
+        "hasPose": false,
+        "finitePose": null,
+        "timestampPresent": false
+      },
+      {
+        "frame": 21,
+        "accepted": true,
+        "busyDrop": null,
+        "roundTripMs": 3.549999952316284,
+        "initialized": false,
+        "status": 1,
+        "features": 97,
+        "imuCount": 10,
+        "hasPose": false,
+        "finitePose": null,
+        "timestampPresent": false
+      },
+      {
+        "frame": 22,
+        "accepted": true,
+        "busyDrop": null,
+        "roundTripMs": 3.6299999952316284,
+        "initialized": false,
+        "status": 1,
+        "features": 102,
+        "imuCount": 10,
+        "hasPose": false,
+        "finitePose": null,
+        "timestampPresent": false
+      },
+      {
+        "frame": 23,
+        "accepted": true,
+        "busyDrop": null,
+        "roundTripMs": 3.7949999570846558,
+        "initialized": false,
+        "status": 1,
+        "features": 102,
+        "imuCount": 10,
+        "hasPose": false,
+        "finitePose": null,
+        "timestampPresent": false
+      },
+      {
+        "frame": 24,
+        "accepted": true,
+        "busyDrop": null,
+        "roundTripMs": 3.7800000309944153,
+        "initialized": false,
+        "status": 1,
+        "features": 102,
+        "imuCount": 10,
+        "hasPose": false,
+        "finitePose": null,
+        "timestampPresent": false
+      },
+      {
+        "frame": 25,
+        "accepted": true,
+        "busyDrop": null,
+        "roundTripMs": 3.060000002384186,
+        "initialized": false,
+        "status": 1,
+        "features": 102,
+        "imuCount": 10,
+        "hasPose": false,
+        "finitePose": null,
+        "timestampPresent": false
+      },
+      {
+        "frame": 26,
+        "accepted": true,
+        "busyDrop": null,
+        "roundTripMs": 2.550000011920929,
+        "initialized": false,
+        "status": 1,
+        "features": 102,
+        "imuCount": 10,
+        "hasPose": false,
+        "finitePose": null,
+        "timestampPresent": false
+      },
+      {
+        "frame": 27,
+        "accepted": true,
+        "busyDrop": null,
+        "roundTripMs": 2.5300000309944153,
+        "initialized": false,
+        "status": 1,
+        "features": 103,
+        "imuCount": 10,
+        "hasPose": false,
+        "finitePose": null,
+        "timestampPresent": false
+      },
+      {
+        "frame": 28,
+        "accepted": true,
+        "busyDrop": null,
+        "roundTripMs": 2.459999978542328,
+        "initialized": false,
+        "status": 1,
+        "features": 103,
+        "imuCount": 10,
+        "hasPose": false,
+        "finitePose": null,
+        "timestampPresent": false
+      },
+      {
+        "frame": 29,
+        "accepted": true,
+        "busyDrop": null,
+        "roundTripMs": 2.6200000047683716,
+        "initialized": false,
+        "status": 1,
+        "features": 104,
+        "imuCount": 10,
+        "hasPose": false,
+        "finitePose": null,
+        "timestampPresent": false
+      },
+      {
+        "frame": 30,
+        "accepted": true,
+        "busyDrop": null,
+        "roundTripMs": 2.625,
+        "initialized": false,
+        "status": 1,
+        "features": 98,
+        "imuCount": 10,
+        "hasPose": false,
+        "finitePose": null,
+        "timestampPresent": false
+      },
+      {
+        "frame": 31,
+        "accepted": true,
+        "busyDrop": null,
+        "roundTripMs": 2.439999997615814,
+        "initialized": false,
+        "status": 1,
+        "features": 98,
+        "imuCount": 10,
+        "hasPose": false,
+        "finitePose": null,
+        "timestampPresent": false
+      },
+      {
+        "frame": 32,
+        "accepted": true,
+        "busyDrop": null,
+        "roundTripMs": 2.475000023841858,
+        "initialized": false,
+        "status": 1,
+        "features": 104,
+        "imuCount": 10,
+        "hasPose": false,
+        "finitePose": null,
+        "timestampPresent": false
+      },
+      {
+        "frame": 33,
+        "accepted": true,
+        "busyDrop": null,
+        "roundTripMs": 2.584999978542328,
+        "initialized": false,
+        "status": 1,
+        "features": 104,
+        "imuCount": 10,
+        "hasPose": false,
+        "finitePose": null,
+        "timestampPresent": false
+      },
+      {
+        "frame": 34,
+        "accepted": true,
+        "busyDrop": null,
+        "roundTripMs": 2.4700000286102295,
+        "initialized": false,
+        "status": 1,
+        "features": 104,
+        "imuCount": 10,
+        "hasPose": false,
+        "finitePose": null,
+        "timestampPresent": false
+      },
+      {
+        "frame": 35,
+        "accepted": true,
+        "busyDrop": null,
+        "roundTripMs": 2.5199999809265137,
+        "initialized": false,
+        "status": 1,
+        "features": 104,
+        "imuCount": 10,
+        "hasPose": false,
+        "finitePose": null,
+        "timestampPresent": false
+      },
+      {
+        "frame": 36,
+        "accepted": true,
+        "busyDrop": null,
+        "roundTripMs": 2.490000009536743,
+        "initialized": false,
+        "status": 1,
+        "features": 104,
+        "imuCount": 10,
+        "hasPose": false,
+        "finitePose": null,
+        "timestampPresent": false
+      },
+      {
+        "frame": 37,
+        "accepted": true,
+        "busyDrop": null,
+        "roundTripMs": 2.5800000429153442,
+        "initialized": false,
+        "status": 1,
+        "features": 104,
+        "imuCount": 10,
+        "hasPose": false,
+        "finitePose": null,
+        "timestampPresent": false
+      },
+      {
+        "frame": 38,
+        "accepted": true,
+        "busyDrop": null,
+        "roundTripMs": 2.7049999833106995,
+        "initialized": false,
+        "status": 1,
+        "features": 104,
+        "imuCount": 10,
+        "hasPose": false,
+        "finitePose": null,
+        "timestampPresent": false
+      },
+      {
+        "frame": 39,
+        "accepted": true,
+        "busyDrop": null,
+        "roundTripMs": 2.6800000071525574,
+        "initialized": false,
+        "status": 1,
+        "features": 104,
+        "imuCount": 10,
+        "hasPose": false,
+        "finitePose": null,
+        "timestampPresent": false
+      },
+      {
+        "frame": 40,
+        "accepted": true,
+        "busyDrop": null,
+        "roundTripMs": 2.4850000143051147,
+        "initialized": false,
+        "status": 1,
+        "features": 93,
+        "imuCount": 10,
+        "hasPose": false,
+        "finitePose": null,
+        "timestampPresent": false
+      },
+      {
+        "frame": 41,
+        "accepted": true,
+        "busyDrop": null,
+        "roundTripMs": 2.3450000286102295,
+        "initialized": false,
+        "status": 1,
+        "features": 93,
+        "imuCount": 10,
+        "hasPose": false,
+        "finitePose": null,
+        "timestampPresent": false
+      },
+      {
+        "frame": 42,
+        "accepted": true,
+        "busyDrop": null,
+        "roundTripMs": 2.435000002384186,
+        "initialized": false,
+        "status": 1,
+        "features": 99,
+        "imuCount": 10,
+        "hasPose": false,
+        "finitePose": null,
+        "timestampPresent": false
+      },
+      {
+        "frame": 43,
+        "accepted": true,
+        "busyDrop": null,
+        "roundTripMs": 2.3550000190734863,
+        "initialized": false,
+        "status": 1,
+        "features": 99,
+        "imuCount": 10,
+        "hasPose": false,
+        "finitePose": null,
+        "timestampPresent": false
+      },
+      {
+        "frame": 44,
+        "accepted": true,
+        "busyDrop": null,
+        "roundTripMs": 2.375,
+        "initialized": false,
+        "status": 1,
+        "features": 99,
+        "imuCount": 10,
+        "hasPose": false,
+        "finitePose": null,
+        "timestampPresent": false
+      },
+      {
+        "frame": 45,
+        "accepted": true,
+        "busyDrop": null,
+        "roundTripMs": 2.424999952316284,
+        "initialized": false,
+        "status": 1,
+        "features": 99,
+        "imuCount": 10,
+        "hasPose": false,
+        "finitePose": null,
+        "timestampPresent": false
+      },
+      {
+        "frame": 46,
+        "accepted": true,
+        "busyDrop": null,
+        "roundTripMs": 2.4950000047683716,
+        "initialized": false,
+        "status": 1,
+        "features": 99,
+        "imuCount": 10,
+        "hasPose": false,
+        "finitePose": null,
+        "timestampPresent": false
+      },
+      {
+        "frame": 47,
+        "accepted": true,
+        "busyDrop": null,
+        "roundTripMs": 2.4200000166893005,
+        "initialized": false,
+        "status": 1,
+        "features": 99,
+        "imuCount": 10,
+        "hasPose": false,
+        "finitePose": null,
+        "timestampPresent": false
+      },
+      {
+        "frame": 48,
+        "accepted": true,
+        "busyDrop": null,
+        "roundTripMs": 2.4149999618530273,
+        "initialized": false,
+        "status": 1,
+        "features": 99,
+        "imuCount": 10,
+        "hasPose": false,
+        "finitePose": null,
+        "timestampPresent": false
+      },
+      {
+        "frame": 49,
+        "accepted": true,
+        "busyDrop": null,
+        "roundTripMs": 2.490000009536743,
+        "initialized": false,
+        "status": 1,
+        "features": 99,
+        "imuCount": 10,
+        "hasPose": false,
+        "finitePose": null,
+        "timestampPresent": false
+      },
+      {
+        "frame": 50,
+        "accepted": true,
+        "busyDrop": null,
+        "roundTripMs": 2.540000021457672,
+        "initialized": false,
+        "status": 1,
+        "features": 93,
+        "imuCount": 10,
+        "hasPose": false,
+        "finitePose": null,
+        "timestampPresent": false
+      },
+      {
+        "frame": 51,
+        "accepted": true,
+        "busyDrop": null,
+        "roundTripMs": 2.334999978542328,
+        "initialized": false,
+        "status": 1,
+        "features": 93,
+        "imuCount": 10,
+        "hasPose": false,
+        "finitePose": null,
+        "timestampPresent": false
+      },
+      {
+        "frame": 52,
+        "accepted": true,
+        "busyDrop": null,
+        "roundTripMs": 2.3799999952316284,
+        "initialized": false,
+        "status": 1,
+        "features": 98,
+        "imuCount": 10,
+        "hasPose": false,
+        "finitePose": null,
+        "timestampPresent": false
+      },
+      {
+        "frame": 53,
+        "accepted": true,
+        "busyDrop": null,
+        "roundTripMs": 2.3600000143051147,
+        "initialized": false,
+        "status": 1,
+        "features": 98,
+        "imuCount": 10,
+        "hasPose": false,
+        "finitePose": null,
+        "timestampPresent": false
+      },
+      {
+        "frame": 54,
+        "accepted": true,
+        "busyDrop": null,
+        "roundTripMs": 2.3700000047683716,
+        "initialized": false,
+        "status": 1,
+        "features": 98,
+        "imuCount": 10,
+        "hasPose": false,
+        "finitePose": null,
+        "timestampPresent": false
+      },
+      {
+        "frame": 55,
+        "accepted": true,
+        "busyDrop": null,
+        "roundTripMs": 2.384999990463257,
+        "initialized": false,
+        "status": 1,
+        "features": 98,
+        "imuCount": 10,
+        "hasPose": false,
+        "finitePose": null,
+        "timestampPresent": false
+      },
+      {
+        "frame": 56,
+        "accepted": true,
+        "busyDrop": null,
+        "roundTripMs": 2.3450000286102295,
+        "initialized": false,
+        "status": 1,
+        "features": 98,
+        "imuCount": 10,
+        "hasPose": false,
+        "finitePose": null,
+        "timestampPresent": false
+      },
+      {
+        "frame": 57,
+        "accepted": true,
+        "busyDrop": null,
+        "roundTripMs": 2.439999997615814,
+        "initialized": false,
+        "status": 1,
+        "features": 98,
+        "imuCount": 10,
+        "hasPose": false,
+        "finitePose": null,
+        "timestampPresent": false
+      },
+      {
+        "frame": 58,
+        "accepted": true,
+        "busyDrop": null,
+        "roundTripMs": 2.4700000286102295,
+        "initialized": false,
+        "status": 1,
+        "features": 98,
+        "imuCount": 10,
+        "hasPose": false,
+        "finitePose": null,
+        "timestampPresent": false
+      },
+      {
+        "frame": 59,
+        "accepted": true,
+        "busyDrop": null,
+        "roundTripMs": 2.5149999856948853,
+        "initialized": false,
+        "status": 1,
+        "features": 99,
+        "imuCount": 10,
+        "hasPose": false,
+        "finitePose": null,
+        "timestampPresent": false
+      }
+    ],
+    "parameterResults": {
+      "setMobileParams": true,
+      "setFThreshold": true,
+      "setTrackingParams": true,
+      "setPnPParams": true
+    },
+    "loadMs": 54.310000002384186,
+    "configured": true,
+    "mainThreadTicks": 41,
+    "invalidImageStatus": 3,
+    "frameGapStatus": 1,
+    "mapPointCount": 0,
+    "classicWorkerBuild": {
+      "loaded": false,
+      "error": "VIOWasmFactory is not a function"
+    },
+    "roundTripMs": {
+      "p50": 2.584999978542328,
+      "p95": 4.320000052452087,
+      "p99": 13.245000004768372,
+      "max": 13.245000004768372
+    },
+    "initializedFrames": 0,
+    "poseFrames": 0,
+    "console": [
+      {
+        "type": "log",
+        "text": "[VIO Worker] Frame #0: imuCount=10, t=1.000"
+      },
+      {
+        "type": "log",
+        "text": "[VIO Worker] processFrame: 12.6ms"
+      },
+      {
+        "type": "log",
+        "text": "[VIO Worker] Frame #1: imuCount=10, t=1.050"
+      },
+      {
+        "type": "log",
+        "text": "[VIO Worker] processFrame: 4.2ms"
+      },
+      {
+        "type": "log",
+        "text": "[VIO Worker] Frame #2: imuCount=10, t=1.100"
+      },
+      {
+        "type": "log",
+        "text": "[VIO Worker] processFrame: 3.1ms"
+      },
+      {
+        "type": "log",
+        "text": "[VIO Worker] Frame #3: imuCount=10, t=1.150"
+      },
+      {
+        "type": "log",
+        "text": "[VIO Worker] processFrame: 2.5ms"
+      },
+      {
+        "type": "log",
+        "text": "[VIO Worker] Frame #4: imuCount=10, t=1.200"
+      },
+      {
+        "type": "log",
+        "text": "[VIO Worker] processFrame: 2.4ms"
+      },
+      {
+        "type": "log",
+        "text": "[VIO Worker] Frame #5: imuCount=10, t=1.250"
+      },
+      {
+        "type": "log",
+        "text": "[VIO Worker] processFrame: 2.6ms"
+      },
+      {
+        "type": "log",
+        "text": "[VIO Worker] Frame #6: imuCount=10, t=1.300"
+      },
+      {
+        "type": "log",
+        "text": "[VIO Worker] processFrame: 2.7ms"
+      },
+      {
+        "type": "log",
+        "text": "[VIO Worker] Frame #7: imuCount=10, t=1.350"
+      },
+      {
+        "type": "log",
+        "text": "[VIO Worker] processFrame: 2.6ms"
+      },
+      {
+        "type": "log",
+        "text": "[VIO Worker] Frame #8: imuCount=10, t=1.400"
+      },
+      {
+        "type": "log",
+        "text": "[VIO Worker] processFrame: 2.5ms"
+      },
+      {
+        "type": "log",
+        "text": "[VIO Worker] Frame #9: imuCount=10, t=1.450"
+      },
+      {
+        "type": "log",
+        "text": "[VIO Worker] processFrame: 2.6ms"
+      },
+      {
+        "type": "log",
+        "text": "[VIO Worker] processFrame: 2.7ms"
+      },
+      {
+        "type": "log",
+        "text": "[VIO Worker] processFrame: 2.6ms"
+      },
+      {
+        "type": "log",
+        "text": "[VIO Worker] processFrame: 2.6ms"
+      },
+      {
+        "type": "log",
+        "text": "[VIO Worker] processFrame: 2.6ms"
+      },
+      {
+        "type": "log",
+        "text": "[VIO Worker] processFrame: 2.7ms"
+      },
+      {
+        "type": "log",
+        "text": "[VIO Worker] processFrame: 2.8ms"
+      },
+      {
+        "type": "log",
+        "text": "[VIO Worker] processFrame: 3.3ms"
+      },
+      {
+        "type": "log",
+        "text": "[VIO Worker] processFrame: 2.7ms"
+      },
+      {
+        "type": "log",
+        "text": "[VIO Worker] processFrame: 2.6ms"
+      },
+      {
+        "type": "log",
+        "text": "[VIO Worker] processFrame: 2.7ms"
+      },
+      {
+        "type": "log",
+        "text": "[VIO Worker] processFrame: 3.6ms"
+      },
+      {
+        "type": "log",
+        "text": "[VIO Worker] processFrame: 3.4ms"
+      },
+      {
+        "type": "log",
+        "text": "[VIO Worker] processFrame: 3.5ms"
+      },
+      {
+        "type": "log",
+        "text": "[VIO Worker] processFrame: 3.6ms"
+      },
+      {
+        "type": "log",
+        "text": "[VIO Worker] processFrame: 3.6ms"
+      },
+      {
+        "type": "log",
+        "text": "[VIO Worker] processFrame: 2.9ms"
+      },
+      {
+        "type": "log",
+        "text": "[VIO Worker] processFrame: 2.4ms"
+      },
+      {
+        "type": "log",
+        "text": "[VIO Worker] processFrame: 2.5ms"
+      },
+      {
+        "type": "log",
+        "text": "[VIO Worker] processFrame: 2.4ms"
+      },
+      {
+        "type": "log",
+        "text": "[VIO Worker] processFrame: 2.5ms"
+      },
+      {
+        "type": "log",
+        "text": "[VIO Worker] processFrame: 2.5ms"
+      },
+      {
+        "type": "log",
+        "text": "[VIO Worker] processFrame: 2.4ms"
+      },
+      {
+        "type": "log",
+        "text": "[VIO Worker] processFrame: 2.4ms"
+      },
+      {
+        "type": "log",
+        "text": "[VIO Worker] processFrame: 2.5ms"
+      },
+      {
+        "type": "log",
+        "text": "[VIO Worker] processFrame: 2.4ms"
+      },
+      {
+        "type": "log",
+        "text": "[VIO Worker] processFrame: 2.4ms"
+      },
+      {
+        "type": "log",
+        "text": "[VIO Worker] processFrame: 2.4ms"
+      },
+      {
+        "type": "log",
+        "text": "[VIO Worker] processFrame: 2.5ms"
+      },
+      {
+        "type": "log",
+        "text": "[VIO Worker] processFrame: 2.6ms"
+      },
+      {
+        "type": "log",
+        "text": "[VIO Worker] processFrame: 2.5ms"
+      },
+      {
+        "type": "log",
+        "text": "[VIO Worker] processFrame: 2.4ms"
+      },
+      {
+        "type": "log",
+        "text": "[VIO Worker] processFrame: 2.3ms"
+      },
+      {
+        "type": "log",
+        "text": "[VIO Worker] processFrame: 2.4ms"
+      },
+      {
+        "type": "log",
+        "text": "[VIO Worker] processFrame: 2.3ms"
+      },
+      {
+        "type": "log",
+        "text": "[VIO Worker] processFrame: 2.3ms"
+      },
+      {
+        "type": "log",
+        "text": "[VIO Worker] processFrame: 2.3ms"
+      },
+      {
+        "type": "log",
+        "text": "[VIO Worker] processFrame: 2.4ms"
+      },
+      {
+        "type": "log",
+        "text": "[VIO Worker] processFrame: 2.3ms"
+      },
+      {
+        "type": "log",
+        "text": "[VIO Worker] processFrame: 2.4ms"
+      },
+      {
+        "type": "log",
+        "text": "[VIO Worker] processFrame: 2.4ms"
+      },
+      {
+        "type": "log",
+        "text": "[VIO Worker] processFrame: 2.5ms"
+      },
+      {
+        "type": "log",
+        "text": "[VIO Worker] processFrame: 2.3ms"
+      },
+      {
+        "type": "log",
+        "text": "[VIO Worker] processFrame: 2.3ms"
+      },
+      {
+        "type": "log",
+        "text": "[VIO Worker] processFrame: 2.3ms"
+      },
+      {
+        "type": "log",
+        "text": "[VIO Worker] processFrame: 2.3ms"
+      },
+      {
+        "type": "log",
+        "text": "[VIO Worker] processFrame: 2.3ms"
+      },
+      {
+        "type": "log",
+        "text": "[VIO Worker] processFrame: 2.3ms"
+      },
+      {
+        "type": "log",
+        "text": "[VIO Worker] processFrame: 2.4ms"
+      },
+      {
+        "type": "log",
+        "text": "[VIO Worker] processFrame: 2.4ms"
+      },
+      {
+        "type": "log",
+        "text": "[VIO Worker] processFrame: 2.4ms"
+      },
+      {
+        "type": "error",
+        "text": "[VIO Worker] Image size mismatch: got 4 bytes, expected 76800 (320x240)"
+      },
+      {
+        "type": "warning",
+        "text": "[VIO Worker] Frame gap 3.00s > 1.5s — resetting VIO"
+      }
+    ]
+  },
+  "pages": [
+    {
+      "pathname": "/",
+      "ready": true,
+      "status": "WASM loaded. Ready to start.",
+      "console": [
+        {
+          "type": "log",
+          "text": "[VIO] Loading WASM module..."
+        },
+        {
+          "type": "log",
+          "text": "Loading WASM: vio_engine.js"
+        },
+        {
+          "type": "log",
+          "text": "[VIO] WASM loaded. Ready to start."
+        },
+        {
+          "type": "warning",
+          "text": "[.WebGL-0x25ec000e8e00]GL Driver Message (OpenGL, Performance, GL_CLOSE_PATH_NV, High): GPU stall due to ReadPixels"
+        }
+      ]
+    },
+    {
+      "pathname": "/test-tumvi.html",
+      "ready": true,
+      "status": "WASM loaded. Click Start to begin.",
+      "afterStart": "Error: No IMU data found in imu0/data.csv",
+      "console": [
+        {
+          "type": "log",
+          "text": "[TUM-VI] 3D Renderer: WEBGL backend"
+        },
+        {
+          "type": "log",
+          "text": "[TUM-VI] Initializing WASM VIO engine..."
+        },
+        {
+          "type": "log",
+          "text": "[TUM-VI] Loading WASM: vio_engine.js"
+        },
+        {
+          "type": "warning",
+          "text": "[.WebGL-0x25ec000ebe00]GL Driver Message (OpenGL, Performance, GL_CLOSE_PATH_NV, High): GPU stall due to ReadPixels"
+        },
+        {
+          "type": "log",
+          "text": "[TUM-VI] WASM module loaded successfully."
+        },
+        {
+          "type": "log",
+          "text": "[TUM-VI] Fetching TUM VI dataset CSV files..."
+        },
+        {
+          "type": "error",
+          "text": "Failed to load resource: the server responded with a status of 404 (Not Found)"
+        },
+        {
+          "type": "error",
+          "text": "Failed to load resource: the server responded with a status of 404 (Not Found)"
+        },
+        {
+          "type": "error",
+          "text": "Failed to load resource: the server responded with a status of 404 (Not Found)"
+        },
+        {
+          "type": "log",
+          "text": "[TUM-VI] ERROR: No IMU data found in imu0/data.csv"
+        },
+        {
+          "type": "error",
+          "text": "[TUM-VI] ERROR: No IMU data found in imu0/data.csv"
+        },
+        {
+          "type": "error",
+          "text": "Error: No IMU data found in imu0/data.csv\n    at TUMVITestApp.start (http://127.0.0.1:37067/js/test-tumvi-app.js:471:46)"
+        }
+      ]
+    }
+  ]
+}

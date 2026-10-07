@@ -1,0 +1,108 @@
+{
+  "startedAt": "2026-10-06T07:34:35.611Z",
+  "servers": [
+    {
+      "name": "playwright",
+      "status": "VERIFIED",
+      "calls": [
+        {
+          "name": "browser_navigate",
+          "isError": false,
+          "text": "### Ran Playwright code\n```js\nawait page.goto('http://127.0.0.1:36611/');\n```\n### Page\n- Page URL: http://127.0.0.1:36611/\n- Page Title: Mobile SLAM MCP probe\n### Snapshot\n- [Snapshot](build/dev-tools/playwright/page-2026-10-06T07-34-35-970Z.yml)",
+          "characters": 246
+        },
+        {
+          "name": "browser_snapshot",
+          "isError": false,
+          "text": "### Page\n- Page URL: http://127.0.0.1:36611/\n- Page Title: Mobile SLAM MCP probe\n### Snapshot\n```yaml\n- main [ref=e2]:\n  - heading \"Mobile SLAM MCP probe\" [level=1] [ref=e3]\n  - paragraph [ref=e4]: Local read-only fixture\n```",
+          "characters": 225
+        },
+        {
+          "name": "browser_close",
+          "isError": false,
+          "text": "### Result\nNo open tabs. Navigate to a URL to create one.\n### Ran Playwright code\n```js\nawait page.close()\n```",
+          "characters": 110
+        }
+      ],
+      "server": {
+        "name": "Playwright",
+        "version": "1.64.0-alpha-1790635538000"
+      },
+      "tools": [
+        "browser_close",
+        "browser_resize",
+        "browser_console_messages",
+        "browser_resume",
+        "browser_highlight",
+        "browser_hide_highlight",
+        "browser_annotate",
+        "browser_handle_dialog",
+        "browser_emulate_media",
+        "browser_evaluate",
+        "browser_file_upload",
+        "browser_drop",
+        "browser_find",
+        "browser_fill_form",
+        "browser_press_key",
+        "browser_type",
+        "browser_navigate",
+        "browser_navigate_back",
+        "browser_network_requests",
+        "browser_network_request",
+        "browser_start_recording",
+        "browser_stop_recording",
+        "browser_run_code_unsafe",
+        "browser_take_screenshot",
+        "browser_snapshot",
+        "browser_click",
+        "browser_drag",
+        "browser_hover",
+        "browser_select_option",
+        "browser_tabs",
+        "browser_start_tracing",
+        "browser_stop_tracing",
+        "browser_start_video",
+        "browser_stop_video",
+        "browser_video_chapter",
+        "browser_video_show_actions",
+        "browser_video_hide_actions",
+        "browser_wait_for"
+      ]
+    },
+    {
+      "name": "context7",
+      "status": "VERIFIED",
+      "calls": [
+        {
+          "name": "resolve-library-id",
+          "isError": false,
+          "text": "Available Libraries:\n\n- Title: Emscripten\n- Context7-compatible library ID: /websites/emscripten\n- Description: Emscripten is a complete compiler toolchain to WebAssembly, using LLVM, with a special focus on speed, size, and the Web platform. It allows porting C/C++ projects to browsers, Node.js, or wasm runtimes.\n- Code Snippets: 2346\n- Source Reputation: High\n- Benchmark Score: 71.26\n----------\n- Title: Emscripten\n- Context7-compatible library ID: /emscripten-core/emscripten\n- Description: Emscripten is a compiler that converts C and C++ code to WebAssembly, enabling complex applications to run on the web, Node.js, and WebAssembly runtimes.\n- Code Snippets: 6007\n- Source Reputation: High\n- Benchmark Score: 74.26\n----------\n- Title: Emscripten SDK\n- Context7-compatible library ID: /emscripten-core/emsdk\n- Description: Emscripten SDK is a standalone toolchain that compiles C and C++ to WebAssembly, providing all required tools including Clang, Python, and Node.js with an update mechanism for version management.\n- Code Snippets: 412\n- Source Reputation: High\n- Benchmark Score: 80.64",
+          "characters": 1098
+        },
+        {
+          "name": "query-docs",
+          "isError": false,
+          "text": "### Using WebAssembly SIMD Intrinsics with wasm_simd128.h\n\nSource: https://github.com/emscripten-core/emscripten/blob/main/site/source/docs/porting/simd.rst\n\nExample demonstrating the use of v128_t types and wasm_f32x4 intrinsics. The code is wrapped in a __wasm_simd128__ preprocessor check to ensure compatibility.\n\n```cpp\n#include <wasm_simd128.h>\n#include <stdio.h>\n\nint main() {\n#ifdef __wasm_simd128__\n  v128_t v1 = wasm_f32x4_make(1.2f, 3.4f, 5.6f, 7.8f);\n  v128_t v2 = wasm_f32x4_make(2.1f, 4.3f, 6.5f, 8.7f);\n  v128_t v3 = wasm_f32x4_add(v1, v2);\n  // Prints \"v3: [3.3, 7.7, 12.1, 16.5]\"\n  printf(\"v3: [%.1f, %.1f, %.1f, %.1f]\\n\",\n         wasm_f32x4_extract_lane(v3, 0),\n         wasm_f32x4_extract_lane(v3, 1),\n         wasm_f32x4_extract_lane(v3, 2),\n         wasm_f32x4_extract_lane(v3, 3));\n#endif\n}\n```\n\n--------------------------------\n\n### Enable WASM_SIMD_COMPAT_SLOW diagnostics\n\nSource: https://github.com/emscripten-core/emscripten/blob/main/site/source/docs/porting/simd.rst\n\nDefine this macro to print warnings when the compiler uses slow emulated paths for SSE intrinsics.\n\n```cpp\n#define WASM_SIMD_COMPAT_SLOW\n```\n\n### Settings Reference > GROWABLE_ARRAYBUFFERS\n\nSource: https://github.com/emscripten-core/emscripten/blob/main/site/source/docs/tools_reference/settings_reference.rst\n\nEnable support for growable views of Wasm memory. This is a recent Web platform feature that can make growing the Wasm memory more efficient, especially in multi-threaded builds. Setting this to 1 will auto-detect the presence of this API and use it when available. Setting this to 2 will unconditionally require it. This is the only way to completely remove the overhead of growable memory + pthreads. This settings does nothing unless ALLOW_MEMORY_GROWTH is set. Default value: 0\n\n--------------------------------\n\n### ALLOW_MEMORY_GROWTH\n\nSource: https://github.com/emscripten-core/emscripten/blob/main/site/source/docs/tools_reference/settings_reference.rst\n\nALLOW_MEMORY_GROWTH\n\nIf false, we abort with an error if we try to allocate more memory than\nwe can (INITIAL_MEMORY). If true, we will grow the memory arrays at\nruntime, seamlessly and dynamically.\nSee [https://code.google.com/p/v8/issues/detail?id=3907](https://code.google.com/p/v8/issues/detail?id=3907) regarding\nmemory growth performance in chrome.\nNote that growing memory means we replace the JS typed array views, as\nonc",
+          "characters": 3851
+        }
+      ],
+      "server": {
+        "name": "Context7",
+        "icons": [
+          {
+            "src": "https://context7.com/context7-icon-green.png",
+            "mimeType": "image/png"
+          }
+        ],
+        "version": "4.1.1",
+        "websiteUrl": "https://context7.com",
+        "description": "Context7 provides up-to-date documentation and code examples for libraries and frameworks."
+      },
+      "tools": [
+        "resolve-library-id",
+        "query-docs"
+      ]
+    }
+  ],
+  "finishedAt": "2026-10-06T07:34:40.736Z"
+}

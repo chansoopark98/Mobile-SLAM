@@ -6,6 +6,8 @@
 #include <unordered_map>
 #include <functional>
 #include <mutex>
+#include <vector>
+#include <type_traits>
 #include "utility/config.h"
 
 namespace config {
@@ -152,7 +154,7 @@ T ConfigManager::getParameter(const std::string& key, const T& default_value) co
 
 template<typename T>
 void ConfigManager::setParameter(const std::string& key, const T& value) {
-    std::lock_guard<std::mutex> lock(config_mutex_);
+    std::unique_lock<std::mutex> lock(config_mutex_);
     
     if (!config_) {
         return;
@@ -160,37 +162,37 @@ void ConfigManager::setParameter(const std::string& key, const T& value) {
     
     // Map parameter keys to config fields for setting
     if constexpr (std::is_same_v<T, int>) {
-        if (key == "frame_skip") { config_->frame_skip = value; notifyChange(key); return; }
-        if (key == "start_frame") { config_->start_frame = value; notifyChange(key); return; }
-        if (key == "end_frame") { config_->end_frame = value; notifyChange(key); return; }
-        if (key == "estimator.window_size") { config_->estimator.window_size = value; notifyChange(key); return; }
-        if (key == "estimator.num_iterations") { config_->estimator.num_iterations = value; notifyChange(key); return; }
-        if (key == "feature_tracker.max_cnt") { config_->feature_tracker.max_cnt = value; notifyChange(key); return; }
-        if (key == "feature_tracker.min_dist") { config_->feature_tracker.min_dist = value; notifyChange(key); return; }
-        if (key == "feature_tracker.window_size") { config_->feature_tracker.window_size = value; notifyChange(key); return; }
-        if (key == "feature_tracker.show_track") { config_->feature_tracker.show_track = value; notifyChange(key); return; }
-        if (key == "feature_tracker.equalize") { config_->feature_tracker.equalize = value; notifyChange(key); return; }
-        if (key == "feature_tracker.fisheye") { config_->feature_tracker.fisheye = value; notifyChange(key); return; }
+        if (key == "frame_skip") { config_->frame_skip = value; lock.unlock(); notifyChange(key); return; }
+        if (key == "start_frame") { config_->start_frame = value; lock.unlock(); notifyChange(key); return; }
+        if (key == "end_frame") { config_->end_frame = value; lock.unlock(); notifyChange(key); return; }
+        if (key == "estimator.window_size") { config_->estimator.window_size = value; lock.unlock(); notifyChange(key); return; }
+        if (key == "estimator.num_iterations") { config_->estimator.num_iterations = value; lock.unlock(); notifyChange(key); return; }
+        if (key == "feature_tracker.max_cnt") { config_->feature_tracker.max_cnt = value; lock.unlock(); notifyChange(key); return; }
+        if (key == "feature_tracker.min_dist") { config_->feature_tracker.min_dist = value; lock.unlock(); notifyChange(key); return; }
+        if (key == "feature_tracker.window_size") { config_->feature_tracker.window_size = value; lock.unlock(); notifyChange(key); return; }
+        if (key == "feature_tracker.show_track") { config_->feature_tracker.show_track = value; lock.unlock(); notifyChange(key); return; }
+        if (key == "feature_tracker.equalize") { config_->feature_tracker.equalize = value; lock.unlock(); notifyChange(key); return; }
+        if (key == "feature_tracker.fisheye") { config_->feature_tracker.fisheye = value; lock.unlock(); notifyChange(key); return; }
     }
     else if constexpr (std::is_same_v<T, double>) {
-        if (key == "camera.focal_length") { config_->camera.focal_length = value; notifyChange(key); return; }
-        if (key == "camera.fx") { config_->camera.fx = value; notifyChange(key); return; }
-        if (key == "camera.fy") { config_->camera.fy = value; notifyChange(key); return; }
-        if (key == "camera.cx") { config_->camera.cx = value; notifyChange(key); return; }
-        if (key == "camera.cy") { config_->camera.cy = value; notifyChange(key); return; }
-        if (key == "estimator.solver_time") { config_->estimator.solver_time = value; notifyChange(key); return; }
-        if (key == "estimator.min_parallax") { config_->estimator.min_parallax = value; notifyChange(key); return; }
-        if (key == "estimator.init_depth") { config_->estimator.init_depth = value; notifyChange(key); return; }
-        if (key == "estimator.acc_n") { config_->estimator.acc_n = value; notifyChange(key); return; }
-        if (key == "estimator.acc_w") { config_->estimator.acc_w = value; notifyChange(key); return; }
-        if (key == "estimator.gyr_n") { config_->estimator.gyr_n = value; notifyChange(key); return; }
-        if (key == "estimator.gyr_w") { config_->estimator.gyr_w = value; notifyChange(key); return; }
-        if (key == "feature_tracker.f_threshold") { config_->feature_tracker.f_threshold = value; notifyChange(key); return; }
+        if (key == "camera.focal_length") { config_->camera.focal_length = value; lock.unlock(); notifyChange(key); return; }
+        if (key == "camera.fx") { config_->camera.fx = value; lock.unlock(); notifyChange(key); return; }
+        if (key == "camera.fy") { config_->camera.fy = value; lock.unlock(); notifyChange(key); return; }
+        if (key == "camera.cx") { config_->camera.cx = value; lock.unlock(); notifyChange(key); return; }
+        if (key == "camera.cy") { config_->camera.cy = value; lock.unlock(); notifyChange(key); return; }
+        if (key == "estimator.solver_time") { config_->estimator.solver_time = value; lock.unlock(); notifyChange(key); return; }
+        if (key == "estimator.min_parallax") { config_->estimator.min_parallax = value; lock.unlock(); notifyChange(key); return; }
+        if (key == "estimator.init_depth") { config_->estimator.init_depth = value; lock.unlock(); notifyChange(key); return; }
+        if (key == "estimator.acc_n") { config_->estimator.acc_n = value; lock.unlock(); notifyChange(key); return; }
+        if (key == "estimator.acc_w") { config_->estimator.acc_w = value; lock.unlock(); notifyChange(key); return; }
+        if (key == "estimator.gyr_n") { config_->estimator.gyr_n = value; lock.unlock(); notifyChange(key); return; }
+        if (key == "estimator.gyr_w") { config_->estimator.gyr_w = value; lock.unlock(); notifyChange(key); return; }
+        if (key == "feature_tracker.f_threshold") { config_->feature_tracker.f_threshold = value; lock.unlock(); notifyChange(key); return; }
     }
     else if constexpr (std::is_same_v<T, std::string>) {
-        if (key == "dataset_path") { config_->dataset_path = value; notifyChange(key); return; }
-        if (key == "config_filepath") { config_->config_filepath = value; notifyChange(key); return; }
-        if (key == "feature_tracker.fisheye_mask") { config_->feature_tracker.fisheye_mask = value; notifyChange(key); return; }
+        if (key == "dataset_path") { config_->dataset_path = value; lock.unlock(); notifyChange(key); return; }
+        if (key == "config_filepath") { config_->config_filepath = value; lock.unlock(); notifyChange(key); return; }
+        if (key == "feature_tracker.fisheye_mask") { config_->feature_tracker.fisheye_mask = value; lock.unlock(); notifyChange(key); return; }
     }
 }
 

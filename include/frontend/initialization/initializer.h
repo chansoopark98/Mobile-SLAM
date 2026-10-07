@@ -26,6 +26,7 @@ public:
     bool initialize();
 
 private:
+    friend struct InitializerTestAccess;
     bool checkIMUExcitation(double threshold);
     bool solveInitialSfM();
     bool relativePose(Matrix3d& relative_R, Vector3d& relative_T, int& index);

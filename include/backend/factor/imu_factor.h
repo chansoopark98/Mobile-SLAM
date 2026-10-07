@@ -6,6 +6,7 @@
 #include <iostream>
 
 #include "integration_base.h"
+#include "covariance_whitening.h"
 #include "utility/config.h"
 #include "utility/utility.h"
 
@@ -15,8 +16,17 @@ namespace factor {
 class IMUFactor : public ceres::SizedCostFunction<15, 7, 9, 7, 9> {
 public:
     IMUFactor() = delete;
-    IMUFactor(IntegrationBase* _pre_integration) : pre_integration(_pre_integration) {}
+    explicit IMUFactor(IntegrationBase* _pre_integration) : pre_integration(_pre_integration) {
+        valid_ = pre_integration && pre_integration->hasUsableInterval() &&
+                 covarianceWhitening(pre_integration->covariance, sqrt_info_);
+    }
+    bool isValid() const { return valid_; }
     virtual bool Evaluate(double const* const* parameters, double* residuals, double** jacobians) const {
+        if (!valid_) return false;
+        const int sizes[] = {7, 9, 7, 9};
+        for (int i = 0; i < 4; ++i)
+            for (int j = 0; j < sizes[i]; ++j)
+                if (!std::isfinite(parameters[i][j])) return false;
         Eigen::Vector3d Pi(parameters[0][0], parameters[0][1], parameters[0][2]);
         Eigen::Quaterniond Qi(parameters[0][6], parameters[0][3], parameters[0][4], parameters[0][5]);
 
@@ -34,10 +44,9 @@ public:
         Eigen::Map<Eigen::Matrix<double, 15, 1>> residual(residuals);
         residual = pre_integration->evaluate(Pi, Qi, Vi, Bai, Bgi, Pj, Qj, Vj, Baj, Bgj);
 
-        Eigen::Matrix<double, 15, 15> sqrt_info =
-            Eigen::LLT<Eigen::Matrix<double, 15, 15>>(pre_integration->covariance.inverse()).matrixL().transpose();
-
+        const auto& sqrt_info = sqrt_info_;
         residual = sqrt_info * residual;
+        if (!residual.allFinite()) return false;
 
         if (jacobians) {
             double sum_dt = pre_integration->sum_dt;
@@ -48,6 +57,10 @@ public:
 
             Eigen::Matrix3d dv_dba = pre_integration->jacobian.template block<3, 3>(O_V, O_BA);
             Eigen::Matrix3d dv_dbg = pre_integration->jacobian.template block<3, 3>(O_V, O_BG);
+            const Eigen::Quaterniond corrected_delta_q =
+                pre_integration->delta_q * Utility::deltaQ(dq_dbg * (Bgi - pre_integration->linearized_bg));
+            const double orientation_sign = IntegrationBase::canonicalOrientationErrorSign(
+                corrected_delta_q.inverse() * (Qi.inverse() * Qj));
 
             if (pre_integration->jacobian.maxCoeff() > 1e8 || pre_integration->jacobian.minCoeff() < -1e8) {
 #ifndef NDEBUG
@@ -63,10 +76,9 @@ public:
                 jacobian_pose_i.block<3, 3>(O_P, O_R) = Utility::skewSymmetric(
                     Qi.inverse() * (0.5 * g_config.estimator.g * sum_dt * sum_dt + Pj - Pi - Vi * sum_dt));
 
-                Eigen::Quaterniond corrected_delta_q =
-                    pre_integration->delta_q * Utility::deltaQ(dq_dbg * (Bgi - pre_integration->linearized_bg));
                 jacobian_pose_i.block<3, 3>(O_R, O_R) =
                     -(Utility::Qleft(Qj.inverse() * Qi) * Utility::Qright(corrected_delta_q)).bottomRightCorner<3, 3>();
+                jacobian_pose_i.block<3, 3>(O_R, O_R) *= orientation_sign;
 
                 jacobian_pose_i.block<3, 3>(O_V, O_R) =
                     Utility::skewSymmetric(Qi.inverse() * (g_config.estimator.g * sum_dt + Vj - Vi));
@@ -88,6 +100,7 @@ public:
 
                 jacobian_speedbias_i.block<3, 3>(O_R, O_BG - O_V) =
                     -Utility::Qleft(Qj.inverse() * Qi * pre_integration->delta_q).bottomRightCorner<3, 3>() * dq_dbg;
+                jacobian_speedbias_i.block<3, 3>(O_R, O_BG - O_V) *= orientation_sign;
 
                 jacobian_speedbias_i.block<3, 3>(O_V, O_V - O_V) = -Qi.inverse().toRotationMatrix();
                 jacobian_speedbias_i.block<3, 3>(O_V, O_BA - O_V) = -dv_dba;
@@ -105,10 +118,9 @@ public:
 
                 jacobian_pose_j.block<3, 3>(O_P, O_P) = Qi.inverse().toRotationMatrix();
 
-                Eigen::Quaterniond corrected_delta_q =
-                    pre_integration->delta_q * Utility::deltaQ(dq_dbg * (Bgi - pre_integration->linearized_bg));
                 jacobian_pose_j.block<3, 3>(O_R, O_R) =
                     Utility::Qleft(corrected_delta_q.inverse() * Qi.inverse() * Qj).bottomRightCorner<3, 3>();
+                jacobian_pose_j.block<3, 3>(O_R, O_R) *= orientation_sign;
 
                 jacobian_pose_j = sqrt_info * jacobian_pose_j;
             }
@@ -126,10 +138,19 @@ public:
             }
         }
 
+        if (jacobians) {
+            for (int block = 0; block < 4; ++block)
+                if (jacobians[block] && !Eigen::Map<const Eigen::VectorXd>(jacobians[block], 15 * sizes[block]).allFinite())
+                    return false;
+        }
         return true;
     }
 
     IntegrationBase* pre_integration;
+
+private:
+    Eigen::Matrix<double, 15, 15> sqrt_info_;
+    bool valid_ = false;
 };
 
 }  // namespace factor

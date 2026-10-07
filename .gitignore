@@ -70,3 +70,10 @@ data/KITTI360/*/
 
 # debug information files
 *.dwo
+
+# Isolated development tooling and audit outputs
+scripts/dev/node_modules/
+scripts/dev/tools/
+scripts/dev/.venv/
+__pycache__/
+.omx/

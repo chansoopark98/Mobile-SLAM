@@ -1,0 +1,235 @@
+[1/194] Building CXX object CMakeFiles/pose_local_parameterization.dir/src/backend/factor/pose_local_parameterization.cpp.o
+[2/194] Building CXX object CMakeFiles/utility.dir/src/utility/config.cpp.o
+[3/194] Building CXX object CMakeFiles/utility.dir/src/utility/utility.cpp.o
+[4/194] Linking CXX static library libutility.a
+[5/194] Building CXX object CMakeFiles/perspective_factor.dir/src/backend/factor/perspective_factor.cpp.o
+[6/194] Building CXX object CMakeFiles/projection_factor.dir/src/backend/factor/projection_factor.cpp.o
+[7/194] Building CXX object CMakeFiles/marginalization_factor.dir/src/backend/factor/marginalization_factor.cpp.o
+[8/194] Building CXX object CMakeFiles/failure_detector.dir/src/frontend/failure_detector.cpp.o
+[9/194] Building CXX object CMakeFiles/optimizer.dir/src/backend/optimizer.cpp.o
+[10/194] Building CXX object CMakeFiles/pnp_frontend.dir/src/frontend/pnp_frontend.cpp.o
+[11/194] Building CXX object CMakeFiles/initializer.dir/src/frontend/initialization/initializer.cpp.o
+[12/194] Building CXX object CMakeFiles/initializer.dir/src/frontend/initialization/initial_sfm.cpp.o
+[13/194] Building CXX object CMakeFiles/gpl.dir/src/common/gpl/gpl.cc.o
+[14/194] Building CXX object CMakeFiles/gpl.dir/src/common/gpl/EigenQuaternionParameterization.cc.o
+[15/194] Building CXX object CMakeFiles/camera_models.dir/src/common/camera_models/CameraFactory.cc.o
+[16/194] Building CXX object CMakeFiles/camera_models.dir/src/common/camera_models/CataCamera.cc.o
+[17/194] Building CXX object CMakeFiles/camera_models.dir/src/common/camera_models/PinholeCamera.cc.o
+[18/194] Building CXX object CMakeFiles/camera_models.dir/src/common/camera_models/Camera.cc.o
+[19/194] Building CXX object CMakeFiles/initializer.dir/src/frontend/initialization/solve_5pts.cpp.o
+[20/194] Building CXX object CMakeFiles/camera_models.dir/src/common/camera_models/ScaramuzzaCamera.cc.o
+[21/194] Building CXX object CMakeFiles/feature_tracker.dir/src/frontend/feature_tracker.cpp.o
+[22/194] Building CXX object _deps/ceres-solver-build/internal/ceres/CMakeFiles/ceres_internal.dir/array_utils.cc.o
+[23/194] Building CXX object CMakeFiles/initializer.dir/src/frontend/initialization/initial_alignment.cpp.o
+[24/194] Building CXX object CMakeFiles/camera_models.dir/src/common/camera_models/EquidistantCamera.cc.o
+[25/194] Building CXX object CMakeFiles/estimator.dir/src/common/frame.cpp.o
+[26/194] Building CXX object CMakeFiles/estimator.dir/src/backend/sliding_window.cpp.o
+[27/194] Building CXX object CMakeFiles/estimator.dir/src/backend/estimator.cpp.o
+[28/194] Building CXX object CMakeFiles/estimator.dir/src/frontend/feature_manager.cpp.o
+[29/194] Building CXX object CMakeFiles/config_manager.dir/src/config/config_manager.cpp.o
+[30/194] Linking CXX static library libconfig_manager.a
+[31/194] Building CXX object CMakeFiles/tiny_vins_mono.dir/src/utility/measurement_processor.cpp.o
+[32/194] Building CXX object CMakeFiles/vio_engine.dir/src/vio_engine.cpp.o
+[33/194] Building CXX object CMakeFiles/trajectory_evaluator.dir/src/utility/trajectory_evaluator.cpp.o
+[34/194] Linking CXX static library libtrajectory_evaluator.a
+[35/194] Building CXX object CMakeFiles/camera_models.dir/src/common/camera_models/CostFunctionFactory.cc.o
+[36/194] Building CXX object CMakeFiles/tiny_vins_mono.dir/src/utility/imu_graph_visualizer.cpp.o
+[37/194] Building CXX object CMakeFiles/tiny_vins_mono.dir/src/utility/test_result_logger.cpp.o
+[38/194] Building CXX object CMakeFiles/tiny_vins_mono.dir/src/utility/visualizer.cpp.o
+[39/194] Building CXX object CMakeFiles/tiny_vins_mono.dir/src/tiny_vins_mono.cpp.o
+[40/194] Building CXX object CMakeFiles/test_sliding_window.dir/tests/test_sliding_window.cpp.o
+[41/194] Building CXX object CMakeFiles/tiny_vins_mono.dir/src/vio_system.cpp.o
+[42/194] Building CXX object CMakeFiles/test_trajectory_evaluator.dir/tests/test_trajectory_evaluator.cpp.o
+/home/park-ubuntu/park/SOLUTION/Mobile-SLAM/tests/test_trajectory_evaluator.cpp: In member function ‘virtual void TrajectoryEvaluatorTest::TearDown()’:
+/home/park-ubuntu/park/SOLUTION/Mobile-SLAM/tests/test_trajectory_evaluator.cpp:17:15: warning: ignoring return value of ‘int system(const char*)’ declared with attribute ‘warn_unused_result’ [-Wunused-result]
+   17 |         system(("rm -rf " + test_dir_).c_str());
+      |         ~~~~~~^~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+/home/park-ubuntu/park/SOLUTION/Mobile-SLAM/tests/test_trajectory_evaluator.cpp: In member function ‘virtual void TrajectoryEvaluatorTest::SetUp()’:
+/home/park-ubuntu/park/SOLUTION/Mobile-SLAM/tests/test_trajectory_evaluator.cpp:13:15: warning: ignoring return value of ‘int system(const char*)’ declared with attribute ‘warn_unused_result’ [-Wunused-result]
+   13 |         system(("mkdir -p " + test_dir_).c_str());
+      |         ~~~~~~^~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+[43/194] Building CXX object CMakeFiles/test_integration_base.dir/tests/test_integration_base.cpp.o
+[44/194] Building CXX object CMakeFiles/test_config_validation.dir/tests/test_config_validation.cpp.o
+[45/194] Building CXX object CMakeFiles/test_measurement_robustness.dir/tests/test_measurement_robustness.cpp.o
+/home/park-ubuntu/park/SOLUTION/Mobile-SLAM/tests/test_measurement_robustness.cpp: In member function ‘virtual void MeasurementRobustnessTest::TearDown()’:
+/home/park-ubuntu/park/SOLUTION/Mobile-SLAM/tests/test_measurement_robustness.cpp:14:15: warning: ignoring return value of ‘int system(const char*)’ declared with attribute ‘warn_unused_result’ [-Wunused-result]
+   14 |         system(("rm -rf " + test_dir_).c_str());
+      |         ~~~~~~^~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+/home/park-ubuntu/park/SOLUTION/Mobile-SLAM/tests/test_measurement_robustness.cpp: In member function ‘virtual void MeasurementRobustnessTest::SetUp()’:
+/home/park-ubuntu/park/SOLUTION/Mobile-SLAM/tests/test_measurement_robustness.cpp:10:15: warning: ignoring return value of ‘int system(const char*)’ declared with attribute ‘warn_unused_result’ [-Wunused-result]
+   10 |         system(("mkdir -p " + test_dir_).c_str());
+      |         ~~~~~~^~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+[46/194] Building CXX object CMakeFiles/test_measurement_robustness.dir/src/utility/measurement_processor.cpp.o
+[47/194] Building CXX object CMakeFiles/test_vio_engine_parity.dir/src/utility/measurement_processor.cpp.o
+[48/194] Building CUDA object _deps/ceres-solver-build/internal/ceres/CMakeFiles/ceres_cuda_kernels.dir/cuda_kernels_vector_ops.cu.cc.o
+nvcc warning : Support for offline compilation for architectures prior to '<compute/sm/lto>_75' will be removed in a future release (Use -Wno-deprecated-gpu-targets to suppress warning).
+[49/194] Building CXX object CMakeFiles/test_vio_engine_parity.dir/tests/test_vio_engine_parity.cpp.o
+[50/194] Building CXX object _deps/ceres-solver-build/internal/ceres/CMakeFiles/ceres_internal.dir/accelerate_sparse.cc.o
+[51/194] Building CXX object _deps/ceres-solver-build/internal/ceres/CMakeFiles/ceres_internal.dir/block_evaluate_preparer.cc.o
+[52/194] Building CXX object _deps/ceres-solver-build/internal/ceres/CMakeFiles/ceres_internal.dir/generated/partitioned_matrix_view_d_d_d.cc.o
+[53/194] Building CXX object _deps/ceres-solver-build/internal/ceres/CMakeFiles/ceres_internal.dir/block_jacobian_writer.cc.o
+[54/194] Building CXX object _deps/ceres-solver-build/internal/ceres/CMakeFiles/ceres_internal.dir/block_random_access_dense_matrix.cc.o
+[55/194] Building CXX object _deps/ceres-solver-build/internal/ceres/CMakeFiles/ceres_internal.dir/block_jacobi_preconditioner.cc.o
+[56/194] Building CXX object _deps/ceres-solver-build/internal/ceres/CMakeFiles/ceres_internal.dir/block_random_access_matrix.cc.o
+[57/194] Building CXX object _deps/ceres-solver-build/internal/ceres/CMakeFiles/ceres_internal.dir/block_random_access_sparse_matrix.cc.o
+[58/194] Building CXX object _deps/ceres-solver-build/internal/ceres/CMakeFiles/ceres_internal.dir/block_random_access_diagonal_matrix.cc.o
+[59/194] Building CXX object _deps/ceres-solver-build/internal/ceres/CMakeFiles/ceres_internal.dir/block_structure.cc.o
+[60/194] Building CXX object _deps/ceres-solver-build/internal/ceres/CMakeFiles/ceres_internal.dir/callbacks.cc.o
+[61/194] Building CXX object _deps/ceres-solver-build/internal/ceres/CMakeFiles/ceres_internal.dir/generated/schur_eliminator_d_d_d.cc.o
+[62/194] Building CXX object _deps/ceres-solver-build/internal/ceres/CMakeFiles/ceres_internal.dir/canonical_views_clustering.cc.o
+[63/194] Building CUDA object _deps/ceres-solver-build/internal/ceres/CMakeFiles/ceres_cuda_kernels.dir/cuda_kernels_bsm_to_crs.cu.cc.o
+nvcc warning : Support for offline compilation for architectures prior to '<compute/sm/lto>_75' will be removed in a future release (Use -Wno-deprecated-gpu-targets to suppress warning).
+[64/194] Linking CUDA static library _deps/ceres-solver-build/lib/libceres_cuda_kernels.a
+[65/194] Building CXX object _deps/ceres-solver-build/internal/ceres/CMakeFiles/ceres_internal.dir/compressed_col_sparse_matrix_utils.cc.o
+[66/194] Building CXX object _deps/ceres-solver-build/internal/ceres/CMakeFiles/ceres_internal.dir/block_sparse_matrix.cc.o
+[67/194] Building CXX object _deps/ceres-solver-build/internal/ceres/CMakeFiles/ceres_internal.dir/conditioned_cost_function.cc.o
+[68/194] Building CXX object _deps/ceres-solver-build/internal/ceres/CMakeFiles/ceres_internal.dir/compressed_row_jacobian_writer.cc.o
+[69/194] Building CXX object _deps/ceres-solver-build/internal/ceres/CMakeFiles/ceres_internal.dir/cgnr_solver.cc.o
+[70/194] Building CXX object _deps/ceres-solver-build/internal/ceres/CMakeFiles/ceres_internal.dir/context.cc.o
+[71/194] Building CXX object _deps/ceres-solver-build/internal/ceres/CMakeFiles/ceres_internal.dir/compressed_row_sparse_matrix.cc.o
+[72/194] Building CXX object _deps/ceres-solver-build/internal/ceres/CMakeFiles/ceres_internal.dir/cost_function.cc.o
+[73/194] Building CXX object _deps/ceres-solver-build/internal/ceres/CMakeFiles/ceres_internal.dir/context_impl.cc.o
+[74/194] Building CXX object _deps/ceres-solver-build/internal/ceres/CMakeFiles/ceres_internal.dir/corrector.cc.o
+[75/194] Building CXX object _deps/ceres-solver-build/internal/ceres/CMakeFiles/ceres_internal.dir/covariance.cc.o
+[76/194] Building CXX object _deps/ceres-solver-build/internal/ceres/CMakeFiles/ceres_internal.dir/cuda_block_sparse_crs_view.cc.o
+[77/194] Building CXX object _deps/ceres-solver-build/internal/ceres/CMakeFiles/ceres_internal.dir/cuda_partitioned_block_sparse_crs_view.cc.o
+[78/194] Building CXX object _deps/ceres-solver-build/internal/ceres/CMakeFiles/ceres_internal.dir/coordinate_descent_minimizer.cc.o
+[79/194] Building CXX object _deps/ceres-solver-build/internal/ceres/CMakeFiles/ceres_internal.dir/cuda_block_structure.cc.o
+[80/194] Building CXX object _deps/ceres-solver-build/internal/ceres/CMakeFiles/ceres_internal.dir/cuda_vector.cc.o
+[81/194] Building CXX object _deps/ceres-solver-build/internal/ceres/CMakeFiles/ceres_internal.dir/cuda_sparse_matrix.cc.o
+[82/194] Building CXX object _deps/ceres-solver-build/internal/ceres/CMakeFiles/ceres_internal.dir/dense_normal_cholesky_solver.cc.o
+[83/194] Building CXX object _deps/ceres-solver-build/internal/ceres/CMakeFiles/ceres_internal.dir/dense_cholesky.cc.o
+[84/194] Building CXX object _deps/ceres-solver-build/internal/ceres/CMakeFiles/ceres_internal.dir/dense_qr_solver.cc.o
+[85/194] Building CXX object _deps/ceres-solver-build/internal/ceres/CMakeFiles/ceres_internal.dir/detect_structure.cc.o
+[86/194] Building CXX object _deps/ceres-solver-build/internal/ceres/CMakeFiles/ceres_internal.dir/dense_qr.cc.o
+[87/194] Building CXX object _deps/ceres-solver-build/internal/ceres/CMakeFiles/ceres_internal.dir/dense_sparse_matrix.cc.o
+[88/194] Building CXX object _deps/ceres-solver-build/internal/ceres/CMakeFiles/ceres_internal.dir/dynamic_compressed_row_sparse_matrix.cc.o
+[89/194] Building CXX object _deps/ceres-solver-build/internal/ceres/CMakeFiles/ceres_internal.dir/dynamic_compressed_row_jacobian_writer.cc.o
+[90/194] Building CXX object _deps/ceres-solver-build/internal/ceres/CMakeFiles/ceres_internal.dir/dynamic_sparse_normal_cholesky_solver.cc.o
+[91/194] Building CXX object _deps/ceres-solver-build/internal/ceres/CMakeFiles/ceres_internal.dir/evaluation_callback.cc.o
+[92/194] Building CXX object _deps/ceres-solver-build/internal/ceres/CMakeFiles/ceres_internal.dir/eigensparse.cc.o
+[93/194] Building CXX object _deps/ceres-solver-build/internal/ceres/CMakeFiles/ceres_internal.dir/fake_bundle_adjustment_jacobian.cc.o
+[94/194] Building CXX object _deps/ceres-solver-build/internal/ceres/CMakeFiles/ceres_internal.dir/file.cc.o
+[95/194] Building CXX object _deps/ceres-solver-build/internal/ceres/CMakeFiles/ceres_internal.dir/first_order_function.cc.o
+[96/194] Building CXX object _deps/ceres-solver-build/internal/ceres/CMakeFiles/ceres_internal.dir/evaluator.cc.o
+[97/194] Building CXX object _deps/ceres-solver-build/internal/ceres/CMakeFiles/ceres_internal.dir/function_sample.cc.o
+[98/194] Building CXX object _deps/ceres-solver-build/internal/ceres/CMakeFiles/ceres_internal.dir/dogleg_strategy.cc.o
+[99/194] Building CXX object _deps/ceres-solver-build/internal/ceres/CMakeFiles/ceres_internal.dir/float_suitesparse.cc.o
+[100/194] Building CXX object _deps/ceres-solver-build/internal/ceres/CMakeFiles/ceres_internal.dir/gradient_checking_cost_function.cc.o
+[101/194] Building CXX object _deps/ceres-solver-build/internal/ceres/CMakeFiles/ceres_internal.dir/gradient_problem_solver.cc.o
+[102/194] Building CXX object _deps/ceres-solver-build/internal/ceres/CMakeFiles/ceres_internal.dir/is_close.cc.o
+[103/194] Building CXX object _deps/ceres-solver-build/internal/ceres/CMakeFiles/ceres_internal.dir/iteration_callback.cc.o
+[104/194] Building CXX object _deps/ceres-solver-build/internal/ceres/CMakeFiles/ceres_internal.dir/inner_product_computer.cc.o
+[105/194] Building CXX object _deps/ceres-solver-build/internal/ceres/CMakeFiles/ceres_internal.dir/iterative_refiner.cc.o
+[106/194] Building CXX object _deps/ceres-solver-build/internal/ceres/CMakeFiles/ceres_internal.dir/implicit_schur_complement.cc.o
+[107/194] Building CXX object _deps/ceres-solver-build/internal/ceres/CMakeFiles/ceres_internal.dir/levenberg_marquardt_strategy.cc.o
+[108/194] Building CXX object _deps/ceres-solver-build/internal/ceres/CMakeFiles/ceres_internal.dir/line_search.cc.o
+[109/194] Building CXX object _deps/ceres-solver-build/internal/ceres/CMakeFiles/ceres_internal.dir/iterative_schur_complement_solver.cc.o
+[110/194] Building CXX object _deps/ceres-solver-build/internal/ceres/CMakeFiles/ceres_internal.dir/line_search_minimizer.cc.o
+[111/194] Building CXX object _deps/ceres-solver-build/internal/ceres/CMakeFiles/ceres_internal.dir/line_search_direction.cc.o
+[112/194] Building CXX object _deps/ceres-solver-build/internal/ceres/CMakeFiles/ceres_internal.dir/line_search_preprocessor.cc.o
+[113/194] Building CXX object _deps/ceres-solver-build/internal/ceres/CMakeFiles/ceres_internal.dir/linear_operator.cc.o
+[114/194] Building CXX object _deps/ceres-solver-build/internal/ceres/CMakeFiles/ceres_internal.dir/linear_least_squares_problems.cc.o
+[115/194] Building CXX object _deps/ceres-solver-build/internal/ceres/CMakeFiles/ceres_internal.dir/low_rank_inverse_hessian.cc.o
+[116/194] Building CXX object _deps/ceres-solver-build/internal/ceres/CMakeFiles/ceres_internal.dir/linear_solver.cc.o
+[117/194] Building CXX object _deps/ceres-solver-build/internal/ceres/CMakeFiles/ceres_internal.dir/parallel_utils.cc.o
+[118/194] Building CXX object _deps/ceres-solver-build/internal/ceres/CMakeFiles/ceres_internal.dir/parallel_invoke.cc.o
+[119/194] Building CXX object _deps/ceres-solver-build/internal/ceres/CMakeFiles/ceres_internal.dir/minimizer.cc.o
+[120/194] Building CXX object _deps/ceres-solver-build/internal/ceres/CMakeFiles/ceres_internal.dir/covariance_impl.cc.o
+[121/194] Building CXX object _deps/ceres-solver-build/internal/ceres/CMakeFiles/ceres_internal.dir/parallel_vector_ops.cc.o
+[122/194] Building CXX object _deps/ceres-solver-build/internal/ceres/CMakeFiles/ceres_internal.dir/partitioned_matrix_view.cc.o
+[123/194] Building CXX object _deps/ceres-solver-build/internal/ceres/CMakeFiles/ceres_internal.dir/parameter_block_ordering.cc.o
+[124/194] Building CXX object _deps/ceres-solver-build/internal/ceres/CMakeFiles/ceres_internal.dir/power_series_expansion_preconditioner.cc.o
+[125/194] Building CXX object _deps/ceres-solver-build/internal/ceres/CMakeFiles/ceres_internal.dir/preconditioner.cc.o
+[126/194] Building CXX object _deps/ceres-solver-build/internal/ceres/CMakeFiles/ceres_internal.dir/preprocessor.cc.o
+[127/194] Building CXX object _deps/ceres-solver-build/internal/ceres/CMakeFiles/ceres_internal.dir/program.cc.o
+[128/194] Building CXX object _deps/ceres-solver-build/internal/ceres/CMakeFiles/ceres_internal.dir/problem_impl.cc.o
+[129/194] Building CXX object _deps/ceres-solver-build/internal/ceres/CMakeFiles/ceres_internal.dir/residual_block.cc.o
+[130/194] Building CXX object _deps/ceres-solver-build/internal/ceres/CMakeFiles/ceres_internal.dir/reorder_program.cc.o
+[131/194] Building CXX object _deps/ceres-solver-build/internal/ceres/CMakeFiles/ceres_internal.dir/residual_block_utils.cc.o
+[132/194] Building CXX object _deps/ceres-solver-build/internal/ceres/CMakeFiles/ceres_internal.dir/polynomial.cc.o
+[133/194] Building CXX object _deps/ceres-solver-build/internal/ceres/CMakeFiles/ceres_internal.dir/schur_eliminator.cc.o
+[134/194] Building CXX object _deps/ceres-solver-build/internal/ceres/CMakeFiles/ceres_internal.dir/schur_jacobi_preconditioner.cc.o
+[135/194] Building CXX object _deps/ceres-solver-build/internal/ceres/CMakeFiles/ceres_internal.dir/scratch_evaluate_preparer.cc.o
+[136/194] Building CXX object _deps/ceres-solver-build/internal/ceres/CMakeFiles/ceres_internal.dir/schur_templates.cc.o
+[137/194] Building CXX object _deps/ceres-solver-build/internal/ceres/CMakeFiles/ceres_internal.dir/single_linkage_clustering.cc.o
+[138/194] Building CXX object _deps/ceres-solver-build/internal/ceres/CMakeFiles/ceres_internal.dir/solver_utils.cc.o
+[139/194] Building CXX object _deps/ceres-solver-build/internal/ceres/CMakeFiles/ceres_internal.dir/sparse_matrix.cc.o
+[140/194] Building CXX object _deps/ceres-solver-build/internal/ceres/CMakeFiles/ceres_internal.dir/sparse_cholesky.cc.o
+[141/194] Building CXX object _deps/ceres-solver-build/internal/ceres/CMakeFiles/ceres_internal.dir/stringprintf.cc.o
+[142/194] Building CXX object _deps/ceres-solver-build/internal/ceres/CMakeFiles/ceres_internal.dir/suitesparse.cc.o
+[143/194] Building CXX object _deps/ceres-solver-build/internal/ceres/CMakeFiles/ceres_internal.dir/thread_pool.cc.o
+[144/194] Building CXX object _deps/ceres-solver-build/internal/ceres/CMakeFiles/ceres_internal.dir/sparse_normal_cholesky_solver.cc.o
+[145/194] Building CXX object _deps/ceres-solver-build/internal/ceres/CMakeFiles/ceres_internal.dir/subset_preconditioner.cc.o
+[146/194] Building CXX object _deps/ceres-solver-build/internal/ceres/CMakeFiles/ceres_internal.dir/thread_token_provider.cc.o
+[147/194] Building CXX object _deps/ceres-solver-build/internal/ceres/CMakeFiles/ceres_internal.dir/schur_complement_solver.cc.o
+[148/194] Building CXX object _deps/ceres-solver-build/internal/ceres/CMakeFiles/ceres_internal.dir/triplet_sparse_matrix.cc.o
+[149/194] Building CXX object _deps/ceres-solver-build/internal/ceres/CMakeFiles/ceres_internal.dir/trust_region_step_evaluator.cc.o
+[150/194] Building CXX object _deps/ceres-solver-build/internal/ceres/CMakeFiles/ceres_internal.dir/trust_region_strategy.cc.o
+[151/194] Building CXX object _deps/ceres-solver-build/internal/ceres/CMakeFiles/ceres_internal.dir/visibility.cc.o
+[152/194] Building CXX object _deps/ceres-solver-build/internal/ceres/CMakeFiles/ceres_internal.dir/trust_region_preprocessor.cc.o
+[153/194] Building CXX object _deps/ceres-solver-build/internal/ceres/CMakeFiles/ceres_internal.dir/wall_time.cc.o
+[154/194] Building CXX object _deps/ceres-solver-build/internal/ceres/CMakeFiles/ceres_internal.dir/trust_region_minimizer.cc.o
+[155/194] Building CXX object _deps/ceres-solver-build/internal/ceres/CMakeFiles/ceres.dir/gradient_problem.cc.o
+[156/194] Building CXX object _deps/ceres-solver-build/internal/ceres/CMakeFiles/ceres.dir/loss_function.cc.o
+[157/194] Building CXX object _deps/ceres-solver-build/internal/ceres/CMakeFiles/ceres.dir/manifold.cc.o
+[158/194] Building CXX object _deps/ceres-solver-build/internal/ceres/CMakeFiles/ceres_internal.dir/visibility_based_preconditioner.cc.o
+[159/194] Building CXX object _deps/ceres-solver-build/internal/ceres/CMakeFiles/ceres.dir/c_api.cc.o
+[160/194] Building CXX object _deps/ceres-solver-build/internal/ceres/CMakeFiles/ceres.dir/gradient_checker.cc.o
+[161/194] Building CXX object _deps/ceres-solver-build/internal/ceres/CMakeFiles/ceres.dir/normal_prior.cc.o
+[162/194] Building CXX object _deps/ceres-solver-build/internal/ceres/CMakeFiles/ceres.dir/miniglog/glog/logging.cc.o
+[163/194] Building CXX object _deps/ceres-solver-build/internal/ceres/CMakeFiles/ceres.dir/types.cc.o
+[164/194] Building CXX object _deps/ceres-solver-build/internal/ceres/CMakeFiles/ceres.dir/problem.cc.o
+[165/194] Building CXX object _deps/googletest-build/googlemock/CMakeFiles/gmock_main.dir/src/gmock_main.cc.o
+[166/194] Building CXX object _deps/googletest-build/googletest/CMakeFiles/gtest_main.dir/src/gtest_main.cc.o
+[167/194] Building CXX object _deps/ceres-solver-build/internal/ceres/CMakeFiles/ceres.dir/solver.cc.o
+[168/194] Linking CXX static library _deps/ceres-solver-build/lib/libceres.a
+[169/194] Linking CXX static library libpose_local_parameterization.a
+[170/194] Linking CXX static library libmarginalization_factor.a
+[171/194] Linking CXX static library libprojection_factor.a
+[172/194] Linking CXX static library libperspective_factor.a
+[173/194] Linking CXX static library liboptimizer.a
+[174/194] Linking CXX static library libpnp_frontend.a
+[175/194] Linking CXX static library libfailure_detector.a
+[176/194] Linking CXX static library libinitializer.a
+[177/194] Linking CXX static library libgpl.a
+[178/194] Linking CXX static library libestimator.a
+[179/194] Linking CXX static library libcamera_models.a
+[180/194] Linking CXX static library libfeature_tracker.a
+[181/194] Linking CXX static library libvio_engine.a
+[182/194] Building CXX object _deps/googletest-build/googlemock/CMakeFiles/gmock.dir/src/gmock-all.cc.o
+[183/194] Linking CXX executable tiny_vins_mono
+[184/194] Building CXX object _deps/googletest-build/googletest/CMakeFiles/gtest.dir/src/gtest-all.cc.o
+[185/194] Linking CXX static library lib/libgtest.a
+[186/194] Linking CXX static library lib/libgtest_main.a
+[187/194] Linking CXX static library lib/libgmock.a
+[188/194] Linking CXX executable test_trajectory_evaluator
+[189/194] Linking CXX executable test_config_validation
+[190/194] Linking CXX executable test_integration_base
+[191/194] Linking CXX static library lib/libgmock_main.a
+[192/194] Linking CXX executable test_sliding_window
+[193/194] Linking CXX executable test_measurement_robustness
+[194/194] Linking CXX executable test_vio_engine_parity
+	Command being timed: "cmake --build build/audit-native --parallel 4"
+	User time (seconds): 297.69
+	System time (seconds): 18.54
+	Percent of CPU this job got: 389%
+	Elapsed (wall clock) time (h:mm:ss or m:ss): 1:21.27
+	Average shared text size (kbytes): 0
+	Average unshared data size (kbytes): 0
+	Average stack size (kbytes): 0
+	Average total size (kbytes): 0
+	Maximum resident set size (kbytes): 1906544
+	Average resident set size (kbytes): 0
+	Major (requiring I/O) page faults: 142
+	Minor (reclaiming a frame) page faults: 16421100
+	Voluntary context switches: 6451
+	Involuntary context switches: 2250
+	Swaps: 0
+	File system inputs: 125912
+	File system outputs: 370968
+	Socket messages sent: 0
+	Socket messages received: 0
+	Signals delivered: 0
+	Page size (bytes): 4096
+	Exit status: 0

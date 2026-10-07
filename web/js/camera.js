@@ -22,6 +22,70 @@
 
 const CAMERA_VERSION = 'v9';
 
+// Profiles describe drawImage pixels before this module's explicit rotation.
+// A browser's implicit orientation is not recoverable from videoWidth alone;
+// profile dimensions and orientation must match the actual drawImage domain.
+export function validateCameraProfile(profile) {
+    if (!profile || profile.schema !== 'mobile-slam-camera-profile-v1' || profile.pixelFrame !== 'drawImage') throw new Error('Invalid camera profile schema/pixelFrame');
+    if (typeof profile.provenance !== 'string' || !profile.provenance.trim()) throw new Error('Camera profile requires calibration provenance');
+    if (!['portrait-primary', 'portrait-secondary', 'landscape-primary', 'landscape-secondary'].includes(profile.orientationType)) throw new Error('Camera profile requires orientationType');
+    if (![profile.width, profile.height].every(n => Number.isInteger(n) && n > 0) ||
+        ![profile.fx, profile.fy, profile.cx, profile.cy].every(Number.isFinite) || profile.fx <= 0 || profile.fy <= 0 ||
+        profile.cx < -0.5 || profile.cx > profile.width - 0.5 || profile.cy < -0.5 || profile.cy > profile.height - 0.5) throw new Error('Invalid camera intrinsics');
+    if (![0, 2].includes(profile.modelType)) throw new Error('Unsupported camera model: use KANNALA_BRANDT=0 or PINHOLE=2');
+    if (!Array.isArray(profile.distortion) || profile.distortion.length !== 4 || !profile.distortion.every(Number.isFinite)) throw new Error('Invalid camera distortion');
+    const r = profile.r_ic;
+    if (!Array.isArray(r) || r.length !== 9 || !r.every(Number.isFinite)) throw new Error('Invalid camera/body rotation');
+    for (let a = 0; a < 3; a++) for (let b = 0; b < 3; b++) {
+        let dot = 0; for (let k = 0; k < 3; k++) dot += r[k * 3 + a] * r[k * 3 + b];
+        if (Math.abs(dot - (a === b ? 1 : 0)) > 1e-6) throw new Error('Camera/body rotation must be orthogonal');
+    }
+    const determinant = r[0] * (r[4] * r[8] - r[5] * r[7]) - r[1] * (r[3] * r[8] - r[5] * r[6]) + r[2] * (r[3] * r[7] - r[4] * r[6]);
+    if (Math.abs(determinant - 1) > 1e-6) throw new Error('Camera/body rotation must have determinant +1');
+    if (!Array.isArray(profile.t_ic) || profile.t_ic.length !== 3 || !profile.t_ic.every(Number.isFinite)) throw new Error('Invalid camera/body translation');
+    return profile;
+}
+
+export function processingDimensions(width, height, scale = 1) {
+    if (![width, height, scale].every(Number.isFinite) || width <= 0 || height <= 0 || scale <= 0 || scale > 1) throw new Error('Invalid processing dimensions');
+    return { width: scale === 1 ? width : Math.max(2, Math.round(width * scale) & ~1),
+        height: scale === 1 ? height : Math.max(2, Math.round(height * scale) & ~1) };
+}
+
+export function transformCameraProfile(profile, transform) {
+    validateCameraProfile(profile);
+    const rotations = {
+        none: [1,0,0,0,1,0,0,0,1], cw: [0,-1,0,1,0,0,0,0,1],
+        ccw: [0,1,0,-1,0,0,0,0,1], half: [-1,0,0,0,-1,0,0,0,1],
+    };
+    const q = rotations[transform.rotation];
+    if (!q) throw new Error('Invalid pixel rotation');
+    const swap = transform.rotation === 'cw' || transform.rotation === 'ccw';
+    const rotatedW = swap ? profile.height : profile.width;
+    const rotatedH = swap ? profile.width : profile.height;
+    const { cropX, cropY, cropWidth, cropHeight, width, height } = transform;
+    if (![cropX,cropY,cropWidth,cropHeight,width,height].every(Number.isInteger) || cropX < 0 || cropY < 0 ||
+        Math.min(cropWidth,cropHeight,width,height) <= 0 || cropX + cropWidth > rotatedW || cropY + cropHeight > rotatedH) throw new Error('Invalid camera crop/resize');
+    let cx = profile.cx, cy = profile.cy;
+    if (transform.rotation === 'cw') { cx = profile.height - 1 - profile.cy; cy = profile.cx; }
+    else if (transform.rotation === 'ccw') { cx = profile.cy; cy = profile.width - 1 - profile.cx; }
+    else if (transform.rotation === 'half') { cx = profile.width - 1 - profile.cx; cy = profile.height - 1 - profile.cy; }
+    const sx = width / cropWidth, sy = height / cropHeight;
+    const r_ic = new Array(9).fill(0);
+    // C_new = Q C_old => R_B_Cnew = R_B_Cold Q^T; body lever arm unchanged.
+    for (let row = 0; row < 3; row++) for (let col = 0; col < 3; col++) for (let k = 0; k < 3; k++) r_ic[row * 3 + col] += profile.r_ic[row * 3 + k] * q[col * 3 + k];
+    let [k2,k3,k4,k5] = profile.distortion;
+    if (profile.modelType === 2) {
+        // PINHOLE API slots k4/k5 are tangential p1/p2. Rotate [p2,p1].
+        const p1 = k4, p2 = k5;
+        k4 = q[3] * p2 + q[4] * p1;
+        k5 = q[0] * p2 + q[1] * p1;
+    }
+    return { width, height, fx: (swap ? profile.fy : profile.fx) * sx, fy: (swap ? profile.fx : profile.fy) * sy,
+        cx: (cx - cropX + 0.5) * sx - 0.5, cy: (cy - cropY + 0.5) * sy - 0.5,
+        modelType: profile.modelType, k2,k3,k4,k5,r_ic,t_ic: [...profile.t_ic] };
+}
+
 export class Camera {
     constructor() {
         this.video = null;
@@ -148,7 +212,7 @@ export class Camera {
 
         // URL override takes highest priority
         const urlRotate = new URLSearchParams(window.location.search).get('rotate');
-        if (urlRotate && ['none', 'cw', 'ccw'].includes(urlRotate)) {
+        if (urlRotate && ['none', 'cw', 'ccw', 'half'].includes(urlRotate)) {
             this._rotateMode = urlRotate;
             console.log(`[Camera] ${CAMERA_VERSION} Rotation override from URL: ${urlRotate}`);
         } else if (nativeIsLandscape) {
@@ -179,6 +243,10 @@ export class Camera {
             this.width = this._nativeHeight;   // e.g., 480
             this.height = this._nativeWidth;   // e.g., 640
             this._dimsSwapped = true;
+        } else if (this._rotateMode === 'half') {
+            this.width = this._nativeWidth;
+            this.height = this._nativeHeight;
+            this._dimsSwapped = false;
         } else if (nativeIsLandscape) {
             // 'none' mode with landscape native (URL override ?rotate=none):
             // Still swap dims for portrait canvas, rely on browser auto-rotation
@@ -369,6 +437,12 @@ export class Camera {
             this.ctx.rotate(-Math.PI / 2);
             this.ctx.drawImage(this.video, 0, 0, this._nativeWidth, this._nativeHeight);
             this.ctx.restore();
+        } else if (this._rotateMode === 'half') {
+            this.ctx.save();
+            this.ctx.translate(cw, ch);
+            this.ctx.rotate(Math.PI);
+            this.ctx.drawImage(this.video, 0, 0, this._nativeWidth, this._nativeHeight);
+            this.ctx.restore();
         } else {
             this.ctx.drawImage(this.video, 0, 0, cw, ch);
         }
@@ -466,6 +540,15 @@ export class Camera {
         return { width: this._portraitWidth, height: this._portraitHeight };
     }
 
+    getPixelTransform(width = this.width, height = this.height) {
+        const manual = this._rotateMode === 'cw' || this._rotateMode === 'ccw' || this._rotateMode === 'half';
+        return { sourceWidth: manual ? this._nativeWidth : this._portraitWidth,
+            sourceHeight: manual ? this._nativeHeight : this._portraitHeight,
+            rotation: this._rotateMode, cropX: 0,
+            cropY: this._cropMode === 'landscape_4_3' ? this._cropOffsetY : 0,
+            cropWidth: this.width, cropHeight: this.height, width, height };
+    }
+
     /**
      * Capture a grayscale frame.
      *
@@ -544,6 +627,12 @@ export class Camera {
             this.ctx.save();
             this.ctx.translate(0, ch);
             this.ctx.rotate(-Math.PI / 2);
+            this.ctx.drawImage(this.video, 0, 0, this._nativeWidth, this._nativeHeight);
+            this.ctx.restore();
+        } else if (this._rotateMode === 'half') {
+            this.ctx.save();
+            this.ctx.translate(cw, ch);
+            this.ctx.rotate(Math.PI);
             this.ctx.drawImage(this.video, 0, 0, this._nativeWidth, this._nativeHeight);
             this.ctx.restore();
         } else {
@@ -659,7 +748,7 @@ export class Camera {
 
         // URL override takes priority — never re-detect
         const urlRotate = new URLSearchParams(window.location.search).get('rotate');
-        if (urlRotate && ['none', 'cw', 'ccw'].includes(urlRotate)) return;
+        if (urlRotate && ['none', 'cw', 'ccw', 'half'].includes(urlRotate)) return;
 
         // Re-read native dimensions (may have swapped after orientation change)
         this._nativeWidth = this.video.videoWidth;
@@ -675,7 +764,11 @@ export class Camera {
         }
 
         // Update portrait dimensions
-        if (this._rotateMode === 'cw' || this._rotateMode === 'ccw' || nativeIsLandscape) {
+        if (this._rotateMode === 'half') {
+            this._portraitWidth = this._nativeWidth;
+            this._portraitHeight = this._nativeHeight;
+            this._dimsSwapped = false;
+        } else if (this._rotateMode === 'cw' || this._rotateMode === 'ccw' || nativeIsLandscape) {
             this._portraitWidth = this._nativeHeight;
             this._portraitHeight = this._nativeWidth;
             this._dimsSwapped = true;

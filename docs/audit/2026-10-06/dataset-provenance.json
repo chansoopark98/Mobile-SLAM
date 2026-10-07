@@ -1,0 +1,20 @@
+{
+  "source": "https://cdn3.vision.in.tum.de/tumvi/exported/euroc/512_16/dataset-room1_512_16.tar",
+  "published_md5_url": "https://cdn3.vision.in.tum.de/tumvi/exported/euroc/512_16/dataset-room1_512_16.tar.md5",
+  "published_md5": "51d2b8d93ee4ada47ec0b2d10115dcf8  dataset-room1_512_16.tar",
+  "md5": "51d2b8d93ee4ada47ec0b2d10115dcf8",
+  "sha256": "20354392eab5cc82c9770ed29cf0130c5acce0db54a257571499008fb34c398f",
+  "bytes": 1707110400,
+  "license": "CC BY 4.0",
+  "authors": "David Schubert, Thore Goll, Nikolaus Demmel, Vladyslav Usenko, Joerg Stueckler, Daniel Cremers",
+  "license_source": "https://cvg.cit.tum.de/data/datasets/visual-inertial-dataset",
+  "extracted_utc": "2026-10-06T07:44:25.087955+00:00",
+  "members": 5671,
+  "dataset_directory": "/home/park-ubuntu/park/SOLUTION/Mobile-SLAM/assets/datasets/tum/dataset-room1_512_16",
+  "cam0_csv_sha256": "95420d52db3c4f392d7df8a4b562abb353b7b8db0d4f73fb76a3031330bd5ddb",
+  "cam0_records": 2821,
+  "imu0_csv_sha256": "8cd471ca2c1425260534228fbe0f3e27bd6711199dfce7c971447cdf184569e2",
+  "imu0_records": 28122,
+  "mocap0_csv_sha256": "24c577e2dcddcd54a4b5d9d988277d00b3b1b64785033bce93775da75eb95fa5",
+  "mocap0_records": 16541
+}

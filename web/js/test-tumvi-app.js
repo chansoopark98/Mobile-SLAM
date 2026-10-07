@@ -13,7 +13,28 @@ import * as THREE from 'three';
 
 // ─── Constants ───────────────────────────────────────────────────────────────
 
-const DATASET_BASE = '/datasets/tum/dataset-room1_512_16/mav0';
+const REPLAY_PARAMS = new URLSearchParams(window.location.search);
+const DATASET_NAMES = ['room1', 'room4'];
+function datasetBase(name) {
+    if (!DATASET_NAMES.includes(name)) throw new Error(`Unsupported dataset: ${name}`);
+    return `/datasets/tum/dataset-${name}_512_16/mav0`;
+}
+async function fetchCSV(url) {
+    const response = await fetch(url);
+    if (!response.ok) throw new Error(`CSV load failed: ${url} (${response.status})`);
+    return response.text();
+}
+function assertOrdered(entries, timestamp = row => row.timestamp_s) {
+    let last = -Infinity;
+    for (const row of entries) {
+        const current = timestamp(row);
+        if (!Number.isFinite(current) || current <= last) throw new Error('Dataset timestamps must be finite and strictly ordered');
+        last = current;
+    }
+}
+function replayDeadline(wallOriginMs, firstTimestampS, timestampS, speed) {
+    return wallOriginMs + (timestampS - firstTimestampS) * 1000 / speed;
+}
 const IMAGE_WIDTH = 512;
 const IMAGE_HEIGHT = 512;
 
@@ -36,13 +57,14 @@ const TUM_VI_CONFIG = {
          0.029615343885863205, -0.03439736061393144,   -0.998969345370175,
         -0.008522328211654736, -0.9993800792498829,     0.03415885127385616
     ],
-    // Extrinsic translation t_imu_cam (from tum_vi_room1.yaml)
-    t_ic: [0.04517590, 0.07251590, -0.04395990],
-    // IMU noise parameters
-    acc_n: 0.0028,
-    acc_w: 0.00086,
-    gyr_n: 0.00016,
-    gyr_w: 0.000022,
+    // cam0 T_cam_imu inverse: -R_cam_imu^T*t_cam_imu; primary room1/room4 dso/camchain.yaml
+    t_ic: [0.045574835649698026, -0.07116180183799704, -0.04468125411714437],
+    // Existing estimator noise parameters, matching config/tum_vi_room1.yaml.
+    // Dataset metadata uses continuous-time densities; numeric ratios alone do not establish estimator weighting.
+    acc_n: 0.04,
+    acc_w: 0.0004,
+    gyr_n: 0.004,
+    gyr_w: 2.0e-5,
     g_norm: 9.81007,
 };
 
@@ -62,19 +84,21 @@ const IMU_FIELDS = 7; // [ts, ax, ay, az, gx, gy, gz]
  * CSV: "#timestamp [ns],filename"
  */
 async function parseImageList(url) {
-    const text = await (await fetch(url)).text();
+    const text = await fetchCSV(url);
     const lines = text.trim().split('\n');
     const entries = [];
     for (const line of lines) {
         const trimmed = line.trim();
         if (trimmed.startsWith('#') || trimmed.length === 0) continue;
         const comma = trimmed.indexOf(',');
+        if (comma < 1 || !/^\d+\.png$/.test(trimmed.substring(comma + 1).trim())) throw new Error('Malformed dataset image entry');
         entries.push({
+            timestamp_ns: trimmed.substring(0, comma),
             timestamp_s: parseFloat(trimmed.substring(0, comma)) * 1e-9,
             filename: trimmed.substring(comma + 1).trim(),
         });
     }
-    entries.sort((a, b) => a.timestamp_s - b.timestamp_s);
+    assertOrdered(entries);
     return entries;
 }
 
@@ -86,7 +110,7 @@ async function parseImageList(url) {
  *           This parser REORDERS the fields.
  */
 async function parseIMUData(url) {
-    const text = await (await fetch(url)).text();
+    const text = await fetchCSV(url);
     const lines = text.trim().split('\n');
 
     // Count data lines
@@ -105,7 +129,7 @@ async function parseIMUData(url) {
         if (trimmed.startsWith('#') || trimmed.length === 0) continue;
 
         const parts = trimmed.split(',');
-        if (parts.length < 7) continue; // skip malformed lines
+        if (parts.length !== 7 || parts.some(value => !Number.isFinite(Number(value)))) throw new Error('Malformed dataset IMU row');
         // CSV columns: [timestamp_ns, gx, gy, gz, ax, ay, az]
         const ts = parseFloat(parts[0]) * 1e-9;
         const gx = parseFloat(parts[1]);
@@ -129,6 +153,7 @@ async function parseIMUData(url) {
         idx++;
     }
 
+    assertOrdered(timestamps, value => value);
     return { data, count: idx, timestamps };
 }
 
@@ -137,19 +162,21 @@ async function parseIMUData(url) {
  * CSV: "#timestamp [ns], px, py, pz, qw, qx, qy, qz"
  */
 async function parseGroundTruth(url) {
-    const text = await (await fetch(url)).text();
+    const text = await fetchCSV(url);
     const lines = text.trim().split('\n');
     const entries = [];
     for (const line of lines) {
         const trimmed = line.trim();
         if (trimmed.startsWith('#') || trimmed.length === 0) continue;
         const p = trimmed.split(',');
+        if (p.length !== 8 || p.some(value => !Number.isFinite(Number(value)))) throw new Error('Malformed ground truth row');
         entries.push({
             timestamp_s: parseFloat(p[0]) * 1e-9,
             position: [parseFloat(p[1]), parseFloat(p[2]), parseFloat(p[3])],
             quaternion: [parseFloat(p[4]), parseFloat(p[5]), parseFloat(p[6]), parseFloat(p[7])],  // qw, qx, qy, qz
         });
     }
+    assertOrdered(entries);
     return entries;
 }
 
@@ -202,34 +229,15 @@ function normalizeGroundTruth(gtPoses) {
  * Find all IMU readings with timestamps in (tPrev, tCurr] via binary search.
  * Returns a NEW Float64Array (safe for Transferable) and count.
  */
-function sliceIMU(allIMU, imuTimestamps, imuCount, tPrev, tCurr) {
-    // Binary search: first index where timestamp > tPrev
-    let lo = 0, hi = imuCount;
-    while (lo < hi) {
-        const mid = (lo + hi) >>> 1;
-        if (imuTimestamps[mid] <= tPrev) lo = mid + 1;
-        else hi = mid;
-    }
-    const startIdx = lo;
-
-    // Binary search: first index where timestamp > tCurr
-    lo = startIdx;
-    hi = imuCount;
-    while (lo < hi) {
-        const mid = (lo + hi) >>> 1;
-        if (imuTimestamps[mid] <= tCurr) lo = mid + 1;
-        else hi = mid;
-    }
-    const endIdx = lo;
-
-    const count = endIdx - startIdx;
-    if (count <= 0) return { data: null, count: 0 };
-
-    // Create NEW Float64Array (will be transferred/detached by sendIMU)
-    const slice = new Float64Array(count * IMU_FIELDS);
-    slice.set(allIMU.subarray(startIdx * IMU_FIELDS, endIdx * IMU_FIELDS));
-
-    return { data: slice, count };
+function sliceIMUCursor(allIMU, imuTimestamps, imuCount, cursor, tCurr, bracket = true) {
+    // Engine owns future carry. Never resend a previously submitted bracket or
+    // consume another future sample while the previous bracket is still future.
+    if (bracket && cursor > 0 && imuTimestamps[cursor - 1] > tCurr) return { data: null, count: 0, nextCursor: cursor };
+    let end = cursor;
+    while (end < imuCount && imuTimestamps[end] <= tCurr) end++;
+    if (bracket && end < imuCount) end++;
+    const count = end - cursor;
+    return { data: count ? new Float64Array(allIMU.subarray(cursor * IMU_FIELDS, end * IMU_FIELDS)) : null, count, nextCursor: end };
 }
 
 // ─── Image Loader ────────────────────────────────────────────────────────────
@@ -243,6 +251,7 @@ async function loadGrayscaleImage(url) {
     if (!response.ok) throw new Error(`Image load failed: ${url} (${response.status})`);
     const blob = await response.blob();
     const bitmap = await createImageBitmap(blob);
+    if (bitmap.width !== IMAGE_WIDTH || bitmap.height !== IMAGE_HEIGHT) { bitmap.close(); throw new Error('Dataset image dimensions do not match calibration'); }
 
     let canvas, ctx;
     if (typeof OffscreenCanvas !== 'undefined') {
@@ -293,6 +302,9 @@ class ImagePrefetcher {
                     this.cache.delete(idx); // evict on failure so next access retries
                     throw err;
                 });
+                // Mark speculative prefetch rejection handled; get(index) still
+                // observes that rejection and fails the replay at the real input.
+                p.catch(() => {});
                 this.cache.set(i, p);
             }
         }
@@ -335,7 +347,29 @@ class TUMVITestApp {
         this.speed = 1;
         this.playbackTimer = null;
         this.playbackTimerType = null; // 'raf' | 'timeout'
-        this.processing = false; // guard against concurrent processNextFrame
+        this.processing = false;
+        this.datasetName = REPLAY_PARAMS.get('dataset') || 'room1';
+        this.datasetBase = datasetBase(this.datasetName);
+        this.frameLimit = Infinity;
+        this._imuCursor = 0;
+        this.inputHashEnabled = REPLAY_PARAMS.get('inputHash') === '1';
+        const benchmarkProfile = REPLAY_PARAMS.get('benchmarkZeroTolerances');
+        if (benchmarkProfile !== null && !['0', '1'].includes(benchmarkProfile)) throw new Error('Invalid benchmarkZeroTolerances');
+        this.benchmarkSolverProfileRequested = benchmarkProfile === '1';
+        this._runGeneration = 0;
+        this._nextScheduledFrame = 0;
+        this.rows = [];
+        this.replay = { completed: false, failed: false, startedAtMs: null, finishedAtMs: null, mode: null };
+        this._renderResultKey = null;
+        this._renderEpoch = null;
+        this.solverConfig = { ...SOLVER_CONFIG };
+        for (const [param, field] of [['solverTime', 'solver_time'], ['iterations', 'num_iterations'], ['features', 'max_features']]) {
+            if (REPLAY_PARAMS.has(param)) {
+                const value = Number(REPLAY_PARAMS.get(param));
+                if (!Number.isFinite(value) || value <= 0 || (field !== 'solver_time' && !Number.isInteger(value))) throw new Error(`Invalid ${param}`);
+                this.solverConfig[field] = value;
+            }
+        }
 
         // Diagnostics
         this.frameProcessingTime = 0;
@@ -384,6 +418,7 @@ class TUMVITestApp {
             const backendSelect = document.getElementById('renderer-backend');
             const backend = backendSelect ? backendSelect.value : 'webgl';
             this.renderer = await Renderer.create(canvas3d, backend);
+            this.renderer.render();
             this.log(`3D Renderer: ${this.renderer.backendName.toUpperCase()} backend`);
 
             window.addEventListener('resize', () => {
@@ -394,13 +429,24 @@ class TUMVITestApp {
             });
         }
 
+        const datasetSelect = document.getElementById('dataset-select');
+        if (datasetSelect) {
+            datasetSelect.value = this.datasetName;
+            datasetSelect.addEventListener('change', event => {
+                if (this.playing) return;
+                this.datasetName = event.target.value;
+                this.datasetBase = datasetBase(this.datasetName);
+            });
+        }
+        document.getElementById('btn-export')?.addEventListener('click', () => this.downloadReport());
+
         // Button events
         this.ui.startBtn.addEventListener('click', () => this.start());
         this.ui.pauseBtn.addEventListener('click', () => this.togglePause());
         this.ui.stepBtn.addEventListener('click', () => this.stepOneFrame());
         this.ui.resetBtn.addEventListener('click', () => this.reset());
         this.ui.speedSelect.addEventListener('change', (e) => {
-            this.speed = parseInt(e.target.value);
+            this.speed = Number(e.target.value);
             if (this.playing && !this.paused) {
                 this.stopPlaybackTimer();
                 this.startPlaybackTimer();
@@ -447,15 +493,15 @@ class TUMVITestApp {
 
     async start() {
         this.ui.startBtn.disabled = true;
-        this.setStatus('Loading dataset...');
+        this.setStatus(`Loading ${this.datasetName}...`);
         this.log('Fetching TUM VI dataset CSV files...');
 
         try {
             // Parse CSV files in parallel
             const [imageList, imuResult, groundTruth] = await Promise.all([
-                parseImageList(`${DATASET_BASE}/cam0/data.csv`),
-                parseIMUData(`${DATASET_BASE}/imu0/data.csv`),
-                parseGroundTruth(`${DATASET_BASE}/mocap0/data.csv`).catch(() => null),
+                parseImageList(`${this.datasetBase}/cam0/data.csv`),
+                parseIMUData(`${this.datasetBase}/imu0/data.csv`),
+                parseGroundTruth(`${this.datasetBase}/mocap0/data.csv`).catch(() => null),
             ]);
 
             this.imageList = imageList;
@@ -481,11 +527,12 @@ class TUMVITestApp {
             this.setStatus(`Dataset loaded. Configuring VIO...`);
 
             // Image prefetcher
-            this.prefetcher = new ImagePrefetcher(imageList, `${DATASET_BASE}/cam0/data`, 10);
+            this.prefetcher = new ImagePrefetcher(imageList, `${this.datasetBase}/cam0/data`, 10);
 
             // Configure VIO
             this.log('Configuring VIO engine with TUM VI calibration...');
-            const configured = await this.vio.configure(TUM_VI_CONFIG);
+            const configured = await this.vio.configure({ ...TUM_VI_CONFIG,
+                benchmark_zero_positive_tolerances: this.benchmarkSolverProfileRequested });
             if (!configured) {
                 this.setStatus('VIO configuration FAILED');
                 this.log('VIO configure() returned false!', 'error');
@@ -496,18 +543,38 @@ class TUMVITestApp {
 
             // Set solver params
             await this.vio.setMobileParams(
-                SOLVER_CONFIG.solver_time,
-                SOLVER_CONFIG.num_iterations,
-                SOLVER_CONFIG.max_features
+                this.solverConfig.solver_time,
+                this.solverConfig.num_iterations,
+                this.solverConfig.max_features
             );
-            this.log(`Solver: time=${SOLVER_CONFIG.solver_time}s, iter=${SOLVER_CONFIG.num_iterations}, features=${SOLVER_CONFIG.max_features}`);
+            this.log(`Solver: time=${this.solverConfig.solver_time}s, iter=${this.solverConfig.num_iterations}, features=${this.solverConfig.max_features}`);
+
+            // TUM VI tracking params: 512x512 calibrated fisheye needs different
+            // settings from the mobile defaults hardcoded in configure().
+            await this.vio.setTrackingParams(
+                21,    // lk_window: default
+                3,     // lk_pyramid: 3 levels for 512x512
+                20,    // min_dist: 20px for good feature density at 512x512
+                0.0    // f_edge_factor: disabled (calibrated fisheye, no unmodeled distortion)
+            );
+            await this.vio.setFThreshold(1.0);
+            await this.vio.setPnPParams(false, 3);
+            this.log('Tracking: LK21/3, min_dist20, F1; PnP disabled');
 
             // Ground truth visualization
             if (this.groundTruth && this.renderer) {
                 this.addGroundTruthToRenderer(this.groundTruth);
             }
 
-            // Start playback
+            // Exact bound belongs to the app: a runner does not race Pause.
+            const requestedFrames = REPLAY_PARAMS.has('frames') ? Number(REPLAY_PARAMS.get('frames')) : imageList.length;
+            if (!Number.isInteger(requestedFrames) || requestedFrames < 1 || requestedFrames > imageList.length) throw new Error('frames must be an exact count within the dataset');
+            this.frameLimit = requestedFrames;
+            this._runGeneration++;
+            this._imuCursor = 0;
+            this._nextScheduledFrame = 0;
+            this.rows = [];
+            this.replay = { completed: false, failed: false, startedAtMs: performance.now(), finishedAtMs: null, mode: null };
             this.currentFrame = 0;
             this.playing = true;
             this.paused = false;
@@ -517,7 +584,9 @@ class TUMVITestApp {
             this.ui.resetBtn.disabled = false;
             this.updateProgress();
 
-            this.speed = parseInt(this.ui.speedSelect.value);
+            this.speed = REPLAY_PARAMS.has('speed') ? Number(REPLAY_PARAMS.get('speed')) : Number(this.ui.speedSelect.value);
+            if (![-1,0,1,2,5].includes(this.speed)) throw new Error('Invalid replay speed');
+            this.ui.speedSelect.value = this.speed;
             if (this.speed === 0) {
                 this.setStatus('Step mode: click Step to advance.');
             } else {
@@ -536,112 +605,123 @@ class TUMVITestApp {
     /**
      * Process one frame: load image, slice IMU, send to worker, update UI.
      */
-    async processNextFrame() {
-        if (this.processing) return; // guard re-entry
-        if (this.currentFrame >= this.imageList.length) {
-            this.stopPlaybackTimer();
-            this.playing = false;
-            this.setStatus(`Complete. ${this.currentFrame} frames processed.`);
-            this.log('Dataset playback complete.');
-            return;
-        }
+    _feedIMU(frameIdx) {
+        const slice = sliceIMUCursor(this.imuData, this.imuTimestamps, this.imuCount, this._imuCursor, this.imageList[frameIdx].timestamp_s, true);
+        const input = { count: slice.count, imuStartIndex: this._imuCursor, imuEndIndexExclusive: slice.nextCursor,
+            imuFirstTimestamp: slice.count ? slice.data[0] : null, imuLastTimestamp: slice.count ? slice.data[(slice.count - 1) * IMU_FIELDS] : null };
+        this._imuCursor = slice.nextCursor;
+        if (slice.count > 0 && this.vio.sendIMU(slice.data, slice.count) === false) throw new Error('Worker rejected replay IMU');
+        return input;
+    }
 
-        this.processing = true;
-        const frameIdx = this.currentFrame;
+    _finishReplay() {
+        if (this.processing || this.currentFrame < this.frameLimit) return;
+        this.stopPlaybackTimer();
+        this.playing = false;
+        this.replay.completed = !this.replay.failed;
+        this.replay.finishedAtMs = performance.now();
+        const report = this.exportReport();
+        this.setStatus(`${this.replay.failed ? 'Failed' : 'Complete'}. ${report.counts.completed} completed / ${report.counts.dropped} dropped / ${this.frameLimit} input (${this.replay.mode}).`);
+    }
+
+    async processNextFrame(scheduledFrame = null, deadlineMs = null) {
+        if (scheduledFrame === null && this.processing) return;
+        const frameIdx = scheduledFrame ?? this.currentFrame;
+        if (frameIdx >= this.frameLimit || frameIdx >= this.imageList.length) { this._finishReplay(); return; }
+        const generation = this._runGeneration;
         const frameEntry = this.imageList[frameIdx];
-
-        // Previous frame timestamp (for IMU slicing)
-        // For the first frame, use just before the first IMU reading to capture all pre-image IMU data
-        const prevTimestamp = frameIdx > 0
-            ? this.imageList[frameIdx - 1].timestamp_s
-            : this.imuTimestamps[0] - 1e-9;
-
         const t0 = performance.now();
-
+        const row = { frame: frameIdx, timestamp: frameEntry.timestamp_s, inputTimestamp: frameEntry.timestamp_s,
+            poseTimestamp: null, pose: null, accepted: false, completed: false, dropped: false,
+            poseFresh: false, poseValid: false, deadlineMs, arrivedAtMs: t0,
+            schedulingLatenessMs: deadlineMs === null ? null : t0 - deadlineMs };
         try {
-            // 1. Load image from prefetch cache
-            const gray = await this.prefetcher.get(frameIdx);
-
-            // 2. Display on preview canvas
-            this.displayImagePreview(gray);
-
-            // 3. Slice IMU data for this inter-frame interval
-            const imuSlice = sliceIMU(
-                this.imuData, this.imuTimestamps, this.imuCount,
-                prevTimestamp, frameEntry.timestamp_s
-            );
-            this.lastIMUSliceCount = imuSlice.count;
-
-            // 4. Send IMU (always goes through, not blocked by busy)
-            if (imuSlice.count > 0) {
-                this.vio.sendIMU(imuSlice.data, imuSlice.count);
-            }
-
-            // 5. Wait for worker to be free, then send frame
-            await this.vio.waitForFree(5000);
-            const sent = this.vio.sendFrame(gray, frameEntry.timestamp_s);
-
-            if (!sent) {
-                this.log(`Frame ${frameIdx} dropped (worker busy)`, 'warn');
-                this.processing = false;
+            const { count: imuCount, ...input } = this._feedIMU(frameIdx);
+            Object.assign(row, input, { submittedIMUCount: imuCount });
+            if (this.processing || this.vio.workerBusy) {
+                if (scheduledFrame === null) throw new Error('Unexpected busy worker in serial replay');
+                row.dropped = true; row.reason = 'paced_worker_busy';
+                this.rows.push(row);
+                this.currentFrame = Math.max(this.currentFrame, frameIdx + 1);
+                this.updateProgress();
                 return;
             }
-
-            // 6. Wait for processing to finish
+            this.processing = true;
+            const decodeStart = performance.now();
+            const gray = await this.prefetcher.get(frameIdx);
+            if (generation !== this._runGeneration || !this.playing) return;
+            row.decodeMs = performance.now() - decodeStart;
+            row.grayBytes = gray.byteLength;
+            if (this.inputHashEnabled) {
+                const hashStart = performance.now();
+                const digest = await crypto.subtle.digest('SHA-256', gray);
+                row.decodedGraySha256 = Array.from(new Uint8Array(digest), byte => byte.toString(16).padStart(2, '0')).join('');
+                row.inputHashMs = performance.now() - hashStart;
+                if (generation !== this._runGeneration || !this.playing) return;
+            }
+            this.displayImagePreview(gray);
+            this.lastIMUSliceCount = imuCount;
+            row.submittedAtMs = performance.now();
+            row.accepted = this.vio.sendFrame(gray, frameEntry.timestamp_s);
+            if (!row.accepted) throw new Error('Worker rejected replay frame');
             await this.vio.waitForFree(10000);
-
-            const t1 = performance.now();
-            this.frameProcessingTime = t1 - t0;
-
-            // 7. Update UI
+            if (generation !== this._runGeneration || !this.playing) return;
+            const result = this.vio.getLatestResult();
+            if (!result || result.inputTimestamp !== frameEntry.timestamp_s) throw new Error('Replay result timestamp mismatch');
+            const { pose, mapPoints: _mapPoints, ...diagnostics } = result;
+            Object.assign(row, diagnostics, { pose: pose ? Array.from(pose) : null, completed: true,
+                receivedAtMs: performance.now(), totalProcessingMs: performance.now() - t0 });
+            row.deadlineToResultMs = deadlineMs === null ? null : row.receivedAtMs - deadlineMs;
+            this.frameProcessingTime = row.totalProcessingMs;
+            this.rows.push(row);
+            this.currentFrame = Math.max(this.currentFrame, frameIdx + 1);
             this.updateDiagnostics();
             this.updateRenderer();
-
-            // 8. Advance
-            this.currentFrame++;
             this.updateProgress();
-
-            // Log status transitions and diagnostics
-            const result = this.vio.getLatestResult();
-            if (result) {
-                const statusNames = ['NOT_CONFIGURED', 'INITIALIZING', 'TRACKING', 'LOST', 'COOLDOWN'];
-                const statusName = statusNames[result.statusCode] || 'UNKNOWN';
-
-                // Log every 20 frames for first 200, then every 100
-                const logInterval = frameIdx < 200 ? 20 : 100;
-                if (frameIdx === 0 || frameIdx % logInterval === 0) {
-                    let poseInfo = 'no pose';
-                    if (result.pose) {
-                        const x = result.pose[3], y = result.pose[7], z = result.pose[11];
-                        const hasNaN = result.pose.some(v => isNaN(v));
-                        const isZero = result.pose.every(v => v === 0);
-                        poseInfo = hasNaN ? 'NaN!' : isZero ? 'all-zero' : `[${x.toFixed(4)}, ${y.toFixed(4)}, ${z.toFixed(4)}]`;
-                    }
-                    this.log(`Frame ${frameIdx}: status=${statusName}, features=${result.featureCount}, imu=${this.lastIMUSliceCount}, time=${this.frameProcessingTime.toFixed(0)}ms, pose=${poseInfo}`);
-                }
-
-                // Check for NaN in pose
-                if (result.pose) {
-                    const hasNaN = result.pose.some(v => isNaN(v));
-                    if (hasNaN) {
-                        this.log(`NaN detected in pose at frame ${frameIdx}!`, 'error');
-                    }
-                }
-
-                // Log status transitions
-                if (this._lastStatus !== undefined && this._lastStatus !== result.statusCode) {
-                    this.log(`STATUS CHANGE at frame ${frameIdx}: ${statusNames[this._lastStatus]} -> ${statusName}`);
-                }
-                this._lastStatus = result.statusCode;
-            }
-
-        } catch (err) {
-            this.log(`Frame ${frameIdx} error: ${err.message}`, 'error');
-            console.error(`[TUM-VI] Frame ${frameIdx}:`, err);
-            this.currentFrame++; // skip failed frame
+            if (frameIdx === 0 || frameIdx % 100 === 0 || this._lastStatus !== result.statusCode) this.log(`Frame ${frameIdx}: status=${result.statusCode}/${result.reason}, IMU=${imuCount}, fresh=${result.poseFresh}, time=${row.totalProcessingMs.toFixed(1)}ms`);
+            this._lastStatus = result.statusCode;
+        } catch (error) {
+            if (generation !== this._runGeneration) return;
+            row.reason = error.message;
+            row.error = true;
+            this.rows.push(row);
+            this.replay.failed = true;
+            this.replay.finishedAtMs = performance.now();
+            this.playing = false;
+            this.stopPlaybackTimer();
+            this.setStatus(`Replay failed at frame ${frameIdx}: ${error.message}`);
+            this.log(error.message, 'error');
         } finally {
-            this.processing = false;
+            // A busy paced arrival must not release another frame's busy guard.
+            if (generation === this._runGeneration && !row.dropped) this.processing = false;
+            if (generation === this._runGeneration) this._finishReplay();
         }
+    }
+
+    exportReport() {
+        const rows = [...this.rows].sort((a,b) => a.frame - b.frame);
+        const appliedProfile = rows.findLast(row => typeof row.benchmarkSolverProfile === 'boolean')?.benchmarkSolverProfile ?? null;
+        return { schema: 'mobile-slam-replay-v2', dataset: this.datasetName, datasetBase: this.datasetBase,
+            requestedFrames: this.frameLimit, datasetFrames: this.imageList.length,
+            inputIMUReadings: this.imuCount, deliveredIMUReadings: this._imuCursor, inputHashEnabled: this.inputHashEnabled,
+            calibration: { ...TUM_VI_CONFIG }, solver: { ...this.solverConfig }, tracking: { lk_window: 21, lk_pyramid: 3, lk_criteria_count: 20, lk_criteria_eps: 0.03, min_dist: 20, f_edge_factor: 0, f_threshold: 1, pnp: false, freq: 3 },
+            benchmarkSolverProfile: { requested: this.benchmarkSolverProfileRequested, actual: appliedProfile,
+                profileName: appliedProfile === true ? 'max10_zero_positive_tolerances' : appliedProfile === false ? 'default' : 'unavailable',
+                actualOptions: null, actualOptionsSource: 'Ordinary replay does not capture solver options; use bounded engine diagnostic capture.' },
+            inputPolicy: 'ordered cursor; first frame includes pre-image readings; first future bracket delivered once; engine owns carry',
+            poseFrame: 'camera T_W_C row-major', poseTimestampSource: 'actual engine poseTimestamp; invalid/fresh=false excluded',
+            clock: { dataset: 'CSV timestamp seconds', browser: 'performance.timeOrigin relative ms', timeOriginMs: performance.timeOrigin },
+            speed: this.speed, ...this.replay, counts: { input: rows.length, accepted: rows.filter(r => r.accepted).length,
+                completed: rows.filter(r => r.completed).length, dropped: rows.filter(r => r.dropped).length,
+                errors: rows.filter(r => r.error).length, freshPoses: rows.filter(r => r.poseFresh && r.poseValid && r.pose).length },
+            transport: this.vio.getMetrics?.() ?? null, rows,
+            limits: ['Dataset/desktop replay; physical phone sensors, exposure time, thermal and field accuracy unverified.', 'Paced deadline-to-result is a dataset scheduling proxy, not physical camera latency.'] };
+    }
+
+    downloadReport() {
+        const url = URL.createObjectURL(new Blob([JSON.stringify(this.exportReport(), null, 2)], { type: 'application/json' }));
+        const link = document.createElement('a'); link.href = url; link.download = `mobile-slam-${this.datasetName}-replay.json`; link.click();
+        setTimeout(() => URL.revokeObjectURL(url), 1000);
     }
 
     /** Draw grayscale image on preview canvas (reuses ImageData to avoid 1MB alloc per frame) */
@@ -690,23 +770,27 @@ class TUMVITestApp {
         }
     }
 
-    /** Update 3D renderer */
+    /** Render each engine observation once; epoch/loss invalidates the display. */
     updateRenderer() {
         if (!this.renderer) return;
         const result = this.vio.getLatestResult();
-        if (result && result.pose) {
-            this.renderer.updateCameraPose(result.pose);
-        }
-        const mapData = this.vio.getMapPoints();
-        if (mapData && mapData.count > 0) {
-            this.renderer.updateMapPoints(mapData.points, mapData.count);
+        const epoch = `${result?.clientEpoch}:${result?.engineEpoch}`;
+        const key = `${epoch}:${result?.sequence}`;
+        if (result && key !== this._renderResultKey) {
+            if (this._renderEpoch !== null && epoch !== this._renderEpoch) this.renderer.clear();
+            this._renderEpoch = epoch;
+            this._renderResultKey = key;
+            if (result.poseFresh && result.poseValid && Number.isFinite(result.poseTimestamp) && result.pose) {
+                this.renderer.updateCameraPose(result.pose);
+                const map = this.vio.getMapPoints(); this.renderer.updateMapPoints(map.points, map.count);
+            } else this.renderer.clear();
         }
         this.renderer.render();
     }
 
     /** Update progress bar */
     updateProgress() {
-        const total = this.imageList.length || 1;
+        const total = Number.isFinite(this.frameLimit) ? this.frameLimit : this.imageList.length || 1;
         const pct = (this.currentFrame / total) * 100;
         if (this.ui.progressFill) this.ui.progressFill.style.width = `${pct}%`;
         if (this.ui.progressText) this.ui.progressText.textContent = `${this.currentFrame} / ${total}`;
@@ -738,32 +822,37 @@ class TUMVITestApp {
 
     startPlaybackTimer() {
         this.stopPlaybackTimer();
-
         if (this.speed === -1) {
-            // Max speed: process as fast as possible with rAF yielding
-            this.playbackTimerType = 'raf';
-            const loop = async () => {
-                if (!this.playing || this.paused) return;
-                await this.processNextFrame();
-                if (this.playing && !this.paused) {
-                    this.playbackTimer = requestAnimationFrame(loop);
-                }
-            };
-            this.playbackTimer = requestAnimationFrame(loop);
-        } else if (this.speed > 0) {
-            // Real-time playback: 20Hz * speed
+            this.replay.mode = 'max_speed_serial';
             this.playbackTimerType = 'timeout';
-            const intervalMs = 1000 / (20 * this.speed);
+            const generation = this._runGeneration;
             const loop = async () => {
-                if (!this.playing || this.paused) return;
+                if (!this.playing || this.paused || generation !== this._runGeneration) return;
+                if (this.processing) { this.playbackTimer = setTimeout(loop, 0); return; }
                 await this.processNextFrame();
-                if (this.playing && !this.paused) {
-                    this.playbackTimer = setTimeout(loop, intervalMs);
-                }
+                if (this.playing && !this.paused && generation === this._runGeneration) this.playbackTimer = setTimeout(loop, 0);
             };
             this.playbackTimer = setTimeout(loop, 0);
-        }
-        // speed === 0: step mode, manual advance only
+        } else if (this.speed > 0) {
+            this.replay.mode = 'paced_absolute_deadline_drop_busy';
+            this.playbackTimerType = 'timeout';
+            this._nextScheduledFrame = Math.max(this._nextScheduledFrame, this.currentFrame);
+            const first = this.imageList[this._nextScheduledFrame]?.timestamp_s;
+            const wallOriginMs = performance.now();
+            const generation = this._runGeneration;
+            const tick = () => {
+                if (!this.playing || this.paused || generation !== this._runGeneration) return;
+                const index = this._nextScheduledFrame++;
+                if (index >= this.frameLimit) { this._finishReplay(); return; }
+                const deadline = replayDeadline(wallOriginMs, first, this.imageList[index].timestamp_s, this.speed);
+                void this.processNextFrame(index, deadline);
+                if (this._nextScheduledFrame < this.frameLimit) {
+                    const next = replayDeadline(wallOriginMs, first, this.imageList[this._nextScheduledFrame].timestamp_s, this.speed);
+                    this.playbackTimer = setTimeout(tick, Math.max(0, next - performance.now()));
+                }
+            };
+            this.playbackTimer = setTimeout(tick, 0);
+        } else this.replay.mode = 'manual_step';
     }
 
     stopPlaybackTimer() {
@@ -806,8 +895,14 @@ class TUMVITestApp {
         this.stopPlaybackTimer();
         this.playing = false;
         this.paused = false;
+        this._runGeneration++;
         this.currentFrame = 0;
+        this._nextScheduledFrame = 0;
+        this._imuCursor = 0;
+        this.rows = [];
         this.processing = false;
+        this._renderResultKey = null;
+        this._renderEpoch = null;
 
         this.vio.reset();
         if (this.renderer) {
@@ -854,4 +949,5 @@ class TUMVITestApp {
 // ─── Entry Point ─────────────────────────────────────────────────────────────
 
 const app = new TUMVITestApp();
+window.__tumviReplay = { app, export: () => app.exportReport() };
 document.addEventListener('DOMContentLoaded', () => app.initialize());

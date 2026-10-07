@@ -114,7 +114,7 @@ function(ceres_pretty_print_cmake_list OUTPUT_VAR)
 endfunction()
 
 # The list of (optional) components this version of Ceres was compiled with.
-set(CERES_COMPILED_COMPONENTS "EigenSparse;SparseLinearAlgebraLibrary")
+set(CERES_COMPILED_COMPONENTS "EigenSparse;SparseLinearAlgebraLibrary;SchurSpecializations")
 
 # If Ceres was not installed, then by definition it was exported
 # from a build directory.

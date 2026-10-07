@@ -1,0 +1,4 @@
+# Audit evaluator only; install in a project-local venv if host packages differ.
+numpy==2.2.6
+scipy==1.16.3
+PyYAML==6.0.3

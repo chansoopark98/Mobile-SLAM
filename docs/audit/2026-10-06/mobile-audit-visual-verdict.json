@@ -1,0 +1,8 @@
+{
+  "score": 92,
+  "verdict": "pass",
+  "category_match": true,
+  "differences": [],
+  "suggestions": [],
+  "reasoning": "412px diagnostic layout keeps controls and Korean instructions readable with scrolling summary. No reference image was supplied: this is functional display QA only, not screenshot fidelity evidence; blank iframe after Stop reflects intended resource teardown."
+}

@@ -64,7 +64,7 @@
 #endif
 
 // If defined, Ceres was compiled without Schur specializations.
-#define CERES_RESTRICT_SCHUR_SPECIALIZATION
+// #define CERES_RESTRICT_SCHUR_SPECIALIZATION
 
 // If defined, Ceres was compiled to use Eigen instead of hardcoded BLAS
 // routines.

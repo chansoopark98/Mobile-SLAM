@@ -86,6 +86,7 @@ export class Renderer {
         // Camera frustum
         this.frustumGroup = this._createFrustum();
         this.worldRoot.add(this.frustumGroup);
+        this.frustumGroup.visible = false;
 
         // ── Pre-allocated map points buffer ──
         this._mapBuffer = new Float32Array(MAX_MAP_POINTS * 3);
@@ -193,7 +194,8 @@ export class Renderer {
      * @param {Float64Array} poseMatrix - 16 doubles, row-major 4x4 matrix
      */
     updateCameraPose(poseMatrix) {
-        if (!poseMatrix || poseMatrix.length < 16) return;
+        if (!poseMatrix || poseMatrix.length !== 16 || !Array.from(poseMatrix).every(Number.isFinite)) return;
+        this.frustumGroup.visible = true;
 
         // Append to pre-allocated trajectory buffer (no new Float32Array)
         if (this._trajCount < MAX_TRAJECTORY_POINTS) {
@@ -252,7 +254,10 @@ export class Renderer {
      * @param {number} count - Number of points
      */
     updateMapPoints(points, count) {
-        if (!points || count === 0) return;
+        if (!points || count <= 0) {
+            this.pointsGeometry.setDrawRange(0, 0);
+            return;
+        }
 
         const n = Math.min(count, MAX_MAP_POINTS);
         // Write directly into pre-allocated buffer (Float64 → Float32 downcast)
@@ -292,5 +297,7 @@ export class Renderer {
         this.pointsGeometry.setDrawRange(0, 0);
 
         this._latestPoseMatrix = null;
+        this.frustumGroup.visible = false;
+        this.frustumGroup.matrix.identity();
     }
 }

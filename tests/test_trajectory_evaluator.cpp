@@ -1,6 +1,7 @@
 #include <gtest/gtest.h>
 #include <Eigen/Dense>
 #include <fstream>
+#include <filesystem>
 #include <iomanip>
 #include <cmath>
 #include "utility/trajectory_evaluator.h"
@@ -10,11 +11,11 @@ protected:
     std::string test_dir_ = "/tmp/trajectory_eval_test";
 
     void SetUp() override {
-        system(("mkdir -p " + test_dir_).c_str());
+        std::filesystem::create_directories(test_dir_);
     }
 
     void TearDown() override {
-        system(("rm -rf " + test_dir_).c_str());
+        std::filesystem::remove_all(test_dir_);
     }
 
     // Write a VIO trajectory file: "# timestamp tx ty tz qx qy qz qw"
@@ -116,7 +117,7 @@ TEST_F(TrajectoryEvaluatorTest, KnownScaleAndRotation) {
     ASSERT_TRUE(evaluator.loadVioTrajectory(vio_path));
     ASSERT_TRUE(evaluator.loadGroundTruth(gt_path));
     evaluator.associateTrajectories(0.01);
-    evaluator.alignTrajectories();
+    evaluator.alignTrajectories(true);
 
     auto ate = evaluator.computeATE();
     // umeyama with scale should align these perfectly
@@ -205,7 +206,7 @@ TEST_F(TrajectoryEvaluatorTest, RPEComputationStraightLine) {
     // GT: straight line at 1 m/s. VIO: straight line at 1.1 m/s (10% error)
     std::vector<std::pair<double, Eigen::Vector3d>> gt_poses, vio_poses;
     for (int i = 0; i < 100; ++i) {
-        double t = 1000.0 + i * 0.05;  // 20Hz
+        double t = 1000.0 + i * 0.1;  // 20Hz
         gt_poses.push_back({t, Eigen::Vector3d(t - 1000.0, 0, 0)});         // 1 m/s
         vio_poses.push_back({t, Eigen::Vector3d((t - 1000.0) * 1.1, 0, 0)}); // 1.1 m/s
     }
@@ -223,8 +224,7 @@ TEST_F(TrajectoryEvaluatorTest, RPEComputationStraightLine) {
 
     auto rpe = evaluator.computeRPE(1.0);
     EXPECT_GT(rpe.num_pairs, 0);
-    // After alignment, RPE should be very small for a straight line with scale correction
-    EXPECT_GE(rpe.rmse_trans, 0.0);
+    EXPECT_NEAR(rpe.rmse_trans, 0.1, 1e-6);
 }
 
 TEST_F(TrajectoryEvaluatorTest, FrameTransformRoundTrip) {
@@ -271,4 +271,57 @@ TEST_F(TrajectoryEvaluatorTest, FrameTransformRoundTrip) {
 
     auto ate = evaluator.computeATE();
     EXPECT_NEAR(ate.rmse, 0.0, 1e-6);
+}
+
+TEST_F(TrajectoryEvaluatorTest, MetricScaleErrorIsNotAlignedAway) {
+    writeVioTrajectory(test_dir_ + "/scale-vio.txt", {{0,{0,0,0}},{1,{2,0,0}},{2,{4,0,0}}});
+    writeGroundTruth(test_dir_ + "/scale-gt.csv", {{0,{0,0,0}},{1,{1,0,0}},{2,{2,0,0}}});
+    utility::TrajectoryEvaluator evaluator;
+    ASSERT_TRUE(evaluator.loadVioTrajectory(test_dir_ + "/scale-vio.txt"));
+    ASSERT_TRUE(evaluator.loadGroundTruth(test_dir_ + "/scale-gt.csv"));
+    ASSERT_EQ(evaluator.associateTrajectories(), 3);
+    ASSERT_TRUE(evaluator.alignTrajectories());
+    EXPECT_NEAR(evaluator.computeATE().rmse, std::sqrt(2.0/3.0), 1e-9);
+    EXPECT_NEAR(evaluator.computeRPE(1).rmse_trans, 1, 1e-9);
+}
+TEST_F(TrajectoryEvaluatorTest, RealRelativeRotationIsNinetyDegrees) {
+    std::ofstream f(test_dir_ + "/rotation-vio.txt");
+    f << std::setprecision(17);
+    for (int i=0;i<3;++i) {
+        const Eigen::Quaterniond q(Eigen::AngleAxisd(i*M_PI/2, Eigen::Vector3d::UnitZ()));
+        f << i << " 0 0 0 " << q.x() << ' ' << q.y() << ' ' << q.z() << ' ' << q.w() << '\n';
+    }
+    f.close();
+    writeGroundTruth(test_dir_ + "/rotation-gt.csv", {{0,{0,0,0}},{1,{0,0,0}},{2,{0,0,0}}});
+    utility::TrajectoryEvaluator e;
+    ASSERT_TRUE(e.loadVioTrajectory(test_dir_ + "/rotation-vio.txt"));
+    ASSERT_TRUE(e.loadGroundTruth(test_dir_ + "/rotation-gt.csv"));
+    ASSERT_EQ(e.associateTrajectories(),3);
+    e.alignTrajectories();
+    EXPECT_NEAR(e.computeRPE().rmse_rot,M_PI/2,1e-9);
+}
+TEST_F(TrajectoryEvaluatorTest, UnmatchedPrefixDoesNotChangeRelativePairs) {
+    writeVioTrajectory(test_dir_ + "/prefix-vio.txt", {{0,{0,0,0}},{.1,{0,0,0}},{.2,{0,0,0}},{10,{0,0,0}},{11,{1,0,0}},{12,{2,0,0}}});
+    writeGroundTruth(test_dir_ + "/prefix-gt.csv", {{10,{0,0,0}},{11,{1,0,0}},{12,{2,0,0}}});
+    utility::TrajectoryEvaluator e;
+    ASSERT_TRUE(e.loadVioTrajectory(test_dir_ + "/prefix-vio.txt"));
+    ASSERT_TRUE(e.loadGroundTruth(test_dir_ + "/prefix-gt.csv"));
+    ASSERT_EQ(e.associateTrajectories(),3);
+    ASSERT_TRUE(e.alignTrajectories());
+    EXPECT_EQ(e.computeRPE().num_pairs,2);
+    EXPECT_NEAR(e.computeRPE().rmse_trans,0,1e-9);
+}
+TEST_F(TrajectoryEvaluatorTest, EmptyResultsAreUnmeasuredRatherThanZeroError) {
+    utility::TrajectoryEvaluator e;
+    EXPECT_FALSE(std::isfinite(e.computeATE().rmse));
+    EXPECT_FALSE(std::isfinite(e.computeRPE().rmse_trans));
+    EXPECT_FALSE(std::isfinite(e.computeRPE().rmse_rot));
+}
+TEST_F(TrajectoryEvaluatorTest, GroundTruthSamplesAreNeverReused) {
+    writeVioTrajectory(test_dir_ + "/unique-vio.txt", {{0,{0,0,0}},{.001,{0,0,0}},{1,{1,0,0}},{2,{2,0,0}}});
+    writeGroundTruth(test_dir_ + "/unique-gt.csv", {{0,{0,0,0}},{1,{1,0,0}},{2,{2,0,0}}});
+    utility::TrajectoryEvaluator e;
+    ASSERT_TRUE(e.loadVioTrajectory(test_dir_ + "/unique-vio.txt"));
+    ASSERT_TRUE(e.loadGroundTruth(test_dir_ + "/unique-gt.csv"));
+    EXPECT_EQ(e.associateTrajectories(),3);
 }

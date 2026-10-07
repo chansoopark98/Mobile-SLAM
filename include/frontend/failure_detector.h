@@ -3,6 +3,7 @@
 
 #include <Eigen/Dense>
 #include <iostream>
+#include <string>
 
 #include "backend/sliding_window.h"
 #include "frontend/feature_manager.h"
@@ -15,6 +16,8 @@ public:
 
     // Main failure detection method
     bool detectFailure(const Vector3d& last_P_end, const Matrix3d& last_R_end);
+    // Threshold crossings are diagnostics; callers choose a calibrated policy.
+    std::string getMeasuredFailureReason(const Vector3d& last_P_end, const Matrix3d& last_R_end);
 
     // Individual failure detection methods
     bool detectFeatureFailure();

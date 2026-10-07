@@ -1,5 +1,6 @@
 #include "config/config_manager.h"
 #include <iostream>
+#include <cmath>
 
 namespace config {
 
@@ -9,16 +10,20 @@ ConfigManager& ConfigManager::getInstance() {
 }
 
 bool ConfigManager::loadConfiguration(const std::string& config_path) {
-    std::lock_guard<std::mutex> lock(config_mutex_);
+    std::unique_lock<std::mutex> lock(config_mutex_);
+    auto candidate = std::make_shared<utility::Config>();
     
-    config_ = std::make_shared<utility::Config>();
-    
-    if (!config_->loadFromYaml(config_path)) {
+    if (!candidate->loadFromYaml(config_path)) {
         std::cerr << "Failed to load configuration from: " << config_path << std::endl;
-        config_.reset();
         return false;
     }
     
+    const auto previous = config_;
+    config_ = candidate;
+    if (!validateCameraParams() || !validateEstimatorParams() || !validateFeatureTrackerParams()) {
+        config_ = previous;
+        return false;
+    }
     config_file_path_ = config_path;
     
     // Basic validation: check if dataset path exists
@@ -31,6 +36,7 @@ bool ConfigManager::loadConfiguration(const std::string& config_path) {
     std::cout << "Configuration loaded successfully from: " << config_path << std::endl;
     
     // Notify all registered callbacks
+    lock.unlock();
     notifyChange("configuration_loaded");
     
     return true;
@@ -91,7 +97,12 @@ bool ConfigManager::saveConfiguration(const std::string& config_path) const {
 }
 
 void ConfigManager::notifyChange(const std::string& key) {
-    for (const auto& callback : change_callbacks_) {
+    std::vector<std::function<void(const std::string&)>> callbacks;
+    {
+        std::lock_guard<std::mutex> lock(config_mutex_);
+        callbacks = change_callbacks_;
+    }
+    for (const auto& callback : callbacks) {
         try {
             callback(key);
         } catch (const std::exception& e) {
@@ -102,24 +113,27 @@ void ConfigManager::notifyChange(const std::string& key) {
 
 bool ConfigManager::validateCameraParams() const {
     if (!config_) return false;
-    // Basic validation - check if camera parameters are reasonable
-    return config_->camera.fx > 0 && config_->camera.fy > 0 && 
-           config_->camera.row > 0 && config_->camera.col > 0;
+    const auto& c=config_->camera;
+    return std::isfinite(c.fx) && c.fx>0 && std::isfinite(c.fy) && c.fy>0 &&
+        std::isfinite(c.cx) && std::isfinite(c.cy) && std::isfinite(c.row) && c.row>0 &&
+        std::isfinite(c.col) && c.col>0 && c.r_ic.allFinite() && c.t_ic.allFinite() &&
+        (c.r_ic.transpose()*c.r_ic-Eigen::Matrix3d::Identity()).norm()<1e-6 &&
+        std::abs(c.r_ic.determinant()-1)<1e-6;
 }
-
 bool ConfigManager::validateEstimatorParams() const {
     if (!config_) return false;
-    // Basic validation - check if estimator parameters are reasonable
-    return config_->estimator.window_size > 0 && 
-           config_->estimator.num_iterations > 0 &&
-           config_->estimator.solver_time > 0;
+    const auto& e=config_->estimator;
+    return e.window_size>0 && e.window_size<=utility::WINDOW_SIZE && e.num_iterations>0 &&
+        std::isfinite(e.solver_time) && e.solver_time>0 && std::isfinite(e.init_depth) && e.init_depth>0 &&
+        e.g.allFinite() && e.g.norm()>0 && std::isfinite(e.acc_n) && e.acc_n>0 &&
+        std::isfinite(e.acc_w) && e.acc_w>=0 && std::isfinite(e.gyr_n) && e.gyr_n>0 &&
+        std::isfinite(e.gyr_w) && e.gyr_w>=0;
 }
-
 bool ConfigManager::validateFeatureTrackerParams() const {
     if (!config_) return false;
-    // Basic validation - check if feature tracker parameters are reasonable
-    return config_->feature_tracker.max_cnt > 0 && 
-           config_->feature_tracker.min_dist > 0;
+    const auto& f=config_->feature_tracker;
+    return f.max_cnt>0 && f.min_dist>0 && f.window_size>0 &&
+        std::isfinite(f.f_threshold) && f.f_threshold>0 && f.lk_iterations>0 &&
+        std::isfinite(f.lk_eps) && f.lk_eps>0;
 }
-
 } // namespace config

@@ -1,0 +1,9 @@
+test_dot_directories_and_encoded_variants_are_denied (__main__.PublicStaticTests.test_dot_directories_and_encoded_variants_are_denied) ... ok
+test_public_javascript_is_allowed (__main__.PublicStaticTests.test_public_javascript_is_allowed) ... ok
+test_symlink_to_secret_or_outside_root_is_denied (__main__.PublicStaticTests.test_symlink_to_secret_or_outside_root_is_denied) ... ok
+test_traversal_is_denied (__main__.PublicStaticTests.test_traversal_is_denied) ... ok
+
+----------------------------------------------------------------------
+Ran 4 tests in 0.001s
+
+OK

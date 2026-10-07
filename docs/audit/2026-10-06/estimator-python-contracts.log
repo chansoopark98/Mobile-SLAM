@@ -1,0 +1,8 @@
+  VIO: 3 poses, t=[0.000, 2.000]s
+  Associated 3 pairs (max_dt=0.001s)
+PYTHON_ORACLE_MATCH rotation90 rotation_deg=89.99999999999999 pairs=2
+  VIO: 6 poses, t=[-100.000, 2.000]s
+  Associated 3 pairs (max_dt=0.001s)
+PYTHON_ORACLE_MATCH unmatched_prefix rotation_deg=0.0 pairs=2
+  VIO: 3 poses, t=[0.000, 2.000]s
+METRIC_LIMIT python_Sim3_scale=0.5000000000000001 ATE_m=3.5463782934425935e-16 metric_SE3_oracle_m=0.6666666666666666

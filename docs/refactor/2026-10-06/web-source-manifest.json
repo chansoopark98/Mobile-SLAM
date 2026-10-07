@@ -1,0 +1,30 @@
+{
+  "recorded_utc": "2026-10-06T11:09:30.772063+00:00",
+  "stage": "freshQR+optinbenchmark candidateactual7002verified",
+  "source_files": {
+    "web/audit-mobile.html": "d26712286ba9db7602e9013509fc8e3dea4f010e2bed57da3e7d0724c0bff125",
+    "web/index.html": "9aa2f7706b97dd935a527fed294938f7a9847417d426cbf5c6860ae1927bbd50",
+    "web/js/app.js": "097641e47e1bec8823046c27ec6937d0f21a4bed9117b6488eb905033f14a25f",
+    "web/js/audit-mobile.js": "b50483c68efcafe8927daa32f6d226f194f7e14a2ba9be06db2fd843b2b854d0",
+    "web/js/camera.js": "61ce1a42f06ed5968975e002e5d3b60c1b692fcb7a661712197f5a30ef0036d1",
+    "web/js/imu.js": "5fe42b6185cabd33d7b39b55ed867811b69b658a252cd5eab59bee5c0500952a",
+    "web/js/orientation.js": "06869f6ba2e1caf298524bde30a0170fb7c5afeca0a791b74ee102397cce16c8",
+    "web/js/renderer.js": "be4c315c5ee2d216c21af7d3b5d66d87350d1330e17b8062fc08dd6439a5865d",
+    "web/js/shared-memory.js": "8bcbb913dc1858b5d3eb0d6dfd80f53d23c8e14394b8960d2cd82d37bb933cc3",
+    "web/js/test-tumvi-app.js": "b6140e59da93a7cd61f2fc1ad745e82327d68453a562618a630b67ae801b8f61",
+    "web/js/vio-worker.js": "fb60bcc7b5c6521fa02a71b9e31a6dfeadbca3b2c01dce3342db6cbc06d5fba1",
+    "web/js/vio-wrapper.js": "d76e8a4c64dbb4717661c197f8000eceb09967aabc68ba0a55db5880ac277e1c",
+    "web/js/vio_engine_worker.js": "fa5f5ec9835b884a5dd1b6069976a09fc4045339778daeaa30346c06f5240796",
+    "web/server.js": "ea2891b7f4e4a5ffad7aacc8abfa17c7724501023007d176e1a2c234a50ec27e",
+    "web/test-tumvi.html": "17790ea956c337ecba439081d961c2f0cc1577160d89cf856134c57bc4ce5434"
+  },
+  "active_candidate": {
+    "path": "/home/park-ubuntu/park/SOLUTION/Mobile-SLAM/build/refactor-wasm/vio_engine.js",
+    "sha256": "fce25012d61a0d5965e4d5afadda25aecf96c219b30451e0394575c3caa10da1",
+    "bytes": 6007610
+  },
+  "core_source_manifest_sha256": "11ca788ff68b39653984b2d384c672820fcf698cfc0a621d273a49311ae9075c",
+  "note": "selected web source snapshot; legacy generated references are preserved and not active WASM provenance",
+  "server_pid": 2449945,
+  "checked_utc": "2026-10-06T14:28:05.474251+00:00"
+}

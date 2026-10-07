@@ -1,9 +1,60 @@
 #include "frontend/feature_tracker.h"
+#include <algorithm>
+#include <cmath>
+#include <limits>
+#include <sstream>
+#include <iomanip>
 
 using namespace std;
 using namespace common;
 using namespace Eigen;
 using namespace utility;
+
+namespace {
+constexpr size_t kDiagnosticPointLimit=1000;
+void diagnosticNumber(std::ostream& output,double value) {
+    if(std::isfinite(value)) output<<std::setprecision(17)<<value;
+    else output<<"null";
+}
+std::string diagnosticPoints(const std::vector<cv::Point2f>& points,
+                              const std::vector<int>* ids=nullptr,const std::vector<int>* tracks=nullptr,
+                              const std::vector<uchar>* status=nullptr,
+                              const std::vector<cv::Point2f>* normals=nullptr,
+                              const std::vector<cv::Point2f>* velocity=nullptr) {
+    std::ostringstream output;
+    output<<"{\"count\":"<<points.size()<<",\"rows\":[";
+    const size_t count=std::min(points.size(),kDiagnosticPointLimit);
+    for(size_t i=0;i<count;++i) {
+        if(i) output<<',';
+        output<<"[";diagnosticNumber(output,points[i].x);output<<',';diagnosticNumber(output,points[i].y);
+        if(ids) output<<','<<(i<ids->size()?(*ids)[i]:-1);
+        if(tracks) output<<','<<(i<tracks->size()?(*tracks)[i]:0);
+        if(status) output<<','<<(i<status->size()?int((*status)[i]):0);
+        if(normals) { output<<',';diagnosticNumber(output,i<normals->size()?(*normals)[i].x:NAN);
+                      output<<',';diagnosticNumber(output,i<normals->size()?(*normals)[i].y:NAN); }
+        if(velocity) { output<<',';diagnosticNumber(output,i<velocity->size()?(*velocity)[i].x:NAN);
+                       output<<',';diagnosticNumber(output,i<velocity->size()?(*velocity)[i].y:NAN); }
+        output<<']';
+    }
+    output<<"]}";
+    return output.str();
+}
+std::string diagnosticMask(const std::vector<uchar>& mask) {
+    std::ostringstream output;output<<"{\"count\":"<<mask.size()<<",\"values\":[";
+    for(size_t i=0;i<std::min(mask.size(),kDiagnosticPointLimit);++i) {if(i)output<<',';output<<int(mask[i]);}
+    output<<"]}";return output.str();
+}
+std::string diagnosticImage(const cv::Mat& image) {
+    uint64_t hash=14695981039346656037ULL;
+    for(int row=0;row<image.rows;++row) for(int col=0;col<image.cols*image.elemSize();++col) {
+        hash^=image.ptr<uchar>(row)[col];hash*=1099511628211ULL;
+    }
+    std::ostringstream output;
+    output<<"{\"rows\":"<<image.rows<<",\"cols\":"<<image.cols
+          <<",\"type\":"<<image.type()<<",\"fnv1a64\":\""<<std::hex<<std::setw(16)<<std::setfill('0')<<hash<<"\"}";
+    return output.str();
+}
+}
 
 namespace frontend {
 
@@ -17,25 +68,60 @@ bool inBorder(const cv::Point2f& pt) {
            img_y < g_config.camera.row - BORDER_SIZE;
 }
 
-void filterByStatus(vector<cv::Point2f>& v, vector<uchar> status) {
+void filterByStatus(vector<cv::Point2f>& v, const vector<uchar>& status) {
     int j = 0;
-    for (int i = 0; i < int(v.size()); i++)
+    // Historical vectors can be shorter than current tracks; unmatched entries have no correspondence.
+    for (int i = 0; i < int(v.size()) && i < int(status.size()); i++)
         if (status[i])
             v[j++] = v[i];
     v.resize(j);
 }
 
-void filterByStatus(vector<int>& v, vector<uchar> status) {
+void filterByStatus(vector<int>& v, const vector<uchar>& status) {
     int j = 0;
-    for (int i = 0; i < int(v.size()); i++)
+    for (int i = 0; i < int(v.size()) && i < int(status.size()); i++)
         if (status[i])
             v[j++] = v[i];
     v.resize(j);
 }
 
-FeatureTracker::FeatureTracker() {}
+FeatureTracker::FeatureTracker() : cur_time(-1.0), prev_time(-1.0) {}
+
+void FeatureTracker::setDiagnosticCapture(bool enabled) {
+    diagnostic_capture_=enabled;diagnostic_stages_.clear();diagnostic_json_.clear();
+}
+void FeatureTracker::recordDiagnostic(const char* name,const std::string& json) {
+    if(!diagnostic_capture_) return;
+    if(!diagnostic_stages_.empty()) diagnostic_stages_+=',';
+    diagnostic_stages_+='"';diagnostic_stages_+=name;diagnostic_stages_+="\":";diagnostic_stages_+=json;
+}
+
+void FeatureTracker::pruneTrackedPoints(const vector<uchar>& status) {
+    filterByStatus(prev_pts,status);
+    filterByStatus(cur_pts,status);
+    filterByStatus(next_pts,status);
+    filterByStatus(prev_undistorted_pts,status);
+    filterByStatus(cur_undistorted_pts,status);
+    filterByStatus(pts_velocity,status);
+    filterByStatus(ids,status);
+    filterByStatus(track_cnt,status);
+}
+
+void FeatureTracker::reset() {
+    mask.release();
+    fisheye_mask.release();
+    prev_img.release(); cur_img.release(); next_img.release();
+    n_pts.clear(); prev_pts.clear(); cur_pts.clear(); next_pts.clear();
+    prev_undistorted_pts.clear(); cur_undistorted_pts.clear(); pts_velocity.clear();
+    ids.clear(); track_cnt.clear();
+    cur_undistorted_pts_map.clear(); prev_undistorted_pts_map.clear();
+    cur_pyramid_.clear(); next_pyramid_.clear();
+    cur_time = prev_time = -1.0;
+    diagnostic_stages_.clear();diagnostic_json_.clear();
+}
 
 void FeatureTracker::setMask() {
+    if(diagnostic_capture_) recordDiagnostic("mask_input",diagnosticPoints(next_pts,&ids,&track_cnt));
     if (g_config.feature_tracker.fisheye) {
         // Lazily initialize fisheye mask on first use.
         if (fisheye_mask.empty()) {
@@ -61,6 +147,7 @@ void FeatureTracker::setMask() {
     } else
         mask = cv::Mat(g_config.camera.row, g_config.camera.col, CV_8UC1, cv::Scalar(255));
 
+    if(diagnostic_capture_) recordDiagnostic("mask_image",diagnosticImage(mask));
     // prefer to keep features that are tracked for long time
     vector<pair<int, pair<cv::Point2f, int>>> cnt_pts_id;
 
@@ -69,8 +156,18 @@ void FeatureTracker::setMask() {
 
     sort(cnt_pts_id.begin(), cnt_pts_id.end(),
          [](const pair<int, pair<cv::Point2f, int>>& a, const pair<int, pair<cv::Point2f, int>>& b) {
-             return a.first > b.first;
+             if(a.first!=b.first) return a.first>b.first;
+             if(a.second.second!=b.second.second) return a.second.second<b.second.second;
+             if(a.second.first.x!=b.second.first.x) return a.second.first.x<b.second.first.x;
+             return a.second.first.y<b.second.first.y;
          });
+
+    if(diagnostic_capture_) {
+        std::vector<cv::Point2f> points;std::vector<int> sorted_ids,counts;
+        const size_t count=std::min(cnt_pts_id.size(),kDiagnosticPointLimit);
+        for(size_t i=0;i<count;++i) {points.push_back(cnt_pts_id[i].second.first);sorted_ids.push_back(cnt_pts_id[i].second.second);counts.push_back(cnt_pts_id[i].first);}
+        recordDiagnostic("mask_sorted",diagnosticPoints(points,&sorted_ids,&counts));
+    }
 
     next_pts.clear();
     ids.clear();
@@ -84,6 +181,7 @@ void FeatureTracker::setMask() {
             cv::circle(mask, it.second.first, g_config.feature_tracker.min_dist, 0, -1);
         }
     }
+    if(diagnostic_capture_) recordDiagnostic("mask_output",diagnosticPoints(next_pts,&ids,&track_cnt));
 }
 
 void FeatureTracker::addPoints() {
@@ -94,9 +192,13 @@ void FeatureTracker::addPoints() {
     }
 }
 
-void FeatureTracker::detectAndTrack(const cv::Mat& _img, double _cur_time) {
+void FeatureTracker::detectAndTrack(const cv::Mat& _img, double _cur_time, bool backend_frame) {
     cv::Mat img;
     cur_time = _cur_time;
+    if(diagnostic_capture_) {diagnostic_stages_.clear();diagnostic_json_.clear();}
+    double min_intensity, max_intensity;
+    cv::minMaxLoc(_img, &min_intensity, &max_intensity);
+    const bool has_image_contrast = min_intensity < max_intensity;
 
     // equalize histogram (CLAHE cached to avoid per-frame allocation)
     if (g_config.feature_tracker.equalize) {
@@ -105,8 +207,9 @@ void FeatureTracker::detectAndTrack(const cv::Mat& _img, double _cur_time) {
         }
         clahe_->apply(_img, img);
     } else
-        img = _img;
+        img = _img.clone(); // Retained tracking images outlive the caller's reusable frame buffer.
 
+    if(diagnostic_capture_) recordDiagnostic("clahe_image",diagnosticImage(img));
     const int lk_win = g_config.feature_tracker.lk_window_size;
     const int lk_pyr = g_config.feature_tracker.lk_pyramid_levels;
     const cv::Size win_size(lk_win, lk_win);
@@ -123,6 +226,11 @@ void FeatureTracker::detectAndTrack(const cv::Mat& _img, double _cur_time) {
     cv::buildOpticalFlowPyramid(next_img, next_pyramid_, win_size, lk_pyr, true);
 
     next_pts.clear();
+    // LK uses reference gradients; an exact constant target cannot support a correspondence.
+    if (!has_image_contrast) {
+        pruneTrackedPoints({});
+        n_pts.clear();
+    }
 
     if (cur_pts.size() > 0) {
         vector<uchar> status;
@@ -135,16 +243,13 @@ void FeatureTracker::detectAndTrack(const cv::Mat& _img, double _cur_time) {
         cv::calcOpticalFlowPyrLK(cur_pyramid_, next_pyramid_, cur_pts, next_pts,
                                  status, err, win_size, lk_pyr, lk_criteria);
 
+        if(diagnostic_capture_) recordDiagnostic("lk_raw",diagnosticPoints(next_pts,&ids,&track_cnt,&status));
         for (int i = 0; i < int(next_pts.size()); i++)
             if (status[i] && !inBorder(next_pts[i]))
                 status[i] = 0;
 
-        filterByStatus(prev_pts, status);
-        filterByStatus(cur_pts, status);
-        filterByStatus(next_pts, status);
-        filterByStatus(ids, status);
-        filterByStatus(cur_undistorted_pts, status);
-        filterByStatus(track_cnt, status);
+        if(diagnostic_capture_) recordDiagnostic("lk_border_status",diagnosticMask(status));
+        pruneTrackedPoints(status);
     }
 
     for (auto& n : track_cnt)
@@ -171,23 +276,29 @@ void FeatureTracker::detectAndTrack(const cv::Mat& _img, double _cur_time) {
             rejectWithFundamentalMatrix();
         }
     }
-    setMask();
 
-    int supplementary_points_count = g_config.feature_tracker.max_cnt - static_cast<int>(next_pts.size());
-    if (supplementary_points_count > 0) {
-        if (mask.empty())
-            cout << "mask is empty " << endl;
-        if (mask.type() != CV_8UC1)
-            cout << "mask type wrong " << endl;
-        if (mask.size() != next_img.size())
-            cout << "wrong size " << endl;
+    // On backend frames: full pipeline (setMask + new feature detection + addPoints).
+    // On PnP-only frames: skip — only existing feature tracks are needed.
+    if (backend_frame && has_image_contrast) {
+        setMask();
 
-        cv::goodFeaturesToTrack(next_img, n_pts, supplementary_points_count, 0.01, g_config.feature_tracker.min_dist,
-                                mask);
-    } else
-        n_pts.clear();
+        int supplementary_points_count = g_config.feature_tracker.max_cnt - static_cast<int>(next_pts.size());
+        if (supplementary_points_count > 0) {
+            if (mask.empty())
+                cout << "mask is empty " << endl;
+            if (mask.type() != CV_8UC1)
+                cout << "mask type wrong " << endl;
+            if (mask.size() != next_img.size())
+                cout << "wrong size " << endl;
 
-    addPoints();
+            cv::goodFeaturesToTrack(next_img, n_pts, supplementary_points_count, 0.01, g_config.feature_tracker.min_dist,
+                                    mask);
+        } else
+            n_pts.clear();
+
+        if(diagnostic_capture_) recordDiagnostic("gftt_new",diagnosticPoints(n_pts));
+        addPoints();
+    }
 
     prev_img = cur_img;
     prev_pts = cur_pts;
@@ -198,31 +309,45 @@ void FeatureTracker::detectAndTrack(const cv::Mat& _img, double _cur_time) {
     cur_pyramid_ = std::move(next_pyramid_);
     undistortedPoints();
     prev_time = cur_time;
+    if(diagnostic_capture_) {
+        recordDiagnostic("final",diagnosticPoints(cur_pts,&ids,&track_cnt,nullptr,&cur_undistorted_pts,&pts_velocity));
+        std::ostringstream output;output<<"{\"time\":";diagnosticNumber(output,cur_time);
+        output<<",\"stages\":{"<<diagnostic_stages_<<"}}";diagnostic_json_=output.str();
+    }
 }
 
 void FeatureTracker::rejectWithFundamentalMatrix() {
-    // Require minimum 30 features for stable F-matrix estimation.
-    // With fewer points, RANSAC produces unreliable models that
-    // cascade-reject features (85→56→22→14 observed in mobile logs).
+    vector<cv::Point2f> undistorted_cur_pts(cur_pts.size()), undistorted_next_pts(next_pts.size());
+    vector<uchar> valid(cur_pts.size(),0);
+    const double cx = g_config.camera.col / 2.0;
+    const double cy = g_config.camera.row / 2.0;
+    const double float_limit = std::numeric_limits<float>::max();
+    if (m_camera) for (size_t i=0;i<cur_pts.size() && i<next_pts.size();++i) {
+        Eigen::Vector3d current_ray,next_ray;
+        m_camera->liftProjective(Eigen::Vector2d(cur_pts[i].x,cur_pts[i].y),current_ray);
+        m_camera->liftProjective(Eigen::Vector2d(next_pts[i].x,next_pts[i].y),next_ray);
+        if (!current_ray.allFinite() || !next_ray.allFinite() ||
+            current_ray.z()<=1e-12 || next_ray.z()<=1e-12) continue;
+        const double coordinates[] = {
+            g_config.camera.focal_length*current_ray.x()/current_ray.z()+cx,
+            g_config.camera.focal_length*current_ray.y()/current_ray.z()+cy,
+            g_config.camera.focal_length*next_ray.x()/next_ray.z()+cx,
+            g_config.camera.focal_length*next_ray.y()/next_ray.z()+cy};
+        if (!std::all_of(std::begin(coordinates),std::end(coordinates),[&](double value){
+            return std::isfinite(value) && std::abs(value)<=float_limit;
+        })) continue;
+        undistorted_cur_pts[i]=cv::Point2f(coordinates[0],coordinates[1]);
+        undistorted_next_pts[i]=cv::Point2f(coordinates[2],coordinates[3]);
+        valid[i]=1;
+    }
+    if(diagnostic_capture_) recordDiagnostic("f_valid",diagnosticMask(valid));
+    // Invalid rays must not enter either division/scoring or retained parallel track history.
+    pruneTrackedPoints(valid);
+    filterByStatus(undistorted_cur_pts,valid);
+    filterByStatus(undistorted_next_pts,valid);
+    // Preserve the existing minimum for stable F-matrix estimation after invalid pairs are removed.
     if (next_pts.size() >= 30) {
         const int before_count = static_cast<int>(next_pts.size());
-        vector<cv::Point2f> undistorted_cur_pts(cur_pts.size()), undistorted_next_pts(next_pts.size());
-
-        const double cx = g_config.camera.col / 2.0;
-        const double cy = g_config.camera.row / 2.0;
-
-        for (unsigned int i = 0; i < cur_pts.size(); i++) {
-            Eigen::Vector3d tmp_p;
-            m_camera->liftProjective(Eigen::Vector2d(cur_pts[i].x, cur_pts[i].y), tmp_p);
-            tmp_p.x() = g_config.camera.focal_length * tmp_p.x() / tmp_p.z() + cx;
-            tmp_p.y() = g_config.camera.focal_length * tmp_p.y() / tmp_p.z() + cy;
-            undistorted_cur_pts[i] = cv::Point2f(tmp_p.x(), tmp_p.y());
-
-            m_camera->liftProjective(Eigen::Vector2d(next_pts[i].x, next_pts[i].y), tmp_p);
-            tmp_p.x() = g_config.camera.focal_length * tmp_p.x() / tmp_p.z() + cx;
-            tmp_p.y() = g_config.camera.focal_length * tmp_p.y() / tmp_p.z() + cy;
-            undistorted_next_pts[i] = cv::Point2f(tmp_p.x(), tmp_p.y());
-        }
 
         vector<uchar> status;
         cv::Mat F = cv::findFundamentalMat(undistorted_cur_pts, undistorted_next_pts, cv::FM_RANSAC,
@@ -284,6 +409,7 @@ void FeatureTracker::rejectWithFundamentalMatrix() {
             }
         }
 
+        if(diagnostic_capture_) recordDiagnostic("f_inliers",diagnosticMask(status));
         int inlier_count = 0;
         for (const auto& s : status) { if (s) inlier_count++; }
         const int rejected = before_count - inlier_count;
@@ -297,12 +423,7 @@ void FeatureTracker::rejectWithFundamentalMatrix() {
                       << std::endl;
         }
 
-        filterByStatus(prev_pts, status);
-        filterByStatus(cur_pts, status);
-        filterByStatus(next_pts, status);
-        filterByStatus(cur_undistorted_pts, status);
-        filterByStatus(ids, status);
-        filterByStatus(track_cnt, status);
+        pruneTrackedPoints(status);
     }
 }
 
@@ -319,34 +440,48 @@ void FeatureTracker::readIntrinsicParameter(const string& calib_file) {
     m_camera = common::camera_models::CameraFactory::instance()->generateCameraFromYamlFile(calib_file);
 }
 
-void FeatureTracker::setIntrinsicParameter(int model_type, int width, int height,
+bool FeatureTracker::setIntrinsicParameter(int model_type, int width, int height,
                                            double fx, double fy, double cx, double cy,
                                            double k2, double k3, double k4, double k5) {
+    const double values[] = {fx,fy,cx,cy,k2,k3,k4,k5};
+    if (width < 8 || height < 8 || fx <= 0 || fy <= 0 ||
+        !std::all_of(std::begin(values),std::end(values),[](double value){return std::isfinite(value);})) return false;
     if (model_type == common::camera_models::Camera::PINHOLE) {
         // Pinhole: k2->k1, k3->k2, k4->p1, k5->p2
         common::camera_models::PinholeCamera::Parameters params(
             "camera", width, height, k2, k3, k4, k5, fx, fy, cx, cy);
         m_camera = std::make_shared<common::camera_models::PinholeCamera>(params);
-    } else {
-        // Default to equidistant (KANNALA_BRANDT) for fisheye
+    } else if (model_type == common::camera_models::Camera::KANNALA_BRANDT) {
         common::camera_models::EquidistantCamera::Parameters params(
             "camera", width, height, k2, k3, k4, k5, fx, fy, cx, cy);
         m_camera = std::make_shared<common::camera_models::EquidistantCamera>(params);
+    } else {
+        return false;
     }
+    reset();
+    return true;
 }
 
 void FeatureTracker::undistortedPoints() {
     cur_undistorted_pts.clear();
+    cur_undistorted_pts.resize(cur_pts.size());
     cur_undistorted_pts_map.clear();
+    pts_velocity.clear();
+    std::vector<uchar> valid(cur_pts.size(),1);
     // cv::undistortPoints(cur_pts, undistorted_pts, K, cv::Mat());
     for (unsigned int i = 0; i < cur_pts.size(); i++) {
         Eigen::Vector2d a(cur_pts[i].x, cur_pts[i].y);
         Eigen::Vector3d b;
         m_camera->liftProjective(a, b);
-        cur_undistorted_pts.push_back(cv::Point2f(b.x() / b.z(), b.y() / b.z()));
-        cur_undistorted_pts_map.insert(make_pair(ids[i], cv::Point2f(b.x() / b.z(), b.y() / b.z())));
+        if (!b.allFinite() || b.z() <= 1e-12) { valid[i] = 0; continue; }
+        const double x=b.x()/b.z(),y=b.y()/b.z();
+        if (!std::isfinite(x) || !std::isfinite(y) || std::abs(x)>std::numeric_limits<float>::max() ||
+            std::abs(y)>std::numeric_limits<float>::max()) { valid[i]=0; continue; }
+        cur_undistorted_pts[i] = cv::Point2f(x,y);
+        cur_undistorted_pts_map.insert(make_pair(ids[i],cur_undistorted_pts[i]));
         // printf("cur pts id %d %f %f", ids[i], cur_undistorted_pts[i].x, cur_undistorted_pts[i].y);
     }
+    pruneTrackedPoints(valid);
     // caculate points velocity
     if (!prev_undistorted_pts_map.empty()) {
         double dt = cur_time - prev_time;

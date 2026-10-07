@@ -121,7 +121,7 @@ bool Config::loadFromYaml(const std::string& yaml_path) {
 
         // Set default values for missing parameters
         if (estimator.init_depth == 0.0)
-            estimator.init_depth = 5.0;
+            estimator.init_depth = 2.0;  // Mobile indoor default
         if (estimator.num_of_features == 0)
             estimator.num_of_features = 1000;
         if (feature_tracker.window_size == 0)

@@ -1,0 +1,59 @@
+{
+  "scope": "actual refactoring and actual HTTPS7002 with virtual validation",
+  "model_review": "one gpt-6-astra ultra review completed; recommendations adopted",
+  "development": "gpt-6.1-sol ultra native executors and inherited root executors",
+  "service": {
+    "url": "https://dev.serdic.com:7002",
+    "pid": 2449945,
+    "bind": "0.0.0.0:7002",
+    "system_trust_tls": "verified freshportable service",
+    "public_dns_from_workstation": "verified freshportable service",
+    "independent_off_lan": "unverified",
+    "artifact_stage": "freshQR+optionalbenchmark fce250 actualservedbytesSHA/systemtrustedTLSverified"
+  },
+  "verification": {
+    "native_before_last_guard": "74 GTests/9 suites pass",
+    "sanitizers_before_last_guard": "all9 suites ASan UBSan LSan pass, no suppressions",
+    "guard_targeted": "Engine19+Numerical18 ASan/UBSan/LSan37 pass",
+    "transport": "49 strict pass/0 TODO",
+    "mobile_source": "21 strict+5 Chrome mocks+4 rotation fixtures",
+    "server": "Node8 + lifecycle9 + repeated40 pass",
+    "final_source_review": "APPROVE; remaining actionable source findings0",
+    "fixed60_parity": {
+      "translation_max_m": 4.807429385971528e-10,
+      "rotation_max_deg": 3.818191820832846e-06,
+      "state_solver_epoch_mismatches": 0
+    },
+    "latest_native": "91/91GTests9/9suitesPASS",
+    "latest_sanitizers": "freshASanUBSanLSan91/91GTests9/9PASSno skips/suppressions",
+    "postcleanup": "STANDARD pass, JS70strict+logtruth21strict+syntax; no pending code changes",
+    "source_peer_reviews": "resumedstableQR independentAPPROVE, filesfrozen",
+    "clangd_latest": "engine+optimizer compiler errors0; intentional Ceres-loss ownership warning1",
+    "run3": "FAILEDfreeze:3fullpairs exactinputs/init45/2776pose match; exactsolver/state predicate failed; downstreamnotstarted",
+    "portable_prior": "independent2oldfail\u21922newpass, semanticfirstseenblocklayout +singleorderedfactorassembly, eps/noise/manifold/stopping unchanged",
+    "portable520": "allfrontend bitexact; init45/475fresh; solver/state/epoch0differences; translationmax7.31e-7m/rotationmax1.55e-5deg",
+    "clangd_latest_marginalization": "compilererror0/diagnostic0; live genuineclangd23.1",
+    "run4": "FAILED firstfullpair: input/init/freshcount match, p95translation.0014727m>cap.001 and4solverfielddifferences1105..1107; stoppedownedrunner,servicepreserved",
+    "qr_targeted": "11/11GREEN; oldweakinformation loss/partialrank/no-drop REDpreserved",
+    "clangd_qr_resume": "QRcompilererrors0/diagnostics0; optimizercompilererrors0/intentionalCeresownershipwarning1",
+    "benchmark300_1110": "strictPASS allstates/actualsolvercounts/profileoptions+posecaps; explicitfgp0 notproddefaults",
+    "default1110": "previousQRdefault numericPASS/strict4iterationFAIL preserved"
+  },
+  "pending": [
+    "run5full3room1/frozencontract/fullroom4",
+    "defaultpaced/loss/realpublicprofile/mobilemock",
+    "finalarchitect/STANDARDcleanup/postclean/finalreport"
+  ],
+  "no_claims": [
+    "physical phone jitter resolved",
+    "field metric accuracy",
+    "production/full SLAM acceptance"
+  ],
+  "updated_utc": "2026-10-06T14:28:35.781597+00:00",
+  "candidate": {
+    "js_sha256": "fce25012d61a0d5965e4d5afadda25aecf96c219b30451e0394575c3caa10da1",
+    "bytes": 6007610,
+    "source_manifest_sha256": "11ca788ff68b39653984b2d384c672820fcf698cfc0a621d273a49311ae9075c",
+    "status": "actual7002promoted; run5fullvirtualacceptedgates pending"
+  }
+}

@@ -1,0 +1,32 @@
+[  3%] Building CXX object CMakeFiles/vio_engine.dir/home/park-ubuntu/park/SOLUTION/Mobile-SLAM/src/vio_engine.cpp.o
+[  6%] Building CXX object CMakeFiles/vio_engine.dir/home/park-ubuntu/park/SOLUTION/Mobile-SLAM/src/backend/estimator.cpp.o
+[ 10%] Building CXX object CMakeFiles/vio_engine.dir/home/park-ubuntu/park/SOLUTION/Mobile-SLAM/src/backend/optimizer.cpp.o
+[ 13%] Building CXX object CMakeFiles/vio_engine.dir/home/park-ubuntu/park/SOLUTION/Mobile-SLAM/src/backend/sliding_window.cpp.o
+[ 16%] Building CXX object CMakeFiles/vio_engine.dir/home/park-ubuntu/park/SOLUTION/Mobile-SLAM/src/backend/factor/marginalization_factor.cpp.o
+[ 20%] Building CXX object CMakeFiles/vio_engine.dir/home/park-ubuntu/park/SOLUTION/Mobile-SLAM/src/backend/factor/projection_factor.cpp.o
+[ 23%] Building CXX object CMakeFiles/vio_engine.dir/home/park-ubuntu/park/SOLUTION/Mobile-SLAM/src/backend/factor/perspective_factor.cpp.o
+[ 26%] Building CXX object CMakeFiles/vio_engine.dir/home/park-ubuntu/park/SOLUTION/Mobile-SLAM/src/backend/factor/pose_local_parameterization.cpp.o
+[ 30%] Building CXX object CMakeFiles/vio_engine.dir/home/park-ubuntu/park/SOLUTION/Mobile-SLAM/src/frontend/feature_tracker.cpp.o
+[ 33%] Building CXX object CMakeFiles/vio_engine.dir/home/park-ubuntu/park/SOLUTION/Mobile-SLAM/src/frontend/feature_manager.cpp.o
+[ 36%] Building CXX object CMakeFiles/vio_engine.dir/home/park-ubuntu/park/SOLUTION/Mobile-SLAM/src/frontend/failure_detector.cpp.o
+[ 40%] Building CXX object CMakeFiles/vio_engine.dir/home/park-ubuntu/park/SOLUTION/Mobile-SLAM/src/frontend/pnp_frontend.cpp.o
+[ 43%] Building CXX object CMakeFiles/vio_engine.dir/home/park-ubuntu/park/SOLUTION/Mobile-SLAM/src/frontend/initialization/initializer.cpp.o
+[ 46%] Building CXX object CMakeFiles/vio_engine.dir/home/park-ubuntu/park/SOLUTION/Mobile-SLAM/src/frontend/initialization/initial_alignment.cpp.o
+[ 50%] Building CXX object CMakeFiles/vio_engine.dir/home/park-ubuntu/park/SOLUTION/Mobile-SLAM/src/frontend/initialization/initial_sfm.cpp.o
+[ 53%] Building CXX object CMakeFiles/vio_engine.dir/home/park-ubuntu/park/SOLUTION/Mobile-SLAM/src/frontend/initialization/solve_5pts.cpp.o
+[ 56%] Building CXX object CMakeFiles/vio_engine.dir/home/park-ubuntu/park/SOLUTION/Mobile-SLAM/src/common/frame.cpp.o
+[ 60%] Building CXX object CMakeFiles/vio_engine.dir/home/park-ubuntu/park/SOLUTION/Mobile-SLAM/src/common/gpl/gpl.cc.o
+[ 63%] Building CXX object CMakeFiles/vio_engine.dir/home/park-ubuntu/park/SOLUTION/Mobile-SLAM/src/common/gpl/EigenQuaternionParameterization.cc.o
+[ 66%] Building CXX object CMakeFiles/vio_engine.dir/home/park-ubuntu/park/SOLUTION/Mobile-SLAM/src/common/camera_models/CameraFactory.cc.o
+[ 70%] Building CXX object CMakeFiles/vio_engine.dir/home/park-ubuntu/park/SOLUTION/Mobile-SLAM/src/common/camera_models/Camera.cc.o
+[ 73%] Building CXX object CMakeFiles/vio_engine.dir/home/park-ubuntu/park/SOLUTION/Mobile-SLAM/src/common/camera_models/PinholeCamera.cc.o
+[ 76%] Building CXX object CMakeFiles/vio_engine.dir/home/park-ubuntu/park/SOLUTION/Mobile-SLAM/src/common/camera_models/EquidistantCamera.cc.o
+[ 80%] Building CXX object CMakeFiles/vio_engine.dir/home/park-ubuntu/park/SOLUTION/Mobile-SLAM/src/common/camera_models/CataCamera.cc.o
+[ 83%] Building CXX object CMakeFiles/vio_engine.dir/home/park-ubuntu/park/SOLUTION/Mobile-SLAM/src/common/camera_models/ScaramuzzaCamera.cc.o
+[ 86%] Building CXX object CMakeFiles/vio_engine.dir/home/park-ubuntu/park/SOLUTION/Mobile-SLAM/src/common/camera_models/CostFunctionFactory.cc.o
+[ 90%] Building CXX object CMakeFiles/vio_engine.dir/home/park-ubuntu/park/SOLUTION/Mobile-SLAM/src/utility/utility.cpp.o
+[ 93%] Building CXX object CMakeFiles/vio_engine.dir/home/park-ubuntu/park/SOLUTION/Mobile-SLAM/src/utility/config.cpp.o
+[ 96%] Building CXX object CMakeFiles/vio_engine.dir/vio_bindings.cpp.o
+[100%] Linking CXX executable vio_engine.js
+clang: warning: future releases of the clang compiler will prefer GCC installations containing libstdc++ include directories; '/usr/lib/gcc/x86_64-linux-gnu/11' would be chosen over '/usr/lib/gcc/x86_64-linux-gnu/12' [-Wgcc-install-dir-libstdcxx]
+[100%] Built target vio_engine

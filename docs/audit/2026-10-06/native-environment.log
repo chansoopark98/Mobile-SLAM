@@ -1,0 +1,87 @@
+platform: Linux-6.8.0-138-generic-x86_64-with-glibc2.35
+$ cmake --version
+cmake version 3.22.1
+
+CMake suite maintained and supported by Kitware (kitware.com/cmake).
+
+exit=0
+$ c++ --version
+c++ (Ubuntu 11.4.0-1ubuntu1~22.04.3) 11.4.0
+Copyright (C) 2021 Free Software Foundation, Inc.
+This is free software; see the source for copying conditions.  There is NO
+warranty; not even for MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.
+
+
+exit=0
+$ ninja --version
+1.10.1
+
+exit=0
+$ pkg-config --modversion opencv4 eigen3 yaml-cpp
+4.5.4
+3.4.0
+0.7.0
+
+exit=0
+$ git -C build/_deps/ceres-solver-src rev-parse HEAD
+85331393dc0dff09f6fb9903ab0c4bfa3e134b01
+
+exit=0
+$ git -C build/_deps/googletest-src rev-parse HEAD
+f8d7d77c06936315286eb55f8de22cd23c188571
+
+exit=0
+$ git status --short
+ M CMakeLists.txt
+ M include/backend/estimator.h
+ M include/backend/optimizer.h
+ M include/common/common_types.h
+ M include/frontend/feature_tracker.h
+ M include/utility/config.h
+ M include/vio_engine.h
+ M src/backend/estimator.cpp
+ M src/backend/optimizer.cpp
+ M src/frontend/failure_detector.cpp
+ M src/frontend/feature_tracker.cpp
+ M src/frontend/initialization/initial_alignment.cpp
+ M src/utility/config.cpp
+ M src/vio_engine.cpp
+ M tests/test_vio_engine_parity.cpp
+ M wasm/CMakeLists.txt
+ M wasm/build_ceres.sh
+ M wasm/libs/ceres/include/ceres/internal/config.h
+ M wasm/libs/ceres/lib/cmake/Ceres/CeresConfig.cmake
+ M wasm/libs/ceres_build/CMakeCache.txt
+ M wasm/libs/ceres_build/CMakeFiles/Makefile.cmake
+ M wasm/libs/ceres_build/CMakeFiles/Makefile2
+ M wasm/libs/ceres_build/CeresConfig-install.cmake
+ M wasm/libs/ceres_build/include/ceres/internal/config.h
+ M wasm/libs/ceres_build/internal/ceres/CMakeFiles/ceres.dir/build.make
+ M wasm/libs/ceres_build/internal/ceres/CMakeFiles/ceres.dir/link.txt
+ M wasm/libs/ceres_build/internal/ceres/CMakeFiles/ceres.dir/progress.make
+ M wasm/libs/ceres_build/internal/ceres/CMakeFiles/ceres_internal.dir/DependInfo.cmake
+ M wasm/libs/ceres_build/internal/ceres/CMakeFiles/ceres_internal.dir/build.make
+ M wasm/libs/ceres_build/internal/ceres/CMakeFiles/ceres_internal.dir/cmake_clean.cmake
+ M wasm/libs/ceres_build/internal/ceres/CMakeFiles/ceres_internal.dir/compiler_depend.internal
+ M wasm/libs/ceres_build/internal/ceres/CMakeFiles/ceres_internal.dir/compiler_depend.make
+ M wasm/libs/ceres_build/internal/ceres/CMakeFiles/ceres_internal.dir/progress.make
+ M wasm/libs/ceres_build/internal/ceres/Makefile
+ M wasm/vio_bindings.cpp
+ M web/js/app.js
+ M web/js/test-tumvi-app.js
+ M web/js/vio-worker.js
+ M web/js/vio-wrapper.js
+ M web/vio_engine.js
+?? .omx/
+?? docs/audit/
+?? include/backend/factor/imu_factor_pnp.h
+?? include/backend/factor/perspective_factor.h
+?? include/frontend/pnp_frontend.h
+?? mobile_web_log.txt
+?? node_server_log.txt
+?? node_server_tum_log.txt
+?? scripts/dev/
+?? src/backend/factor/perspective_factor.cpp
+?? src/frontend/pnp_frontend.cpp
+
+exit=0

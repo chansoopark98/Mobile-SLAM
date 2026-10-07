@@ -8,7 +8,7 @@
 
 int main(int argc, char* argv[]) {
     if (argc < 2) {
-        std::cout << "Usage: " << argv[0] << " <config_file>" << std::endl;
+        std::cout << "Usage: " << argv[0] << " <config_file> [--headless]" << std::endl;
         std::cout << "Example: " << argv[0] << " ./config/config.yaml" << std::endl;
         return 1;
     }
@@ -30,7 +30,9 @@ int main(int argc, char* argv[]) {
     config_manager.printConfiguration();
 
     // Create VIO system with dependency injection
-    VIOSystem vio_system(config_manager.getConfig());
+    const bool headless = argc > 2 && std::string(argv[2]) == "--headless";
+    if (argc > 2 && !headless) { LOG_ERROR("Unknown option: " << argv[2]); return 1; }
+    VIOSystem vio_system(config_manager.getConfig(), headless);
     
     if (!vio_system.initialize()) {
         LOG_ERROR("Failed to initialize VIO system");

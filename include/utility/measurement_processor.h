@@ -1,12 +1,10 @@
 #ifndef UTILITY__MEASUREMENT_PROCESSOR_H
 #define UTILITY__MEASUREMENT_PROCESSOR_H
 
-#include <array>
 #include <string>
 #include <vector>
 
-#include "common/image_frame.h"
-#include "frontend/feature_tracker.h"
+#include <opencv2/core/mat.hpp>
 
 namespace utility {
 
@@ -16,26 +14,11 @@ struct IMUMsg {
     double angular_vel_x, angular_vel_y, angular_vel_z;
 };
 
-struct Point3D {
-    int index;
-    double x, y, z;
-};
-
-using ChannelData = std::vector<double>;
-
-struct ImageFeatureMsg {
-    double timestamp;
-    std::string frame_id;
-    int points_count;
-    int channels_count;
-    std::vector<Point3D> ray_vectors;
-    std::array<ChannelData, 5> channel_data;
-};
-
-struct MeasurementMsg {
-    int measurement_id;
+struct RawMeasurementMsg {
+    int measurement_id = 0;
+    double timestamp = -1.0;
+    cv::Mat gray_image;
     std::vector<IMUMsg> imu_msg;
-    ImageFeatureMsg image_feature_msg;
 };
 
 struct ImageFileData {
@@ -57,8 +40,11 @@ public:
     bool loadImuData(const std::string& filepath);
     bool loadImageFileData(const std::string& csv_filepath, const std::string& image_dir);
 
-    // Create MeasurementMsg
-    MeasurementMsg createMeasurementMsg(int measurement_id, const ImageFileData& image_data);
+    // Forward each original IMU sample once, including one future bracket.
+    // Only VIOEngine owns retained future samples and endpoint interpolation.
+    RawMeasurementMsg createRawMeasurementMsg(int measurement_id, const ImageFileData& image_data);
+    // Optional late-start adapter: seed with the original sample immediately before the first image.
+    void beginAtImageTimestamp(double timestamp);
 
     // Data accessors
     const std::vector<IMUMsg>& getIMUData() const {
@@ -79,17 +65,8 @@ private:
     // Member variables
     std::vector<IMUMsg> imu_data_;
     std::vector<ImageFileData> image_file_data_;
-    std::vector<double> image_timestamps_;
-    std::vector<std::string> image_files_;
 
-    // Store previous image timestamp
-    double prev_image_timestamp_;
-
-    // Feature tracker related
-    std::unique_ptr<frontend::FeatureTracker> feature_tracker_;
-
-    // Extract image features
-    ImageFeatureMsg extractImageFeatures(const ImageFileData& image_data);
+    size_t imu_cursor_ = 0;
 };
 
 }  // namespace utility

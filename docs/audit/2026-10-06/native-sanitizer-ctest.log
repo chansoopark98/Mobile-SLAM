@@ -1,0 +1,12 @@
+Internal ctest changing into directory: /home/park-ubuntu/park/SOLUTION/Mobile-SLAM/build/audit-native/sanitizer/build
+Test project /home/park-ubuntu/park/SOLUTION/Mobile-SLAM/build/audit-native/sanitizer/build
+    Start 1: IntegrationBaseSanitizer
+1/3 Test #1: IntegrationBaseSanitizer .........   Passed    0.03 sec
+    Start 2: SlidingWindowSanitizer
+2/3 Test #2: SlidingWindowSanitizer ...........   Passed    0.01 sec
+    Start 3: TrajectoryEvaluatorSanitizer
+3/3 Test #3: TrajectoryEvaluatorSanitizer .....   Passed    0.03 sec
+
+100% tests passed, 0 tests failed out of 3
+
+Total Test time (real) =   0.06 sec

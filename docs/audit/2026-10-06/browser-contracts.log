@@ -1,0 +1,155 @@
+TAP version 13
+# Subtest: Busy worker rejects new frame while independent IMU remains deliverable
+ok 1 - Busy worker rejects new frame while independent IMU remains deliverable
+  ---
+  duration_ms: 0.510861
+  type: 'test'
+  ...
+# Subtest: Frame subarray submits exactly its bytes and retains camera reusable buffer
+ok 2 - Frame subarray submits exactly its bytes and retains camera reusable buffer
+  ---
+  duration_ms: 0.374416
+  type: 'test'
+  ...
+# Subtest: Frame completion resolves waiting consumer and retains worker pose
+ok 3 - Frame completion resolves waiting consumer and retains worker pose
+  ---
+  duration_ms: 0.244087
+  type: 'test'
+  ...
+# Subtest: Pose result preserves its frame timestamp for pose-age measurement
+not ok 4 - Pose result preserves its frame timestamp for pose-age measurement # TODO P1: result schema discards timestamp; accuracy and stale pose gating cannot use it
+  ---
+  duration_ms: 0.402902
+  type: 'test'
+  location: '/home/park-ubuntu/park/SOLUTION/Mobile-SLAM/tests/browser/contracts.test.mjs:46:1'
+  failureType: 'testCodeFailure'
+  error: |-
+    Expected values to be strictly equal:
+    
+    undefined !== 3
+    
+  code: 'ERR_ASSERTION'
+  name: 'AssertionError'
+  expected: 3
+  operator: 'strictEqual'
+  stack: |-
+    TestContext.<anonymous> (file:///home/park-ubuntu/park/SOLUTION/Mobile-SLAM/tests/browser/contracts.test.mjs:49:12)
+    Test.runInAsyncScope (node:async_hooks:214:14)
+    Test.run (node:internal/test_runner/test:1047:25)
+    Test.processPendingSubtests (node:internal/test_runner/test:744:18)
+    Test.postRun (node:internal/test_runner/test:1173:19)
+    Test.run (node:internal/test_runner/test:1101:12)
+    async Test.processPendingSubtests (node:internal/test_runner/test:744:7)
+  ...
+# Subtest: Concurrent worker completion waiters all settle
+not ok 5 - Concurrent worker completion waiters all settle # TODO P2: only one _workerFreeResolve slot; earlier waiter remains pending even after its deadline
+  ---
+  duration_ms: 40.042601
+  type: 'test'
+  location: '/home/park-ubuntu/park/SOLUTION/Mobile-SLAM/tests/browser/contracts.test.mjs:52:1'
+  failureType: 'testCodeFailure'
+  error: |-
+    Expected values to be strictly equal:
+    
+    false !== true
+    
+  code: 'ERR_ASSERTION'
+  name: 'AssertionError'
+  expected: true
+  actual: false
+  operator: 'strictEqual'
+  stack: |-
+    TestContext.<anonymous> (file:///home/park-ubuntu/park/SOLUTION/Mobile-SLAM/tests/browser/contracts.test.mjs:61:12)
+    async Test.run (node:internal/test_runner/test:1054:7)
+    async Test.processPendingSubtests (node:internal/test_runner/test:744:7)
+  ...
+# Subtest: Empty map result clears previous points
+not ok 6 - Empty map result clears previous points # TODO P2: zero mapPointCount leaves stale cached map visible after tracking loss
+  ---
+  duration_ms: 0.159186
+  type: 'test'
+  location: '/home/park-ubuntu/park/SOLUTION/Mobile-SLAM/tests/browser/contracts.test.mjs:64:1'
+  failureType: 'testCodeFailure'
+  error: |-
+    Expected values to be strictly equal:
+    
+    1 !== 0
+    
+  code: 'ERR_ASSERTION'
+  name: 'AssertionError'
+  expected: 0
+  actual: 1
+  operator: 'strictEqual'
+  stack: |-
+    TestContext.<anonymous> (file:///home/park-ubuntu/park/SOLUTION/Mobile-SLAM/tests/browser/contracts.test.mjs:68:12)
+    Test.runInAsyncScope (node:async_hooks:214:14)
+    Test.run (node:internal/test_runner/test:1047:25)
+    Test.processPendingSubtests (node:internal/test_runner/test:744:18)
+    Test.postRun (node:internal/test_runner/test:1173:19)
+    Test.run (node:internal/test_runner/test:1101:12)
+    async Test.processPendingSubtests (node:internal/test_runner/test:744:7)
+  ...
+# Subtest: IMU subarray transfers exactly its declared readings
+not ok 7 - IMU subarray transfers exactly its declared readings # TODO P1: sendIMU transfers entire backing buffer and drops byteOffset/length
+  ---
+  duration_ms: 0.181798
+  type: 'test'
+  location: '/home/park-ubuntu/park/SOLUTION/Mobile-SLAM/tests/browser/contracts.test.mjs:71:1'
+  failureType: 'testCodeFailure'
+  error: |-
+    Expected values to be strictly equal:
+    
+    1 !== 2
+    
+  code: 'ERR_ASSERTION'
+  name: 'AssertionError'
+  expected: 2
+  actual: 1
+  operator: 'strictEqual'
+  stack: |-
+    TestContext.<anonymous> (file:///home/park-ubuntu/park/SOLUTION/Mobile-SLAM/tests/browser/contracts.test.mjs:75:12)
+    Test.runInAsyncScope (node:async_hooks:214:14)
+    Test.run (node:internal/test_runner/test:1047:25)
+    Test.processPendingSubtests (node:internal/test_runner/test:744:18)
+    Test.postRun (node:internal/test_runner/test:1173:19)
+    Test.run (node:internal/test_runner/test:1101:12)
+    async Test.processPendingSubtests (node:internal/test_runner/test:744:7)
+  ...
+# Subtest: Worker preserves future IMU beyond one interpolation boundary
+ok 8 - Worker preserves future IMU beyond one interpolation boundary
+  ---
+  duration_ms: 0.799664
+  type: 'test'
+  ...
+# Subtest: Ring overflow retains ordered recent IMU across delayed camera frame
+not ok 9 - Ring overflow retains ordered recent IMU across delayed camera frame # TODO P1: appendIMU advances write index without bounding read index after wrap
+  ---
+  duration_ms: 0.816658
+  type: 'test'
+  location: '/home/park-ubuntu/park/SOLUTION/Mobile-SLAM/tests/browser/contracts.test.mjs:97:1'
+  failureType: 'testCodeFailure'
+  error: 'expected about 100 readings in half-second window, got 1'
+  code: 'ERR_ASSERTION'
+  name: 'AssertionError'
+  expected: true
+  actual: false
+  operator: '=='
+  stack: |-
+    TestContext.<anonymous> (file:///home/park-ubuntu/park/SOLUTION/Mobile-SLAM/tests/browser/contracts.test.mjs:103:12)
+    Test.runInAsyncScope (node:async_hooks:214:14)
+    Test.run (node:internal/test_runner/test:1047:25)
+    Test.processPendingSubtests (node:internal/test_runner/test:744:18)
+    Test.postRun (node:internal/test_runner/test:1173:19)
+    Test.run (node:internal/test_runner/test:1101:12)
+    async Test.processPendingSubtests (node:internal/test_runner/test:744:7)
+  ...
+1..9
+# tests 9
+# suites 0
+# pass 4
+# fail 0
+# cancelled 0
+# skipped 0
+# todo 5
+# duration_ms 73.312403

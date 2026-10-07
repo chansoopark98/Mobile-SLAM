@@ -1,0 +1,38 @@
+TAP version 13
+# (node:1092727) [MODULE_TYPELESS_PACKAGE_JSON] Warning: Module type of file:///home/park-ubuntu/park/SOLUTION/Mobile-SLAM/web/js/audit-mobile.js is not specified and it doesn't parse as CommonJS.
+# Reparsing as ES module because module syntax was detected. This incurs a performance overhead.
+# To eliminate this warning, add "type": "module" to /home/park-ubuntu/park/SOLUTION/Mobile-SLAM/web/package.json.
+# (Use `node --trace-warnings ...` to show where the warning was created)
+# Subtest: Bounded recorder stops accepting samples after stop and reports discarded rows
+ok 1 - Bounded recorder stops accepting samples after stop and reports discarded rows
+  ---
+  duration_ms: 1.653877
+  type: 'test'
+  ...
+# Subtest: Recording duration rejects trailing samples at its deadline
+ok 2 - Recording duration rejects trailing samples at its deadline
+  ---
+  duration_ms: 0.222557
+  type: 'test'
+  ...
+# Subtest: Pose jump keeps translation metres and rotation degrees independently
+ok 3 - Pose jump keeps translation metres and rotation degrees independently
+  ---
+  duration_ms: 0.229402
+  type: 'test'
+  ...
+# Subtest: Recorder copies numeric samples before transferable buffers detach
+ok 4 - Recorder copies numeric samples before transferable buffers detach
+  ---
+  duration_ms: 0.77731
+  type: 'test'
+  ...
+1..4
+# tests 4
+# suites 0
+# pass 4
+# fail 0
+# cancelled 0
+# skipped 0
+# todo 0
+# duration_ms 43.325953

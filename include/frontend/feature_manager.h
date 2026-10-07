@@ -33,12 +33,12 @@ public:
     Vector3d ray_vector;
     Vector2d observation;
     Vector2d velocity;
-    double z;
-    bool is_used;
-    double parallax;
+    double z = 0;
+    bool is_used = false;
+    double parallax = 0;
     MatrixXd A;
     VectorXd b;
-    double dep_gradient;
+    double dep_gradient = 0;
 };
 
 class FeaturePerId {
@@ -56,7 +56,8 @@ public:
     Vector3d gt_p;
 
     FeaturePerId(int _feature_id, int _start_frame)
-        : feature_id(_feature_id), start_frame(_start_frame), used_num(0), estimated_depth(-1.0), solve_flag(0) {}
+        : feature_id(_feature_id), start_frame(_start_frame), used_num(0), is_outlier(false), is_margin(false),
+          estimated_depth(-1.0), solve_flag(0), gt_p(Vector3d::Zero()) {}
 
     int endFrame();
 };

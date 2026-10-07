@@ -1,22 +1,29 @@
 #include "frontend/initialization/initial_sfm.h"
+#include <cmath>
 
 namespace frontend {
 namespace initialization {
 
 InitialSFM::InitialSFM() {}
 
-void InitialSFM::triangulatePoint(Eigen::Matrix<double, 3, 4>& Pose0, Eigen::Matrix<double, 3, 4>& Pose1,
+bool InitialSFM::triangulatePoint(Eigen::Matrix<double, 3, 4>& Pose0, Eigen::Matrix<double, 3, 4>& Pose1,
                                   Vector2d& point0, Vector2d& point1, Vector3d& point_3d) {
+    if (!Pose0.allFinite() || !Pose1.allFinite() || !point0.allFinite() || !point1.allFinite())
+        return false;
     Matrix4d design_matrix = Matrix4d::Zero();
     design_matrix.row(0) = point0[0] * Pose0.row(2) - Pose0.row(0);
     design_matrix.row(1) = point0[1] * Pose0.row(2) - Pose0.row(1);
     design_matrix.row(2) = point1[0] * Pose1.row(2) - Pose1.row(0);
     design_matrix.row(3) = point1[1] * Pose1.row(2) - Pose1.row(1);
+    if (!design_matrix.allFinite()) return false;
     Vector4d triangulated_point;
     triangulated_point = design_matrix.jacobiSvd(Eigen::ComputeFullV).matrixV().rightCols<1>();
-    point_3d(0) = triangulated_point(0) / triangulated_point(3);
-    point_3d(1) = triangulated_point(1) / triangulated_point(3);
-    point_3d(2) = triangulated_point(2) / triangulated_point(3);
+    if (!triangulated_point.allFinite() || triangulated_point.w() == 0) return false;
+    point_3d = triangulated_point.head<3>() / triangulated_point.w();
+    if (!point_3d.allFinite()) return false;
+    const Vector4d homogeneous_point(point_3d.x(),point_3d.y(),point_3d.z(),1);
+    const Vector3d camera0 = Pose0 * homogeneous_point, camera1 = Pose1 * homogeneous_point;
+    return camera0.allFinite() && camera1.allFinite() && camera0.z() > 0 && camera1.z() > 0;
 }
 
 bool InitialSFM::solveFrameByPnP(Matrix3d& R_initial, Vector3d& P_initial, int i, vector<SFMFeature>& sfm_f) {
@@ -86,7 +93,7 @@ void InitialSFM::triangulateTwoFrames(int frame0, Eigen::Matrix<double, 3, 4>& P
         }
         if (has_0 && has_1) {
             Vector3d point_3d;
-            triangulatePoint(Pose0, Pose1, point0, point1, point_3d);
+            if (!triangulatePoint(Pose0, Pose1, point0, point1, point_3d)) continue;
             sfm_f[j].state = true;
             sfm_f[j].position[0] = point_3d(0);
             sfm_f[j].position[1] = point_3d(1);
@@ -190,7 +197,7 @@ bool InitialSFM::construct(int frame_num, Quaterniond* q, Vector3d* T, int refer
             point1 = sfm_f[j].observation.back().second;
 
             Vector3d point_3d;
-            triangulatePoint(Pose[frame_0], Pose[frame_1], point0, point1, point_3d);
+            if (!triangulatePoint(Pose[frame_0], Pose[frame_1], point0, point1, point_3d)) continue;
             sfm_f[j].state = true;
             sfm_f[j].position[0] = point_3d(0);
             sfm_f[j].position[1] = point_3d(1);
@@ -233,6 +240,7 @@ bool InitialSFM::construct(int frame_num, Quaterniond* q, Vector3d* T, int refer
         }
     }
 
+    if (problem.NumResidualBlocks() == 0) return false;
     ceres::Solver::Options options;
     options.linear_solver_type = ceres::DENSE_SCHUR;
     options.logging_type = ceres::SILENT;
@@ -241,6 +249,8 @@ bool InitialSFM::construct(int frame_num, Quaterniond* q, Vector3d* T, int refer
     ceres::Solver::Summary summary;
     ceres::Solve(options, &problem, &summary);
     // std::cout << summary.BriefReport() << "\n";
+    if (!summary.IsSolutionUsable() || !std::isfinite(summary.final_cost) || summary.final_cost < 0)
+        return false;
     if (summary.termination_type == ceres::CONVERGENCE || summary.final_cost < 2e-02) {
         // cout << "vision only BA converge" << endl;
     } else {

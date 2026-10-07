@@ -3,23 +3,27 @@
 
 #include <Eigen/Dense>
 #include <string>
+#include <limits>
 #include <vector>
 
 namespace utility {
 
 struct AteResult {
-    double rmse = 0.0;
-    double mean = 0.0;
-    double median = 0.0;
-    double std_dev = 0.0;
-    double min = 0.0;
-    double max = 0.0;
+    double rmse = std::numeric_limits<double>::quiet_NaN();
+    bool valid = false;
+    double alignment_scale = 1.0;
+    double mean = std::numeric_limits<double>::quiet_NaN();
+    double median = std::numeric_limits<double>::quiet_NaN();
+    double std_dev = std::numeric_limits<double>::quiet_NaN();
+    double min = std::numeric_limits<double>::quiet_NaN();
+    double max = std::numeric_limits<double>::quiet_NaN();
     int num_pairs = 0;
 };
 
 struct RpeResult {
-    double rmse_trans = 0.0;
-    double rmse_rot = 0.0;
+    double rmse_trans = std::numeric_limits<double>::quiet_NaN();
+    bool valid = false;
+    double rmse_rot = std::numeric_limits<double>::quiet_NaN();
     int num_pairs = 0;
 };
 
@@ -42,7 +46,8 @@ public:
 
     // Alignment
     int associateTrajectories(double max_dt = 0.01);
-    bool alignTrajectories();
+    // Rigid metric alignment by default; Sim(3) is diagnostic only.
+    bool alignTrajectories(bool diagnostic_sim3 = false);
 
     // Evaluation
     AteResult computeATE() const;
@@ -62,10 +67,12 @@ private:
     std::vector<TimestampedPose> gt_trajectory_;
 
     // Matched pairs after association
-    std::vector<Eigen::Vector3d> matched_vio_;
-    std::vector<Eigen::Vector3d> matched_gt_;
+    std::vector<TimestampedPose> matched_vio_;
+    std::vector<TimestampedPose> matched_gt_;
 
-    // Aligned VIO positions (after SE(3)+scale transform)
+    double alignment_scale_ = 1.0;
+
+    // Aligned positions; RPE uses metric matched poses, independent of alignment.
     std::vector<Eigen::Vector3d> aligned_vio_;
 };
 

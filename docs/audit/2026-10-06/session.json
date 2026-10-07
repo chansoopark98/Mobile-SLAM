@@ -1,0 +1,9 @@
+{
+  "started_utc": "2026-10-06T07:30:47.141944+00:00",
+  "client_date": "2026-10-06",
+  "head": "b2826c037a50036d286329b1a56daa1a75ba57a3",
+  "branch": "main",
+  "scope": "parallel baseline audit, repeatable development/test tooling, staged production research plan",
+  "preserve": "existing dirty files, data, datasets, certificates, services and built artifacts",
+  "initial_diff_snapshot": "build/audit-baseline/initial-diff.patch"
+}

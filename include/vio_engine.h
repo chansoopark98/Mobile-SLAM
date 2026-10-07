@@ -2,11 +2,16 @@
 #define VIO_ENGINE_H
 
 #include <memory>
+#include <cstdint>
+#include <deque>
+#include <string>
 #include <vector>
+#include <unordered_map>
 #include <Eigen/Dense>
 
 #include "backend/estimator.h"
 #include "frontend/feature_tracker.h"
+#include "frontend/pnp_frontend.h"
 #include "utility/config.h"
 
 // Headless VIO engine for WASM and programmatic use.
@@ -36,7 +41,7 @@ public:
 
     // Configure camera and IMU parameters directly (no YAML file needed).
     // Camera: width, height, fx, fy, cx, cy
-    // Distortion: model_type (0=PINHOLE, 1=KANNALA_BRANDT), k2, k3, k4, k5
+    // Distortion: model_type (0=KANNALA_BRANDT, 2=PINHOLE), k2, k3, k4, k5
     // Extrinsics: r_ic (9 doubles, row-major), t_ic (3 doubles)
     // IMU noise: acc_n, acc_w, gyr_n, gyr_w, g_norm
     bool configure(int width, int height,
@@ -47,6 +52,11 @@ public:
                    double acc_n, double acc_w,
                    double gyr_n, double gyr_w,
                    double g_norm);
+
+#ifndef __EMSCRIPTEN__
+    // Native YAML adapter uses the same direct camera and processing contracts.
+    bool configureFromConfig(const utility::Config& config, const std::string& camera_file);
+#endif
 
     // Process one camera frame with associated IMU readings.
     // gray_image: pointer to grayscale image data (width * height bytes)
@@ -86,33 +96,90 @@ public:
 
     // Get current VIO status code.
     int getStatusCode() const;
+    uint64_t getEpoch() const { return epoch_; }
+    double getPoseTimestamp() const { return pose_timestamp_; }
+    double getFrameTimestamp() const { return frame_timestamp_; }
+    double getIMUEndpointTimestamp() const { return current_time_; }
+    const std::string& getLastReason() const { return last_reason_; }
+    bool getPoseFresh() const { return has_valid_pose_; }
+    bool getPoseValid() const { return has_valid_pose_; }
+    int getLastSolverIterations() const;
+    std::string getLastSolverTermination() const;
+    // Explicit reproducibility profile shared by native and WASM callers.
+    void setExecutionParams(int seed, int cv_threads);
+    int getExecutionSeed() const { return execution_configured_ ? execution_seed_ : -1; }
+    int getCVThreadCount() const;
+    void setDiagnosticCapture(bool enabled);
+    // Explicit numerical-validation control; persists reset/reconfigure until disabled.
+    void setBenchmarkSolverProfile(bool enabled);
+    bool getBenchmarkSolverProfile() const { return benchmark_solver_profile_; }
+    std::string getFeatureDiagnostics() const;
 
     // Reset the VIO system to initial state.
     void reset();
 
+    // Enable/disable PnP dual-rate pipeline and configure FREQ decimation.
+    // enable_pnp=false reverts to full backend on every frame (current behavior).
+    // freq: backend runs every freq frames (default 3).
+    void setPnPParams(bool enable_pnp, int freq);
+
 private:
-    void processIMUData(const IMUReading* readings, int count,
+    friend struct VIOEngineTestAccess;
+    bool processIMUData(const IMUReading* readings, int count,
                         double image_timestamp);
+    void resetState(const std::string& reason);
+    void invalidatePose(const std::string& reason);
+    bool feedIMU(double timestamp, const Eigen::Vector3d& acc, const Eigen::Vector3d& gyro);
+    bool publishPose(const Eigen::Vector3d& position, const Eigen::Matrix3d& rotation,
+                     double timestamp, double* output);
+
+    // Write 4x4 pose matrix to output buffer.
+    void writePoseOutput(double* pose_output) const;
+
+    // Match currently tracked features against cached solved features from backend.
+    std::vector<common::SolvedFeature> matchFeaturesForPnP() const;
 
     bool configured_;
     double current_time_;
     double prev_image_timestamp_;
+    double last_imu_timestamp_ = -1.0;
+    std::deque<IMUReading> pending_imu_;
+    size_t imu_samples_since_image_ = 0;
+    int configured_width_ = 0;
+    int configured_height_ = 0;
+    uint64_t epoch_ = 0;
+    uint64_t estimator_generation_ = 0;
+    double pose_timestamp_ = -1.0;
+    double frame_timestamp_ = -1.0;
+    std::string last_reason_ = "not_configured";
+    int last_solver_iterations_ = 0;
+    std::string last_solver_termination_ = "not_run";
+    std::string last_solver_quality_reason_;
+    bool execution_configured_ = false;
+    int execution_seed_ = 0;
+    int execution_threads_ = 1;
+    bool diagnostic_capture_ = false;
+    bool benchmark_solver_profile_ = false;
+    void recordSolver(const backend::SolverDiagnostics& diagnostics);
+    static constexpr int kMaxIMUReadings = 4096;
+    static constexpr double kMaxSensorGapSeconds = 0.5;
     Eigen::Vector3d prev_acc_;
     Eigen::Vector3d prev_gyro_;
 
     std::unique_ptr<backend::Estimator> estimator_;
     std::unique_ptr<frontend::FeatureTracker> feature_tracker_;
 
+    // PnP dual-rate frontend (VINS-Mobile pattern)
+    std::unique_ptr<frontend::PnPFrontend> pnp_frontend_;
+    int img_cnt_;                  // Frame counter for FREQ decimation (0..FREQ-1)
+    bool pnp_initialized_;         // True after first successful backend solve
+    std::vector<common::SolvedFeature> cached_solved_features_;
+    std::unordered_map<int, size_t> solved_feature_map_;  // feature_id -> index
+
     // Store latest pose for retrieval
     Eigen::Vector3d latest_position_;
     Eigen::Matrix3d latest_rotation_;
     bool has_valid_pose_;
-    int consecutive_failures_;
-    static constexpr int kMaxConsecutiveFailures = 5;
-    static constexpr int kCooldownFrames = 30;
-    int cooldown_counter_;
-
-    int frames_since_init_start_;
     double init_start_time_;
     static constexpr double kInitTimeoutSeconds = 15.0;
 };

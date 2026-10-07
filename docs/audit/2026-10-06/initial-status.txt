@@ -1,0 +1,49 @@
+ M CMakeLists.txt
+ M include/backend/estimator.h
+ M include/backend/optimizer.h
+ M include/common/common_types.h
+ M include/frontend/feature_tracker.h
+ M include/utility/config.h
+ M include/vio_engine.h
+ M src/backend/estimator.cpp
+ M src/backend/optimizer.cpp
+ M src/frontend/failure_detector.cpp
+ M src/frontend/feature_tracker.cpp
+ M src/frontend/initialization/initial_alignment.cpp
+ M src/utility/config.cpp
+ M src/vio_engine.cpp
+ M tests/test_vio_engine_parity.cpp
+ M wasm/CMakeLists.txt
+ M wasm/build_ceres.sh
+ M wasm/libs/ceres/include/ceres/internal/config.h
+ M wasm/libs/ceres/lib/cmake/Ceres/CeresConfig.cmake
+ M wasm/libs/ceres_build/CMakeCache.txt
+ M wasm/libs/ceres_build/CMakeFiles/Makefile.cmake
+ M wasm/libs/ceres_build/CMakeFiles/Makefile2
+ M wasm/libs/ceres_build/CeresConfig-install.cmake
+ M wasm/libs/ceres_build/include/ceres/internal/config.h
+ M wasm/libs/ceres_build/internal/ceres/CMakeFiles/ceres.dir/build.make
+ M wasm/libs/ceres_build/internal/ceres/CMakeFiles/ceres.dir/link.txt
+ M wasm/libs/ceres_build/internal/ceres/CMakeFiles/ceres.dir/progress.make
+ M wasm/libs/ceres_build/internal/ceres/CMakeFiles/ceres_internal.dir/DependInfo.cmake
+ M wasm/libs/ceres_build/internal/ceres/CMakeFiles/ceres_internal.dir/build.make
+ M wasm/libs/ceres_build/internal/ceres/CMakeFiles/ceres_internal.dir/cmake_clean.cmake
+ M wasm/libs/ceres_build/internal/ceres/CMakeFiles/ceres_internal.dir/compiler_depend.internal
+ M wasm/libs/ceres_build/internal/ceres/CMakeFiles/ceres_internal.dir/compiler_depend.make
+ M wasm/libs/ceres_build/internal/ceres/CMakeFiles/ceres_internal.dir/progress.make
+ M wasm/libs/ceres_build/internal/ceres/Makefile
+ M wasm/vio_bindings.cpp
+ M web/js/app.js
+ M web/js/test-tumvi-app.js
+ M web/js/vio-worker.js
+ M web/js/vio-wrapper.js
+ M web/vio_engine.js
+?? .omx/
+?? include/backend/factor/imu_factor_pnp.h
+?? include/backend/factor/perspective_factor.h
+?? include/frontend/pnp_frontend.h
+?? mobile_web_log.txt
+?? node_server_log.txt
+?? node_server_tum_log.txt
+?? src/backend/factor/perspective_factor.cpp
+?? src/frontend/pnp_frontend.cpp

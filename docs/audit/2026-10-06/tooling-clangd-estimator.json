@@ -1,0 +1,38 @@
+{
+  "status": "VERIFIED",
+  "source": "/home/park-ubuntu/park/SOLUTION/Mobile-SLAM/src/backend/estimator.cpp",
+  "compile_database": "/home/park-ubuntu/park/SOLUTION/Mobile-SLAM/build/audit-native",
+  "diagnostics": [
+    {
+      "code": "unused-includes",
+      "codeDescription": {
+        "href": "https://clangd.llvm.org/guides/include-cleaner"
+      },
+      "message": "Included header fstream is not used directly (fix available)",
+      "range": {
+        "end": {
+          "character": 18,
+          "line": 0
+        },
+        "start": {
+          "character": 0,
+          "line": 0
+        }
+      },
+      "severity": 2,
+      "source": "clangd",
+      "tags": [
+        1
+      ]
+    }
+  ],
+  "server": {
+    "name": "clangd",
+    "version": "clangd version 23.1.0 (https://github.com/llvm/llvm-project ea7d852a70e8bdfaf601d6626a760f9771b2c4b4) linux+grpc x86_64-unknown-linux-gnu"
+  },
+  "symbol_count": 1,
+  "symbols": [
+    "backend"
+  ],
+  "error_count": 0
+}

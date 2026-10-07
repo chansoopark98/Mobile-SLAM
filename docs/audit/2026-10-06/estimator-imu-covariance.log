@@ -1,0 +1,4 @@
+WHITENING_INVALID samples=0 sum_dt=0 covariance_rank=0 inverse_finite=0 LLT_info=0 sqrt_info_finite=0
+WHITENING_INVALID samples=1 sum_dt=0.0166667 covariance_rank=12 inverse_finite=0 LLT_info=0 sqrt_info_finite=0
+WHITENING_FINITE samples=2 sum_dt=0.0333333 covariance_rank=15 inverse_finite=1 LLT_info=0 sqrt_info_finite=1
+WHITENING_FINITE samples=6 sum_dt=0.1 covariance_rank=15 inverse_finite=1 LLT_info=0 sqrt_info_finite=1

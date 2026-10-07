@@ -5,7 +5,7 @@ Trajectory Evaluation Script — ATE + RPE for TUM VI / EuRoC
 Computes standard VIO evaluation metrics against ground truth.
 
 ATE (Absolute Trajectory Error):
-  - Umeyama Sim(3) alignment (rotation + translation + scale)
+  - Rigid SE(3) alignment (scale fixed at 1); optional diagnostic Sim(3)
   - RMSE / mean / median / std / max of per-pose position error
 
 RPE (Relative Pose Error):
@@ -128,7 +128,7 @@ def pose_compose(R1, t1, R2, t2):
 # ---------------------------------------------------------------------------
 # Umeyama similarity alignment  (Sim(3): scale + rotation + translation)
 # ---------------------------------------------------------------------------
-def umeyama_alignment(src: np.ndarray, dst: np.ndarray, with_scale: bool = True):
+def umeyama_alignment(src: np.ndarray, dst: np.ndarray, with_scale: bool = False):
     """
     Align src trajectory to dst using the Umeyama method.
 
@@ -301,38 +301,37 @@ def associate_trajectories(est_df: pd.DataFrame, gt_df: pd.DataFrame,
     """
     gt_ts = gt_df['timestamp'].values
     est_ts = est_df['timestamp'].values
-
-    est_idx = []
-    gt_idx = []
-
-    for i, t in enumerate(est_ts):
-        j = np.searchsorted(gt_ts, t)
-        # Check neighbors
-        candidates = [j - 1, j, j + 1]
-        best_j, best_dt = -1, max_dt + 1
-        for c in candidates:
-            if 0 <= c < len(gt_ts):
-                dt = abs(gt_ts[c] - t)
-                if dt < best_dt:
-                    best_dt, best_j = dt, c
-        if best_j >= 0 and best_dt <= max_dt:
-            est_idx.append(i)
-            gt_idx.append(best_j)
-
-    print(f"  Associated {len(est_idx)} pairs (max_dt={max_dt}s)")
-    return np.array(est_idx), np.array(gt_idx)
+    if not np.isfinite(max_dt) or max_dt < 0:
+        raise ValueError("Invalid association tolerance")
+    for timestamps in (gt_ts, est_ts):
+        if not np.isfinite(timestamps).all() or np.any(np.diff(timestamps) <= 0):
+            raise ValueError("Pose timestamps must be finite and strictly increasing")
+    est_idx, gt_idx = [], []
+    next_gt = 0
+    for i, timestamp in enumerate(est_ts):
+        insertion = max(next_gt, int(np.searchsorted(gt_ts, timestamp)))
+        candidates = [j for j in (insertion-1,insertion) if next_gt <= j < len(gt_ts)]
+        if not candidates:
+            continue
+        best = min(candidates, key=lambda j: (abs(gt_ts[j]-timestamp),j))
+        if abs(gt_ts[best]-timestamp) <= max_dt:
+            est_idx.append(i); gt_idx.append(best); next_gt = best+1
+    print(f"  Associated {len(est_idx)} unique pairs (max_dt={max_dt}s)")
+    return np.array(est_idx,dtype=int), np.array(gt_idx,dtype=int)
 
 
 # ---------------------------------------------------------------------------
 # ATE
 # ---------------------------------------------------------------------------
-def compute_ate(est_pos: np.ndarray, gt_pos: np.ndarray):
+def compute_ate(est_pos: np.ndarray, gt_pos: np.ndarray, diagnostic_sim3: bool = False):
     """
-    Compute ATE with Umeyama Sim(3) alignment.
+    Compute metric SE(3) ATE, or explicitly requested diagnostic Sim(3).
     est_pos, gt_pos: (N, 3)
     Returns dict with RMSE, mean, median, std, max, scale.
     """
-    scale, R, t = umeyama_alignment(est_pos, gt_pos, with_scale=True)
+    if len(est_pos) < 3 or not np.isfinite(est_pos).all() or not np.isfinite(gt_pos).all():
+        raise ValueError("ATE requires at least 3 finite associated positions")
+    scale, R, t = umeyama_alignment(est_pos, gt_pos, with_scale=diagnostic_sim3)
     est_aligned = scale * (R @ est_pos.T).T + t
 
     errors = np.linalg.norm(est_aligned - gt_pos, axis=1)
@@ -563,7 +562,7 @@ def evaluate(experiment_path: str, save: bool = False, show: bool = True):
             f.write(f"Dataset:    {dataset_path}\n")
             f.write(f"Trajectory: {traj_file}\n")
             f.write(f"N poses:    {ate['n']}\n\n")
-            f.write("ATE (Umeyama Sim(3) alignment):\n")
+            f.write("ATE (rigid SE(3), scale fixed 1):\n")
             f.write(f"  Scale:  {ate['scale']:.6f}\n")
             f.write(f"  RMSE:   {ate['rmse']:.6f} m\n")
             f.write(f"  Mean:   {ate['mean']:.6f} m\n")

@@ -34,7 +34,11 @@ endif()
 
 find_package(Eigen3 REQUIRED)
 find_package(OpenCV REQUIRED)
-find_package(Pangolin REQUIRED)
+option(MOBILE_SLAM_BUILD_VIEWER "Build Pangolin desktop viewer" OFF)
+if(MOBILE_SLAM_BUILD_VIEWER)
+    find_package(Pangolin REQUIRED)
+    add_compile_definitions(MOBILE_SLAM_WITH_VIEWER=1)
+endif()
 find_package(PkgConfig REQUIRED)
 pkg_check_modules(YAML_CPP REQUIRED yaml-cpp)
 
@@ -48,7 +52,8 @@ set(SUITESPARSE OFF CACHE BOOL "Disable SuiteSparse" FORCE)
 set(CXSPARSE OFF CACHE BOOL "Disable CXSparse" FORCE)
 set(LAPACK OFF CACHE BOOL "Disable LAPACK" FORCE)
 set(EIGENSPARSE ON CACHE BOOL "Use Eigen sparse solver" FORCE)
-set(SCHUR_SPECIALIZATIONS OFF CACHE BOOL "Disable Schur specializations for faster build" FORCE)
+set(USE_CUDA OFF CACHE BOOL "Browser/shared-core solver uses CPU DENSE_SCHUR" FORCE)
+set(SCHUR_SPECIALIZATIONS ON CACHE BOOL "Match pinned WASM Ceres Schur backend" FORCE)
 set(BUILD_TESTING OFF CACHE BOOL "Disable Ceres tests" FORCE)
 set(BUILD_EXAMPLES OFF CACHE BOOL "Disable Ceres examples" FORCE)
 set(BUILD_BENCHMARKS OFF CACHE BOOL "Disable Ceres benchmarks" FORCE)
@@ -83,65 +88,50 @@ include_directories(include
     ${Pangolin_INCLUDE_DIRS}
 )
 
-# Libraries 
-add_library(utility src/utility/utility.cpp src/utility/config.cpp)
-target_link_libraries(utility ${YAML_CPP_LIBRARIES})
+include(cmake/SLAMCoreSources.cmake)
 
-add_library(pose_local_parameterization src/backend/factor/pose_local_parameterization.cpp)
+# Libraries 
+add_library(utility ${MOBILE_SLAM_UTILITY_SOURCES})
+target_link_libraries(utility PUBLIC ${YAML_CPP_LIBRARIES} ${OpenCV_LIBS})
+
+add_library(pose_local_parameterization ${MOBILE_SLAM_POSE_LOCAL_PARAMETERIZATION_SOURCES})
 target_link_libraries(pose_local_parameterization ceres)
 
-add_library(marginalization_factor src/backend/factor/marginalization_factor.cpp)
+add_library(marginalization_factor ${MOBILE_SLAM_MARGINALIZATION_FACTOR_SOURCES})
 target_link_libraries(marginalization_factor ceres)
 
-add_library(projection_factor src/backend/factor/projection_factor.cpp)
+add_library(projection_factor ${MOBILE_SLAM_PROJECTION_FACTOR_SOURCES})
 target_link_libraries(projection_factor ceres)
 
-add_library(optimizer src/backend/optimizer.cpp)
+add_library(perspective_factor ${MOBILE_SLAM_PERSPECTIVE_FACTOR_SOURCES})
+target_link_libraries(perspective_factor ceres)
+
+add_library(optimizer ${MOBILE_SLAM_OPTIMIZER_SOURCES})
 target_link_libraries(optimizer ceres marginalization_factor pose_local_parameterization)
 
-add_library(failure_detector src/frontend/failure_detector.cpp)
+add_library(pnp_frontend ${MOBILE_SLAM_PNP_FRONTEND_SOURCES})
+target_link_libraries(pnp_frontend PUBLIC ceres perspective_factor pose_local_parameterization utility ${OpenCV_LIBS})
+
+add_library(failure_detector ${MOBILE_SLAM_FAILURE_DETECTOR_SOURCES})
 target_link_libraries(failure_detector ceres)
 
-add_library(initializer
-    src/frontend/initialization/initializer.cpp
-    src/frontend/initialization/initial_alignment.cpp
-    src/frontend/initialization/initial_sfm.cpp
-    src/frontend/initialization/solve_5pts.cpp
-)
+add_library(initializer ${MOBILE_SLAM_INITIALIZER_SOURCES})
 target_link_libraries(initializer ceres utility ${OpenCV_LIBS})
 
-add_library(gpl 
-    src/common/gpl/gpl.cc
-    src/common/gpl/EigenQuaternionParameterization.cc
-)
+add_library(gpl ${MOBILE_SLAM_GPL_SOURCES})
 target_link_libraries(gpl ceres)
 
-add_library(camera_models
-    src/common/camera_models/CameraFactory.cc
-    src/common/camera_models/CataCamera.cc
-    src/common/camera_models/PinholeCamera.cc
-    src/common/camera_models/Camera.cc
-    src/common/camera_models/EquidistantCamera.cc
-    src/common/camera_models/ScaramuzzaCamera.cc
-    src/common/camera_models/CostFunctionFactory.cc
-)
+add_library(camera_models ${MOBILE_SLAM_CAMERA_MODELS_SOURCES})
 target_link_libraries(camera_models gpl)
 
-add_library(feature_tracker
-    src/frontend/feature_tracker.cpp
-)
+add_library(feature_tracker ${MOBILE_SLAM_FEATURE_TRACKER_SOURCES})
 target_link_libraries(feature_tracker
     utility
     ceres
     camera_models
 )
 
-add_library(estimator
-    src/backend/estimator.cpp
-    src/common/frame.cpp
-    src/frontend/feature_manager.cpp
-    src/backend/sliding_window.cpp
-)
+add_library(estimator ${MOBILE_SLAM_ESTIMATOR_SOURCES})
 target_link_libraries(estimator
     utility
     ceres
@@ -155,10 +145,11 @@ target_link_libraries(estimator
 )
 
 # VIO Engine (headless wrapper for WASM and programmatic use)
-add_library(vio_engine src/vio_engine.cpp)
+add_library(vio_engine ${MOBILE_SLAM_VIO_ENGINE_SOURCES})
 target_link_libraries(vio_engine
     estimator
     feature_tracker
+    pnp_frontend
     utility
     camera_models
     ${OpenCV_LIBS}
@@ -180,11 +171,13 @@ add_executable(tiny_vins_mono
     src/tiny_vins_mono.cpp 
     src/vio_system.cpp
     src/utility/measurement_processor.cpp
-    src/utility/visualizer.cpp
-    src/utility/imu_graph_visualizer.cpp
     src/utility/test_result_logger.cpp
 )
+if(MOBILE_SLAM_BUILD_VIEWER)
+    target_sources(tiny_vins_mono PRIVATE src/utility/visualizer.cpp src/utility/imu_graph_visualizer.cpp)
+endif()
 target_link_libraries(tiny_vins_mono
+    vio_engine
     ${OpenCV_LIBS}
     ${YAML_CPP_LIBRARIES}
     ${EIGEN3_LIBRARIES}
@@ -264,3 +257,30 @@ target_link_libraries(test_vio_engine_parity
 )
 target_include_directories(test_vio_engine_parity PRIVATE include)
 add_test(NAME VIOEngineParityTest COMMAND test_vio_engine_parity)
+
+# Headless dataset replay is a regular build target, without command parsing.
+add_executable(native_replay tests/audit_dataset_replay.cpp)
+target_link_libraries(native_replay PRIVATE vio_engine ${YAML_CPP_LIBRARIES})
+
+add_executable(test_engine_contracts tests/test_engine_contracts.cpp)
+target_link_libraries(test_engine_contracts PRIVATE vio_engine gtest_main)
+add_test(NAME EngineContractsTest COMMAND test_engine_contracts)
+
+add_executable(test_numerical_contracts tests/test_numerical_contracts.cpp)
+target_link_libraries(test_numerical_contracts PRIVATE estimator pnp_frontend gtest_main)
+add_test(NAME NumericalContractsTest COMMAND test_numerical_contracts)
+
+add_executable(test_initial_sfm_contracts tests/test_initial_sfm_contracts.cpp)
+target_link_libraries(test_initial_sfm_contracts PRIVATE initializer gtest_main)
+add_test(NAME InitialSFMContractsTest COMMAND test_initial_sfm_contracts)
+
+add_executable(test_native_adapter tests/test_native_adapter.cpp src/utility/measurement_processor.cpp
+    src/vio_system.cpp src/utility/test_result_logger.cpp)
+target_link_libraries(test_native_adapter PRIVATE vio_engine trajectory_evaluator gtest_main stdc++fs)
+add_test(NAME NativeAdapterTest COMMAND test_native_adapter)
+
+set_tests_properties(IntegrationBaseTest SlidingWindowTest TrajectoryEvaluatorTest ConfigValidationTest
+    MeasurementRobustnessTest VIOEngineParityTest EngineContractsTest NumericalContractsTest InitialSFMContractsTest NativeAdapterTest
+    PROPERTIES WORKING_DIRECTORY "${CMAKE_CURRENT_SOURCE_DIR}" TIMEOUT 180)
+
+set_tests_properties(NativeAdapterTest PROPERTIES WORKING_DIRECTORY "${PROJECT_BINARY_DIR}")

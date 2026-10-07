@@ -1,0 +1,64 @@
+RUN FRESH wasm/test_wasm_module.mjs
+=== WASM Module Load Test ===
+
+[1] Loading vio_engine.js...
+    Module function loaded: OK
+[2] Initializing WASM runtime...
+    WASM instance: OK
+    _malloc available: OK
+    _free available: OK
+    HEAPU8 available: OK
+    HEAPF64 available: OK
+[3] Creating VIOEngine instance...
+    VIOEngine created: OK
+[4] Checking API methods...
+    configure: OK
+    processFrame: OK
+    isInitialized: OK
+    getFeaturePointCount: OK
+    getMapPoints: OK
+    reset: OK
+[5] Testing initial state...
+    isInitialized: OK (false)
+    getFeaturePointCount: OK (0)
+[6] Testing configure...
+    configure result: OK (true)
+[7] Testing processFrame with dummy image...
+    processFrame result: OK (false, not initialized yet)
+    isInitialized after 1 frame: OK (false)
+
+=== All WASM module tests passed ===
+RUN FRESH wasm/test_wasm_integration.mjs
+=== WASM Integration Test ===
+
+[1] Module Loading
+  PASS: VIOWasm is a function
+  PASS: WASM instance created
+  PASS: _malloc available
+  PASS: _free available
+  PASS: HEAPU8 available
+  PASS: HEAPF64 available
+
+[2] Engine Creation
+  PASS: VIOEngine created
+  PASS: Not initialized initially
+  PASS: Zero features initially
+
+[3] Configuration
+  PASS: Configure succeeded
+
+[4] Multi-frame Processing
+  PASS: Frame 0: no pose yet (expected)
+  INFO: 20 frames processed, avg 1.6ms/frame
+  PASS: Processing took 32ms total
+
+[5] Map Points
+  PASS: getMapPoints returned 0 points
+
+[6] Reset
+  PASS: Not initialized after reset
+
+[7] Re-configure After Reset
+  PASS: Re-configure after reset succeeded
+
+=== Results: 15 passed, 0 failed ===

@@ -45,9 +45,10 @@ void solveGyroscopeBias(std::map<double, common::ImageFrame> const& all_image_fr
     std::cout << "gyroscope bias initial calibration " << delta_bg.transpose() << std::endl;
 #endif
 
-    // Clamp gyroscope bias to physically reasonable range (±0.05 rad/s per axis)
-    // Mobile MEMS gyroscopes cannot have bias larger than ~3 deg/s
-    const double max_bias = 0.05;
+    // Clamp gyroscope bias to physically reasonable range (±0.35 rad/s per axis)
+    // Mobile MEMS gyroscopes can have bias 0.2-0.3 rad/s (11-17 deg/s).
+    // Previous 0.05 was 7x too tight → truncated legitimate bias → pre-integration contamination.
+    const double max_bias = 0.35;
     for (int axis = 0; axis < 3; axis++) {
         delta_bg(axis) = std::max(-max_bias, std::min(max_bias, delta_bg(axis)));
     }
@@ -96,6 +97,8 @@ void RefineGravity(std::map<double, common::ImageFrame> const& all_image_frame, 
     std::map<double, common::ImageFrame>::const_iterator frame_i;
     std::map<double, common::ImageFrame>::const_iterator frame_j;
     for (int k = 0; k < 4; k++) {
+        A.setZero();
+        b.setZero();
         MatrixXd lxly(3, 2);
         lxly = TangentBasis(g0);
         int i = 0;

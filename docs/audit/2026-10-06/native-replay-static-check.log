@@ -1,0 +1,24 @@
+In file included from /home/park-ubuntu/park/SOLUTION/Mobile-SLAM/build/_deps/ceres-solver-src/include/ceres/internal/fixed_array.h:42,
+                 from /home/park-ubuntu/park/SOLUTION/Mobile-SLAM/build/_deps/ceres-solver-src/include/ceres/internal/array_selector.h:38,
+                 from /home/park-ubuntu/park/SOLUTION/Mobile-SLAM/build/_deps/ceres-solver-src/include/ceres/internal/autodiff.h:147,
+                 from /home/park-ubuntu/park/SOLUTION/Mobile-SLAM/build/_deps/ceres-solver-src/include/ceres/autodiff_cost_function.h:130,
+                 from /home/park-ubuntu/park/SOLUTION/Mobile-SLAM/build/_deps/ceres-solver-src/include/ceres/ceres.h:38,
+                 from /home/park-ubuntu/park/SOLUTION/Mobile-SLAM/include/backend/optimizer.h:4,
+                 from /home/park-ubuntu/park/SOLUTION/Mobile-SLAM/include/backend/estimator.h:11,
+                 from /home/park-ubuntu/park/SOLUTION/Mobile-SLAM/include/vio_engine.h:9,
+                 from /home/park-ubuntu/park/SOLUTION/Mobile-SLAM/tests/audit_dataset_replay.cpp:20:
+/home/park-ubuntu/park/SOLUTION/Mobile-SLAM/build/_deps/ceres-solver-src/internal/ceres/miniglog/glog/logging.h: In member function ‘void LoggerVoidify::operator&(const ostream&)’:
+/home/park-ubuntu/park/SOLUTION/Mobile-SLAM/build/_deps/ceres-solver-src/internal/ceres/miniglog/glog/logging.h:295:38: warning: unused parameter ‘s’ [-Wunused-parameter]
+  295 |   void operator&(const std::ostream& s) {}
+      |                  ~~~~~~~~~~~~~~~~~~~~^
+In file included from /home/park-ubuntu/park/SOLUTION/Mobile-SLAM/include/backend/factor/integration_base.h:8,
+                 from /home/park-ubuntu/park/SOLUTION/Mobile-SLAM/include/backend/factor/imu_factor.h:8,
+                 from /home/park-ubuntu/park/SOLUTION/Mobile-SLAM/include/backend/optimizer.h:8,
+                 from /home/park-ubuntu/park/SOLUTION/Mobile-SLAM/include/backend/estimator.h:11,
+                 from /home/park-ubuntu/park/SOLUTION/Mobile-SLAM/include/vio_engine.h:9,
+                 from /home/park-ubuntu/park/SOLUTION/Mobile-SLAM/tests/audit_dataset_replay.cpp:20:
+/home/park-ubuntu/park/SOLUTION/Mobile-SLAM/include/utility/utility.h: At global scope:
+/home/park-ubuntu/park/SOLUTION/Mobile-SLAM/include/utility/utility.h:140:6: warning: extra ‘;’ [-Wpedantic]
+  140 |     };
+      |      ^
+      |      -

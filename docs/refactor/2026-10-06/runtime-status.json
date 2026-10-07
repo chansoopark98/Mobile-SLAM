@@ -1,0 +1,160 @@
+{
+  "scope": "R0-R6 refactoring, real HTTPS7002 and virtual validation; physical/fullSLAM/production acceptance separate",
+  "status": "complete_for_R0_R6_delivery",
+  "updated_utc": "2026-10-06T17:26:54.515642+00:00",
+  "model_review": {
+    "model": "gpt-6-astra",
+    "effort": "ultra",
+    "count": 1,
+    "result": "recommendations adopted"
+  },
+  "development": {
+    "model": "gpt-6.1-sol",
+    "effort": "ultra"
+  },
+  "service": {
+    "url": "https://dev.serdic.com:7002/",
+    "pid": 3002812,
+    "instance_id": "c98f10df76144a3c80311b09d1e0d5cf",
+    "bind": "0.0.0.0:7002",
+    "strict_TLS_SNI_system_trust": true,
+    "chain_count": 3,
+    "HTTP_regressions": 34,
+    "log": "logs/https/20261006T164826765565Z-7002-c98f10df76144a3c80311b09d1e0d5cf.log",
+    "stop": "bash scripts/ops/serve.sh stop",
+    "ordinary_hostname_route": "127.0.0.1 existing unrelated hosts override preserved",
+    "forced_public_TCP_route": "183.98.179.103 samehost HTTP200 verify0 same identity",
+    "independent_off_LAN": "UNVERIFIED",
+    "leave_running": true
+  },
+  "candidate": {
+    "js_sha256": "9973d58eca6f95fcf5fcaf2d553d02bc2215f419e4ba1fc1cc94ae417eb3014d",
+    "bytes": 6009632,
+    "single_file_embedded_wasm": true,
+    "source_manifest_sha256": "b936982e5fea0c8ad0fb77e3e8b311770998763ff77ef2ef4bb082945866674b"
+  },
+  "verification": {
+    "native": {
+      "passed": 102,
+      "suites": 10,
+      "skip": 0
+    },
+    "ASan_UBSan_LSan": {
+      "passed": 102,
+      "suites": 10,
+      "duration_s": 176.61,
+      "skip": 0,
+      "suppressions": 0,
+      "thirdparty_fully_instrumented": false
+    },
+    "source_contracts": {
+      "JS": 78,
+      "python_browser": 7,
+      "mandatory_TODO": 0,
+      "syntax": "PASS; not ESLint/TypeScript"
+    },
+    "clangd": {
+      "version": "23.1.0",
+      "files": [
+        "initial_sfm.cpp",
+        "initializer.cpp",
+        "optimizer.cpp"
+      ],
+      "errors": 0,
+      "optimizer_intentional_ownership_warning": 1
+    },
+    "run6": {
+      "ALL_exit": 0,
+      "strict": "PASS",
+      "room1_repeated_pairs": 3,
+      "contract_sha256": "53bba52381be83e932d9c9c3c94867c6e08436af4cb11d778f803feb7164ae76",
+      "frozen_before_room4": true,
+      "solver_metadata_differences": 0,
+      "supplemental_function_stop_exceptions": 0,
+      "default_paced_loss_gap_busy_REAL_HTTPS_mock": "PASS",
+      "old_failed_runs_preserved": true
+    },
+    "room2_first_confirmation": {
+      "native_only": true,
+      "runs": 1,
+      "profile": "default false/0.1s/max10/features150",
+      "frames": 2882,
+      "poses": 2838,
+      "init_frame": 44,
+      "GT_associations": 2547,
+      "GT_association_coverage": 0.897463,
+      "ATE_m": 0.0665293138,
+      "APE_deg": 0.89893297,
+      "loss": 0,
+      "resets": 0,
+      "protocol_sha256": "c98a336ab8e772abf13a07ff2cb22ac0c2d774d2f54d607e7c71b0c370476e17",
+      "tuning": false
+    },
+    "cleanup": {
+      "mode": "STANDARD",
+      "session_owned_files": 88,
+      "additional_source_edits": 0,
+      "review": "THOROUGH APPROVE",
+      "postcleanup": "CTest10/10 JS78 Python7 syntax/scoped diff/source SHA PASS",
+      "evidence": "build/refactor-evidence/final-closure/postcleanup-verification.json"
+    }
+  },
+  "dataset_metrics": {
+    "body_frame": "T_W_B",
+    "alignment": "SE3 scale1; Sim3 diagnostic only",
+    "room1_benchmark": {
+      "ATE_m": 0.053166151,
+      "APE_deg": 1.20301948,
+      "fresh": 2776,
+      "input": 2821,
+      "GT_associations": 2719
+    },
+    "room4_default": {
+      "native_ATE_m": 0.051316571756,
+      "WASM_ATE_m": 0.051316963502,
+      "fresh": 2148,
+      "input": 2228,
+      "GT_associations": 2108
+    },
+    "room4_benchmark": {
+      "ATE_m": 0.051330817,
+      "APE_deg": 1.251115244
+    }
+  },
+  "performance": {
+    "scope": "desktop dataset source-time20Hz, hashOFF, benchmarkfalse; physical capture/thermal unverified",
+    "input": 300,
+    "completed": 286,
+    "fresh": 241,
+    "drops": 14,
+    "engine_ms_postinit": {
+      "p50": 29.08,
+      "p95": 49.2,
+      "p99": 62.01
+    },
+    "roundtrip_ms_postinit": {
+      "p50": 29.2949,
+      "p95": 49.425,
+      "p99": 62.3298
+    },
+    "speed_improvement_claim": false
+  },
+  "pending": [],
+  "limits": [
+    "physical phone camera/IMU/jump accuracy",
+    "exposure/capture-to-display and thermal sustained performance",
+    "full SLAM loop closure/global relocalization/map persistence",
+    "commercial licensing acceptance",
+    "independent off-LAN",
+    "GT-unassociated291room2 poses accuracy unmeasured"
+  ],
+  "evidence": [
+    "build/refactor-evaluation/final-physical/ready-handoff.json",
+    "build/refactor-validation/run-6/final-validation-signoff.json",
+    "build/refactor-evaluation/room2-confirmation/first-native-default-result.json",
+    "build/refactor-evidence/final-closure/parent-live-verification.json",
+    "docs/refactor/2026-10-06/final-refactor-review.md"
+  ],
+  "historical_status_snapshot": "docs/refactor/2026-10-06/runtime-status-before-final.json",
+  "completed_utc": "2026-10-06T17:38:39.490801+00:00"
+}

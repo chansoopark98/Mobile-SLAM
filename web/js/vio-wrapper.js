@@ -1,340 +1,330 @@
-/**
- * VIOWrapper - Async Worker-based API wrapping the WASM VIO engine.
- * Main thread remains unblocked; all VIO processing runs in a Web Worker.
- *
- * IMU data is sent independently from camera frames via sendIMU().
- * The worker accumulates IMU internally and drains on each frame.
- */
-
+/** Async API for the single VIO Worker. Frames may be dropped while IMU remains deliverable. */
 export class VIOWrapper {
-    constructor() {
+    constructor({ requestTimeoutMs = 15000, frameTimeoutMs = 30000 } = {}) {
         this.worker = null;
         this.configured = false;
         this.workerBusy = false;
-
-        // Latest result from worker (updated asynchronously)
+        this.onWasmLog = null;
         this._latestResult = null;
         this._latestMapPoints = null;
-
-        // Pending promises for init/configure/setMobileParams/setFThreshold
-        this._pendingInit = null;
-        this._pendingConfigure = null;
-        this._pendingSetMobileParams = null;
-        this._pendingSetFThreshold = null;
-
-        // WASM C++ stdout/stderr log callback: (level, msg) => {}
-        this.onWasmLog = null;
-
-        // Promise-based worker completion notification (replaces busy-poll)
-        this._workerFreeResolve = null;
-        this._workerFreeTimer = null;
+        this._engineEpoch = null;
+        this._clientEpoch = 0;
+        this._nextRequestId = 1;
+        this._sequence = 0;
+        this._pending = new Map();
+        this._freeWaiters = new Set();
+        this._activeFrame = null;
+        this._requestTimeoutMs = this._boundedTimeout(requestTimeoutMs, 15000);
+        this._frameTimeoutMs = this._boundedTimeout(frameTimeoutMs, 30000);
+        this._metrics = {
+            framesSubmitted: 0, framesCompleted: 0, framesDropped: 0, framesTimedOut: 0, framesCancelled: 0,
+            frameDropReasons: { busy: 0, notConfigured: 0, invalid: 0, postMessage: 0 },
+            imuReadingsSubmitted: 0, imuReadingsRejected: 0, staleReplies: 0,
+            workerErrors: 0, imuDrops: null, lastError: null,
+        };
     }
 
-    /**
-     * Load and initialize the WASM module inside a Web Worker.
-     * @param {string} wasmPath - Path to the vio_engine_worker.js WASM module
-     * @returns {Promise<void>}
-     */
+    _boundedTimeout(value, fallback) {
+        return Number.isFinite(value) && value > 0 ? Math.min(value, 60000) : fallback;
+    }
+
+    _nowMs() {
+        return performance.timeOrigin + performance.now();
+    }
+
+    _message(type, data) {
+        return { type, data, requestId: this._nextRequestId++, clientEpoch: this._clientEpoch,
+            sequence: ++this._sequence, sentAtMs: this._nowMs() };
+    }
+
+    /** One pending table prevents concurrent calls of the same RPC from overwriting each other. */
+    _request(type, data) {
+        if (!this.worker) return Promise.reject(new Error('Worker is not loaded'));
+        const message = this._message(type, data);
+        return new Promise((resolve, reject) => {
+            const timer = setTimeout(() => {
+                if (!this._pending.delete(message.requestId)) return;
+                const error = new Error(`Worker ${type} timeout`);
+                reject(error);
+                // Unknown configure/reset completion cannot safely admit another frame.
+                if (type === 'init' || type === 'configure' || type === 'reset') this._workerFailure(error);
+            }, this._requestTimeoutMs);
+            this._pending.set(message.requestId, { ...message, resolve, reject, timer });
+            try {
+                this.worker.postMessage(message);
+            } catch (error) {
+                clearTimeout(timer);
+                this._pending.delete(message.requestId);
+                reject(error);
+            }
+        });
+    }
+
+    _invalidate(error) {
+        if (this._activeFrame && !this._activeFrame.timedOut) this._metrics.framesCancelled++;
+        this._clientEpoch++;
+        this._sequence = 0;
+        this._latestResult = null;
+        this._latestMapPoints = null;
+        this._engineEpoch = null;
+        for (const pending of this._pending.values()) {
+            clearTimeout(pending.timer);
+            pending.reject(error);
+        }
+        this._pending.clear();
+        this._finishFrame(error);
+    }
+
     async load(wasmPath = '/vio_engine.js') {
-        return new Promise((resolve, reject) => {
-            this.worker = new Worker('/js/vio-worker.js', { type: 'module' });
-
-            this.worker.onmessage = (e) => {
-                this._handleWorkerMessage(e.data);
-            };
-
-            this.worker.onerror = (err) => {
-                console.error('[VIO Wrapper] Worker error:', err);
-                if (this._pendingInit) {
-                    this._pendingInit.reject(err);
-                    this._pendingInit = null;
-                }
-            };
-
-            this._pendingInit = { resolve, reject };
-            this.worker.postMessage({ type: 'init', data: { wasmPath } });
-        });
+        this._invalidate(new Error('Worker replaced'));
+        this.configured = false;
+        if (this.worker) this.worker.terminate();
+        const worker = new Worker('/js/vio-worker.js', { type: 'module' });
+        this.worker = worker;
+        worker.onmessage = event => {
+            if (this.worker === worker) this._handleWorkerMessage(event.data);
+        };
+        worker.onerror = error => {
+            if (this.worker === worker) this._workerFailure(new Error(error.message || 'Worker runtime error'));
+        };
+        worker.onmessageerror = () => {
+            if (this.worker === worker) this._workerFailure(new Error('Worker message deserialization failed'));
+        };
+        const success = await this._request('init', { wasmPath });
+        if (!success) throw new Error('Worker init failed');
     }
 
-    /**
-     * Configure the VIO engine with camera and IMU parameters.
-     * @param {Object} params - Configuration parameters
-     * @returns {Promise<boolean>}
-     */
     async configure(params) {
-        return new Promise((resolve, reject) => {
-            this._pendingConfigure = { resolve, reject };
-            this.worker.postMessage({ type: 'configure', data: params });
-        });
+        this._invalidate(new Error('Worker reconfigured'));
+        this.configured = false;
+        return this._request('configure', params);
     }
 
-    /**
-     * Set mobile-optimized solver parameters (call after configure).
-     * @param {number} solverTime - Max solver time in seconds
-     * @param {number} numIterations - Max solver iterations
-     * @param {number} maxFeatures - Max tracked features
-     * @returns {Promise<boolean>}
-     */
     async setMobileParams(solverTime, numIterations, maxFeatures) {
-        return new Promise((resolve, reject) => {
-            this._pendingSetMobileParams = { resolve, reject };
-            this.worker.postMessage({
-                type: 'setMobileParams',
-                data: { solver_time: solverTime, num_iterations: numIterations, max_features: maxFeatures },
-            });
+        return this._request('setMobileParams', {
+            solver_time: solverTime, num_iterations: numIterations, max_features: maxFeatures,
         });
     }
 
-    /**
-     * Set fundamental matrix RANSAC threshold for feature rejection.
-     * @param {number} fThreshold - Threshold in pixels (default: 5.0)
-     * @returns {Promise<boolean>}
-     */
     async setFThreshold(fThreshold) {
-        return new Promise((resolve, reject) => {
-            this._pendingSetFThreshold = { resolve, reject };
-            this.worker.postMessage({
-                type: 'setFThreshold',
-                data: { f_threshold: fThreshold },
-            });
-        });
+        return this._request('setFThreshold', { f_threshold: fThreshold });
     }
 
-    /**
-     * Set feature tracking parameters for mobile optimization.
-     * @param {number} lkWindow - LK optical flow window size (odd, default 21)
-     * @param {number} lkPyramid - LK pyramid levels (default 3)
-     * @param {number} minDist - Min distance between features in pixels (default 20)
-     * @param {number} fEdgeFactor - Edge distortion compensation (0=off, 2.0=recommended)
-     * @returns {Promise<boolean>}
-     */
     async setTrackingParams(lkWindow, lkPyramid, minDist, fEdgeFactor) {
-        return new Promise((resolve, reject) => {
-            this._pendingSetTrackingParams = { resolve, reject };
-            this.worker.postMessage({
-                type: 'setTrackingParams',
-                data: { lk_window: lkWindow, lk_pyramid: lkPyramid, min_dist: minDist, f_edge_factor: fEdgeFactor },
-            });
+        return this._request('setTrackingParams', {
+            lk_window: lkWindow, lk_pyramid: lkPyramid, min_dist: minDist, f_edge_factor: fEdgeFactor,
         });
     }
 
-    /**
-     * Send IMU data to the worker independently from camera frames.
-     * This is NOT blocked by workerBusy — IMU always gets through.
-     *
-     * @param {Float64Array} imuData - Flat array: [ts, ax, ay, az, gx, gy, gz] × count
-     * @param {number} count - Number of IMU readings
-     * @returns {boolean} true if sent
-     */
+    async setPnPParams(enablePnP, freq = 3) {
+        return this._request('setPnPParams', { enable_pnp: enablePnP, freq });
+    }
+
+    /** Flat [timestamp seconds, acceleration m/s², angular velocity rad/s] × count. */
     sendIMU(imuData, count) {
-        if (!this.configured || !this.worker || !imuData || count <= 0) {
+        if (!this.configured || !this.worker) return false;
+        if (!(imuData instanceof Float64Array) || !Number.isInteger(count) || count < 1 ||
+            count > 4096 || count * 7 > imuData.length) {
+            this._metrics.imuReadingsRejected += Number.isInteger(count) && count > 0 ? count : 0;
+            this._metrics.lastError = 'invalid_imu_batch';
             return false;
         }
-
-        // Transfer the buffer for zero-copy delivery
-        const buffer = imuData.buffer;
-        this.worker.postMessage(
-            {
-                type: 'imu',
-                data: { imuData: buffer, count },
-            },
-            [buffer]  // Transferable
-        );
-        return true;
+        for (let i = 0; i < count * 7; i++) {
+            if (!Number.isFinite(imuData[i]) || (i % 7 === 0 && i >= 7 && imuData[i] <= imuData[i - 7])) {
+                this._metrics.imuReadingsRejected += count;
+                this._metrics.lastError = 'invalid_imu_sample';
+                return false;
+            }
+        }
+        // Copy the declared view: transferring its backing buffer would detach unrelated readings.
+        const buffer = imuData.buffer.slice(imuData.byteOffset, imuData.byteOffset + count * 7 * 8);
+        try {
+            this.worker.postMessage(this._message('imu', { imuData: buffer, count }), [buffer]);
+            this._metrics.imuReadingsSubmitted += count;
+            return true;
+        } catch (error) {
+            this._metrics.imuReadingsRejected += count;
+            this._metrics.lastError = error.message;
+            return false;
+        }
     }
 
-    /**
-     * Send a camera frame to the worker for processing (non-blocking).
-     * If the worker is busy, the frame is dropped (but IMU is NOT lost).
-     *
-     * @param {Uint8Array} grayImage - Grayscale image data
-     * @param {number} timestamp - Image timestamp in seconds
-     * @returns {boolean} true if frame was sent, false if dropped
-     */
+    /** Submit exact grayscale view bytes; retain the camera's reusable source buffer. */
     sendFrame(grayImage, timestamp = 0) {
-        if (!this.configured || !this.worker || this.workerBusy) {
+        if (!this.configured || !this.worker || this.workerBusy ||
+            !(grayImage instanceof Uint8Array) || !Number.isFinite(timestamp)) {
+            this._metrics.framesDropped++;
+            const reason = !this.configured || !this.worker ? 'notConfigured' : this.workerBusy ? 'busy' : 'invalid';
+            this._metrics.frameDropReasons[reason]++;
             return false;
         }
-
+        const copyStarted = performance.now();
+        const gray = grayImage.buffer.slice(grayImage.byteOffset, grayImage.byteOffset + grayImage.byteLength);
+        const frameCopyMs = performance.now() - copyStarted;
+        const message = this._message('frame', { gray, timestamp });
         this.workerBusy = true;
-
-        // Transfer the image buffer for zero-copy
-        const grayBuffer = grayImage.buffer.slice(
-            grayImage.byteOffset,
-            grayImage.byteOffset + grayImage.byteLength
-        );
-
-        this.worker.postMessage(
-            {
-                type: 'frame',
-                data: {
-                    gray: grayBuffer,
-                    timestamp: timestamp,
-                },
-            },
-            [grayBuffer]  // Transferable
-        );
-        return true;
-    }
-
-    /**
-     * Get the latest result from the worker (synchronous, non-blocking).
-     * @returns {{pose: Float64Array|null, initialized: boolean, featureCount: number}|null}
-     */
-    getLatestResult() {
-        return this._latestResult;
-    }
-
-    /**
-     * Get the latest map points from the worker.
-     * @returns {{points: Float64Array|null, count: number}}
-     */
-    getMapPoints() {
-        if (this._latestMapPoints) {
-            return this._latestMapPoints;
+        const timer = setTimeout(() => {
+            if (this._activeFrame?.requestId !== message.requestId) return;
+            this._metrics.framesTimedOut++;
+            this._activeFrame.timedOut = true;
+            this._metrics.lastError = 'frame_timeout';
+            this._workerFailure(new Error('Worker frame timeout'));
+        }, this._frameTimeoutMs);
+        this._activeFrame = { ...message, timer, frameCopyMs };
+        try {
+            this.worker.postMessage(message, [gray]);
+            this._metrics.framesSubmitted++;
+            return true;
+        } catch (error) {
+            this._metrics.framesDropped++;
+            this._metrics.frameDropReasons.postMessage++;
+            this._metrics.lastError = error.message;
+            this._latestResult = this._latestMapPoints = null;
+            this._finishFrame(error);
+            return false;
         }
-        return { points: null, count: 0 };
     }
 
-    /** Check if VIO has initialized */
-    isInitialized() {
-        return this._latestResult ? this._latestResult.initialized : false;
+    getLatestResult() { return this._latestResult; }
+    getMapPoints() { return this._latestMapPoints || { points: null, count: 0 }; }
+    isInitialized() { return this._latestResult?.initialized || false; }
+    getMetrics() {
+        return { ...this._metrics, imuDrops: this._metrics.imuDrops ? { ...this._metrics.imuDrops } : null,
+            frameDropReasons: { ...this._metrics.frameDropReasons },
+            workerBusy: this.workerBusy, clientEpoch: this._clientEpoch };
     }
 
-    /** Reset VIO state */
     reset() {
-        if (this.worker) {
-            this.workerBusy = false;
-            this._latestResult = null;
-            this._latestMapPoints = null;
-            this.worker.postMessage({ type: 'reset' });
-        }
+        const wasConfigured = this.configured;
+        this._invalidate(new Error('Worker reset'));
+        const epoch = this._clientEpoch;
+        this.configured = false;
+        if (this.worker) this._request('reset').then(success => {
+            if (this._clientEpoch === epoch) this.configured = success && wasConfigured;
+        }, error => {
+            if (this._clientEpoch === epoch) this._metrics.lastError = error.message;
+        });
     }
 
-    /** Clean up worker and resources */
     dispose() {
+        this._invalidate(new Error('Worker disposed'));
+        this.configured = false;
         if (this.worker) {
-            this.worker.postMessage({ type: 'dispose' });
+            try { this.worker.postMessage(this._message('dispose')); } catch (_) { /* Already unavailable. */ }
             this.worker.terminate();
             this.worker = null;
         }
-        this.configured = false;
-        this.workerBusy = false;
-        this._latestResult = null;
-        this._latestMapPoints = null;
     }
 
-    /**
-     * Wait for the worker to become free (promise-based, no busy-poll).
-     * Resolves immediately if worker is already free.
-     * @param {number} timeoutMs - Timeout in milliseconds
-     * @returns {Promise<void>}
-     */
+    /** Each consumer has its own bounded deadline and always settles on completion or invalidation. */
     waitForFree(timeoutMs = 5000) {
         if (!this.workerBusy) return Promise.resolve();
         return new Promise((resolve, reject) => {
-            this._workerFreeResolve = resolve;
-            if (timeoutMs > 0) {
-                this._workerFreeTimer = setTimeout(() => {
-                    if (this._workerFreeResolve === resolve) {
-                        this._workerFreeResolve = null;
-                        this._workerFreeTimer = null;
-                        reject(new Error('Worker timeout'));
-                    }
-                }, timeoutMs);
-            }
+            const waiter = { resolve, reject, timer: null };
+            waiter.timer = setTimeout(() => {
+                this._freeWaiters.delete(waiter);
+                reject(new Error('Worker timeout'));
+            }, this._boundedTimeout(timeoutMs, 5000));
+            this._freeWaiters.add(waiter);
         });
     }
 
-    /** Resolve pending waitForFree promise */
-    _resolveWorkerFree() {
-        if (this._workerFreeResolve) {
-            const resolve = this._workerFreeResolve;
-            this._workerFreeResolve = null;
-            if (this._workerFreeTimer) {
-                clearTimeout(this._workerFreeTimer);
-                this._workerFreeTimer = null;
-            }
-            resolve();
+    _finishFrame(error = null) {
+        if (this._activeFrame) clearTimeout(this._activeFrame.timer);
+        this._activeFrame = null;
+        this.workerBusy = false;
+        for (const waiter of this._freeWaiters) {
+            clearTimeout(waiter.timer);
+            if (error) waiter.reject(error); else waiter.resolve();
         }
+        this._freeWaiters.clear();
     }
 
-    /** Handle messages from the worker */
-    _handleWorkerMessage(msg) {
-        switch (msg.type) {
-            case 'init':
-                if (this._pendingInit) {
-                    if (msg.success) {
-                        this._pendingInit.resolve();
-                    } else {
-                        this._pendingInit.reject(new Error(msg.error || 'Worker init failed'));
-                    }
-                    this._pendingInit = null;
-                }
-                break;
+    _workerFailure(error) {
+        this._metrics.workerErrors++;
+        this._metrics.lastError = error.message;
+        this._invalidate(error);
+        this.configured = false;
+        if (this.worker) this.worker.terminate();
+        this.worker = null;
+    }
 
-            case 'configure':
-                this.configured = msg.success;
-                if (this._pendingConfigure) {
-                    this._pendingConfigure.resolve(msg.success);
-                    this._pendingConfigure = null;
-                }
-                break;
+    _matches(message, pending) {
+        return pending && message.clientEpoch === this._clientEpoch &&
+            message.clientEpoch === pending.clientEpoch && message.requestId === pending.requestId &&
+            message.sequence === pending.sequence;
+    }
 
-            case 'setMobileParams':
-                if (this._pendingSetMobileParams) {
-                    this._pendingSetMobileParams.resolve(msg.success);
-                    this._pendingSetMobileParams = null;
-                }
-                break;
-
-            case 'setFThreshold':
-                if (this._pendingSetFThreshold) {
-                    this._pendingSetFThreshold.resolve(msg.success);
-                    this._pendingSetFThreshold = null;
-                }
-                break;
-
-            case 'setTrackingParams':
-                if (this._pendingSetTrackingParams) {
-                    this._pendingSetTrackingParams.resolve(msg.success);
-                    this._pendingSetTrackingParams = null;
-                }
-                break;
-
-            case 'result':
-                this.workerBusy = false;
-                this._resolveWorkerFree();
-                if (msg.data) {
-                    this._latestResult = {
-                        pose: msg.data.pose,
-                        initialized: msg.data.initialized,
-                        featureCount: msg.data.featureCount,
-                        statusCode: msg.data.statusCode,
-                        imuCount: msg.data.imuCount || 0,
-                    };
-                    if (msg.data.mapPoints && msg.data.mapPointCount > 0) {
-                        this._latestMapPoints = {
-                            points: msg.data.mapPoints,
-                            count: msg.data.mapPointCount,
-                        };
-                    }
-                }
-                break;
-
-            case 'wasm_log':
-                if (this.onWasmLog && msg.data) {
-                    this.onWasmLog(msg.data.level, msg.data.msg);
-                }
-                break;
-
-            case 'reset':
-                this.workerBusy = false;
-                this._resolveWorkerFree();
-                break;
-
-            case 'dispose':
-                break;
+    _handleWorkerMessage(message) {
+        if (!message || message.clientEpoch !== this._clientEpoch) {
+            this._metrics.staleReplies++;
+            return;
         }
+        if (message.type === 'wasm_log') {
+            if (this.onWasmLog && message.data) this.onWasmLog(message.data.level, message.data.msg);
+            return;
+        }
+        if (message.type === 'runtime_error') {
+            this._workerFailure(new Error(message.error || 'Worker runtime rejection'));
+            return;
+        }
+        if (message.type === 'imu') {
+            if (message.imuDrops) this._metrics.imuDrops = message.imuDrops;
+            if (!message.success) this._metrics.lastError = message.error;
+            return;
+        }
+        if (message.type === 'result') {
+            if (!this._matches(message, this._activeFrame)) {
+                this._metrics.staleReplies++;
+                return;
+            }
+            const roundtripMs = this._nowMs() - this._activeFrame.sentAtMs;
+            const frameCopyMs = this._activeFrame.frameCopyMs;
+            const data = message.data || { inputTimestamp: this._activeFrame.data.timestamp,
+                pose: null, poseValid: false, poseFresh: false, poseTimestamp: null,
+                mapPoints: null, mapPointCount: 0, reason: message.error || 'empty_result' };
+            this._metrics.framesCompleted++;
+            const inputTimestamp = this._activeFrame.data.timestamp;
+            const wrongEpoch = this._engineEpoch !== null && Number.isFinite(data.engineEpoch) && data.engineEpoch < this._engineEpoch;
+            const error = message.success !== true ? new Error(message.error || data.reason || 'Worker frame failed') :
+                data.inputTimestamp !== inputTimestamp ? new Error('Frame timestamp mismatch') :
+                wrongEpoch ? new Error('Stale engine epoch') : null;
+            if (error) this._metrics.lastError = error.message;
+            if (data.engineEpoch !== this._engineEpoch) this._latestMapPoints = null;
+            if (!wrongEpoch) this._engineEpoch = data.engineEpoch ?? null;
+            const poseTimestamp = Number.isFinite(data.poseTimestamp) && data.poseTimestamp >= 0 ? data.poseTimestamp : null;
+            const poseValid = !error && data.poseValid === true && data.poseFresh === true && poseTimestamp !== null &&
+                data.pose instanceof Float64Array && data.pose.length === 16 && data.pose.every(Number.isFinite);
+            const count = data.mapPointCount;
+            const mapValid = poseValid && data.mapPoints instanceof Float64Array && Number.isInteger(count) &&
+                count > 0 && count <= 2000 && data.mapPoints.length === count * 3 && data.mapPoints.every(Number.isFinite);
+            this._latestResult = {
+                ...data, pose: poseValid ? data.pose : null, poseValid, poseFresh: poseValid,
+                poseTimestamp: poseValid ? poseTimestamp : null,
+                inputTimestamp, timestamp: inputTimestamp, requestId: message.requestId,
+                clientEpoch: message.clientEpoch, sequence: message.sequence, roundtripMs, frameCopyMs,
+                poseAgeSeconds: poseValid ? inputTimestamp - poseTimestamp : null,
+                mapPoints: mapValid ? data.mapPoints : null, mapPointCount: mapValid ? count : 0,
+            };
+            this._latestMapPoints = mapValid
+                ? { points: data.mapPoints, count } : null;
+            if (data.imuDrops) this._metrics.imuDrops = data.imuDrops;
+            this._finishFrame(error);
+            return;
+        }
+        const pending = this._pending.get(message.requestId);
+        if (!this._matches(message, pending) || message.type !== pending.type) {
+            this._metrics.staleReplies++;
+            return;
+        }
+        clearTimeout(pending.timer);
+        this._pending.delete(message.requestId);
+        if (message.imuDrops) this._metrics.imuDrops = message.imuDrops;
+        if (message.type === 'configure') this.configured = message.success === true;
+        if (message.error) {
+            this._metrics.lastError = message.error;
+            pending.reject(new Error(message.error));
+        }
+        else pending.resolve(message.success === true);
     }
 }

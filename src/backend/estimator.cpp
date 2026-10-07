@@ -34,9 +34,11 @@ void Estimator::setParameter() {
 }
 
 void Estimator::clearState() {
-    for (int i = 0; i < WINDOW_SIZE + 1; i++) {
-        sliding_window_.clearSlidingWindow();
-    }
+    optimizer_.reset();
+    sliding_window_.clearSlidingWindow();
+    latest_image_update_usable_ = false;
+    last_solver_diagnostics_ = SolverDiagnostics{};
+    ++reset_generation_;
 
     t_ic_ = Eigen::Vector3d::Zero();
     r_ic_ = Eigen::Matrix3d::Identity();
@@ -60,6 +62,15 @@ void Estimator::clearState() {
     last_P_end_ = Eigen::Vector3d::Zero();
 
     failure_occur_ = 0;
+    marginalization_flag_ = common::MarginalizationFlag::MARGIN_OLD_KEYFRAME;
+}
+
+void Estimator::reset() {
+#ifndef __EMSCRIPTEN__
+    std::lock_guard<std::mutex> lock(estimator_mutex_);
+#endif
+    clearState();
+    setParameter();
 }
 
 void Estimator::propagateIMUState(int frame_index, double dt, const Eigen::Vector3d& linear_acceleration,
@@ -78,7 +89,7 @@ void Estimator::propagateIMUState(int frame_index, double dt, const Eigen::Vecto
     Eigen::Vector3d bias_corrected_gyro = 0.5 * (prev_gyro_ + angular_velocity) - sliding_window_[frame_index].Bg;
 
     // update rotation: R = R * exp(gyro*dt)
-    sliding_window_[frame_index].R *= Utility::deltaQ(bias_corrected_gyro * dt).toRotationMatrix();
+    sliding_window_[frame_index].R *= Utility::deltaQ(bias_corrected_gyro * dt).normalized().toRotationMatrix();
 
     // Propagate position and velocity using trapezoidal integration
     Eigen::Vector3d bias_corrected_curr_acc =
@@ -109,21 +120,41 @@ void Estimator::processIMU(double dt, const Eigen::Vector3d& linear_acceleration
 #ifndef __EMSCRIPTEN__
     std::lock_guard<std::mutex> lock(estimator_mutex_);
 #endif
+    if (!std::isfinite(dt) || dt < 0 || !linear_acceleration.allFinite() || !angular_velocity.allFinite()) {
+        latest_image_update_usable_ = false;
+        last_solver_diagnostics_.usable = false;
+        last_solver_diagnostics_.reason = "invalid_imu_input";
+        return;
+    }
     // check initial IMU data
     if (!first_imu_) {
         first_imu_ = true;
         prev_acc_ = linear_acceleration;
         prev_gyro_ = angular_velocity;
     }
-
     // if pre_integrations[frame_count_] is not initialized, initialize it
     // this is generated at every new image frame
     if (!sliding_window_[frame_count_].pre_integration) {
         sliding_window_[frame_count_].pre_integration = std::make_unique<backend::factor::IntegrationBase>(
             prev_acc_, prev_gyro_, sliding_window_[frame_count_].Ba, sliding_window_[frame_count_].Bg);
     }
+    if (dt == 0) {
+        prev_acc_ = linear_acceleration;
+        prev_gyro_ = angular_velocity;
+        return;
+    }
 
     if (frame_count_ != 0) {
+        if (sliding_window_[frame_count_].dt_buf.size() >= 4096) {
+            clearState();
+            setParameter();
+            last_solver_diagnostics_.reason = "estimator_history_overflow";
+            return;
+        }
+        if (!tmp_pre_integration_) {
+            tmp_pre_integration_ = std::make_unique<backend::factor::IntegrationBase>(
+                prev_acc_, prev_gyro_, sliding_window_[frame_count_].Ba, sliding_window_[frame_count_].Bg);
+        }
         sliding_window_.pushBackPreintegration(frame_count_, dt, linear_acceleration, angular_velocity);
         tmp_pre_integration_->push_back(dt, linear_acceleration, angular_velocity);
         propagateIMUState(frame_count_, dt, linear_acceleration, angular_velocity);
@@ -137,10 +168,29 @@ void Estimator::processImage(const common::ImageData& image, double timestamp) {
 #ifndef __EMSCRIPTEN__
     std::lock_guard<std::mutex> lock(estimator_mutex_);
 #endif
+    latest_image_update_usable_ = false;
+    last_solver_diagnostics_ = SolverDiagnostics{};
+    last_solver_diagnostics_.reason = "initializing";
+    if (!std::isfinite(timestamp)) {
+        last_solver_diagnostics_.reason = "invalid_image_timestamp";
+        return;
+    }
     if (feature_manager_.addFeatureAndCheckParallax(frame_count_, image)) {
         marginalization_flag_ = common::MarginalizationFlag::MARGIN_OLD_KEYFRAME;
     } else {
         marginalization_flag_ = common::MarginalizationFlag::MARGIN_NEW_GENERAL_FRAME;
+    }
+    if (frame_count_ == WINDOW_SIZE &&
+        marginalization_flag_ == common::MarginalizationFlag::MARGIN_NEW_GENERAL_FRAME) {
+        const auto& previous = sliding_window_[WINDOW_SIZE - 1];
+        const auto& current = sliding_window_[WINDOW_SIZE];
+        if ((previous.pre_integration && current.pre_integration &&
+             previous.pre_integration->sum_dt + current.pre_integration->sum_dt > 10) ||
+            previous.dt_buf.size() + current.dt_buf.size() > 4096) {
+            // Retire the oldest keyframe before merging would exceed the
+            // existing usable IMU interval or the bounded history budget.
+            marginalization_flag_ = common::MarginalizationFlag::MARGIN_OLD_KEYFRAME;
+        }
     }
 
     sliding_window_[frame_count_].timestamp = timestamp;
@@ -148,6 +198,12 @@ void Estimator::processImage(const common::ImageData& image, double timestamp) {
     common::ImageFrame imageframe(image, timestamp);
     imageframe.pre_integration = std::move(tmp_pre_integration_);
     all_image_frame_.insert(std::make_pair(timestamp, std::move(imageframe)));
+    if (all_image_frame_.size() > 4096) {
+        clearState();
+        setParameter();
+        last_solver_diagnostics_.reason = "estimator_history_overflow";
+        return;
+    }
     tmp_pre_integration_ = std::make_unique<backend::factor::IntegrationBase>(prev_acc_, prev_gyro_, sliding_window_[frame_count_].Ba,
                                                                 sliding_window_[frame_count_].Bg);
 
@@ -228,26 +284,8 @@ void Estimator::processImage(const common::ImageData& image, double timestamp) {
             std::cout << "[VIO] Post-optimization NaN detected, performing full reset" << std::endl;
             clearState();
             setParameter();
+            last_solver_diagnostics_.reason = "nonfinite_state_reset";
             return;
-        }
-
-        // Divergence detection: velocity, position, and bias sanity checks.
-        // A handheld phone in normal SLAM usage should not exceed these limits.
-        // Without this check, small errors create a positive feedback loop:
-        //   bad scale → bad poses → feature loss → pure IMU → more drift
-        {
-            const auto& latest = sliding_window_[WINDOW_SIZE];
-            double vel_norm = latest.V.norm();
-            double pos_norm = latest.P.norm();
-            double ba_norm = latest.Ba.norm();
-
-            if (vel_norm > 10.0 || pos_norm > 100.0) {
-                std::cout << "[VIO] DIVERGENCE detected: |vel|=" << vel_norm
-                          << " |pos|=" << pos_norm << " — full reset" << std::endl;
-                clearState();
-                setParameter();
-                return;
-            }
         }
 
         slideWindow();
@@ -345,8 +383,15 @@ void Estimator::solveOdometry() {
 
     if (solver_flag_ == common::SolverFlag::NON_LINEAR) {
         feature_manager_.triangulateAcrossAllViews(sliding_window_, t_ic_, r_ic_);
-
-        optimizer_.optimize(marginalization_flag_);
+        feature_manager_.removeFailures();
+        latest_image_update_usable_ = optimizer_.optimize(marginalization_flag_);
+        last_solver_diagnostics_ = optimizer_.getLastSolverDiagnostics();
+        const std::string measured_reason = failure_detector_.getMeasuredFailureReason(last_P_end_, last_R_end_);
+        if (!measured_reason.empty() && measured_reason != last_solver_diagnostics_.qualityReason) {
+            if (!last_solver_diagnostics_.qualityReason.empty()) last_solver_diagnostics_.qualityReason += ";";
+            last_solver_diagnostics_.qualityReason += measured_reason;
+        }
+        if (!latest_image_update_usable_) return;
 
         // Update extrinsic parameters from optimizer
         t_ic_ = optimizer_.getTic();
@@ -424,6 +469,47 @@ void Estimator::logTriangulationDiag(int frame_num) const {
               << " ba=(" << ba.x() << "," << ba.y() << "," << ba.z() << ")"
               << " bg=(" << bg.x() << "," << bg.y() << "," << bg.z() << ")"
               << std::endl;
+}
+
+std::vector<common::SolvedFeature> Estimator::getSolvedFeatures() const {
+    std::vector<common::SolvedFeature> result;
+    for (const auto& it_per_id : feature_manager_.feature_bank_) {
+        int used_num = static_cast<int>(it_per_id.feature_per_frame.size());
+        if (!(used_num >= 2 && it_per_id.start_frame < WINDOW_SIZE - 2))
+            continue;
+        if (it_per_id.solve_flag != 1 || !std::isfinite(it_per_id.estimated_depth) ||
+            it_per_id.estimated_depth <= 1e-10)
+            continue;
+        int imu_i = it_per_id.start_frame;
+        Eigen::Vector3d pts_i = it_per_id.feature_per_frame[0].ray_vector * it_per_id.estimated_depth;
+        Eigen::Vector3d world_pos = sliding_window_[imu_i].R * (r_ic_ * pts_i + t_ic_) + sliding_window_[imu_i].P;
+        if (!world_pos.allFinite()) continue;
+
+        common::SolvedFeature sf;
+        sf.id = it_per_id.feature_id;
+        sf.position = world_pos;
+        sf.track_num = static_cast<int>(it_per_id.feature_per_frame.size());
+        sf.observation = Eigen::Vector2d::Zero();  // filled by caller with current frame observation
+        result.push_back(sf);
+    }
+    return result;
+}
+
+common::VINSResult Estimator::getLatestVINSResult() const {
+    common::VINSResult vr;
+    // Use WINDOW_SIZE - 1 to match VINS-Mobile convention:
+    //   solved_vins.header = vins.Headers[WINDOW_SIZE - 1]
+    // After slideWindow, slots WINDOW_SIZE-1 and WINDOW_SIZE have the same
+    // P/R/V values (copyFrame), but using WINDOW_SIZE-1 ensures the timestamp
+    // matches what the PnP frontend stores in headers_[] via processImage.
+    const auto& latest = sliding_window_[WINDOW_SIZE - 1];
+    vr.timestamp = latest.timestamp;
+    vr.P = latest.P;
+    vr.R = latest.R;
+    vr.V = latest.V;
+    vr.Ba = latest.Ba;
+    vr.Bg = latest.Bg;
+    return vr;
 }
 
 }  // namespace backend

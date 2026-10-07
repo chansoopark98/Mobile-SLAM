@@ -37,6 +37,18 @@ const DEFAULT_FREQUENCY = 60;
 
 const DEG_TO_RAD = Math.PI / 180;
 
+// Source timestamps and callback arrival share the document performance clock.
+// Legacy DeviceMotion implementations can expose Unix epoch milliseconds.
+export function normalizeEventTimestamp(timestampMs, timeOriginMs = performance.timeOrigin) {
+    if (!Number.isFinite(timestampMs) || timestampMs < 0) return null;
+    const epoch = timestampMs >= 1e12;
+    if (epoch && !Number.isFinite(timeOriginMs)) return null;
+    const relativeMs = epoch ? timestampMs - timeOriginMs : timestampMs;
+    return relativeMs >= 0 ? { timestampS: relativeMs / 1000, clock: epoch ? 'epoch_minus_timeOrigin' : 'timeOrigin_relative' } : null;
+}
+
+const finiteVector = vector => vector && [vector.x, vector.y, vector.z].every(Number.isFinite);
+
 /**
  * Detect if running on iOS (Safari, Chrome on iOS, etc.)
  * iOS uses WebKit which reports accelerationIncludingGravity with inverted signs
@@ -74,17 +86,18 @@ export class IMU {
         this._accel = null;
         this._gyro = null;
         // Latest readings from each sensor (for cross-sensor sampling)
-        this._latestGyro = { x: 0, y: 0, z: 0 };
-        this._latestAccel = { x: 0, y: 0, z: 0 };
-        // Timestamp of last pushed sample (for dedup)
-        this._lastSampleTime = 0;
+        this._latestGyro = null;
+        this._latestAccel = null;
+        // Strict ordering of emitted source samples
+        this._lastSampleTime = -Infinity;
+        this._pendingGyro = null;
 
         // DeviceMotionEvent handler
         this._motionHandler = null;
-        this._lastMotionTimestamp = 0;
+        this._lastMotionTimestamp = -Infinity;
 
         // Generic Sensor timestamp monotonicity guard
-        this._lastGenericTimestamp = 0;
+        this._lastGenericTimestamp = -Infinity;
 
         // Platform detection: iOS inverts accelerationIncludingGravity signs
         // iOS Safari: stationary phone reports acc_y ~= -9.81 (gravity opposes +Y)
@@ -95,7 +108,7 @@ export class IMU {
 
         // Rate measurement
         this._rateCount = 0;
-        this._rateStartTime = 0;
+        this._rateStartTime = null;
         this._currentRate = 0;
 
         // Latest reading for UI display
@@ -118,6 +131,31 @@ export class IMU {
         this._gravitySumX = 0;
         this._gravitySumY = 0;
         this._gravitySumZ = 0;
+        this._diagnostics = this._newDiagnostics();
+        this.permission = { state: 'not_requested', api: null, error: null };
+    }
+
+    _newDiagnostics() {
+        return { receivedAccel: 0, receivedGyro: 0, receivedMotion: 0, emitted: 0, flushed: 0,
+            drops: { overflow: 0, stale: 0, nonfinite: 0, timestamp: 0, outOfOrder: 0, pairing: 0, discarded: 0 },
+            status: 'stopped', error: null, lastSample: null, calibration: 'not_calibrated' };
+    }
+
+    getDiagnostics() {
+        return { ...this._diagnostics, drops: { ...this._diagnostics.drops }, permission: { ...this.permission },
+            buffered: this._writeIdx - this._readIdx, requestedHz: this._frequency,
+            emissionPolicy: 'gyro timestamp; latest accel held within 1.5 requested periods; one emission per gyro',
+            maxPairSkewS: 1.5 / this._frequency, timeOriginMs: performance.timeOrigin };
+    }
+
+    discard(reason = 'pause') {
+        this._diagnostics.drops.discarded += this._writeIdx - this._readIdx;
+        this._readIdx = this._writeIdx;
+        if (this._pendingGyro) this._diagnostics.drops.pairing++;
+        this._pendingGyro = null;
+        this._latestAccel = null;
+        this._latestGyro = null;
+        this._diagnostics.status = reason;
     }
 
     /**
@@ -127,38 +165,40 @@ export class IMU {
      * @returns {Promise<boolean>} True if permission granted
      */
     async requestPermission() {
-        // iOS 13+ DeviceMotionEvent permission
-        if (typeof DeviceMotionEvent !== 'undefined' &&
-            typeof DeviceMotionEvent.requestPermission === 'function') {
+        const record = (state, error = null) => {
+            this.permission.state = state;
+            this.permission.error = error ? { name: error.name, message: error.message } : null;
+            this.permission.resolvedAtMs = performance.now();
+        };
+        this.permission = { state: 'requested', api: null, error: null, requestedAtMs: performance.now(),
+            activationActive: navigator.userActivation?.isActive ?? null };
+        if (typeof DeviceMotionEvent !== 'undefined' && typeof DeviceMotionEvent.requestPermission === 'function') {
+            this.permission.api = 'DeviceMotionEvent.requestPermission';
             try {
-                const permission = await DeviceMotionEvent.requestPermission();
+                // Native invocation precedes the first await: preserve Start activation.
+                const nativeRequest = DeviceMotionEvent.requestPermission();
+                const permission = await nativeRequest;
+                record(permission === 'granted' ? 'granted' : 'denied');
                 return permission === 'granted';
-            } catch (e) {
-                console.error('[IMU] iOS permission request failed:', e);
-                return false;
-            }
+            } catch (error) { record('error', error); return false; }
         }
-
-        // Generic Sensor API permission check (Android Chrome)
-        if (typeof Accelerometer !== 'undefined') {
+        if (typeof Accelerometer !== 'undefined' && typeof Gyroscope !== 'undefined') {
+            this.permission.api = 'Permissions.query';
             try {
-                const results = await Promise.all([
-                    navigator.permissions.query({ name: 'accelerometer' }),
-                    navigator.permissions.query({ name: 'gyroscope' }),
-                ]);
-                if (results[0].state === 'denied' || results[1].state === 'denied') {
-                    console.warn('[IMU] Sensor permissions denied');
-                    return false;
-                }
-                return true;
-            } catch (_) {
-                // Permissions API not available; assume granted
+                const results = await Promise.all(['accelerometer', 'gyroscope'].map(name => navigator.permissions.query({ name })));
+                const denied = results.some(result => result.state === 'denied');
+                record(denied ? 'denied' : results.every(result => result.state === 'granted') ? 'granted' : 'prompt');
+                return !denied;
+            } catch (error) {
+                // A missing query API permits trying start(), not a claim of permission grant.
+                record('query_unavailable', error);
                 return true;
             }
         }
-
-        // Legacy: no permission needed
-        return true;
+        this.permission.api = 'DeviceMotionEvent';
+        const available = typeof DeviceMotionEvent !== 'undefined';
+        record(available ? 'not_required' : 'unsupported');
+        return available;
     }
 
     /**
@@ -216,26 +256,16 @@ export class IMU {
         };
         const gravMag = Math.sqrt(avgAcc.x ** 2 + avgAcc.y ** 2 + avgAcc.z ** 2);
 
-        // Validate: gravity magnitude should be ~9.81 if stationary
-        if (gravMag < 8.5 || gravMag > 11.0) {
-            console.warn(`[IMU] Calibration suspect: |acc|=${gravMag.toFixed(2)} (expected ~9.81). Device may be moving.`);
+        const biasMag = Math.hypot(bias.x, bias.y, bias.z);
+        if (!Number.isFinite(gravMag) || gravMag < 8.5 || gravMag > 11.0 || biasMag > 0.35) {
+            this._calibrated = false;
+            this._diagnostics.calibration = 'rejected_motion_or_gravity';
+            console.warn('[IMU] Calibration rejected: hold still and retry', { gravMag, biasMag });
+            return null;
         }
-
-        // Validate gyro bias magnitude — large bias indicates device was moving during calibration
-        const biasMag = Math.sqrt(bias.x ** 2 + bias.y ** 2 + bias.z ** 2);
-        const MAX_BIAS_MAG = 0.35; // rad/s — mobile MEMS gyro bias can reach 0.2-0.3
-        if (biasMag > MAX_BIAS_MAG) {
-            console.warn(`[IMU] ⚠ Gyro bias too large: |bias|=${biasMag.toFixed(3)} rad/s (max=${MAX_BIAS_MAG}). Clamping.`);
-            console.warn(`[IMU]   Device was likely moving during calibration. Keep phone still and retry.`);
-            // Clamp each component proportionally
-            const scale = MAX_BIAS_MAG / biasMag;
-            bias.x *= scale;
-            bias.y *= scale;
-            bias.z *= scale;
-        }
-
         this._gyroBias = bias;
         this._calibrated = true;
+        this._diagnostics.calibration = 'stationary_bias_candidate';
 
         console.log(`[IMU] Gyro bias calibrated from ${count} samples:`);
         console.log(`[IMU]   bias = (${bias.x.toFixed(5)}, ${bias.y.toFixed(5)}, ${bias.z.toFixed(5)}) rad/s`);
@@ -281,11 +311,10 @@ export class IMU {
      * - iOS: Prefer DeviceMotionEvent (Generic Sensor API is unavailable on
      *   Safari; DeviceMotionEvent provides synchronized accel+gyro at ~60Hz).
      *
-     * Trade-off: Generic Sensor fires accel and gyro independently (~10ms
-     * desync at 100Hz). For VIO pre-integration this is acceptable because
-     * the mid-point integration scheme averages consecutive samples.
-     * The higher sample rate (100Hz vs 60Hz) is more valuable than perfect
-     * synchronization for pre-integration quality.
+     * Generic sources are asynchronous. Emit once at each gyro source timestamp
+     * using a finite latest acceleration within 1.5 requested periods; if gyro
+     * arrives first it waits for accel. This hold policy is observable and does
+     * not establish hardware synchronization or physical sampling accuracy.
      *
      * @param {number} [frequency=60] Requested sensor frequency in Hz.
      *   Chrome Android will cap delivery at 60Hz regardless of this value.
@@ -294,11 +323,19 @@ export class IMU {
     start(frequency = DEFAULT_FREQUENCY) {
         if (this.running) return;
 
+        if (!Number.isFinite(frequency) || frequency <= 0) throw new Error('Invalid IMU frequency');
         this._frequency = frequency;
+        this._diagnostics = this._newDiagnostics();
+        this._diagnostics.status = 'starting';
+        this._latestAccel = null;
+        this._latestGyro = null;
+        this._pendingGyro = null;
+        this._lastGenericTimestamp = -Infinity;
+        this._lastSampleTime = -Infinity;
         this._writeIdx = 0;
         this._readIdx = 0;
         this._rateCount = 0;
-        this._rateStartTime = performance.now();
+        this._rateStartTime = null;
         this._currentRate = 0;
         this.running = true;
 
@@ -306,6 +343,7 @@ export class IMU {
             // iOS: DeviceMotionEvent only (no Generic Sensor API on Safari)
             if (this._tryDeviceMotion()) {
                 this._sensorType = SensorType.DEVICE_MOTION;
+                this._diagnostics.status = 'listening';
                 console.log('[IMU] Using DeviceMotionEvent (iOS, synchronized accel+gyro)');
                 return;
             }
@@ -313,6 +351,7 @@ export class IMU {
             // Android: Prefer Generic Sensor API for higher configurable rate
             if (this._tryGenericSensor(frequency)) {
                 this._sensorType = SensorType.GENERIC_SENSOR;
+                this._diagnostics.status = 'listening';
                 console.log(`[IMU] Using Generic Sensor API @ ${frequency}Hz`);
                 return;
             }
@@ -320,6 +359,7 @@ export class IMU {
             // Fallback to DeviceMotionEvent (~60Hz, not configurable)
             if (this._tryDeviceMotion()) {
                 this._sensorType = SensorType.DEVICE_MOTION;
+                this._diagnostics.status = 'listening';
                 console.warn('[IMU] Fallback to DeviceMotionEvent (~60Hz, rate not configurable)');
                 return;
             }
@@ -328,6 +368,7 @@ export class IMU {
         console.error('[IMU] No IMU sensor API available');
         this.running = false;
         this._sensorType = SensorType.NONE;
+        this._diagnostics.status = 'unsupported';
     }
 
     /**
@@ -349,69 +390,36 @@ export class IMU {
             this._accel = new Accelerometer({ frequency: frequency, referenceFrame: 'device' });
             this._gyro = new Gyroscope({ frequency: frequency, referenceFrame: 'device' });
 
-            // Both sensors fire independently; push a combined sample on each
-            // event using the freshest reading from the other sensor.
-            //
-            // Dedup window: half the expected inter-sample interval, floored at
-            // 4ms.  At 60Hz → 8.3ms window (was hardcoded 8ms).  At 100Hz →
-            // 5ms window.  At 200Hz → 4ms (floor).  This prevents the accel and
-            // gyro callbacks from a single hardware tick (~1ms apart) from
-            // producing two near-duplicate samples while still accepting every
-            // valid reading at the requested rate.
-            const DEDUP_S = Math.max(0.004, 0.5 / frequency);
-
-            this._accel.addEventListener('reading', () => {
+            const read = (sensor, axis) => {
                 if (!this.running) return;
-                // Store latest accel
-                this._latestAccel.x = this._accel.x;
-                this._latestAccel.y = this._accel.y;
-                this._latestAccel.z = this._accel.z;
-
-                const t = performance.now() / 1000.0;
-                if (t - this._lastSampleTime < DEDUP_S) return;
-                if (t <= this._lastGenericTimestamp) return;
-                this._lastGenericTimestamp = t;
-                this._lastSampleTime = t;
-
-                this._pushSample(t,
-                    this._accel.x, this._accel.y, this._accel.z,
-                    this._latestGyro.x, this._latestGyro.y, this._latestGyro.z
-                );
-            });
-
-            this._gyro.addEventListener('reading', () => {
-                if (!this.running) return;
-                // Store latest gyro
-                this._latestGyro.x = this._gyro.x;
-                this._latestGyro.y = this._gyro.y;
-                this._latestGyro.z = this._gyro.z;
-
-                const t = performance.now() / 1000.0;
-                if (t - this._lastSampleTime < DEDUP_S) return;
-                if (t <= this._lastGenericTimestamp) return;
-                this._lastGenericTimestamp = t;
-                this._lastSampleTime = t;
-
-                this._pushSample(t,
-                    this._latestAccel.x, this._latestAccel.y, this._latestAccel.z,
-                    this._gyro.x, this._gyro.y, this._gyro.z
-                );
-            });
-
-            this._accel.addEventListener('error', (e) => {
-                console.warn('[IMU] Accelerometer error:', e.error.message);
-                this._stopGenericSensor();
-                if (this.running && this._sensorType !== SensorType.DEVICE_MOTION) {
-                    if (this._tryDeviceMotion()) {
-                        this._sensorType = SensorType.DEVICE_MOTION;
-                        console.log('[IMU] Fell back to DeviceMotionEvent');
-                    }
+                this._diagnostics[axis === 'accel' ? 'receivedAccel' : 'receivedGyro']++;
+                const timestampS = Number.isFinite(sensor.timestamp) && sensor.timestamp >= 0 ? sensor.timestamp / 1000 : null;
+                if (timestampS === null) { this._diagnostics.drops.timestamp++; return; }
+                if (!finiteVector(sensor)) { this._diagnostics.drops.nonfinite++; return; }
+                const previous = axis === 'accel' ? this._latestAccel : this._latestGyro;
+                if (previous && timestampS <= previous.timestampS) { this._diagnostics.drops.outOfOrder++; return; }
+                const sample = { x: sensor.x, y: sensor.y, z: sensor.z, timestampS, arrivalMs: performance.now() };
+                if (axis === 'accel') this._latestAccel = sample;
+                else {
+                    if (this._pendingGyro && this._pendingGyro.timestampS > this._lastGenericTimestamp) this._diagnostics.drops.pairing++;
+                    this._latestGyro = sample;
+                    this._pendingGyro = sample;
                 }
-            });
-
-            this._gyro.addEventListener('error', (e) => {
-                console.warn('[IMU] Gyroscope error:', e.error.message);
-            });
+                this._emitGeneric();
+            };
+            this._accel.addEventListener('reading', () => read(this._accel, 'accel'));
+            this._gyro.addEventListener('reading', () => read(this._gyro, 'gyro'));
+            const fail = event => {
+                this._diagnostics.error = event.error?.message || 'Generic sensor error';
+                this._stopGenericSensor();
+                this._latestAccel = this._latestGyro = this._pendingGyro = null;
+                if (this.running && this._tryDeviceMotion()) {
+                    this._sensorType = SensorType.DEVICE_MOTION;
+                    this._diagnostics.status = 'fallback_motion';
+                } else { this.running = false; this._sensorType = SensorType.NONE; this._diagnostics.status = 'error'; }
+            };
+            this._accel.addEventListener('error', fail);
+            this._gyro.addEventListener('error', fail);
 
             this._accel.start();
             this._gyro.start();
@@ -421,6 +429,19 @@ export class IMU {
             this._stopGenericSensor();
             return false;
         }
+    }
+
+    _emitGeneric() {
+        const acc = this._latestAccel;
+        const gyro = this._pendingGyro;
+        if (!acc || !gyro || gyro.timestampS <= this._lastGenericTimestamp) return;
+        const skewS = acc.timestampS - gyro.timestampS;
+        if (Math.abs(skewS) > 1.5 / this._frequency) { this._diagnostics.status = 'waiting_pair'; return; }
+        this._lastGenericTimestamp = gyro.timestampS;
+        this._pendingGyro = null;
+        this._diagnostics.lastSample = { source: 'GenericSensor.timestamp', timestampS: gyro.timestampS,
+            accelTimestampS: acc.timestampS, gyroTimestampS: gyro.timestampS, skewS, arrivalMs: performance.now() };
+        this._pushSample(gyro.timestampS, acc.x, acc.y, acc.z, gyro.x, gyro.y, gyro.z);
     }
 
     /**
@@ -433,20 +454,26 @@ export class IMU {
             return false;
         }
 
-        this._lastMotionTimestamp = 0;
+        this._lastMotionTimestamp = -Infinity;
 
         this._motionHandler = (event) => {
             if (!this.running) return;
 
             const acc = event.accelerationIncludingGravity;
             const rot = event.rotationRate;
-            if (!acc || !rot) return;
-
-            const timestamp = performance.now() / 1000.0;
+            this._diagnostics.receivedMotion++;
+            if (!finiteVector(acc) || !rot || ![rot.beta, rot.gamma, rot.alpha].every(Number.isFinite)) {
+                this._diagnostics.drops.nonfinite++; return;
+            }
+            const normalized = normalizeEventTimestamp(event.timeStamp);
+            if (!normalized) { this._diagnostics.drops.timestamp++; return; }
+            const timestamp = normalized.timestampS;
 
             // Monotonicity check
-            if (timestamp <= this._lastMotionTimestamp) return;
+            if (timestamp <= this._lastMotionTimestamp) { this._diagnostics.drops.outOfOrder++; return; }
             this._lastMotionTimestamp = timestamp;
+            this._diagnostics.lastSample = { source: 'DeviceMotionEvent.timeStamp', clock: normalized.clock,
+                timestampS: timestamp, eventTimestampMs: event.timeStamp, arrivalMs: performance.now() };
 
             // DeviceMotion rotationRate is in deg/s -> convert to rad/s
             // W3C spec: beta=x-axis, gamma=y-axis, alpha=z-axis
@@ -463,7 +490,7 @@ export class IMU {
             // Compute hardware gravity estimate from LINEAR_ACCELERATION
             // gravity = accelerationIncludingGravity - acceleration
             const linAcc = event.acceleration;
-            if (linAcc && linAcc.x !== null && linAcc.y !== null && linAcc.z !== null) {
+            if (finiteVector(linAcc)) {
                 const gx = (acc.x ?? 0) * s - (linAcc.x ?? 0) * s;
                 const gy = (acc.y ?? 0) * s - (linAcc.y ?? 0) * s;
                 const gz = (acc.z ?? 0) * s - (linAcc.z ?? 0) * s;
@@ -490,15 +517,23 @@ export class IMU {
      * @private
      */
     _pushSample(timestamp, ax, ay, az, gx, gy, gz) {
-        // 8th Wall stale protection: discard all buffered data if oldest
-        // unread sample is >5s old (e.g., after tab switch or backgrounding)
-        const STALE_THRESHOLD_S = 5.0;
+        if (![timestamp, ax, ay, az, gx, gy, gz].every(Number.isFinite)) {
+            this._diagnostics.drops.nonfinite++; return false;
+        }
+        if (timestamp < 0 || timestamp <= this._lastSampleTime) {
+            this._diagnostics.drops.outOfOrder++; return false;
+        }
+        this._lastSampleTime = timestamp;
         if (this._writeIdx > this._readIdx) {
-            const oldestSlot = (this._readIdx % RING_CAPACITY) * FIELDS_PER_READING;
-            if (timestamp - this._ring[oldestSlot] > STALE_THRESHOLD_S) {
-                console.warn(`[IMU] Stale data detected (${(timestamp - this._ring[oldestSlot]).toFixed(1)}s gap). Clearing ${this._writeIdx - this._readIdx} buffered readings.`);
+            const oldest = this._ring[(this._readIdx % RING_CAPACITY) * FIELDS_PER_READING];
+            if (timestamp - oldest > 5) {
+                this._diagnostics.drops.stale += this._writeIdx - this._readIdx;
                 this._readIdx = this._writeIdx;
             }
+        }
+        if (this._writeIdx - this._readIdx >= RING_CAPACITY) {
+            this._readIdx++;
+            this._diagnostics.drops.overflow++;
         }
 
         // Subtract calibrated gyroscope bias
@@ -517,6 +552,8 @@ export class IMU {
         this._ring[slot + 5] = gy - by;
         this._ring[slot + 6] = gz - bz;
         this._writeIdx++;
+        this._diagnostics.emitted++;
+        this._diagnostics.status = 'streaming';
 
         // Update latest for UI display (bias-corrected gyro)
         this.latest.acc_x = ax;
@@ -529,8 +566,9 @@ export class IMU {
         // Rate measurement — reuse the timestamp already computed by the
         // caller (converting from seconds back to ms) to avoid a second
         // performance.now() call per sample.
-        this._rateCount++;
         const nowMs = timestamp * 1000.0;
+        if (this._rateStartTime === null) this._rateStartTime = nowMs;
+        else this._rateCount++;
         const elapsed = nowMs - this._rateStartTime;
         if (elapsed >= 1000) {
             this._currentRate = (this._rateCount / elapsed) * 1000;
@@ -572,6 +610,7 @@ export class IMU {
         }
 
         this._readIdx = this._writeIdx;
+        this._diagnostics.flushed += count;
         return { data: result, count };
     }
 
@@ -596,8 +635,7 @@ export class IMU {
      * @returns {boolean}
      */
     static isAvailable() {
-        return typeof Accelerometer !== 'undefined' ||
-               typeof Gyroscope !== 'undefined' ||
+        return (typeof Accelerometer !== 'undefined' && typeof Gyroscope !== 'undefined') ||
                typeof DeviceMotionEvent !== 'undefined';
     }
 
@@ -616,6 +654,7 @@ export class IMU {
     /** Stop capturing IMU data. */
     stop() {
         this.running = false;
+        this.discard('stopped');
 
         this._stopGenericSensor();
 
@@ -626,11 +665,12 @@ export class IMU {
 
         this._writeIdx = 0;
         this._readIdx = 0;
-        this._lastMotionTimestamp = 0;
-        this._lastGenericTimestamp = 0;
-        this._lastSampleTime = 0;
-        this._latestAccel = { x: 0, y: 0, z: 0 };
-        this._latestGyro = { x: 0, y: 0, z: 0 };
+        this._lastMotionTimestamp = -Infinity;
+        this._lastGenericTimestamp = -Infinity;
+        this._lastSampleTime = -Infinity;
+        this._pendingGyro = null;
+        this._latestAccel = null;
+        this._latestGyro = null;
         this._sensorType = SensorType.NONE;
         this._currentRate = 0;
         this._gyroBias = { x: 0, y: 0, z: 0 };

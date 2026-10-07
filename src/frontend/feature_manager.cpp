@@ -1,4 +1,5 @@
 #include "frontend/feature_manager.h"
+#include <cmath>
 
 namespace frontend {
 
@@ -6,10 +7,11 @@ int FeaturePerId::endFrame() {
     return start_frame + feature_per_frame.size() - 1;
 }
 
-FeatureManager::FeatureManager() {}
+FeatureManager::FeatureManager() : last_track_num_(0) {}
 
 void FeatureManager::clearState() {
     feature_bank_.clear();
+    last_track_num_ = 0;
 }
 
 int FeatureManager::getFeatureCount() {
@@ -31,11 +33,19 @@ bool FeatureManager::addFeatureAndCheckParallax(int frame_count, const common::I
 
     // add features to feature bank
     for (auto& feature_id_and_info : image) {
+        if (!feature_id_and_info.second.allFinite() || feature_id_and_info.second(2) <= 1e-10) continue;
         int feature_id = feature_id_and_info.first;
         FeaturePerFrame feature_per_frame(feature_id_and_info.second);
 
         auto it = find_if(feature_bank_.begin(), feature_bank_.end(),
                           [feature_id](const FeaturePerId& it) { return it.feature_id == feature_id; });
+
+        // Storage indexes assume consecutive frames. A reappearing ID begins a
+        // new track rather than attaching its observation to a missing frame.
+        if (it != feature_bank_.end() && it->endFrame() != frame_count - 1) {
+            feature_bank_.erase(it);
+            it = feature_bank_.end();
+        }
 
         if (it == feature_bank_.end()) {
             // new feature
@@ -99,10 +109,13 @@ void FeatureManager::setDepth(const VectorXd& x) {
         if (!(it_per_id.used_num >= 2 && it_per_id.start_frame < WINDOW_SIZE - 2))
             continue;
 
-        double depth = 1.0 / x(++feature_index);
-        if (depth < 0) {
+        ++feature_index;
+        const double inverse_depth = feature_index < x.size() ? x(feature_index) : 0;
+        if (!std::isfinite(inverse_depth) || inverse_depth <= 1e-10) {
+            it_per_id.estimated_depth = -1;
             it_per_id.solve_flag = 2;
         } else {
+            const double depth = 1.0 / inverse_depth;
             it_per_id.estimated_depth = depth;
             it_per_id.solve_flag = 1;
         }
@@ -123,7 +136,11 @@ void FeatureManager::clearDepth(const VectorXd& x) {
         it_per_id.used_num = it_per_id.feature_per_frame.size();
         if (!(it_per_id.used_num >= 2 && it_per_id.start_frame < WINDOW_SIZE - 2))
             continue;
-        it_per_id.estimated_depth = 1.0 / x(++feature_index);
+        ++feature_index;
+        const double inverse_depth = feature_index < x.size() ? x(feature_index) : 0;
+        it_per_id.estimated_depth = std::isfinite(inverse_depth) && inverse_depth > 1e-10
+                                      ? 1.0 / inverse_depth : -1;
+        it_per_id.solve_flag = 0;
     }
 }
 
@@ -134,7 +151,8 @@ VectorXd FeatureManager::getDepthVector() {
         it_per_id.used_num = it_per_id.feature_per_frame.size();
         if (!(it_per_id.used_num >= 2 && it_per_id.start_frame < WINDOW_SIZE - 2))
             continue;
-        dep_vec(++feature_index) = 1. / it_per_id.estimated_depth;
+        dep_vec(++feature_index) = std::isfinite(it_per_id.estimated_depth) && it_per_id.estimated_depth > 1e-10
+                                      ? 1. / it_per_id.estimated_depth : 0;
     }
     return dep_vec;
 }
@@ -146,7 +164,7 @@ void FeatureManager::triangulateAcrossAllViews(const backend::SlidingWindow& sli
         if (!(it_per_id.used_num >= 2 && it_per_id.start_frame < WINDOW_SIZE - 2))
             continue;
 
-        if (it_per_id.estimated_depth > 0)
+        if (std::isfinite(it_per_id.estimated_depth) && it_per_id.estimated_depth > 0)
             continue;
 
         int imu_i = it_per_id.start_frame;
@@ -180,6 +198,11 @@ void FeatureManager::triangulateAcrossAllViews(const backend::SlidingWindow& sli
         }
         assert(svd_idx == svd_A.rows());
         Eigen::Vector4d svd_V = Eigen::JacobiSVD<Eigen::MatrixXd>(svd_A, Eigen::ComputeThinV).matrixV().rightCols<1>();
+        if (!svd_V.allFinite() || std::abs(svd_V[3]) <= 1e-10) {
+            it_per_id.estimated_depth = -1;
+            it_per_id.solve_flag = 2;
+            continue;
+        }
         double svd_method = svd_V[2] / svd_V[3];
         // it_per_id->estimated_depth = -b / A;
         // it_per_id->estimated_depth = svd_V[2] / svd_V[3];
@@ -187,8 +210,9 @@ void FeatureManager::triangulateAcrossAllViews(const backend::SlidingWindow& sli
         it_per_id.estimated_depth = svd_method;
         // it_per_id->estimated_depth = INIT_DEPTH;
 
-        if (it_per_id.estimated_depth < 0.1) {
-            it_per_id.estimated_depth = g_config.estimator.init_depth;
+        if (!std::isfinite(it_per_id.estimated_depth) || it_per_id.estimated_depth <= 1e-10) {
+            it_per_id.estimated_depth = -1;
+            it_per_id.solve_flag = 2;
         }
     }
 }
@@ -223,10 +247,12 @@ void FeatureManager::removeBackShiftDepth(Eigen::Matrix3d marg_R, Eigen::Vector3
                 Eigen::Vector3d w_pts_i = marg_R * pts_i + marg_P;
                 Eigen::Vector3d pts_j = new_R.transpose() * (w_pts_i - new_P);
                 double dep_j = pts_j(2);
-                if (dep_j > 0)
+                if (std::isfinite(dep_j) && dep_j > 1e-10)
                     it->estimated_depth = dep_j;
-                else
-                    it->estimated_depth = g_config.estimator.init_depth;
+                else {
+                    it->estimated_depth = -1;
+                    it->solve_flag = 2;
+                }
             }
         }
     }

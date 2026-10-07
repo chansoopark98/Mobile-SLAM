@@ -1,0 +1,58 @@
+{
+  "assessment": "metrics_only_not_production_acceptance",
+  "alignment": "SE3_scale_fixed_1",
+  "estimated_poses": 555,
+  "expected_frames": 600,
+  "pose_coverage": 0.925,
+  "associated_poses": 555,
+  "association_coverage": 1.0,
+  "association_max_dt_s": 0.01,
+  "association_dt_s": {
+    "rmse": 0.002211615565673834,
+    "median": 0.002165079116821289,
+    "p95": 0.002846026420593262,
+    "max": 0.0034999847412109375
+  },
+  "alignment_position_rank": 3,
+  "ate_translation_m": {
+    "rmse": 0.289261414522668,
+    "median": 0.23325357273975758,
+    "p95": 0.4902695307600823,
+    "max": 0.554502749955789
+  },
+  "alignment_covariance_rank": 3,
+  "orientation_alignment": "observable_from_positions",
+  "ape_rotation_deg": {
+    "rmse": 5.0098304654585695,
+    "median": 4.747799260214633,
+    "p95": 6.3767551221792536,
+    "max": 8.028593870206779
+  },
+  "rpe": {
+    "delta_s": 1.0,
+    "tolerance_s": 0.05,
+    "pairs": 536,
+    "translation_m": {
+      "rmse": 0.07991573846671182,
+      "median": 0.05071541109063803,
+      "p95": 0.1687387596235982,
+      "max": 0.2469843660764007
+    },
+    "rotation_deg": {
+      "rmse": 0.8804873660683289,
+      "median": 0.5154612177969713,
+      "p95": 2.0561773011666524,
+      "max": 4.494084973380693
+    }
+  },
+  "diagnostic_sim3_only": {
+    "fitted_scale": 0.8894287276178552,
+    "ate_rmse_m": 0.2808872866248476
+  },
+  "inputs": {
+    "estimate": "/home/park-ubuntu/park/SOLUTION/Mobile-SLAM/build/audit-baseline/native-replay/room1-until-image-600/trajectory-camera.txt",
+    "ground_truth": "/home/park-ubuntu/park/SOLUTION/Mobile-SLAM/assets/datasets/tum/dataset-room1_512_16/mav0/mocap0/data.csv",
+    "estimate_frame": "camera",
+    "gt_format": "euroc"
+  }
+}

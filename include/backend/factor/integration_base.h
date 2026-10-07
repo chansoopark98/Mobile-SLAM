@@ -3,6 +3,7 @@
 
 #include <Eigen/Dense>
 #include <iostream>
+#include <cmath>
 
 #include "utility/config.h"
 #include "utility/utility.h"
@@ -42,10 +43,37 @@ public:
     }
 
     void push_back(double dt, const Eigen::Vector3d& acc, const Eigen::Vector3d& gyr) {
+        if (!std::isfinite(dt) || dt <= 0 || !acc.allFinite() || !gyr.allFinite()) {
+            valid_interval_ = false;
+            return;
+        }
         dt_buf.push_back(dt);
         acc_buf.push_back(acc);
         gyr_buf.push_back(gyr);
         propagate(dt, acc, gyr);
+    }
+
+    bool hasUsableInterval() const {
+        if (!valid_interval_ || dt_buf.size() < 2 || dt_buf.size() != acc_buf.size() ||
+            dt_buf.size() != gyr_buf.size() || !std::isfinite(sum_dt) || sum_dt <= 0 || sum_dt > 10 ||
+            !jacobian.allFinite() || !delta_p.allFinite() || !delta_v.allFinite() ||
+            !delta_q.coeffs().allFinite()) return false;
+        double covered = 0;
+        for (size_t i = 0; i < dt_buf.size(); ++i) {
+            if (!std::isfinite(dt_buf[i]) || dt_buf[i] <= 0 || !acc_buf[i].allFinite() ||
+                !gyr_buf[i].allFinite()) return false;
+            covered += dt_buf[i];
+        }
+        return std::abs(covered - sum_dt) <= 1e-9 * std::max(1.0, sum_dt);
+    }
+
+    static double canonicalOrientationErrorSign(const Eigen::Quaterniond& error) {
+        if (error.w() != 0) return error.w() < 0 ? -1.0 : 1.0;
+        // The shortest-rotation chart is nondifferentiable at pi. Use a stable
+        // axis tie so q and -q still select the same residual at that cut.
+        for (int axis = 0; axis < 3; ++axis)
+            if (error.vec()[axis] != 0) return error.vec()[axis] < 0 ? -1.0 : 1.0;
+        return 1.0;
     }
 
     void repropagate(const Eigen::Vector3d& _linearized_ba, const Eigen::Vector3d& _linearized_bg) {
@@ -74,6 +102,7 @@ public:
         Vector3d un_acc_0 = delta_q * (_acc_0 - linearized_ba);
         Vector3d un_gyr = 0.5 * (_gyr_0 + _gyr_1) - linearized_bg;
         result_delta_q = delta_q * Quaterniond(1, un_gyr(0) * _dt / 2, un_gyr(1) * _dt / 2, un_gyr(2) * _dt / 2);
+        result_delta_q.normalize();
         Vector3d un_acc_1 = result_delta_q * (_acc_1 - linearized_ba);
         Vector3d un_acc = 0.5 * (un_acc_0 + un_acc_1);
         result_delta_p = delta_p + delta_v * _dt + 0.5 * un_acc * _dt * _dt;
@@ -183,7 +212,8 @@ public:
 
         residuals.block<3, 1>(O_P, 0) =
             Qi.inverse() * (0.5 * g_config.estimator.g * sum_dt * sum_dt + Pj - Pi - Vi * sum_dt) - corrected_delta_p;
-        residuals.block<3, 1>(O_R, 0) = 2 * (corrected_delta_q.inverse() * (Qi.inverse() * Qj)).vec();
+        const Eigen::Quaterniond orientation_error = corrected_delta_q.inverse() * (Qi.inverse() * Qj);
+        residuals.block<3, 1>(O_R, 0) = 2 * canonicalOrientationErrorSign(orientation_error) * orientation_error.vec();
         residuals.block<3, 1>(O_V, 0) = Qi.inverse() * (g_config.estimator.g * sum_dt + Vj - Vi) - corrected_delta_v;
         residuals.block<3, 1>(O_BA, 0) = Baj - Bai;
         residuals.block<3, 1>(O_BG, 0) = Bgj - Bgi;
@@ -210,6 +240,9 @@ public:
     std::vector<double> dt_buf;
     std::vector<Eigen::Vector3d> acc_buf;
     std::vector<Eigen::Vector3d> gyr_buf;
+
+private:
+    bool valid_interval_ = true;
 };
 
 }  // namespace factor

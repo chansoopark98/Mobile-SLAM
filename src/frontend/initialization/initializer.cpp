@@ -390,11 +390,13 @@ bool Initializer::visualInitialAlign() {
 
     // update the speed
     int kv = -1;
+    int image_index = 0;
     std::map<double, common::ImageFrame>::iterator frame_i;
-    for (frame_i = all_image_frame_->begin(); frame_i != all_image_frame_->end(); frame_i++) {
+    for (frame_i = all_image_frame_->begin(); frame_i != all_image_frame_->end(); frame_i++, image_index++) {
         if (frame_i->second.is_key_frame) {
             kv++;
-            (*sliding_window_)[kv].V = frame_i->second.R * x.segment<3>(kv * 3);
+            // Alignment stores a velocity for every image, including non-keyframes.
+            (*sliding_window_)[kv].V = frame_i->second.R * x.segment<3>(image_index * 3);
         }
     }
 

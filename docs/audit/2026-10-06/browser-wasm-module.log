@@ -1,0 +1,29 @@
+=== WASM Module Load Test ===
+
+[1] Loading vio_engine.js...
+    Module function loaded: OK
+[2] Initializing WASM runtime...
+    WASM instance: OK
+    _malloc available: OK
+    _free available: OK
+    HEAPU8 available: OK
+    HEAPF64 available: OK
+[3] Creating VIOEngine instance...
+    VIOEngine created: OK
+[4] Checking API methods...
+    configure: OK
+    processFrame: OK
+    isInitialized: OK
+    getFeaturePointCount: OK
+    getMapPoints: OK
+    reset: OK
+[5] Testing initial state...
+    isInitialized: OK (false)
+    getFeaturePointCount: OK (0)
+[6] Testing configure...
+    configure result: OK (true)
+[7] Testing processFrame with dummy image...
+    processFrame result: OK (false, not initialized yet)
+    isInitialized after 1 frame: OK (false)
+
+=== All WASM module tests passed ===

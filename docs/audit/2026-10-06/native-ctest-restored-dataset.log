@@ -1,0 +1,51 @@
+Internal ctest changing into directory: /home/park-ubuntu/park/SOLUTION/Mobile-SLAM/build/audit-native
+Test project /home/park-ubuntu/park/SOLUTION/Mobile-SLAM/build/audit-native
+    Start 6: VIOEngineParityTest
+1/1 Test #6: VIOEngineParityTest ..............***Failed    0.14 sec
+[==========] Running 3 tests from 1 test suite.
+[----------] Global test environment set-up.
+[----------] 3 tests from VIOParityTest
+[ RUN      ] VIOParityTest.BothProduceTrajectories
+/home/park-ubuntu/park/SOLUTION/Mobile-SLAM/tests/test_vio_engine_parity.cpp:120: Failure
+Value of: std::ifstream(DATASET_PATH + "/mav0/cam0/data.csv").good()
+  Actual: false
+Expected: true
+TUM VI dataset not found at: ./assets/datasets/tum/dataset-room1_512_16
+
+[  FAILED  ] VIOParityTest.BothProduceTrajectories (0 ms)
+[ RUN      ] VIOParityTest.TrajectoryComparison
+/home/park-ubuntu/park/SOLUTION/Mobile-SLAM/tests/test_vio_engine_parity.cpp:120: Failure
+Value of: std::ifstream(DATASET_PATH + "/mav0/cam0/data.csv").good()
+  Actual: false
+Expected: true
+TUM VI dataset not found at: ./assets/datasets/tum/dataset-room1_512_16
+
+[  FAILED  ] VIOParityTest.TrajectoryComparison (0 ms)
+[ RUN      ] VIOParityTest.VIOEngineSanity
+/home/park-ubuntu/park/SOLUTION/Mobile-SLAM/tests/test_vio_engine_parity.cpp:120: Failure
+Value of: std::ifstream(DATASET_PATH + "/mav0/cam0/data.csv").good()
+  Actual: false
+Expected: true
+TUM VI dataset not found at: ./assets/datasets/tum/dataset-room1_512_16
+
+[  FAILED  ] VIOParityTest.VIOEngineSanity (0 ms)
+[----------] 3 tests from VIOParityTest (0 ms total)
+
+[----------] Global test environment tear-down
+[==========] 3 tests from 1 test suite ran. (0 ms total)
+[  PASSED  ] 0 tests.
+[  FAILED  ] 3 tests, listed below:
+[  FAILED  ] VIOParityTest.BothProduceTrajectories
+[  FAILED  ] VIOParityTest.TrajectoryComparison
+[  FAILED  ] VIOParityTest.VIOEngineSanity
+
+ 3 FAILED TESTS
+
+
+0% tests passed, 1 tests failed out of 1
+
+Total Test time (real) =   0.14 sec
+
+The following tests FAILED:
+	  6 - VIOEngineParityTest (Failed)
+Errors while running CTest

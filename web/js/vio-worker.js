@@ -1,197 +1,163 @@
-/**
- * VIO Web Worker - Runs WASM VIO processing off the main thread.
- *
- * Architecture:
- * - IMU data arrives independently via 'imu' messages and is accumulated
- *   in a worker-side ring buffer.
- * - Camera frames arrive via 'frame' messages. On each frame, all
- *   accumulated IMU readings are drained and fed to the WASM engine
- *   together with the image.
- * - This decoupling prevents IMU data loss when frames are dropped.
- */
-
-// Worker-local state
+/** Single-engine module Worker. Engine owns future IMU carry and pose freshness. */
 let wasm = null;
 let engine = null;
 let configured = false;
-
-// Module-level diagnostics state (initialized once, not checked every frame)
-let _diagLogCount = 0;
-let _diagLastLogTime = 0;
-let _diagFirstFrameTime = 0;
-let _diagWasInitialized = false;
-let _diagTrackCount = 0;
-let _diagLastFeatureCount = 0;
-
-function resetDiagnostics() {
-    _diagLogCount = 0;
-    _diagLastLogTime = 0;
-    _diagFirstFrameTime = 0;
-    _diagWasInitialized = false;
-    _diagTrackCount = 0;
-    _diagLastFeatureCount = 0;
-}
-
-// Pre-allocated result object (reused each frame to avoid GC pressure)
-const _frameResult = {
-    pose: null,
-    initialized: false,
-    featureCount: 0,
-    statusCode: 0,
-    imuCount: 0,
-    mapPoints: null,
-    mapPointCount: 0,
-};
-
-// Shared memory buffers (allocated on WASM heap)
+let processing = false;
+let clientEpoch = 0;
+let lastSequence = 0;
+let engineEpoch = null;
+let activeRequest = null;
+let frameWait = null;
+const IMU_BRACKET_WAIT_MS = 40;
 let memImage = null;
 let memIMU = null;
 let memPose = null;
 let memMapPoints = null;
 let memExtrinsicR = null;
 let memExtrinsicT = null;
-
 let imageWidth = 0;
 let imageHeight = 0;
 const maxIMUReadings = 512;
 const maxMapPoints = 2000;
-
-let processing = false;
-
-// Last successfully processed frame timestamp (for stale frame detection)
-let lastFrameTimestamp = 0;
-
-/** Max age (seconds) for IMU readings relative to frame timestamp.
- *  Reduced from 3.0 to 0.5: 3s was too loose — browser GC/thermal stalls
- *  could accumulate massive IMU batches with stale data, causing
- *  pre-integration to span unreasonable time intervals → divergence. */
-const MAX_IMU_AGE_S = 0.5;
-/** Max gap (seconds) between consecutive frames before VIO reset */
-const MAX_FRAME_GAP_S = 1.5;
-
-// ── Worker-side IMU accumulation ring buffer ──
 const IMU_FIELDS = 7;
 const IMU_RING_CAPACITY = 1024;
+const MAX_IMU_AGE_S = 0.5;
 const imuRing = new Float64Array(IMU_RING_CAPACITY * IMU_FIELDS);
 let imuRingWriteIdx = 0;
 let imuRingReadIdx = 0;
+let lastIMUTimestamp = null;
+let intervalLoss = null;
+const imuDrops = {
+    received: 0, accepted: 0, overflow: 0, stale: 0, capacity: 0,
+    invalid: 0, order: 0, reset: 0, invalidBatches: 0, gapCount: 0, lastGapSeconds: null, lossResets: 0,
+};
 
-/**
- * Append IMU readings from a flat Float64Array into the worker ring buffer.
- * @param {Float64Array} data - Flat [ts, ax, ay, az, gx, gy, gz] × count
- * @param {number} count - Number of readings
- */
-function appendIMU(data, count) {
-    for (let i = 0; i < count; i++) {
-        const srcBase = i * IMU_FIELDS;
-        const dstSlot = (imuRingWriteIdx % IMU_RING_CAPACITY) * IMU_FIELDS;
-        imuRing[dstSlot + 0] = data[srcBase + 0];
-        imuRing[dstSlot + 1] = data[srcBase + 1];
-        imuRing[dstSlot + 2] = data[srcBase + 2];
-        imuRing[dstSlot + 3] = data[srcBase + 3];
-        imuRing[dstSlot + 4] = data[srcBase + 4];
-        imuRing[dstSlot + 5] = data[srcBase + 5];
-        imuRing[dstSlot + 6] = data[srcBase + 6];
-        imuRingWriteIdx++;
-    }
+function clearIMURing(resetCounters = false) {
+    if (resetCounters) {
+        for (const key of Object.keys(imuDrops)) imuDrops[key] = key === 'lastGapSeconds' ? null : 0;
+    } else imuDrops.reset += imuRingWriteIdx - imuRingReadIdx;
+    imuRingWriteIdx = imuRingReadIdx = 0;
+    lastIMUTimestamp = null;
+    intervalLoss = null;
 }
 
-/**
- * Drain all accumulated IMU readings into the WASM heap buffer.
- * Discards stale readings (older than MAX_IMU_AGE_S relative to frameTs).
- * @param {number} frameTs - Current frame timestamp in seconds
- * @returns {number} Number of readings written to memIMU
- */
-function drainIMUToWasm(frameTs) {
-    if (!memIMU || !wasm) return 0;
+function recordIntervalLoss(reason, count, firstTimestamp, lastTimestamp) {
+    if (count <= 0) return;
+    if (!intervalLoss) intervalLoss = { count: 0, reasons: { overflow: 0, stale: 0, capacity: 0 }, droppedTimestampMin: firstTimestamp, droppedTimestampMax: lastTimestamp };
+    intervalLoss.count += count;
+    intervalLoss.reasons[reason] += count;
+    intervalLoss.droppedTimestampMin = Math.min(intervalLoss.droppedTimestampMin, firstTimestamp);
+    intervalLoss.droppedTimestampMax = Math.max(intervalLoss.droppedTimestampMax, lastTimestamp);
+}
 
-    // Discard stale IMU readings (older than MAX_IMU_AGE_S from frame timestamp)
-    // This prevents accumulated data from browser stalls (GC, thermal throttle)
-    // from poisoning the VIO pre-integration with huge time intervals.
-    if (frameTs > 0) {
-        const cutoff = frameTs - MAX_IMU_AGE_S;
-        while (imuRingReadIdx < imuRingWriteIdx) {
-            const slot = (imuRingReadIdx % IMU_RING_CAPACITY) * IMU_FIELDS;
-            if (imuRing[slot] < cutoff) {
-                imuRingReadIdx++;
-            } else {
-                break;
-            }
-        }
+function finishBracketWait(wait, cancelled = false) {
+    if (frameWait !== wait) return;
+    clearTimeout(wait.timer);
+    frameWait = null;
+    wait.resolve({ cancelled, imuWaitMs: performance.now() - wait.startedAtMs,
+        bracket: !cancelled && lastIMUTimestamp !== null && lastIMUTimestamp >= wait.timestamp &&
+            performance.now() - wait.startedAtMs <= IMU_BRACKET_WAIT_MS });
+}
+
+function cancelBracketWait() {
+    if (!frameWait) return;
+    const waitingRequest = frameWait.request;
+    finishBracketWait(frameWait, true);
+    if (activeRequest === waitingRequest) { activeRequest = null; processing = false; }
+}
+
+function waitForBracket(request, timestamp) {
+    if (lastIMUTimestamp !== null && lastIMUTimestamp >= timestamp) return Promise.resolve({ bracket: true, cancelled: false, imuWaitMs: 0 });
+    return new Promise(resolve => {
+        const wait = { request, timestamp, resolve, startedAtMs: performance.now(), timer: null };
+        wait.timer = setTimeout(() => finishBracketWait(wait), IMU_BRACKET_WAIT_MS);
+        frameWait = wait;
+    });
+}
+
+/** Bound read cursor on each append; reject malformed/order-invalid samples explicitly. */
+function appendIMU(data, count) {
+    if (Number.isInteger(count) && count >= 0 && count <= 4096) imuDrops.received += count;
+    if (!(data instanceof Float64Array) || !Number.isInteger(count) || count < 0 || count > 4096 || count * IMU_FIELDS > data.length) {
+        imuDrops.invalidBatches++;
+        imuDrops.invalid += Number.isInteger(count) && count > 0 && count <= 4096 ? count : 0;
+        return false;
     }
-
-    // Find how many readings are available up to (and including one past) frameTs.
-    // Readings with timestamps AFTER frameTs are preserved for the next frame.
-    let endIdx = imuRingReadIdx;
-    let pastFrameCount = 0;
-    for (let idx = imuRingReadIdx; idx < imuRingWriteIdx; idx++) {
-        const slot = (idx % IMU_RING_CAPACITY) * IMU_FIELDS;
-        if (imuRing[slot] <= frameTs) {
-            endIdx = idx + 1;
-        } else {
-            // Include one reading past frameTs for interpolation boundary
-            if (pastFrameCount === 0) {
-                endIdx = idx + 1;
-                pastFrameCount++;
-            }
-            break;
-        }
-    }
-
-    const available = endIdx - imuRingReadIdx;
-    if (available <= 0) return 0;
-
-    // Clamp to max WASM buffer
-    const count = Math.min(available, IMU_RING_CAPACITY, maxIMUReadings);
-    const startIdx = endIdx - count;
-
-    // Write directly into WASM heap (memIMU is Float64, 7 fields per reading)
-    // Access wasm.HEAPF64 directly each time to handle memory growth
-    const heapOffset = memIMU.ptr / 8;  // Float64 index
+    let valid = true;
     for (let i = 0; i < count; i++) {
-        const srcSlot = ((startIdx + i) % IMU_RING_CAPACITY) * IMU_FIELDS;
-        const dstBase = heapOffset + i * IMU_FIELDS;
-        wasm.HEAPF64[dstBase + 0] = imuRing[srcSlot + 0];
-        wasm.HEAPF64[dstBase + 1] = imuRing[srcSlot + 1];
-        wasm.HEAPF64[dstBase + 2] = imuRing[srcSlot + 2];
-        wasm.HEAPF64[dstBase + 3] = imuRing[srcSlot + 3];
-        wasm.HEAPF64[dstBase + 4] = imuRing[srcSlot + 4];
-        wasm.HEAPF64[dstBase + 5] = imuRing[srcSlot + 5];
-        wasm.HEAPF64[dstBase + 6] = imuRing[srcSlot + 6];
+        const base = i * IMU_FIELDS;
+        let finite = true;
+        for (let j = 0; j < IMU_FIELDS; j++) finite = finite && Number.isFinite(data[base + j]);
+        if (!finite) { imuDrops.invalid++; valid = false; continue; }
+        const timestamp = data[base];
+        if (lastIMUTimestamp !== null && timestamp <= lastIMUTimestamp) {
+            imuDrops.order++;
+            valid = false;
+            continue;
+        }
+        if (lastIMUTimestamp !== null && timestamp - lastIMUTimestamp > MAX_IMU_AGE_S) {
+            imuDrops.gapCount++;
+            imuDrops.lastGapSeconds = timestamp - lastIMUTimestamp;
+        }
+        lastIMUTimestamp = timestamp;
+        if (imuRingWriteIdx - imuRingReadIdx === IMU_RING_CAPACITY) {
+            const droppedTimestamp = imuRing[(imuRingReadIdx % IMU_RING_CAPACITY) * IMU_FIELDS];
+            recordIntervalLoss('overflow', 1, droppedTimestamp, droppedTimestamp);
+            imuRingReadIdx++;
+            imuDrops.overflow++;
+        }
+        const slot = (imuRingWriteIdx % IMU_RING_CAPACITY) * IMU_FIELDS;
+        imuRing.set(data.subarray(base, base + IMU_FIELDS), slot);
+        imuRingWriteIdx++;
+        imuDrops.accepted++;
     }
+    if (frameWait && lastIMUTimestamp !== null && lastIMUTimestamp >= frameWait.timestamp) finishBracketWait(frameWait);
+    return valid;
+}
 
-    imuRingReadIdx = endIdx;  // Only consume up to endIdx, preserve future readings
+/** Send at most one future bracket once. Only Engine retains that bracket afterward. */
+function drainIMUToWasm(frameTs) {
+    if (!memIMU || !wasm || !Number.isFinite(frameTs)) return 0;
+    const cutoff = frameTs - MAX_IMU_AGE_S;
+    while (imuRingReadIdx < imuRingWriteIdx && imuRing[(imuRingReadIdx % IMU_RING_CAPACITY) * IMU_FIELDS] < cutoff) {
+        const droppedTimestamp = imuRing[(imuRingReadIdx % IMU_RING_CAPACITY) * IMU_FIELDS];
+        recordIntervalLoss('stale', 1, droppedTimestamp, droppedTimestamp);
+        imuRingReadIdx++;
+        imuDrops.stale++;
+    }
+    let endIdx = imuRingReadIdx;
+    while (endIdx < imuRingWriteIdx) {
+        const timestamp = imuRing[(endIdx % IMU_RING_CAPACITY) * IMU_FIELDS];
+        endIdx++;
+        if (timestamp > frameTs) break;
+    }
+    const available = endIdx - imuRingReadIdx;
+    const count = Math.min(available, maxIMUReadings);
+    const startIdx = endIdx - count;
+    if (startIdx > imuRingReadIdx) recordIntervalLoss('capacity', startIdx - imuRingReadIdx,
+        imuRing[(imuRingReadIdx % IMU_RING_CAPACITY) * IMU_FIELDS], imuRing[((startIdx - 1) % IMU_RING_CAPACITY) * IMU_FIELDS]);
+    imuDrops.capacity += startIdx - imuRingReadIdx;
+    for (let i = 0; i < count; i++) {
+        const slot = ((startIdx + i) % IMU_RING_CAPACITY) * IMU_FIELDS;
+        wasm.HEAPF64.set(imuRing.subarray(slot, slot + IMU_FIELDS), memIMU.ptr / 8 + i * IMU_FIELDS);
+    }
+    imuRingReadIdx = endIdx;
     return count;
 }
-
-/**
- * Simple SharedMemory helper for Worker context.
- * Manages a typed array backed by WASM heap memory.
- */
 class WorkerSharedMemory {
     constructor(wasmModule, heapArray, count) {
         this.wasm = wasmModule;
         this.count = count;
         this.byteSize = count * heapArray.BYTES_PER_ELEMENT;
-        this.ptr = wasmModule._malloc(this.byteSize);
-        this.byteOffset = this.ptr;
+        // Classify before malloc: growth replaces module heap views during allocation.
         this._heapType = heapArray === wasmModule.HEAPF64 ? 'f64' : 'u8';
-        if (this._heapType === 'f64') {
-            this.byteOffset = this.ptr / 8;  // Float64 index
-        }
-        // Track buffer identity for memory growth detection
-        this._lastBuffer = wasmModule.HEAPU8.buffer;
-    }
-
-    /** Check if WASM memory has grown and update heap references */
-    _updateHeapViews() {
-        if (this.wasm.HEAPU8.buffer !== this._lastBuffer) {
-            this._lastBuffer = this.wasm.HEAPU8.buffer;
-        }
+        this.ptr = wasmModule._malloc(this.byteSize);
+        if (!this.ptr) throw new Error('WASM buffer allocation failed');
     }
 
     write(typedArray) {
-        this._updateHeapViews();
+        if (typedArray.length > this.count) throw new Error('WASM write exceeds allocated buffer');
+        // Read current heap views on every access; Emscripten may have grown memory.
         if (this._heapType === 'u8') {
             this.wasm.HEAPU8.set(typedArray, this.ptr);
         } else {
@@ -200,7 +166,7 @@ class WorkerSharedMemory {
     }
 
     read(count) {
-        this._updateHeapViews();
+        if (!Number.isInteger(count) || count < 0 || count > this.count) throw new Error('WASM read exceeds allocated buffer');
         if (this._heapType === 'f64') {
             return new Float64Array(
                 this.wasm.HEAPF64.buffer.slice(this.ptr, this.ptr + count * 8)
@@ -237,307 +203,278 @@ function disposeBuffers() {
     memImage = memIMU = memPose = memMapPoints = memExtrinsicR = memExtrinsicT = null;
 }
 
-function processFrame(gray, timestamp) {
-    if (!configured || !engine) return null;
-
-    // Stale frame guard: if gap between frames is too large, reset VIO
-    // to prevent divergence from accumulated IMU drift over long pause.
-    if (lastFrameTimestamp > 0 && timestamp - lastFrameTimestamp > MAX_FRAME_GAP_S) {
-        console.warn(`[VIO Worker] Frame gap ${(timestamp - lastFrameTimestamp).toFixed(2)}s > ${MAX_FRAME_GAP_S}s — resetting VIO`);
-        try { engine.reset(); } catch (_) {}
-        imuRingWriteIdx = imuRingReadIdx = 0;  // Clear stale IMU
-        lastFrameTimestamp = timestamp;
-        return { pose: null, initialized: false, featureCount: 0, statusCode: 1, mapPoints: null, mapPointCount: 0 };
-    }
-    lastFrameTimestamp = timestamp;
-
-    // Validate image dimensions match configured buffer
-    const expectedSize = imageWidth * imageHeight;
-    if (gray.length !== expectedSize) {
-        console.error(`[VIO Worker] Image size mismatch: got ${gray.length} bytes, expected ${expectedSize} (${imageWidth}x${imageHeight})`);
-        return { pose: null, initialized: false, featureCount: 0, statusCode: 3, mapPoints: null, mapPointCount: 0 };
-    }
-
-    // Write image to WASM heap
-    memImage.write(gray);
-
-    // Drain accumulated IMU readings into WASM heap (discards stale data)
-    const imuCount = drainIMUToWasm(timestamp);
-
-    // Diagnostic: log IMU density per VIO frame
-    if (_diagFirstFrameTime === 0) _diagFirstFrameTime = timestamp;
-    if (_diagLogCount < 10) {
-        console.log(`[VIO Worker] Frame #${_diagLogCount}: imuCount=${imuCount}, t=${timestamp.toFixed(3)}`);
-        if (imuCount < 2) {
-            console.warn(`[VIO Worker] Low IMU density: ${imuCount} readings — pre-integration may be unreliable`);
-        }
-        _diagLogCount++;
-    } else if (timestamp - _diagLastLogTime > 10.0) {
-        // Periodic log every 10s for ongoing diagnostics
-        const isInit = engine.isInitialized();
-        console.log(`[VIO Worker] Status: imuCount=${imuCount}, initialized=${isInit}, features=${engine.getFeaturePointCount()}`);
-        _diagLastLogTime = timestamp;
-        // Detect init transition
-        if (isInit && !_diagWasInitialized) {
-            const elapsed = (timestamp - _diagFirstFrameTime).toFixed(1);
-            console.log(`[VIO Worker] INITIALIZED after ${_diagLogCount} worker frames (${elapsed}s)`);
-        }
-        _diagWasInitialized = isInit;
-    }
-
-    // Guard: skip frame if no IMU data available (pre-integration impossible).
-    // This commonly happens on the very first frame before IMU pipeline starts.
-    if (imuCount === 0) {
-        return { pose: null, initialized: false, featureCount: 0,
-                 statusCode: 1, mapPoints: null, mapPointCount: 0 };
-    }
-
-    // Process frame
-    let hasPose = false;
-    try {
-        const t0 = performance.now();
-        hasPose = engine.processFrame(
-            memImage.ptr,
-            imageWidth, imageHeight,
-            memIMU.ptr,
-            imuCount,
-            timestamp,
-            memPose.ptr
-        );
-        const dt = performance.now() - t0;
-        if (_diagLogCount < 10 || _diagTrackCount % 30 === 0) {
-            console.log(`[VIO Worker] processFrame: ${dt.toFixed(1)}ms`);
-        }
-    } catch (e) {
-        console.error('[VIO Worker] processFrame error:', e.message);
-        try {
-            engine.reset();
-        } catch (resetErr) {
-            console.error('[VIO Worker] reset also failed:', resetErr.message);
-        }
-        return { pose: null, initialized: false, featureCount: 0, statusCode: 3, mapPoints: null, mapPointCount: 0 };
-    }
-
-    _frameResult.pose = null;
-    _frameResult.initialized = engine.isInitialized();
-    _frameResult.featureCount = engine.getFeaturePointCount();
-    _frameResult.statusCode = engine.getStatusCode();
-    _frameResult.imuCount = imuCount;
-    _frameResult.mapPoints = null;
-    _frameResult.mapPointCount = 0;
-
-    if (hasPose) {
-        const poseData = memPose.read(16);
-        _frameResult.pose = new Float64Array(poseData);
-
-        // Divergence detection: log pose position for first 20 tracking frames
-        // and whenever position magnitude exceeds threshold
-        if (_frameResult.initialized) {
-            const px = poseData[3], py = poseData[7], pz = poseData[11];
-            const posMag = Math.sqrt(px*px + py*py + pz*pz);
-            if (_diagTrackCount < 20) {
-                console.log(`[VIO Worker] Track #${_diagTrackCount}: pos=(${px.toFixed(3)}, ${py.toFixed(3)}, ${pz.toFixed(3)}) |pos|=${posMag.toFixed(3)} feat=${_frameResult.featureCount}`);
-            }
-            if (posMag > 10.0) {
-                console.warn(`[VIO Worker] DIVERGENCE: |pos|=${posMag.toFixed(1)} at track #${_diagTrackCount} pos=(${px.toFixed(2)}, ${py.toFixed(2)}, ${pz.toFixed(2)})`);
-            }
-            // Feature tracking loss diagnostic: detect sudden drops
-            if (_diagLastFeatureCount > 0 && _frameResult.featureCount < _diagLastFeatureCount * 0.4) {
-                console.warn(`[VIO Worker] Feature drop: ${_diagLastFeatureCount}→${_frameResult.featureCount} (${((1 - _frameResult.featureCount/_diagLastFeatureCount)*100).toFixed(0)}% lost) at track #${_diagTrackCount}`);
-            }
-            if (_frameResult.featureCount < 15 && _diagTrackCount > 5) {
-                console.warn(`[VIO Worker] Low features: ${_frameResult.featureCount} — tracking may be unstable`);
-            }
-            _diagLastFeatureCount = _frameResult.featureCount;
-            _diagTrackCount++;
-        }
-    }
-
-    // Get map points
-    try {
-        const count = engine.getMapPoints(memMapPoints.ptr, maxMapPoints);
-        if (count > 0) {
-            const pointsData = memMapPoints.read(count * 3);
-            _frameResult.mapPoints = new Float64Array(pointsData);
-            _frameResult.mapPointCount = count;
-        }
-    } catch (e) {
-        // Non-fatal
-    }
-
-    return _frameResult;
+function engineValue(name, fallback) {
+    try { return engine && typeof engine[name] === 'function' ? engine[name]() : fallback; }
+    catch (_) { return fallback; }
 }
 
-// Message handler
-self.onmessage = async function(e) {
-    const { type, data } = e.data;
+function engineState() {
+    const epoch = Number(engineValue('getEpoch', NaN));
+    const frameTimestamp = engineValue('getFrameTimestamp', null);
+    const benchmarkSolverProfile = engineValue('getBenchmarkSolverProfile', null);
+    return {
+        engineEpoch: Number.isSafeInteger(epoch) && epoch >= 0 ? epoch : null,
+        engineFrameTimestamp: Number.isFinite(frameTimestamp) && frameTimestamp >= 0 ? frameTimestamp : null,
+        poseFrame: 'camera',
+        initialized: engineValue('isInitialized', false),
+        featureCount: engineValue('getFeaturePointCount', 0),
+        statusCode: engineValue('getStatusCode', 0),
+        reason: engineValue('getLastReason', 'engine_status_unavailable'),
+        solverIterations: engineValue('getLastSolverIterations', null),
+        solverTermination: engineValue('getLastSolverTermination', null),
+        benchmarkSolverProfile,
+        solverProfile: benchmarkSolverProfile === true ? 'max10_zero_positive_tolerances' : benchmarkSolverProfile === false ? 'default' : 'unavailable',
+        executionSeed: engineValue('getExecutionSeed', null),
+        cvThreads: engineValue('getCVThreadCount', null),
+        imuEndpointTimestamp: engineValue('getIMUEndpointTimestamp', null),
+    };
+}
 
-    switch (type) {
-        case 'init': {
-            try {
-                // Try importScripts first (non-ES6 worker build),
-                // fall back to dynamic import() for ES6 module builds
-                let VIOWasmFactory;
-                try {
-                    importScripts(data.wasmPath);
-                    VIOWasmFactory = self.VIOWasm || VIOWasm;
-                } catch (_) {
-                    const module = await import(data.wasmPath);
-                    VIOWasmFactory = module.default;
-                }
-                // Filter out Ceres miniglog noise (pre-built library, can't recompile)
-                const _ceresNoiseRe = /detect_structure|block_sparse_matrix|schur_eliminator|callbacks\.cc|trust_region_minimizer|Schur complement|Dynamic .* block size/;
-                wasm = await VIOWasmFactory({
-                    print: (text) => {
-                        if (_ceresNoiseRe.test(text)) return;
-                        self.postMessage({ type: 'wasm_log', data: { level: 'info', msg: text } });
-                    },
-                    printErr: (text) => {
-                        if (_ceresNoiseRe.test(text)) return;
-                        self.postMessage({ type: 'wasm_log', data: { level: 'warn', msg: text } });
-                    },
-                });
-                engine = new wasm.VIOEngine();
-                self.postMessage({ type: 'init', success: true });
-            } catch (err) {
-                self.postMessage({ type: 'init', success: false, error: err.message });
-            }
-            break;
-        }
+function emptyResult(timestamp, reason, imuCount = 0) {
+    return { ...engineState(), pose: null, poseValid: false, poseFresh: false, poseTimestamp: null,
+        inputTimestamp: Number.isFinite(timestamp) ? timestamp : null, timestamp: Number.isFinite(timestamp) ? timestamp : null,
+        reason, imuCount, mapPoints: null, mapPointCount: 0, imuDrops: { ...imuDrops }, engineProcessingMs: 0 };
+}
 
-        case 'configure': {
-            try {
-                const p = data;
-                imageWidth = p.width;
-                imageHeight = p.height;
+function rejectRequest(request, responseType, error) {
+    const fields = { success: false, error };
+    if (responseType === 'result') fields.data = emptyResult(request.data?.timestamp, error);
+    reply(request, responseType, fields);
+}
 
-                allocateBuffers();
-
-                // Reset IMU accumulation
-                imuRingWriteIdx = 0;
-                imuRingReadIdx = 0;
-
-                const r_ic = p.r_ic || [1, 0, 0, 0, 1, 0, 0, 0, 1];
-                const t_ic = p.t_ic || [0, 0, 0];
-                memExtrinsicR.write(new Float64Array(r_ic));
-                memExtrinsicT.write(new Float64Array(t_ic));
-
-                const result = engine.configure(
-                    p.width, p.height,
-                    p.fx, p.fy, p.cx, p.cy,
-                    p.modelType ?? 2,  // C++ enum: KANNALA_BRANDT=0, MEI=1, PINHOLE=2, SCARAMUZZA=3
-                    p.k2 || 0, p.k3 || 0, p.k4 || 0, p.k5 || 0,
-                    memExtrinsicR.ptr,
-                    memExtrinsicT.ptr,
-                    p.acc_n ?? 0.08,
-                    p.acc_w ?? 0.0004,   // was 0.002 (50x too large)
-                    p.gyr_n ?? 0.01,
-                    p.gyr_w ?? 0.0001,   // was 0.002 (20x too large)
-                    p.g_norm ?? 9.81
-                );
-
-                configured = result;
-                self.postMessage({ type: 'configure', success: result });
-            } catch (err) {
-                self.postMessage({ type: 'configure', success: false, error: err.message });
-            }
-            break;
-        }
-
-        case 'setMobileParams': {
-            try {
-                const { solver_time, num_iterations, max_features } = data;
-                engine.setMobileParams(solver_time, num_iterations, max_features);
-                self.postMessage({ type: 'setMobileParams', success: true });
-            } catch (err) {
-                self.postMessage({ type: 'setMobileParams', success: false, error: err.message });
-            }
-            break;
-        }
-
-        case 'setFThreshold': {
-            try {
-                const { f_threshold } = data;
-                engine.setFThreshold(f_threshold);
-                self.postMessage({ type: 'setFThreshold', success: true });
-            } catch (err) {
-                self.postMessage({ type: 'setFThreshold', success: false, error: err.message });
-            }
-            break;
-        }
-
-        case 'setTrackingParams': {
-            try {
-                const { lk_window, lk_pyramid, min_dist, f_edge_factor } = data;
-                engine.setTrackingParams(lk_window, lk_pyramid, min_dist, f_edge_factor);
-                self.postMessage({ type: 'setTrackingParams', success: true });
-            } catch (err) {
-                self.postMessage({ type: 'setTrackingParams', success: false, error: err.message });
-            }
-            break;
-        }
-
-        case 'imu': {
-            // Independent IMU delivery — accumulate in worker ring buffer
-            if (configured && data.imuData && data.count > 0) {
-                const imuArray = new Float64Array(data.imuData);
-                appendIMU(imuArray, data.count);
-            }
-            break;
-        }
-
-        case 'frame': {
-            if (processing) {
-                // Drop frame if still processing previous one
-                // IMU data is NOT lost — it stays in the accumulation buffer
-                return;
-            }
-            processing = true;
-            try {
-                const { gray, timestamp } = data;
-                const grayArray = new Uint8Array(gray);
-                const result = processFrame(grayArray, timestamp);
-                self.postMessage({
-                    type: 'result',
-                    data: result,
-                });
-            } catch (err) {
-                self.postMessage({
-                    type: 'result',
-                    data: { pose: null, initialized: false, featureCount: 0, statusCode: 3, mapPoints: null, mapPointCount: 0 },
-                });
-            }
-            processing = false;
-            break;
-        }
-
-        case 'reset': {
-            if (engine) {
-                try { engine.reset(); } catch (e) {}
-            }
-            processing = false;
-            imuRingWriteIdx = 0;
-            imuRingReadIdx = 0;
-            lastFrameTimestamp = 0;
-            resetDiagnostics();
-            self.postMessage({ type: 'reset', success: true });
-            break;
-        }
-
-        case 'dispose': {
-            disposeBuffers();
-            if (engine) {
-                try { engine.delete(); } catch (e) {}
-                engine = null;
-            }
-            wasm = null;
-            configured = false;
-            processing = false;
-            imuRingWriteIdx = 0;
-            imuRingReadIdx = 0;
-            lastFrameTimestamp = 0;
-            self.postMessage({ type: 'dispose', success: true });
-            break;
+function processFrame(gray, timestamp) {
+    if (!configured || !engine) return emptyResult(timestamp, 'not_configured');
+    if (!Number.isFinite(timestamp) || gray.length !== imageWidth * imageHeight) {
+        return emptyResult(timestamp, 'invalid_frame');
+    }
+    memImage.write(gray);
+    const imuCount = drainIMUToWasm(timestamp);
+    let loss = null;
+    if (intervalLoss) {
+        const endpointAvailable = typeof engine.getIMUEndpointTimestamp === 'function';
+        const endpoint = engineValue('getIMUEndpointTimestamp', null);
+        const knownEndpoint = Number.isFinite(endpoint) && endpoint >= 0;
+        loss = { ...intervalLoss, reasons: { ...intervalLoss.reasons }, preexistingEngineEndpointTimestamp: knownEndpoint ? endpoint : null,
+            engineEndpointDisconnected: endpointAvailable ? knownEndpoint : null,
+            endpointStatus: knownEndpoint ? 'known' : endpointAvailable ? 'none' : 'unavailable', engineEpochBeforeReset: engineState().engineEpoch };
+        engine.reset();
+        engineEpoch = engineState().engineEpoch;
+        loss.engineEpochAfterReset = engineEpoch;
+        intervalLoss = null;
+        imuDrops.lossResets++;
+    }
+    const started = performance.now();
+    // Even an empty batch may be covered by Engine's pending future bracket.
+    const hasPose = engine.processFrame(memImage.ptr, imageWidth, imageHeight, memIMU.ptr, imuCount, timestamp, memPose.ptr);
+    const engineProcessingMs = performance.now() - started;
+    const state = engineState();
+    if (state.engineEpoch !== engineEpoch) clearIMURing();
+    engineEpoch = state.engineEpoch;
+    const poseTimestamp = engineValue('getPoseTimestamp', null);
+    const poseFresh = hasPose && engineValue('getPoseFresh', false) === true;
+    const poseValid = poseFresh && engineValue('getPoseValid', false) === true && Number.isFinite(poseTimestamp) && poseTimestamp >= 0;
+    const result = { ...emptyResult(timestamp, state.reason, imuCount), ...state, engineProcessingMs, imuIntervalLoss: loss };
+    if (loss) {
+        // Recent/future samples seed the new lifecycle; this frame cannot connect to its old endpoint.
+        result.engineReason = state.reason;
+        result.reason = 'imu_transport_loss';
+        result.initialized = false;
+        result.statusCode = 1;
+        return result;
+    }
+    if (poseValid) {
+        const pose = memPose.read(16);
+        if (pose.every(Number.isFinite)) {
+            result.pose = pose;
+            result.poseTimestamp = poseTimestamp;
+            result.poseFresh = result.poseValid = true;
+        } else result.reason = 'nonfinite_pose';
+    }
+    if (result.poseValid) {
+        const count = engine.getMapPoints(memMapPoints.ptr, maxMapPoints);
+        if (!Number.isInteger(count) || count < 0 || count > maxMapPoints) throw new Error('Invalid map point count');
+        if (count > 0) {
+            const points = memMapPoints.read(count * 3);
+            if (points.every(Number.isFinite)) {
+                result.mapPoints = points;
+                result.mapPointCount = count;
+            } else result.reason = 'nonfinite_map';
         }
     }
+    return result;
+}
+
+function reply(request, type, fields = {}) {
+    self.postMessage({ type, requestId: request.requestId, clientEpoch: request.clientEpoch,
+        sequence: request.sequence, ...fields });
+}
+
+function nowMs() { return performance.timeOrigin + performance.now(); }
+
+const parameterCalls = {
+    setMobileParams: ['solver_time', 'num_iterations', 'max_features'],
+    setFThreshold: ['f_threshold'],
+    setTrackingParams: ['lk_window', 'lk_pyramid', 'min_dist', 'f_edge_factor'],
+    setPnPParams: ['enable_pnp', 'freq'],
+};
+
+// init is async; its captured epoch must still be current before installing the engine.
+self.onmessage = async function(event) {
+    const request = event.data || {};
+    const { type, data } = request;
+    const receivedAtMs = nowMs();
+    const responseType = type === 'frame' ? 'result' : type;
+    const lifecycle = ['init', 'configure', 'reset', 'dispose'].includes(type);
+    if (!Number.isInteger(request.requestId) || request.requestId < 1 || !Number.isInteger(request.clientEpoch) || request.clientEpoch < 0 ||
+        !Number.isInteger(request.sequence) || request.sequence < 1) {
+        rejectRequest(request, responseType, 'invalid_request');
+        return;
+    }
+    if (request.clientEpoch < clientEpoch || (request.clientEpoch > clientEpoch && !lifecycle)) {
+        rejectRequest(request, responseType, 'stale_epoch');
+        return;
+    }
+    if (request.clientEpoch > clientEpoch) { clientEpoch = request.clientEpoch; lastSequence = 0; }
+    if (request.sequence <= lastSequence) {
+        rejectRequest(request, responseType, 'stale_sequence');
+        return;
+    }
+    lastSequence = request.sequence;
+    if (lifecycle) cancelBracketWait();
+    if (type === 'frame' && processing) {
+        rejectRequest(request, 'result', 'worker_busy');
+        return;
+    }
+    const started = performance.now();
+    let processingStarted = started;
+    let imuWaitMs = 0;
+    try {
+        if (type === 'init') {
+            activeRequest = request;
+            const module = await import(data.wasmPath);
+            if (typeof module.default !== 'function') throw new Error('WASM artifact must export an ES module factory');
+            const noise = /detect_structure|block_sparse_matrix|schur_eliminator|callbacks\.cc|trust_region_minimizer|Schur complement|Dynamic .* block size/;
+            const loadedWasm = await module.default({
+                print: text => { if (!noise.test(text)) reply(request, 'wasm_log', { data: { level: 'info', msg: text } }); },
+                printErr: text => { if (!noise.test(text)) reply(request, 'wasm_log', { data: { level: 'warn', msg: text } }); },
+            });
+            if (request.clientEpoch !== clientEpoch) {
+                reply(request, 'init', { success: false, error: 'stale_epoch' });
+                return;
+            }
+            disposeBuffers();
+            if (engine) engine.delete();
+            wasm = loadedWasm;
+            engine = new wasm.VIOEngine();
+            configured = false;
+            clearIMURing(true);
+            reply(request, 'init', { success: true });
+        } else if (type === 'configure') {
+            configured = false;
+            if (!engine || !Number.isInteger(data?.width) || !Number.isInteger(data?.height) ||
+                data.width < 1 || data.height < 1 || data.width * data.height > 16777216) throw new Error('Invalid image dimensions');
+            const r = data.r_ic || [1, 0, 0, 0, 1, 0, 0, 0, 1];
+            const t = data.t_ic || [0, 0, 0];
+            if (r.length !== 9 || t.length !== 3 || !Array.from(r).every(Number.isFinite) || !Array.from(t).every(Number.isFinite)) throw new Error('Invalid extrinsics');
+            imageWidth = data.width;
+            imageHeight = data.height;
+            allocateBuffers();
+            clearIMURing();
+            memExtrinsicR.write(new Float64Array(r));
+            memExtrinsicT.write(new Float64Array(t));
+            configured = engine.configure(imageWidth, imageHeight, data.fx, data.fy, data.cx, data.cy,
+                data.modelType ?? 2, data.k2 ?? 0, data.k3 ?? 0, data.k4 ?? 0, data.k5 ?? 0,
+                memExtrinsicR.ptr, memExtrinsicT.ptr, data.acc_n ?? 0.08, data.acc_w ?? 0.0004,
+                data.gyr_n ?? 0.01, data.gyr_w ?? 0.0001, data.g_norm ?? 9.81) === true;
+            if (configured) {
+                const requested = data.benchmark_zero_positive_tolerances === true;
+                const profileAPI = typeof engine.setBenchmarkSolverProfile === 'function' && typeof engine.getBenchmarkSolverProfile === 'function';
+                if (requested && !profileAPI) throw new Error('Benchmark solver profile API unavailable');
+                if (typeof engine.setBenchmarkSolverProfile === 'function') engine.setBenchmarkSolverProfile(requested);
+                if (profileAPI && engine.getBenchmarkSolverProfile() !== requested) throw new Error('Benchmark solver profile not applied');
+            }
+            if (configured && typeof engine.setExecutionParams === 'function') engine.setExecutionParams(data.execution_seed ?? 0, data.cv_threads ?? 1);
+            engineEpoch = engineState().engineEpoch;
+            reply(request, type, { success: configured, benchmarkSolverProfile: engineState().benchmarkSolverProfile, imuDrops: { ...imuDrops } });
+        } else if (Object.hasOwn(parameterCalls, type)) {
+            if (!engine) throw new Error('Engine is not loaded');
+            engine[type](...parameterCalls[type].map(name => data?.[name]));
+            reply(request, type, { success: true });
+        } else if (type === 'imu') {
+            if (!configured) throw new Error('Engine is not configured');
+            if (!(data?.imuData instanceof ArrayBuffer) || data.imuData.byteLength % 8 !== 0) {
+                const count = Number.isInteger(data?.count) && data.count > 0 && data.count <= 4096 ? data.count : 0;
+                imuDrops.received += count;
+                imuDrops.invalid += count;
+                imuDrops.invalidBatches++;
+                throw new Error('Invalid IMU buffer');
+            }
+            const success = appendIMU(new Float64Array(data.imuData), data.count);
+            reply(request, type, { success, error: success ? undefined : 'invalid_imu_batch_or_sample', imuDrops: { ...imuDrops } });
+        } else if (type === 'frame') {
+            processing = true;
+            activeRequest = request;
+            if (!(data?.gray instanceof ArrayBuffer)) throw new Error('Invalid image buffer');
+            const gray = new Uint8Array(data.gray);
+            let bracket = true;
+            if (configured && engine && Number.isFinite(data.timestamp) && gray.length === imageWidth * imageHeight) {
+                const wait = await waitForBracket(request, data.timestamp);
+                imuWaitMs = wait.imuWaitMs;
+                if (wait.cancelled || request.clientEpoch !== clientEpoch || activeRequest !== request) {
+                    const result = emptyResult(data.timestamp, 'stale_epoch');
+                    result.imuWaitMs = imuWaitMs;
+                    result.workerQueueMs = Number.isFinite(request.sentAtMs) ? Math.max(0, receivedAtMs - request.sentAtMs) : null;
+                    result.workerProcessingMs = 0;
+                    reply(request, 'result', { success: false, error: 'stale_epoch', data: result });
+                    return;
+                }
+                bracket = wait.bracket;
+            }
+            processingStarted = performance.now();
+            const result = bracket ? processFrame(gray, data.timestamp) : emptyResult(data.timestamp, 'missing_bracket');
+            if (!bracket) result.statusCode = result.initialized ? 3 : 1;
+            result.imuWaitMs = imuWaitMs;
+            result.workerQueueMs = Number.isFinite(request.sentAtMs) ? Math.max(0, receivedAtMs - request.sentAtMs) : null;
+            result.workerProcessingMs = performance.now() - processingStarted;
+            reply(request, 'result', { success: true, data: result });
+        } else if (type === 'reset') {
+            if (engine) engine.reset();
+            clearIMURing();
+            engineEpoch = engineState().engineEpoch;
+            reply(request, type, { success: true, imuDrops: { ...imuDrops } });
+        } else if (type === 'dispose') {
+            configured = false;
+            disposeBuffers();
+            if (engine) engine.delete();
+            engine = wasm = null;
+            clearIMURing();
+            engineEpoch = null;
+            reply(request, type, { success: true });
+        } else throw new Error('Unknown worker request');
+    } catch (error) {
+        if (type === 'configure') configured = false;
+        if (type === 'frame') {
+            try { if (engine) engine.reset(); } catch (_) { configured = false; }
+            clearIMURing();
+            engineEpoch = engineState().engineEpoch;
+            const result = emptyResult(data?.timestamp, 'worker_exception');
+            result.error = error.message;
+            result.workerQueueMs = Number.isFinite(request.sentAtMs) ? Math.max(0, receivedAtMs - request.sentAtMs) : null;
+            result.imuWaitMs = imuWaitMs;
+            result.workerProcessingMs = performance.now() - processingStarted;
+            reply(request, 'result', { success: false, error: error.message, data: result });
+        } else reply(request, responseType, { success: false, error: error.message, imuDrops: type === 'imu' ? { ...imuDrops } : undefined });
+    } finally {
+        if (activeRequest === request) {
+            if (type === 'frame') processing = false;
+            activeRequest = null;
+        }
+    }
+};
+
+self.onunhandledrejection = function(event) {
+    self.postMessage({ type: 'runtime_error', clientEpoch: activeRequest?.clientEpoch ?? clientEpoch, requestId: activeRequest?.requestId ?? null,
+        sequence: activeRequest?.sequence ?? null, error: event.reason?.message || String(event.reason) });
+    event.preventDefault();
+    cancelBracketWait();
 };

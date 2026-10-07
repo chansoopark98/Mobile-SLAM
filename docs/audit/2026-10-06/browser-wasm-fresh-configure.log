@@ -1,0 +1,4 @@
+emcmake: cmake -S wasm -B build/audit-wasm -DCMAKE_BUILD_TYPE=Release -DCMAKE_TOOLCHAIN_FILE=/home/park-ubuntu/emsdk/upstream/emscripten/cmake/Modules/Platform/Emscripten.cmake -DCMAKE_CROSSCOMPILING_EMULATOR=/home/park-ubuntu/emsdk/node/22.16.0_64bit/bin/node in directory /home/park-ubuntu/park/SOLUTION/Mobile-SLAM
+-- Configuring done
+-- Generating done
+-- Build files have been written to: /home/park-ubuntu/park/SOLUTION/Mobile-SLAM/build/audit-wasm

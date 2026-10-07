@@ -1,0 +1,8 @@
+test_known_z_rotation_and_translation (test_export_trajectory.ExportTrajectoryTests.test_known_z_rotation_and_translation) ... ok
+test_rejects_duplicate_timestamps (test_export_trajectory.ExportTrajectoryTests.test_rejects_duplicate_timestamps) ... ok
+test_rejects_nonrotation_matrix (test_export_trajectory.ExportTrajectoryTests.test_rejects_nonrotation_matrix) ... ok
+
+----------------------------------------------------------------------
+Ran 3 tests in 0.006s
+
+OK

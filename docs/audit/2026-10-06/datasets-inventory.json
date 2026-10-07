@@ -1,0 +1,2085 @@
+{
+  "date": "2026-10-06",
+  "canonical_dataset_home": "/mnt/backup/SLAM",
+  "read_only_source": true,
+  "limits": [
+    "uncompressed tar metadata traversal; CSV/YAML and 2 image samples per TUM archive only",
+    "no complete huge archive hashes or extraction",
+    "EuRoC outer ZIP central directory only; nested deflated ZIP payloads not decompressed",
+    "Initial all-archive metadata pass stopped at 60s after magistrale1; no archive corruption conclusion for uninspected records",
+    "All TUM archives except outdoors1: complete member metadata and small CSV/YAML verified, first/last cam0 image samples only",
+    "Redwood: raw scene direct file counts and 1 RGB/1 depth sample each; PoseGraph header only, not physical independent GT proof",
+    "TartanAir: environment/sequence directories and 3 sample sequences; no global image/file hashing, no assumed IMU generation"
+  ],
+  "tum_vi": [
+    {
+      "archive": "/mnt/backup/SLAM/TUM VI/dataset-magistrale1_512_16.tar",
+      "size_bytes": 10284318720,
+      "status": "ready_after_local_extract_and_profile_check",
+      "csv": {
+        "cam0": {
+          "bytes": 679693,
+          "sha256": "c52b384d7f13f37e1ef4ec3a88d37a0bbd15a3cbff0401d0eb8a42ebe8a67d62",
+          "header": "#timestamp [ns],filename",
+          "rows": 15447,
+          "columns_first": 2,
+          "first_row": [
+            "1520500644192001413",
+            "1520500644192001413.png"
+          ],
+          "first_timestamp_ns": 1520500644192001413,
+          "last_timestamp_ns": 1520501416516135272,
+          "duration_s": 772.3241338590001,
+          "non_increasing_timestamps": 0,
+          "member": "dataset-magistrale1_512_16/mav0/cam0/data.csv",
+          "image_members": 15447,
+          "missing_referenced_images": 0,
+          "zero_byte_images": 0
+        },
+        "cam1": {
+          "bytes": 679693,
+          "sha256": "c52b384d7f13f37e1ef4ec3a88d37a0bbd15a3cbff0401d0eb8a42ebe8a67d62",
+          "header": "#timestamp [ns],filename",
+          "rows": 15447,
+          "columns_first": 2,
+          "first_row": [
+            "1520500644192001413",
+            "1520500644192001413.png"
+          ],
+          "first_timestamp_ns": 1520500644192001413,
+          "last_timestamp_ns": 1520501416516135272,
+          "duration_s": 772.3241338590001,
+          "non_increasing_timestamps": 0,
+          "member": "dataset-magistrale1_512_16/mav0/cam1/data.csv",
+          "image_members": 15447,
+          "missing_referenced_images": 0,
+          "zero_byte_images": 0
+        },
+        "imu0": {
+          "bytes": 15626971,
+          "sha256": "069b3af97a777ddefb264030c2ec0cd94742952f5d1a48a2fda9b022b338898e",
+          "header": "#timestamp [ns],w_RS_S_x [rad s^-1],w_RS_S_y [rad s^-1],w_RS_S_z [rad s^-1],a_RS_S_x [m s^-2],a_RS_S_y [m s^-2],a_RS_S_z [m s^-2]",
+          "rows": 153989,
+          "columns_first": 7,
+          "first_row": [
+            "1520500644190003571",
+            "-0.1269924273",
+            "0.0434041844",
+            "-0.0046001652",
+            "0.5929731814",
+            "0.2541762675",
+            "9.8631778946"
+          ],
+          "first_timestamp_ns": 1520500644190003571,
+          "last_timestamp_ns": 1520501416544172571,
+          "duration_s": 772.3541690000001,
+          "non_increasing_timestamps": 0,
+          "member": "dataset-magistrale1_512_16/mav0/imu0/data.csv"
+        },
+        "mocap0": {
+          "bytes": 1613885,
+          "sha256": "684c3bba46760c7a35b5f8ad5abbcbd06b5cc6dc88d60c139cd21fa31aa7b759",
+          "header": "#timestamp [ns], p_RS_R_x [m], p_RS_R_y [m], p_RS_R_z [m], q_RS_w [], q_RS_x [], q_RS_y [], q_RS_z []",
+          "rows": 14218,
+          "columns_first": 8,
+          "first_row": [
+            "1520500646910717482",
+            "-0.6830486429",
+            "-0.1185346858",
+            "1.1767646238",
+            "0.9942191945",
+            "-0.0103962742",
+            "-0.0057459391",
+            "-0.1067103316"
+          ],
+          "first_timestamp_ns": 1520500646910717482,
+          "last_timestamp_ns": 1520501416535717482,
+          "duration_s": 769.625,
+          "non_increasing_timestamps": 0,
+          "member": "dataset-magistrale1_512_16/mav0/mocap0/data.csv"
+        }
+      },
+      "yaml": [
+        {
+          "member": "dataset-magistrale1_512_16/dso/imu_config.yaml",
+          "bytes": 725,
+          "sha256": "e309d3f4b5e6e812580fcb9c9f402ab79f4a09931e41f433e7038301118683a1",
+          "first_lines": [
+            "rostopic: /imu0",
+            "update_rate: 200.0  # Hz",
+            "",
+            "# Values from allan plots",
+            "# sequence: dataset-calib-imu-static2.bag (full data range)",
+            "#accelerometer_noise_density: 0.0014     # m/s^1.5",
+            "#accelerometer_random_walk:   0.000086   # m/s^2.5",
+            "#gyroscope_noise_density:     0.000080   # rad/s^0.5",
+            "#gyroscope_random_walk:       0.0000022  # rad/s^1.5",
+            "",
+            "# Inflated values (to account for unmodelled effects)",
+            "# Those values work well with Kalibr cam-imu calibration.",
+            "#  - white noise multiplied by 2",
+            "#  - bias random walk multiplied by 10",
+            "accelerometer_noise_density: 0.0028     # m/s^1.5",
+            "accelerometer_random_walk:   0.00086    # m/s^2.5",
+            "gyroscope_noise_density:     0.00016    # rad/s^0.5",
+            "gyroscope_random_walk:       0.000022   # rad/s^1.5"
+          ]
+        },
+        {
+          "member": "dataset-magistrale1_512_16/dso/camchain.yaml",
+          "bytes": 1646,
+          "sha256": "3a0c0285f4d0a3a1678053b2e5912e3e250e78ac09bd009f6d7d8bba669d5703",
+          "first_lines": [
+            "cam0:",
+            "  T_cam_imu:",
+            "  - [-0.9995250378696743, 0.029615343885863205, -0.008522328211654736, 0.04727988224914392]",
+            "  - [0.0075019185074052044, -0.03439736061393144, -0.9993800792498829, -0.047443232143367084]",
+            "  - [-0.02989013031643309, -0.998969345370175, 0.03415885127385616, -0.0681999605066297]",
+            "  - [0.0, 0.0, 0.0, 1.0]",
+            "  cam_overlaps: [1]",
+            "  camera_model: pinhole",
+            "  distortion_coeffs: [0.0034823894022493434, 0.0007150348452162257, -0.0020532361418706202,",
+            "    0.00020293673591811182]",
+            "  distortion_model: equidistant",
+            "  intrinsics: [190.97847715128717, 190.9733070521226, 254.93170605935475, 256.8974428996504]",
+            "  resolution: [512, 512]",
+            "  rostopic: /cam0/image_raw",
+            "cam1:",
+            "  T_cam_imu:",
+            "  - [-0.9995110484978581, 0.030299116376600627, -0.0077218830287333565, -0.053697434688869734]",
+            "  - [0.008104079263822521, 0.012511643720192351, -0.9998888851620987, -0.046131737923635924]",
+            "  - [-0.030199136245891378, -0.9994625667418545, -0.012751072573940885, -0.07149261284195751]",
+            "  - [0.0, 0.0, 0.0, 1.0]",
+            "  T_cn_cnm1:",
+            "  - [0.9999994457734953, -0.0008233639921576076, -0.0006561436136444361, -0.10106110275180535]"
+          ]
+        }
+      ],
+      "image_samples": [
+        {
+          "member": "dataset-magistrale1_512_16/mav0/cam0/data/1520500644192001413.png",
+          "bytes": 283293,
+          "sha256": "6207d6ce3d0c054a5363cc8d4026c995e021237bd3b1e61b6810735f5c871e40",
+          "decode_ok": true,
+          "shape": [
+            512,
+            512
+          ],
+          "dtype": "uint16",
+          "min": 672,
+          "max": 65520
+        },
+        {
+          "member": "dataset-magistrale1_512_16/mav0/cam0/data/1520501416516135272.png",
+          "bytes": 289570,
+          "sha256": "2e7125c6ad408ba7f06401043cce21daee3227b1578d61c9fcb5a504342a30f4",
+          "decode_ok": true,
+          "shape": [
+            512,
+            512
+          ],
+          "dtype": "uint16",
+          "min": 544,
+          "max": 65520
+        }
+      ],
+      "members": 30923,
+      "zero_byte_regular_members": [],
+      "archive_root": "dataset-magistrale1_512_16",
+      "metadata_seconds": 46.534,
+      "calibration_yaml_hash_matches_room1": true
+    },
+    {
+      "archive": "/mnt/backup/SLAM/TUM VI/dataset-outdoors1_512_16.tar",
+      "size_bytes": 17645230080,
+      "status": "archive_present_content_not_inspected"
+    },
+    {
+      "archive": "/mnt/backup/SLAM/TUM VI/dataset-room1_512_16.tar",
+      "size_bytes": 1707110400,
+      "archive_root": "dataset-room1_512_16",
+      "status": "ready_after_local_extract_and_profile_check",
+      "csv": {
+        "cam0": {
+          "member": "dataset-room1_512_16/mav0/cam0/data.csv",
+          "bytes": 124149,
+          "sha256": "95420d52db3c4f392d7df8a4b562abb353b7b8db0d4f73fb76a3031330bd5ddb",
+          "header": "#timestamp [ns],filename",
+          "rows": 2821,
+          "columns_first": 2,
+          "first_row": [
+            "1520530308199447626",
+            "1520530308199447626.png"
+          ],
+          "first_timestamp_ns": 1520530308199447626,
+          "last_timestamp_ns": 1520530449203911100,
+          "duration_s": 141.004463474,
+          "non_increasing_timestamps": 0,
+          "image_members": 2821,
+          "missing_referenced_images": 0,
+          "zero_byte_images": 0,
+          "matches_restored_local_csv": true
+        },
+        "cam1": {
+          "member": "dataset-room1_512_16/mav0/cam1/data.csv",
+          "bytes": 124149,
+          "sha256": "95420d52db3c4f392d7df8a4b562abb353b7b8db0d4f73fb76a3031330bd5ddb",
+          "header": "#timestamp [ns],filename",
+          "rows": 2821,
+          "columns_first": 2,
+          "first_row": [
+            "1520530308199447626",
+            "1520530308199447626.png"
+          ],
+          "first_timestamp_ns": 1520530308199447626,
+          "last_timestamp_ns": 1520530449203911100,
+          "duration_s": 141.004463474,
+          "non_increasing_timestamps": 0,
+          "image_members": 2821,
+          "missing_referenced_images": 0,
+          "zero_byte_images": 0,
+          "matches_restored_local_csv": true
+        },
+        "imu0": {
+          "member": "dataset-room1_512_16/mav0/imu0/data.csv",
+          "bytes": 2831804,
+          "sha256": "8cd471ca2c1425260534228fbe0f3e27bd6711199dfce7c971447cdf184569e2",
+          "header": "#timestamp [ns],w_RS_S_x [rad s^-1],w_RS_S_y [rad s^-1],w_RS_S_z [rad s^-1],a_RS_S_x [m s^-2],a_RS_S_y [m s^-2],a_RS_S_z [m s^-2]",
+          "rows": 28122,
+          "columns_first": 7,
+          "first_row": [
+            "1520530308181901469",
+            "0.1045577128",
+            "-0.0792420275",
+            "0.0178416359",
+            "-0.3522450410",
+            "0.0000321145",
+            "9.9237603029"
+          ],
+          "first_timestamp_ns": 1520530308181901469,
+          "last_timestamp_ns": 1520530449232329469,
+          "duration_s": 141.050428,
+          "non_increasing_timestamps": 0,
+          "matches_restored_local_csv": true
+        },
+        "mocap0": {
+          "member": "dataset-room1_512_16/mav0/mocap0/data.csv",
+          "bytes": 1876721,
+          "sha256": "24c577e2dcddcd54a4b5d9d988277d00b3b1b64785033bce93775da75eb95fa5",
+          "header": "#timestamp [ns], p_RS_R_x [m], p_RS_R_y [m], p_RS_R_z [m], q_RS_w [], q_RS_x [], q_RS_y [], q_RS_z []",
+          "rows": 16541,
+          "columns_first": 8,
+          "first_row": [
+            "1520530308189679351",
+            "0.8417820384",
+            "-0.2193354118",
+            "1.2499749141",
+            "0.9996498117",
+            "0.0037373093",
+            "0.0097169635",
+            "-0.0243283190"
+          ],
+          "first_timestamp_ns": 1520530308189679351,
+          "last_timestamp_ns": 1520530449214678351,
+          "duration_s": 141.024999,
+          "non_increasing_timestamps": 0,
+          "matches_restored_local_csv": true
+        }
+      },
+      "yaml": [
+        {
+          "member": "dataset-room1_512_16/dso/imu_config.yaml",
+          "bytes": 725,
+          "sha256": "e309d3f4b5e6e812580fcb9c9f402ab79f4a09931e41f433e7038301118683a1",
+          "first_lines": [
+            "rostopic: /imu0",
+            "update_rate: 200.0  # Hz",
+            "",
+            "# Values from allan plots",
+            "# sequence: dataset-calib-imu-static2.bag (full data range)",
+            "#accelerometer_noise_density: 0.0014     # m/s^1.5",
+            "#accelerometer_random_walk:   0.000086   # m/s^2.5",
+            "#gyroscope_noise_density:     0.000080   # rad/s^0.5",
+            "#gyroscope_random_walk:       0.0000022  # rad/s^1.5",
+            "",
+            "# Inflated values (to account for unmodelled effects)",
+            "# Those values work well with Kalibr cam-imu calibration.",
+            "#  - white noise multiplied by 2",
+            "#  - bias random walk multiplied by 10",
+            "accelerometer_noise_density: 0.0028     # m/s^1.5",
+            "accelerometer_random_walk:   0.00086    # m/s^2.5",
+            "gyroscope_noise_density:     0.00016    # rad/s^0.5",
+            "gyroscope_random_walk:       0.000022   # rad/s^1.5"
+          ],
+          "matches_restored_local_yaml": true
+        },
+        {
+          "member": "dataset-room1_512_16/dso/camchain.yaml",
+          "bytes": 1646,
+          "sha256": "3a0c0285f4d0a3a1678053b2e5912e3e250e78ac09bd009f6d7d8bba669d5703",
+          "first_lines": [
+            "cam0:",
+            "  T_cam_imu:",
+            "  - [-0.9995250378696743, 0.029615343885863205, -0.008522328211654736, 0.04727988224914392]",
+            "  - [0.0075019185074052044, -0.03439736061393144, -0.9993800792498829, -0.047443232143367084]",
+            "  - [-0.02989013031643309, -0.998969345370175, 0.03415885127385616, -0.0681999605066297]",
+            "  - [0.0, 0.0, 0.0, 1.0]",
+            "  cam_overlaps: [1]",
+            "  camera_model: pinhole",
+            "  distortion_coeffs: [0.0034823894022493434, 0.0007150348452162257, -0.0020532361418706202,",
+            "    0.00020293673591811182]",
+            "  distortion_model: equidistant",
+            "  intrinsics: [190.97847715128717, 190.9733070521226, 254.93170605935475, 256.8974428996504]",
+            "  resolution: [512, 512]",
+            "  rostopic: /cam0/image_raw",
+            "cam1:",
+            "  T_cam_imu:",
+            "  - [-0.9995110484978581, 0.030299116376600627, -0.0077218830287333565, -0.053697434688869734]",
+            "  - [0.008104079263822521, 0.012511643720192351, -0.9998888851620987, -0.046131737923635924]",
+            "  - [-0.030199136245891378, -0.9994625667418545, -0.012751072573940885, -0.07149261284195751]",
+            "  - [0.0, 0.0, 0.0, 1.0]",
+            "  T_cn_cnm1:",
+            "  - [0.9999994457734953, -0.0008233639921576076, -0.0006561436136444361, -0.10106110275180535]"
+          ],
+          "matches_restored_local_yaml": true
+        }
+      ],
+      "image_samples": [
+        {
+          "member": "dataset-room1_512_16/mav0/cam0/data/1520530308199447626.png",
+          "bytes": 278875,
+          "sha256": "9c57c2b85643c2bc0291fdb4fc1aa6cc0018acaa5945e51c56b108fb2bb7e550",
+          "decode_ok": true,
+          "shape": [
+            512,
+            512
+          ],
+          "dtype": "uint16",
+          "min": 512,
+          "max": 65520
+        },
+        {
+          "member": "dataset-room1_512_16/mav0/cam0/data/1520530449203911100.png",
+          "bytes": 284744,
+          "sha256": "6cc92e54db964d73be9de234b0fe2862128c72a888b0c75c447d5a801b67b763",
+          "decode_ok": true,
+          "shape": [
+            512,
+            512
+          ],
+          "dtype": "uint16",
+          "min": 720,
+          "max": 65520
+        }
+      ],
+      "members": 5671,
+      "zero_byte_regular_members": [],
+      "metadata_seconds": 7.609,
+      "calibration_yaml_hash_matches_room1": true
+    },
+    {
+      "archive": "/mnt/backup/SLAM/TUM VI/dataset-room2_512_16.tar",
+      "size_bytes": 1759395840,
+      "archive_root": "dataset-room2_512_16",
+      "status": "ready_after_local_extract_and_profile_check",
+      "csv": {
+        "cam0": {
+          "member": "dataset-room2_512_16/mav0/cam0/data.csv",
+          "bytes": 126833,
+          "sha256": "779fb893b2f275507fca1fe22948bf030e23276f5fc12eee31862a656311a23d",
+          "header": "#timestamp [ns],filename",
+          "rows": 2882,
+          "columns_first": 2,
+          "first_row": [
+            "1520530731400018325",
+            "1520530731400018325.png"
+          ],
+          "first_timestamp_ns": 1520530731400018325,
+          "last_timestamp_ns": 1520530875454345641,
+          "duration_s": 144.054327316,
+          "non_increasing_timestamps": 0,
+          "image_members": 2882,
+          "missing_referenced_images": 0,
+          "zero_byte_images": 0
+        },
+        "cam1": {
+          "member": "dataset-room2_512_16/mav0/cam1/data.csv",
+          "bytes": 126833,
+          "sha256": "779fb893b2f275507fca1fe22948bf030e23276f5fc12eee31862a656311a23d",
+          "header": "#timestamp [ns],filename",
+          "rows": 2882,
+          "columns_first": 2,
+          "first_row": [
+            "1520530731400018325",
+            "1520530731400018325.png"
+          ],
+          "first_timestamp_ns": 1520530731400018325,
+          "last_timestamp_ns": 1520530875454345641,
+          "duration_s": 144.054327316,
+          "non_increasing_timestamps": 0,
+          "image_members": 2882,
+          "missing_referenced_images": 0,
+          "zero_byte_images": 0
+        },
+        "imu0": {
+          "member": "dataset-room2_512_16/mav0/imu0/data.csv",
+          "bytes": 2874197,
+          "sha256": "e11f764c9c7f04b4a13f3f76a7f2964b133b31832697f59e06995d43c8c03f79",
+          "header": "#timestamp [ns],w_RS_S_x [rad s^-1],w_RS_S_y [rad s^-1],w_RS_S_z [rad s^-1],a_RS_S_x [m s^-2],a_RS_S_y [m s^-2],a_RS_S_z [m s^-2]",
+          "rows": 28732,
+          "columns_first": 7,
+          "first_row": [
+            "1520530731372454010",
+            "-0.0884747972",
+            "-0.1008611572",
+            "0.0110013777",
+            "-0.2584447593",
+            "-0.4364623051",
+            "10.0313523357"
+          ],
+          "first_timestamp_ns": 1520530731372454010,
+          "last_timestamp_ns": 1520530875479830010,
+          "duration_s": 144.10737600000002,
+          "non_increasing_timestamps": 0
+        },
+        "mocap0": {
+          "member": "dataset-room2_512_16/mav0/mocap0/data.csv",
+          "bytes": 1750622,
+          "sha256": "da8e819b98d75398c86cc723f9236b9ae4e621f754f52073e0af78395bc43d5e",
+          "header": "#timestamp [ns], p_RS_R_x [m], p_RS_R_y [m], p_RS_R_z [m], q_RS_w [], q_RS_x [], q_RS_y [], q_RS_z []",
+          "rows": 15477,
+          "columns_first": 8,
+          "first_row": [
+            "1520530731382632018",
+            "0.6133646566",
+            "-0.3638428811",
+            "1.2577577142",
+            "0.9991824411",
+            "-0.0300339752",
+            "0.0128128850",
+            "-0.0238377774"
+          ],
+          "first_timestamp_ns": 1520530731382632018,
+          "last_timestamp_ns": 1520530875449299018,
+          "duration_s": 144.066667,
+          "non_increasing_timestamps": 0
+        }
+      },
+      "yaml": [
+        {
+          "member": "dataset-room2_512_16/dso/imu_config.yaml",
+          "bytes": 725,
+          "sha256": "e309d3f4b5e6e812580fcb9c9f402ab79f4a09931e41f433e7038301118683a1",
+          "first_lines": [
+            "rostopic: /imu0",
+            "update_rate: 200.0  # Hz",
+            "",
+            "# Values from allan plots",
+            "# sequence: dataset-calib-imu-static2.bag (full data range)",
+            "#accelerometer_noise_density: 0.0014     # m/s^1.5",
+            "#accelerometer_random_walk:   0.000086   # m/s^2.5",
+            "#gyroscope_noise_density:     0.000080   # rad/s^0.5",
+            "#gyroscope_random_walk:       0.0000022  # rad/s^1.5",
+            "",
+            "# Inflated values (to account for unmodelled effects)",
+            "# Those values work well with Kalibr cam-imu calibration.",
+            "#  - white noise multiplied by 2",
+            "#  - bias random walk multiplied by 10",
+            "accelerometer_noise_density: 0.0028     # m/s^1.5",
+            "accelerometer_random_walk:   0.00086    # m/s^2.5",
+            "gyroscope_noise_density:     0.00016    # rad/s^0.5",
+            "gyroscope_random_walk:       0.000022   # rad/s^1.5"
+          ]
+        },
+        {
+          "member": "dataset-room2_512_16/dso/camchain.yaml",
+          "bytes": 1646,
+          "sha256": "3a0c0285f4d0a3a1678053b2e5912e3e250e78ac09bd009f6d7d8bba669d5703",
+          "first_lines": [
+            "cam0:",
+            "  T_cam_imu:",
+            "  - [-0.9995250378696743, 0.029615343885863205, -0.008522328211654736, 0.04727988224914392]",
+            "  - [0.0075019185074052044, -0.03439736061393144, -0.9993800792498829, -0.047443232143367084]",
+            "  - [-0.02989013031643309, -0.998969345370175, 0.03415885127385616, -0.0681999605066297]",
+            "  - [0.0, 0.0, 0.0, 1.0]",
+            "  cam_overlaps: [1]",
+            "  camera_model: pinhole",
+            "  distortion_coeffs: [0.0034823894022493434, 0.0007150348452162257, -0.0020532361418706202,",
+            "    0.00020293673591811182]",
+            "  distortion_model: equidistant",
+            "  intrinsics: [190.97847715128717, 190.9733070521226, 254.93170605935475, 256.8974428996504]",
+            "  resolution: [512, 512]",
+            "  rostopic: /cam0/image_raw",
+            "cam1:",
+            "  T_cam_imu:",
+            "  - [-0.9995110484978581, 0.030299116376600627, -0.0077218830287333565, -0.053697434688869734]",
+            "  - [0.008104079263822521, 0.012511643720192351, -0.9998888851620987, -0.046131737923635924]",
+            "  - [-0.030199136245891378, -0.9994625667418545, -0.012751072573940885, -0.07149261284195751]",
+            "  - [0.0, 0.0, 0.0, 1.0]",
+            "  T_cn_cnm1:",
+            "  - [0.9999994457734953, -0.0008233639921576076, -0.0006561436136444361, -0.10106110275180535]"
+          ]
+        }
+      ],
+      "image_samples": [
+        {
+          "member": "dataset-room2_512_16/mav0/cam0/data/1520530731400018325.png",
+          "bytes": 286066,
+          "sha256": "0e962cc929a6d79e2fcf9ffb2099acc9ef983b3fdb565c50d29c953d60bb0f1d",
+          "decode_ok": true,
+          "shape": [
+            512,
+            512
+          ],
+          "dtype": "uint16",
+          "min": 544,
+          "max": 65520
+        },
+        {
+          "member": "dataset-room2_512_16/mav0/cam0/data/1520530875454345641.png",
+          "bytes": 275436,
+          "sha256": "c45e7c75dc8e00d9e0230625eb85473ae09daea70a14356d1c493d706e0e0707",
+          "decode_ok": true,
+          "shape": [
+            512,
+            512
+          ],
+          "dtype": "uint16",
+          "min": 704,
+          "max": 65520
+        }
+      ],
+      "members": 5793,
+      "zero_byte_regular_members": [],
+      "metadata_seconds": 8.258,
+      "calibration_yaml_hash_matches_room1": true
+    },
+    {
+      "archive": "/mnt/backup/SLAM/TUM VI/dataset-room3_512_16.tar",
+      "size_bytes": 1742612480,
+      "archive_root": "dataset-room3_512_16",
+      "status": "ready_after_local_extract_and_profile_check",
+      "csv": {
+        "cam0": {
+          "member": "dataset-room3_512_16/mav0/cam0/data.csv",
+          "bytes": 124149,
+          "sha256": "b32b7e2b283022bfe3db78e3463bfaf85b5b9bff3ec667c18de9493ec357e101",
+          "header": "#timestamp [ns],filename",
+          "rows": 2821,
+          "columns_first": 2,
+          "first_row": [
+            "1520530962750148976",
+            "1520530962750148976.png"
+          ],
+          "first_timestamp_ns": 1520530962750148976,
+          "last_timestamp_ns": 1520531103754995888,
+          "duration_s": 141.004846912,
+          "non_increasing_timestamps": 0,
+          "image_members": 2821,
+          "missing_referenced_images": 0,
+          "zero_byte_images": 0
+        },
+        "cam1": {
+          "member": "dataset-room3_512_16/mav0/cam1/data.csv",
+          "bytes": 124149,
+          "sha256": "b32b7e2b283022bfe3db78e3463bfaf85b5b9bff3ec667c18de9493ec357e101",
+          "header": "#timestamp [ns],filename",
+          "rows": 2821,
+          "columns_first": 2,
+          "first_row": [
+            "1520530962750148976",
+            "1520530962750148976.png"
+          ],
+          "first_timestamp_ns": 1520530962750148976,
+          "last_timestamp_ns": 1520531103754995888,
+          "duration_s": 141.004846912,
+          "non_increasing_timestamps": 0,
+          "image_members": 2821,
+          "missing_referenced_images": 0,
+          "zero_byte_images": 0
+        },
+        "imu0": {
+          "member": "dataset-room3_512_16/mav0/imu0/data.csv",
+          "bytes": 2832266,
+          "sha256": "7f280b289400bd305acd14934236807a2877ea3ceace1fb3ae832bc73c4ca94b",
+          "header": "#timestamp [ns],w_RS_S_x [rad s^-1],w_RS_S_y [rad s^-1],w_RS_S_z [rad s^-1],a_RS_S_x [m s^-2],a_RS_S_y [m s^-2],a_RS_S_z [m s^-2]",
+          "rows": 28124,
+          "columns_first": 7,
+          "first_row": [
+            "1520530962735370731",
+            "-0.2031777681",
+            "0.0127797054",
+            "-0.0049627179",
+            "0.2105566487",
+            "0.1270971665",
+            "9.5811366398"
+          ],
+          "first_timestamp_ns": 1520530962735370731,
+          "last_timestamp_ns": 1520531103790106731,
+          "duration_s": 141.05473600000002,
+          "non_increasing_timestamps": 0
+        },
+        "mocap0": {
+          "member": "dataset-room3_512_16/mav0/mocap0/data.csv",
+          "bytes": 1726273,
+          "sha256": "7fe5023521d9adc57dd999c600462328cec54c76f762ee507c85165a509d45de",
+          "header": "#timestamp [ns], p_RS_R_x [m], p_RS_R_y [m], p_RS_R_z [m], q_RS_w [], q_RS_x [], q_RS_y [], q_RS_z []",
+          "rows": 15200,
+          "columns_first": 8,
+          "first_row": [
+            "1520530962744806490",
+            "1.2225485047",
+            "-0.3593893239",
+            "1.2309284925",
+            "0.9999403609",
+            "-0.0108671140",
+            "-0.0009484840",
+            "0.0005299107"
+          ],
+          "first_timestamp_ns": 1520530962744806490,
+          "last_timestamp_ns": 1520531103761473490,
+          "duration_s": 141.016667,
+          "non_increasing_timestamps": 0
+        }
+      },
+      "yaml": [
+        {
+          "member": "dataset-room3_512_16/dso/imu_config.yaml",
+          "bytes": 725,
+          "sha256": "e309d3f4b5e6e812580fcb9c9f402ab79f4a09931e41f433e7038301118683a1",
+          "first_lines": [
+            "rostopic: /imu0",
+            "update_rate: 200.0  # Hz",
+            "",
+            "# Values from allan plots",
+            "# sequence: dataset-calib-imu-static2.bag (full data range)",
+            "#accelerometer_noise_density: 0.0014     # m/s^1.5",
+            "#accelerometer_random_walk:   0.000086   # m/s^2.5",
+            "#gyroscope_noise_density:     0.000080   # rad/s^0.5",
+            "#gyroscope_random_walk:       0.0000022  # rad/s^1.5",
+            "",
+            "# Inflated values (to account for unmodelled effects)",
+            "# Those values work well with Kalibr cam-imu calibration.",
+            "#  - white noise multiplied by 2",
+            "#  - bias random walk multiplied by 10",
+            "accelerometer_noise_density: 0.0028     # m/s^1.5",
+            "accelerometer_random_walk:   0.00086    # m/s^2.5",
+            "gyroscope_noise_density:     0.00016    # rad/s^0.5",
+            "gyroscope_random_walk:       0.000022   # rad/s^1.5"
+          ]
+        },
+        {
+          "member": "dataset-room3_512_16/dso/camchain.yaml",
+          "bytes": 1646,
+          "sha256": "3a0c0285f4d0a3a1678053b2e5912e3e250e78ac09bd009f6d7d8bba669d5703",
+          "first_lines": [
+            "cam0:",
+            "  T_cam_imu:",
+            "  - [-0.9995250378696743, 0.029615343885863205, -0.008522328211654736, 0.04727988224914392]",
+            "  - [0.0075019185074052044, -0.03439736061393144, -0.9993800792498829, -0.047443232143367084]",
+            "  - [-0.02989013031643309, -0.998969345370175, 0.03415885127385616, -0.0681999605066297]",
+            "  - [0.0, 0.0, 0.0, 1.0]",
+            "  cam_overlaps: [1]",
+            "  camera_model: pinhole",
+            "  distortion_coeffs: [0.0034823894022493434, 0.0007150348452162257, -0.0020532361418706202,",
+            "    0.00020293673591811182]",
+            "  distortion_model: equidistant",
+            "  intrinsics: [190.97847715128717, 190.9733070521226, 254.93170605935475, 256.8974428996504]",
+            "  resolution: [512, 512]",
+            "  rostopic: /cam0/image_raw",
+            "cam1:",
+            "  T_cam_imu:",
+            "  - [-0.9995110484978581, 0.030299116376600627, -0.0077218830287333565, -0.053697434688869734]",
+            "  - [0.008104079263822521, 0.012511643720192351, -0.9998888851620987, -0.046131737923635924]",
+            "  - [-0.030199136245891378, -0.9994625667418545, -0.012751072573940885, -0.07149261284195751]",
+            "  - [0.0, 0.0, 0.0, 1.0]",
+            "  T_cn_cnm1:",
+            "  - [0.9999994457734953, -0.0008233639921576076, -0.0006561436136444361, -0.10106110275180535]"
+          ]
+        }
+      ],
+      "image_samples": [
+        {
+          "member": "dataset-room3_512_16/mav0/cam0/data/1520530962750148976.png",
+          "bytes": 286538,
+          "sha256": "abbcc74208835f5533c7bb68f1110234d1983e06fbe205576bfed20eefc764b7",
+          "decode_ok": true,
+          "shape": [
+            512,
+            512
+          ],
+          "dtype": "uint16",
+          "min": 816,
+          "max": 65520
+        },
+        {
+          "member": "dataset-room3_512_16/mav0/cam0/data/1520531103754995888.png",
+          "bytes": 300806,
+          "sha256": "1f99f8e72397ae8a1597f416952e2ebb7e0e7ff38af0a998db8028385257a47c",
+          "decode_ok": true,
+          "shape": [
+            512,
+            512
+          ],
+          "dtype": "uint16",
+          "min": 1040,
+          "max": 65520
+        }
+      ],
+      "members": 5671,
+      "zero_byte_regular_members": [],
+      "metadata_seconds": 7.935,
+      "calibration_yaml_hash_matches_room1": true
+    },
+    {
+      "archive": "/mnt/backup/SLAM/TUM VI/dataset-room4_512_16.tar",
+      "size_bytes": 1356206080,
+      "archive_root": "dataset-room4_512_16",
+      "status": "ready_after_local_extract_and_profile_check",
+      "csv": {
+        "cam0": {
+          "member": "dataset-room4_512_16/mav0/cam0/data.csv",
+          "bytes": 98057,
+          "sha256": "feff54e5a721df968901ae0ec5af1d6ca45c12e758ef8e9e965b812ca87c8d67",
+          "header": "#timestamp [ns],filename",
+          "rows": 2228,
+          "columns_first": 2,
+          "first_row": [
+            "1520531124150444163",
+            "1520531124150444163.png"
+          ],
+          "first_timestamp_ns": 1520531124150444163,
+          "last_timestamp_ns": 1520531235504118338,
+          "duration_s": 111.35367417500001,
+          "non_increasing_timestamps": 0,
+          "image_members": 2228,
+          "missing_referenced_images": 0,
+          "zero_byte_images": 0
+        },
+        "cam1": {
+          "member": "dataset-room4_512_16/mav0/cam1/data.csv",
+          "bytes": 98057,
+          "sha256": "feff54e5a721df968901ae0ec5af1d6ca45c12e758ef8e9e965b812ca87c8d67",
+          "header": "#timestamp [ns],filename",
+          "rows": 2228,
+          "columns_first": 2,
+          "first_row": [
+            "1520531124150444163",
+            "1520531124150444163.png"
+          ],
+          "first_timestamp_ns": 1520531124150444163,
+          "last_timestamp_ns": 1520531235504118338,
+          "duration_s": 111.35367417500001,
+          "non_increasing_timestamps": 0,
+          "image_members": 2228,
+          "missing_referenced_images": 0,
+          "zero_byte_images": 0
+        },
+        "imu0": {
+          "member": "dataset-room4_512_16/mav0/imu0/data.csv",
+          "bytes": 2232296,
+          "sha256": "4249d4036b3c03c55b709f6f634d975d024999fb017ab3539cfa71580793a3be",
+          "header": "#timestamp [ns],w_RS_S_x [rad s^-1],w_RS_S_y [rad s^-1],w_RS_S_z [rad s^-1],a_RS_S_x [m s^-2],a_RS_S_y [m s^-2],a_RS_S_z [m s^-2]",
+          "rows": 22212,
+          "columns_first": 7,
+          "first_row": [
+            "1520531124153717567",
+            "-0.3594956053",
+            "0.0297280333",
+            "-0.0451253615",
+            "0.8539303751",
+            "0.9136831762",
+            "10.3899324039"
+          ],
+          "first_timestamp_ns": 1520531124153717567,
+          "last_timestamp_ns": 1520531235555397567,
+          "duration_s": 111.40168000000001,
+          "non_increasing_timestamps": 0
+        },
+        "mocap0": {
+          "member": "dataset-room4_512_16/mav0/mocap0/data.csv",
+          "bytes": 1481244,
+          "sha256": "073a3e957efa8ff638ea41402cac9654b40897631d566a3ffee090208597db2a",
+          "header": "#timestamp [ns], p_RS_R_x [m], p_RS_R_y [m], p_RS_R_z [m], q_RS_w [], q_RS_x [], q_RS_y [], q_RS_z []",
+          "rows": 13075,
+          "columns_first": 8,
+          "first_row": [
+            "1520531124177875537",
+            "0.8082440113",
+            "-0.2339065203",
+            "1.2688503693",
+            "0.9999643205",
+            "0.0075138116",
+            "-0.0037085755",
+            "-0.0010709302"
+          ],
+          "first_timestamp_ns": 1520531124177875537,
+          "last_timestamp_ns": 1520531235544541537,
+          "duration_s": 111.36666600000001,
+          "non_increasing_timestamps": 0
+        }
+      },
+      "yaml": [
+        {
+          "member": "dataset-room4_512_16/dso/imu_config.yaml",
+          "bytes": 725,
+          "sha256": "e309d3f4b5e6e812580fcb9c9f402ab79f4a09931e41f433e7038301118683a1",
+          "first_lines": [
+            "rostopic: /imu0",
+            "update_rate: 200.0  # Hz",
+            "",
+            "# Values from allan plots",
+            "# sequence: dataset-calib-imu-static2.bag (full data range)",
+            "#accelerometer_noise_density: 0.0014     # m/s^1.5",
+            "#accelerometer_random_walk:   0.000086   # m/s^2.5",
+            "#gyroscope_noise_density:     0.000080   # rad/s^0.5",
+            "#gyroscope_random_walk:       0.0000022  # rad/s^1.5",
+            "",
+            "# Inflated values (to account for unmodelled effects)",
+            "# Those values work well with Kalibr cam-imu calibration.",
+            "#  - white noise multiplied by 2",
+            "#  - bias random walk multiplied by 10",
+            "accelerometer_noise_density: 0.0028     # m/s^1.5",
+            "accelerometer_random_walk:   0.00086    # m/s^2.5",
+            "gyroscope_noise_density:     0.00016    # rad/s^0.5",
+            "gyroscope_random_walk:       0.000022   # rad/s^1.5"
+          ]
+        },
+        {
+          "member": "dataset-room4_512_16/dso/camchain.yaml",
+          "bytes": 1646,
+          "sha256": "3a0c0285f4d0a3a1678053b2e5912e3e250e78ac09bd009f6d7d8bba669d5703",
+          "first_lines": [
+            "cam0:",
+            "  T_cam_imu:",
+            "  - [-0.9995250378696743, 0.029615343885863205, -0.008522328211654736, 0.04727988224914392]",
+            "  - [0.0075019185074052044, -0.03439736061393144, -0.9993800792498829, -0.047443232143367084]",
+            "  - [-0.02989013031643309, -0.998969345370175, 0.03415885127385616, -0.0681999605066297]",
+            "  - [0.0, 0.0, 0.0, 1.0]",
+            "  cam_overlaps: [1]",
+            "  camera_model: pinhole",
+            "  distortion_coeffs: [0.0034823894022493434, 0.0007150348452162257, -0.0020532361418706202,",
+            "    0.00020293673591811182]",
+            "  distortion_model: equidistant",
+            "  intrinsics: [190.97847715128717, 190.9733070521226, 254.93170605935475, 256.8974428996504]",
+            "  resolution: [512, 512]",
+            "  rostopic: /cam0/image_raw",
+            "cam1:",
+            "  T_cam_imu:",
+            "  - [-0.9995110484978581, 0.030299116376600627, -0.0077218830287333565, -0.053697434688869734]",
+            "  - [0.008104079263822521, 0.012511643720192351, -0.9998888851620987, -0.046131737923635924]",
+            "  - [-0.030199136245891378, -0.9994625667418545, -0.012751072573940885, -0.07149261284195751]",
+            "  - [0.0, 0.0, 0.0, 1.0]",
+            "  T_cn_cnm1:",
+            "  - [0.9999994457734953, -0.0008233639921576076, -0.0006561436136444361, -0.10106110275180535]"
+          ]
+        }
+      ],
+      "image_samples": [
+        {
+          "member": "dataset-room4_512_16/mav0/cam0/data/1520531124150444163.png",
+          "bytes": 284188,
+          "sha256": "1c8371dd64a55790c561f98611f132a645a1944291da63f18c054263ed0c5963",
+          "png_signature": true,
+          "png_ihdr": [
+            512,
+            512,
+            16,
+            0,
+            0,
+            0,
+            0
+          ],
+          "decode_ok": true,
+          "shape": [
+            512,
+            512
+          ],
+          "dtype": "uint16"
+        },
+        {
+          "member": "dataset-room4_512_16/mav0/cam0/data/1520531235504118338.png",
+          "bytes": 292738,
+          "sha256": "9d39195775e9707e31da58a4c52e478e3d601d395a245b1ac45f93f34649fa5f",
+          "png_signature": true,
+          "png_ihdr": [
+            512,
+            512,
+            16,
+            0,
+            0,
+            0,
+            0
+          ],
+          "decode_ok": true,
+          "shape": [
+            512,
+            512
+          ],
+          "dtype": "uint16"
+        }
+      ],
+      "members": 4485,
+      "zero_byte_regular_members": [],
+      "metadata_seconds": 6.143,
+      "calibration_yaml_hash_matches_room1": true
+    },
+    {
+      "archive": "/mnt/backup/SLAM/TUM VI/dataset-slides1_512_16.tar",
+      "size_bytes": 3509268480,
+      "archive_root": "dataset-slides1_512_16",
+      "status": "ready_after_local_extract_and_profile_check",
+      "csv": {
+        "cam0": {
+          "member": "dataset-slides1_512_16/mav0/cam0/data.csv",
+          "bytes": 245633,
+          "sha256": "1bbc5facb0fcd7aa2bff9c04a0a374d1436176f7b527772d312af0660f633ef0",
+          "header": "#timestamp [ns],filename",
+          "rows": 5582,
+          "columns_first": 2,
+          "first_row": [
+            "1520520210018767843",
+            "1520520210018767843.png"
+          ],
+          "first_timestamp_ns": 1520520210018767843,
+          "last_timestamp_ns": 1520520489077516124,
+          "duration_s": 279.058748281,
+          "non_increasing_timestamps": 0,
+          "image_members": 5582,
+          "missing_referenced_images": 0,
+          "zero_byte_images": 0
+        },
+        "cam1": {
+          "member": "dataset-slides1_512_16/mav0/cam1/data.csv",
+          "bytes": 245633,
+          "sha256": "1bbc5facb0fcd7aa2bff9c04a0a374d1436176f7b527772d312af0660f633ef0",
+          "header": "#timestamp [ns],filename",
+          "rows": 5582,
+          "columns_first": 2,
+          "first_row": [
+            "1520520210018767843",
+            "1520520210018767843.png"
+          ],
+          "first_timestamp_ns": 1520520210018767843,
+          "last_timestamp_ns": 1520520489077516124,
+          "duration_s": 279.058748281,
+          "non_increasing_timestamps": 0,
+          "image_members": 5582,
+          "missing_referenced_images": 0,
+          "zero_byte_images": 0
+        },
+        "imu0": {
+          "member": "dataset-slides1_512_16/mav0/imu0/data.csv",
+          "bytes": 5637446,
+          "sha256": "58e4f651a61cf2e6a65b3c48cae4905a77facd635e7b601d7a0c8b471ec584b8",
+          "header": "#timestamp [ns],w_RS_S_x [rad s^-1],w_RS_S_y [rad s^-1],w_RS_S_z [rad s^-1],a_RS_S_x [m s^-2],a_RS_S_y [m s^-2],a_RS_S_z [m s^-2]",
+          "rows": 55646,
+          "columns_first": 7,
+          "first_row": [
+            "1520520210025251984",
+            "-0.0005274278",
+            "-0.0264573682",
+            "-0.1214353466",
+            "0.2947363886",
+            "-0.1595039509",
+            "9.7909448136"
+          ],
+          "first_timestamp_ns": 1520520210025251984,
+          "last_timestamp_ns": 1520520489128799984,
+          "duration_s": 279.103548,
+          "non_increasing_timestamps": 0
+        },
+        "mocap0": {
+          "member": "dataset-slides1_512_16/mav0/mocap0/data.csv",
+          "bytes": 1474904,
+          "sha256": "31ed29fdaea4ca2d2617be7f7d23eaf16bc297839b4063f06fcdbe56216682a1",
+          "header": "#timestamp [ns], p_RS_R_x [m], p_RS_R_y [m], p_RS_R_z [m], q_RS_w [], q_RS_x [], q_RS_y [], q_RS_z []",
+          "rows": 12972,
+          "columns_first": 8,
+          "first_row": [
+            "1520520210036895359",
+            "0.2869502247",
+            "0.0069161236",
+            "1.1960096990",
+            "0.9998075697",
+            "-0.0141387297",
+            "-0.0125906883",
+            "-0.0051375463"
+          ],
+          "first_timestamp_ns": 1520520210036895359,
+          "last_timestamp_ns": 1520520489120229359,
+          "duration_s": 279.08333400000004,
+          "non_increasing_timestamps": 0
+        }
+      },
+      "yaml": [
+        {
+          "member": "dataset-slides1_512_16/dso/imu_config.yaml",
+          "bytes": 725,
+          "sha256": "e309d3f4b5e6e812580fcb9c9f402ab79f4a09931e41f433e7038301118683a1",
+          "first_lines": [
+            "rostopic: /imu0",
+            "update_rate: 200.0  # Hz",
+            "",
+            "# Values from allan plots",
+            "# sequence: dataset-calib-imu-static2.bag (full data range)",
+            "#accelerometer_noise_density: 0.0014     # m/s^1.5",
+            "#accelerometer_random_walk:   0.000086   # m/s^2.5",
+            "#gyroscope_noise_density:     0.000080   # rad/s^0.5",
+            "#gyroscope_random_walk:       0.0000022  # rad/s^1.5",
+            "",
+            "# Inflated values (to account for unmodelled effects)",
+            "# Those values work well with Kalibr cam-imu calibration.",
+            "#  - white noise multiplied by 2",
+            "#  - bias random walk multiplied by 10",
+            "accelerometer_noise_density: 0.0028     # m/s^1.5",
+            "accelerometer_random_walk:   0.00086    # m/s^2.5",
+            "gyroscope_noise_density:     0.00016    # rad/s^0.5",
+            "gyroscope_random_walk:       0.000022   # rad/s^1.5"
+          ]
+        },
+        {
+          "member": "dataset-slides1_512_16/dso/camchain.yaml",
+          "bytes": 1646,
+          "sha256": "3a0c0285f4d0a3a1678053b2e5912e3e250e78ac09bd009f6d7d8bba669d5703",
+          "first_lines": [
+            "cam0:",
+            "  T_cam_imu:",
+            "  - [-0.9995250378696743, 0.029615343885863205, -0.008522328211654736, 0.04727988224914392]",
+            "  - [0.0075019185074052044, -0.03439736061393144, -0.9993800792498829, -0.047443232143367084]",
+            "  - [-0.02989013031643309, -0.998969345370175, 0.03415885127385616, -0.0681999605066297]",
+            "  - [0.0, 0.0, 0.0, 1.0]",
+            "  cam_overlaps: [1]",
+            "  camera_model: pinhole",
+            "  distortion_coeffs: [0.0034823894022493434, 0.0007150348452162257, -0.0020532361418706202,",
+            "    0.00020293673591811182]",
+            "  distortion_model: equidistant",
+            "  intrinsics: [190.97847715128717, 190.9733070521226, 254.93170605935475, 256.8974428996504]",
+            "  resolution: [512, 512]",
+            "  rostopic: /cam0/image_raw",
+            "cam1:",
+            "  T_cam_imu:",
+            "  - [-0.9995110484978581, 0.030299116376600627, -0.0077218830287333565, -0.053697434688869734]",
+            "  - [0.008104079263822521, 0.012511643720192351, -0.9998888851620987, -0.046131737923635924]",
+            "  - [-0.030199136245891378, -0.9994625667418545, -0.012751072573940885, -0.07149261284195751]",
+            "  - [0.0, 0.0, 0.0, 1.0]",
+            "  T_cn_cnm1:",
+            "  - [0.9999994457734953, -0.0008233639921576076, -0.0006561436136444361, -0.10106110275180535]"
+          ]
+        }
+      ],
+      "image_samples": [
+        {
+          "member": "dataset-slides1_512_16/mav0/cam0/data/1520520210018767843.png",
+          "bytes": 277656,
+          "sha256": "bb0694a84e2ba1dde6b8d6b83448853b3e3d21beb7d7659a902d2a3ec6d6a68c",
+          "decode_ok": true,
+          "shape": [
+            512,
+            512
+          ],
+          "dtype": "uint16",
+          "min": 464,
+          "max": 65520
+        },
+        {
+          "member": "dataset-slides1_512_16/mav0/cam0/data/1520520489077516124.png",
+          "bytes": 288379,
+          "sha256": "d74cc8d9cb1cf8151697240e120fcda434c550f642d7568e487a482d244eaaea",
+          "decode_ok": true,
+          "shape": [
+            512,
+            512
+          ],
+          "dtype": "uint16",
+          "min": 496,
+          "max": 65520
+        }
+      ],
+      "members": 11193,
+      "zero_byte_regular_members": [],
+      "metadata_seconds": 15.06,
+      "calibration_yaml_hash_matches_room1": true
+    }
+  ],
+  "euroc": {
+    "archive": "/mnt/backup/SLAM/EuROC/machine_hall.zip",
+    "bytes": 12683729426,
+    "entries": 20,
+    "empty_regular_entries": 0,
+    "nested_sequences": [
+      {
+        "member": "machine_hall/MH_05_difficult/MH_05_difficult.zip",
+        "bytes": 828426215,
+        "compressed_bytes": 828285034,
+        "compression_method": 8,
+        "crc32": "c8794414"
+      },
+      {
+        "member": "machine_hall/MH_04_difficult/MH_04_difficult.zip",
+        "bytes": 726518489,
+        "compressed_bytes": 726388661,
+        "compression_method": 8,
+        "crc32": "ef013401"
+      },
+      {
+        "member": "machine_hall/MH_02_easy/MH_02_easy.zip",
+        "bytes": 1292413952,
+        "compressed_bytes": 1292280179,
+        "compression_method": 8,
+        "crc32": "05bd2c2f"
+      },
+      {
+        "member": "machine_hall/MH_01_easy/MH_01_easy.zip",
+        "bytes": 1571292346,
+        "compressed_bytes": 1571131855,
+        "compression_method": 8,
+        "crc32": "a1c54dd7"
+      },
+      {
+        "member": "machine_hall/MH_03_medium/MH_03_medium.zip",
+        "bytes": 1105301873,
+        "compressed_bytes": 1105171496,
+        "compression_method": 8,
+        "crc32": "fd0efa08"
+      }
+    ],
+    "bag_sequences": [
+      "machine_hall/MH_05_difficult/MH_05_difficult.bag",
+      "machine_hall/MH_04_difficult/MH_04_difficult.bag",
+      "machine_hall/MH_02_easy/MH_02_easy.bag",
+      "machine_hall/MH_01_easy/MH_01_easy.bag",
+      "machine_hall/MH_03_medium/MH_03_medium.bag"
+    ],
+    "csv_or_yaml_direct_entries": [],
+    "status": "requires_nested_archive_extraction_before_stream_validation",
+    "integrity_limit": "central directory parses; full ZIP CRC and nested archive contents unverified"
+  },
+  "other_families": {
+    "redwood": {
+      "status": "RGB-D_pose_conversion_needed_IMU_not_observed",
+      "scenes": [
+        {
+          "scene": "apartment",
+          "path": "/mnt/backup/SLAM/redwood/raw/apartment",
+          "top_files": [
+            "apartment.json",
+            "apartment.log"
+          ],
+          "image_count": 31919,
+          "image_sample": {
+            "name": "010525.jpg",
+            "bytes": 130340,
+            "decode_ok": true,
+            "shape": [
+              480,
+              640,
+              3
+            ],
+            "dtype": "uint8"
+          },
+          "depth_count": 31919,
+          "depth_sample": {
+            "name": "009015.png",
+            "bytes": 92741,
+            "decode_ok": true,
+            "shape": [
+              480,
+              640
+            ],
+            "dtype": "uint16"
+          },
+          "pose_json_header_sample": "{\n\t\"class_name\" : \"PoseGraph\",\n\t\"edges\" : null,\n\t\"nodes\" : \n\t[\n\t\t{\n\t\t\t\"class_name\" : \"PoseGraphNode\",\n\t\t\t\"pose\" : \n\t\t\t[\n\t\t\t\t1.0,\n\t\t\t\t1.3e-07,\n\t\t\t\t-1.6999999999999999e-07,\n\t\t\t\t0.0,\n\t\t\t\t-1.3e-07,\n\t\t\t\t1.0,\n\t\t\t\t-2e-08,\n\t\t\t\t0.0,\n\t\t\t\t1.6999999999999999e-07,\n\t\t\t\t2e-08,\n\t\t\t\t1.0,\n\t\t\t\t0.0,\n\t\t\t\t1.999999689,\n\t\t\t\t2.0000002640000001,\n\t\t\t\t-0.3000004,\n\t\t\t\t1.0\n\t\t\t],\n\t\t\t\"version_major\" : 1,\n\t\t\t\"",
+          "imu_csv_in_top_level": false
+        },
+        {
+          "scene": "bedroom",
+          "path": "/mnt/backup/SLAM/redwood/raw/bedroom",
+          "top_files": [
+            "bedroom.json",
+            "bedroom.log"
+          ],
+          "image_count": 21931,
+          "image_sample": {
+            "name": "009418.jpg",
+            "bytes": 71754,
+            "decode_ok": true,
+            "shape": [
+              480,
+              640,
+              3
+            ],
+            "dtype": "uint8"
+          },
+          "depth_count": 21931,
+          "depth_sample": {
+            "name": "013597.png",
+            "bytes": 145397,
+            "decode_ok": true,
+            "shape": [
+              480,
+              640
+            ],
+            "dtype": "uint16"
+          },
+          "pose_json_header_sample": "{\n\t\"class_name\" : \"PoseGraph\",\n\t\"edges\" : null,\n\t\"nodes\" : \n\t[\n\t\t{\n\t\t\t\"class_name\" : \"PoseGraphNode\",\n\t\t\t\"pose\" : \n\t\t\t[\n\t\t\t\t1.0,\n\t\t\t\t-2e-08,\n\t\t\t\t1e-08,\n\t\t\t\t0.0,\n\t\t\t\t2e-08,\n\t\t\t\t1.0,\n\t\t\t\t1e-08,\n\t\t\t\t0.0,\n\t\t\t\t-1e-08,\n\t\t\t\t-1e-08,\n\t\t\t\t1.0,\n\t\t\t\t0.0,\n\t\t\t\t2.0000000529999999,\n\t\t\t\t1.999999973,\n\t\t\t\t-0.29999995000000002,\n\t\t\t\t1.0\n\t\t\t],\n\t\t\t\"version_major\" : 1,\n\t\t\t\"version_minor\" : 0\n\t\t},\n\t\t{\n",
+          "imu_csv_in_top_level": false
+        },
+        {
+          "scene": "boardroom",
+          "path": "/mnt/backup/SLAM/redwood/raw/boardroom",
+          "top_files": [
+            "boardroom.json",
+            "boardroom.log"
+          ],
+          "image_count": 24321,
+          "image_sample": {
+            "name": "009418.jpg",
+            "bytes": 99615,
+            "decode_ok": true,
+            "shape": [
+              480,
+              640,
+              3
+            ],
+            "dtype": "uint8"
+          },
+          "depth_count": 24321,
+          "depth_sample": {
+            "name": "013597.png",
+            "bytes": 89032,
+            "decode_ok": true,
+            "shape": [
+              480,
+              640
+            ],
+            "dtype": "uint16"
+          },
+          "pose_json_header_sample": "{\n\t\"class_name\" : \"PoseGraph\",\n\t\"edges\" : null,\n\t\"nodes\" : \n\t[\n\t\t{\n\t\t\t\"class_name\" : \"PoseGraphNode\",\n\t\t\t\"pose\" : \n\t\t\t[\n\t\t\t\t1.0,\n\t\t\t\t1.8e-07,\n\t\t\t\t-8.9999999999999999e-08,\n\t\t\t\t0.0,\n\t\t\t\t-1.8e-07,\n\t\t\t\t1.0,\n\t\t\t\t-2.6e-07,\n\t\t\t\t0.0,\n\t\t\t\t8.9999999999999999e-08,\n\t\t\t\t2.6e-07,\n\t\t\t\t1.0,\n\t\t\t\t0.0,\n\t\t\t\t1.9999996229999999,\n\t\t\t\t2.0000002619999999,\n\t\t\t\t-0.30000071,\n\t\t\t\t1.0\n\t\t\t],\n\t\t\t\"version_majo",
+          "imu_csv_in_top_level": false
+        },
+        {
+          "scene": "lobby",
+          "path": "/mnt/backup/SLAM/redwood/raw/lobby",
+          "top_files": [
+            "lobby.json",
+            "lobby.log"
+          ],
+          "image_count": 20000,
+          "image_sample": {
+            "name": "009418.jpg",
+            "bytes": 99143,
+            "decode_ok": true,
+            "shape": [
+              480,
+              640,
+              3
+            ],
+            "dtype": "uint8"
+          },
+          "depth_count": 20000,
+          "depth_sample": {
+            "name": "013597.png",
+            "bytes": 110560,
+            "decode_ok": true,
+            "shape": [
+              480,
+              640
+            ],
+            "dtype": "uint16"
+          },
+          "pose_json_header_sample": "{\n\t\"class_name\" : \"PoseGraph\",\n\t\"edges\" : null,\n\t\"nodes\" : \n\t[\n\t\t{\n\t\t\t\"class_name\" : \"PoseGraphNode\",\n\t\t\t\"pose\" : \n\t\t\t[\n\t\t\t\t1.0,\n\t\t\t\t-8.0000000000000002e-08,\n\t\t\t\t-1e-08,\n\t\t\t\t0.0,\n\t\t\t\t8.0000000000000002e-08,\n\t\t\t\t1.0,\n\t\t\t\t4.9999999999999998e-08,\n\t\t\t\t0.0,\n\t\t\t\t1e-08,\n\t\t\t\t-4.9999999999999998e-08,\n\t\t\t\t1.0,\n\t\t\t\t0.0,\n\t\t\t\t2.0000001470000002,\n\t\t\t\t1.9999998649999999,\n\t\t\t\t-0.29999991999999",
+          "imu_csv_in_top_level": false
+        },
+        {
+          "scene": "loft",
+          "path": "/mnt/backup/SLAM/redwood/raw/loft",
+          "top_files": [
+            "loft.json",
+            "loft.log"
+          ],
+          "image_count": 25300,
+          "image_sample": {
+            "name": "010525.jpg",
+            "bytes": 90476,
+            "decode_ok": true,
+            "shape": [
+              480,
+              640,
+              3
+            ],
+            "dtype": "uint8"
+          },
+          "depth_count": 25300,
+          "depth_sample": {
+            "name": "019044.png",
+            "bytes": 85497,
+            "decode_ok": true,
+            "shape": [
+              480,
+              640
+            ],
+            "dtype": "uint16"
+          },
+          "pose_json_header_sample": "{\n\t\"class_name\" : \"PoseGraph\",\n\t\"edges\" : null,\n\t\"nodes\" : \n\t[\n\t\t{\n\t\t\t\"class_name\" : \"PoseGraphNode\",\n\t\t\t\"pose\" : \n\t\t\t[\n\t\t\t\t1.0,\n\t\t\t\t8.0000000000000002e-08,\n\t\t\t\t-1e-08,\n\t\t\t\t0.0,\n\t\t\t\t-8.0000000000000002e-08,\n\t\t\t\t1.0,\n\t\t\t\t7.0000000000000005e-08,\n\t\t\t\t0.0,\n\t\t\t\t1e-08,\n\t\t\t\t-7.0000000000000005e-08,\n\t\t\t\t1.0,\n\t\t\t\t0.0,\n\t\t\t\t1.9999998569999999,\n\t\t\t\t2.000000161,\n\t\t\t\t-0.29999987,\n\t\t\t\t1.0\n\t\t\t",
+          "imu_csv_in_top_level": false
+        }
+      ],
+      "intrinsic": {
+        "path": "/mnt/backup/SLAM/redwood/intrinsic.npy",
+        "matrix": [
+          [
+            525.0,
+            0.0,
+            319.5
+          ],
+          [
+            0.0,
+            525.0,
+            239.5
+          ],
+          [
+            0.0,
+            0.0,
+            1.0
+          ]
+        ]
+      },
+      "pose_archives": [
+        {
+          "name": "pose_apartment.zip",
+          "bytes": 5835036
+        },
+        {
+          "name": "pose_bedroom.zip",
+          "bytes": 4014560
+        },
+        {
+          "name": "pose_boardroom.zip",
+          "bytes": 4462689
+        },
+        {
+          "name": "pose_lobby.zip",
+          "bytes": 3671822
+        },
+        {
+          "name": "pose_loft.zip",
+          "bytes": 4638915
+        }
+      ]
+    },
+    "tartanair": {
+      "status": "synthetic_RGB_depth_pose_conversion_needed_IMU_timestamps_calibration_not_observed_in_samples",
+      "environment_names": [
+        {
+          "environment": "abandonedfactory",
+          "difficulty_sequences": {
+            "Easy": [
+              "P000",
+              "P001",
+              "P002",
+              "P004",
+              "P005",
+              "P006",
+              "P008",
+              "P009",
+              "P010",
+              "P011"
+            ],
+            "Hard": [
+              "P000",
+              "P001",
+              "P002",
+              "P003",
+              "P004",
+              "P005",
+              "P006",
+              "P007",
+              "P008",
+              "P009",
+              "P010",
+              "P011"
+            ]
+          }
+        },
+        {
+          "environment": "abandonedfactory_night",
+          "difficulty_sequences": {
+            "Easy": [
+              "P001",
+              "P002",
+              "P003",
+              "P004",
+              "P005",
+              "P006",
+              "P007",
+              "P008",
+              "P009",
+              "P010",
+              "P011",
+              "P012",
+              "P013"
+            ],
+            "Hard": [
+              "P000",
+              "P001",
+              "P002",
+              "P003",
+              "P005",
+              "P006",
+              "P007",
+              "P008",
+              "P009",
+              "P010",
+              "P011",
+              "P012",
+              "P013",
+              "P014"
+            ]
+          }
+        },
+        {
+          "environment": "amusement",
+          "difficulty_sequences": {
+            "Easy": [
+              "P001",
+              "P002",
+              "P003",
+              "P004",
+              "P006",
+              "P007",
+              "P008"
+            ],
+            "Hard": [
+              "P000",
+              "P001",
+              "P002",
+              "P003",
+              "P004",
+              "P005",
+              "P006",
+              "P007"
+            ]
+          }
+        },
+        {
+          "environment": "carwelding",
+          "difficulty_sequences": {
+            "Easy": [
+              "P001",
+              "P002",
+              "P004",
+              "P005",
+              "P006",
+              "P007"
+            ],
+            "Hard": [
+              "P000",
+              "P001",
+              "P002",
+              "P003"
+            ]
+          }
+        },
+        {
+          "environment": "endofworld",
+          "difficulty_sequences": {
+            "Easy": [
+              "P000",
+              "P001",
+              "P002",
+              "P003",
+              "P004",
+              "P005",
+              "P006",
+              "P007",
+              "P008",
+              "P009"
+            ],
+            "Hard": [
+              "P000",
+              "P001",
+              "P002",
+              "P005",
+              "P006"
+            ]
+          }
+        },
+        {
+          "environment": "gascola",
+          "difficulty_sequences": {
+            "Easy": [
+              "P001",
+              "P003",
+              "P004",
+              "P005",
+              "P006",
+              "P007",
+              "P008"
+            ],
+            "Hard": [
+              "P000",
+              "P001",
+              "P002",
+              "P003",
+              "P004",
+              "P005",
+              "P006",
+              "P007",
+              "P008",
+              "P009"
+            ]
+          }
+        },
+        {
+          "environment": "hospital",
+          "difficulty_sequences": {
+            "Easy": [
+              "P000",
+              "P001",
+              "P002",
+              "P003",
+              "P004",
+              "P005",
+              "P006",
+              "P007",
+              "P008",
+              "P009",
+              "P010",
+              "P011",
+              "P012",
+              "P013",
+              "P014",
+              "P015",
+              "P016",
+              "P017",
+              "P018",
+              "P019",
+              "P020",
+              "P021",
+              "P022",
+              "P023",
+              "P024",
+              "P025",
+              "P026",
+              "P027",
+              "P028",
+              "P029",
+              "P030",
+              "P031",
+              "P032",
+              "P033",
+              "P034",
+              "P035",
+              "P036"
+            ],
+            "Hard": [
+              "P037",
+              "P038",
+              "P039",
+              "P040",
+              "P041",
+              "P042",
+              "P043",
+              "P044",
+              "P045",
+              "P046",
+              "P047",
+              "P048",
+              "P049"
+            ]
+          }
+        },
+        {
+          "environment": "japanesealley",
+          "difficulty_sequences": {
+            "Easy": [
+              "P001",
+              "P002",
+              "P003",
+              "P004",
+              "P005",
+              "P007"
+            ],
+            "Hard": [
+              "P000",
+              "P001",
+              "P002",
+              "P003",
+              "P004",
+              "P005"
+            ]
+          }
+        },
+        {
+          "environment": "neighborhood",
+          "difficulty_sequences": {
+            "Easy": [
+              "P000",
+              "P001",
+              "P002",
+              "P003",
+              "P004",
+              "P005",
+              "P007",
+              "P008",
+              "P009",
+              "P010",
+              "P012",
+              "P013",
+              "P014",
+              "P015",
+              "P016",
+              "P017",
+              "P018",
+              "P019",
+              "P020",
+              "P021"
+            ],
+            "Hard": [
+              "P000",
+              "P001",
+              "P002",
+              "P003",
+              "P004",
+              "P005",
+              "P006",
+              "P007",
+              "P008",
+              "P009",
+              "P010",
+              "P011",
+              "P012",
+              "P013",
+              "P014",
+              "P015",
+              "P016",
+              "P017"
+            ]
+          }
+        },
+        {
+          "environment": "ocean",
+          "difficulty_sequences": {
+            "Easy": [
+              "P000",
+              "P001",
+              "P002",
+              "P004",
+              "P005",
+              "P006",
+              "P008",
+              "P009",
+              "P010",
+              "P011",
+              "P012",
+              "P013"
+            ],
+            "Hard": [
+              "P000",
+              "P001",
+              "P002",
+              "P003",
+              "P004",
+              "P005",
+              "P006",
+              "P007",
+              "P008",
+              "P009"
+            ]
+          }
+        },
+        {
+          "environment": "office2",
+          "difficulty_sequences": {
+            "Easy": [
+              "P000",
+              "P003",
+              "P004",
+              "P005",
+              "P006",
+              "P007",
+              "P008",
+              "P009",
+              "P010",
+              "P011"
+            ],
+            "Hard": [
+              "P000",
+              "P001",
+              "P002",
+              "P003",
+              "P004",
+              "P005",
+              "P006",
+              "P007",
+              "P008",
+              "P009",
+              "P010"
+            ]
+          }
+        },
+        {
+          "environment": "office",
+          "difficulty_sequences": {
+            "Easy": [
+              "P000",
+              "P001",
+              "P002",
+              "P003",
+              "P004",
+              "P005",
+              "P006"
+            ],
+            "Hard": [
+              "P000",
+              "P001",
+              "P002",
+              "P003",
+              "P004",
+              "P005",
+              "P006",
+              "P007"
+            ]
+          }
+        },
+        {
+          "environment": "oldtown",
+          "difficulty_sequences": {
+            "Easy": [
+              "P000",
+              "P001",
+              "P002",
+              "P004",
+              "P005",
+              "P007"
+            ],
+            "Hard": [
+              "P000",
+              "P001",
+              "P002",
+              "P003",
+              "P004",
+              "P005",
+              "P006",
+              "P007",
+              "P008"
+            ]
+          }
+        },
+        {
+          "environment": "seasidetown",
+          "difficulty_sequences": {
+            "Easy": [
+              "P000",
+              "P001",
+              "P002",
+              "P003",
+              "P004",
+              "P005",
+              "P006",
+              "P007",
+              "P008",
+              "P009"
+            ],
+            "Hard": [
+              "P000",
+              "P001",
+              "P002",
+              "P003",
+              "P004"
+            ]
+          }
+        },
+        {
+          "environment": "seasonsforest",
+          "difficulty_sequences": {
+            "Easy": [
+              "P001",
+              "P002",
+              "P003",
+              "P004",
+              "P005",
+              "P007",
+              "P008",
+              "P009",
+              "P010",
+              "P011"
+            ],
+            "Hard": [
+              "P001",
+              "P002",
+              "P004",
+              "P005",
+              "P006"
+            ]
+          }
+        },
+        {
+          "environment": "seasonsforest_winter",
+          "difficulty_sequences": {
+            "Easy": [
+              "P000",
+              "P001",
+              "P002",
+              "P003",
+              "P004",
+              "P005",
+              "P006",
+              "P007",
+              "P008",
+              "P009"
+            ],
+            "Hard": [
+              "P010",
+              "P011",
+              "P012",
+              "P013",
+              "P014",
+              "P015",
+              "P016",
+              "P017",
+              "P018"
+            ]
+          }
+        },
+        {
+          "environment": "soulcity",
+          "difficulty_sequences": {
+            "Easy": [
+              "P000",
+              "P001",
+              "P002",
+              "P003",
+              "P004",
+              "P005",
+              "P006",
+              "P007",
+              "P008",
+              "P009",
+              "P010",
+              "P011",
+              "P012"
+            ],
+            "Hard": [
+              "P000",
+              "P001",
+              "P002",
+              "P003",
+              "P004",
+              "P005",
+              "P008",
+              "P009"
+            ]
+          }
+        },
+        {
+          "environment": "westerndesert",
+          "difficulty_sequences": {
+            "Easy": [
+              "P001",
+              "P002",
+              "P004",
+              "P005",
+              "P006",
+              "P007",
+              "P008",
+              "P009",
+              "P010",
+              "P011",
+              "P012",
+              "P013"
+            ],
+            "Hard": [
+              "P000",
+              "P001",
+              "P002",
+              "P003",
+              "P004",
+              "P005",
+              "P006",
+              "P007"
+            ]
+          }
+        }
+      ],
+      "sample_sequences": [
+        {
+          "path": "/mnt/backup/SLAM/TartanAir/abandonedfactory/abandonedfactory/Easy/P000",
+          "top_entries": [
+            "image_left",
+            "pose_left.txt",
+            "depth_left"
+          ],
+          "image_left_count": 2176,
+          "image_left_samples": [
+            {
+              "name": "001923_left.png",
+              "bytes": 923627,
+              "sha256": "3c97e3c6236758a05f3612576f025a123a2093cc176f6f2b388bbf3ddc8c5806",
+              "decode_ok": true,
+              "shape": [
+                480,
+                640,
+                3
+              ],
+              "dtype": "uint8",
+              "min": 0.0,
+              "max": 255.0,
+              "std": 80.37018795951471
+            },
+            {
+              "name": "000673_left.png",
+              "bytes": 923627,
+              "sha256": "dc6cbf5358906a2ba0cbcece222a21598a8f03af8ce92e62eb3ab7984042c593",
+              "decode_ok": true,
+              "shape": [
+                480,
+                640,
+                3
+              ],
+              "dtype": "uint8",
+              "min": 0.0,
+              "max": 252.0,
+              "std": 92.73891128886544
+            }
+          ],
+          "depth_left_count": 2176,
+          "depth_left_samples": [
+            {
+              "name": "002076_left_depth.npy",
+              "bytes": 1228928,
+              "sha256": "97deb51178c1a442b3905383f203e65b4e9c5a61163274045705c059b22074a4",
+              "decode_ok": true,
+              "shape": [
+                480,
+                640
+              ],
+              "dtype": "float32",
+              "min": 1.1455078125,
+              "max": 14712.0,
+              "std": 5040.59130859375
+            },
+            {
+              "name": "000117_left_depth.npy",
+              "bytes": 1228928,
+              "sha256": "66a17dff5ba25aabba0240b2429424ea739e9a654ce9a93e1a1bddd1125526ba",
+              "decode_ok": true,
+              "shape": [
+                480,
+                640
+              ],
+              "dtype": "float32",
+              "min": 1.6015625,
+              "max": 13208.0,
+              "std": 425.3360900878906
+            }
+          ],
+          "pose_left.txt": {
+            "rows": 2176,
+            "columns_first": 7,
+            "first_row": "-1.179049015045166016e+01 -4.795211315155029297e+00 -1.666950345039367676e+00 -0.000000000000000000e+00 -0.000000000000000000e+00 7.702344059944152832e-01 6.377608776092529297e-01"
+          },
+          "metadata_only_fragment": false
+        },
+        {
+          "path": "/mnt/backup/SLAM/TartanAir/office/office/Easy/P000",
+          "top_entries": [
+            "image_left",
+            "pose_left.txt",
+            "depth_left"
+          ],
+          "image_left_count": 1419,
+          "image_left_samples": [
+            {
+              "name": "000673_left.png",
+              "bytes": 923627,
+              "sha256": "407091c65ddac8df4bfe007c45879c3ed4a044bfb9bd4de18a66bd7fb87b0582",
+              "decode_ok": true,
+              "shape": [
+                480,
+                640,
+                3
+              ],
+              "dtype": "uint8",
+              "min": 0.0,
+              "max": 255.0,
+              "std": 55.10351732001409
+            },
+            {
+              "name": "000966_left.png",
+              "bytes": 923627,
+              "sha256": "c81a006ad1378ed7df4241ffbde3a3a010230a05837bedfd5de6d9e83f4f6519",
+              "decode_ok": true,
+              "shape": [
+                480,
+                640,
+                3
+              ],
+              "dtype": "uint8",
+              "min": 0.0,
+              "max": 255.0,
+              "std": 79.39260140898355
+            }
+          ],
+          "depth_left_count": 1419,
+          "depth_left_samples": [
+            {
+              "name": "000117_left_depth.npy",
+              "bytes": 1228928,
+              "sha256": "e31678bf1848c5de7c68502a3d53fc8ada0db5dc17170ab600a6f7e7f25e4a3c",
+              "decode_ok": true,
+              "shape": [
+                480,
+                640
+              ],
+              "dtype": "float32",
+              "min": 0.67236328125,
+              "max": 12152.0,
+              "std": 260.8116760253906
+            },
+            {
+              "name": "000994_left_depth.npy",
+              "bytes": 1228928,
+              "sha256": "ed450944afcc6814104f4f9aca3bcd26b758d00b2d6c7d1d8e9506f43d2e7678",
+              "decode_ok": true,
+              "shape": [
+                480,
+                640
+              ],
+              "dtype": "float32",
+              "min": 1.7294921875,
+              "max": 16448.0,
+              "std": 2583.05517578125
+            }
+          ],
+          "pose_left.txt": {
+            "rows": 1419,
+            "columns_first": 7,
+            "first_row": "-6.309880256652832031e+00 -2.013587570190429688e+01 -8.007445931434631348e-02 -0.000000000000000000e+00 -0.000000000000000000e+00 9.321467876434326172e-01 3.620806932449340820e-01"
+          },
+          "metadata_only_fragment": false
+        },
+        {
+          "path": "/mnt/backup/SLAM/TartanAir/abandonedfactory_Easy_image_left/abandonedfactory/Easy/P000",
+          "top_entries": [
+            "pose_right.txt",
+            "pose_left.txt"
+          ],
+          "pose_left.txt": {
+            "rows": 2176,
+            "columns_first": 7,
+            "first_row": "-1.179049015045166016e+01 -4.795211315155029297e+00 -1.666950345039367676e+00 -0.000000000000000000e+00 -0.000000000000000000e+00 7.702344059944152832e-01 6.377608776092529297e-01"
+          },
+          "pose_right.txt": {
+            "rows": 2176,
+            "columns_first": 7,
+            "first_row": "-1.203610038757324219e+01 -4.841841697692871094e+00 -1.666950345039367676e+00 -0.000000000000000000e+00 -0.000000000000000000e+00 7.702344059944152832e-01 6.377608776092529297e-01"
+          },
+          "metadata_only_fragment": true
+        }
+      ]
+    }
+  },
+  "provenance": "User-provided storage; original download receipts/licenses/archive hashes not verified"
+}

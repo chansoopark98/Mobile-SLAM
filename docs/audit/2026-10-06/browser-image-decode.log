@@ -1,0 +1,34 @@
+{
+  "browser": "144.0.7559.96",
+  "decode": "createImageBitmap default options; OffscreenCanvas 2d; getImageData R channel",
+  "frames": [
+    {
+      "index": 0,
+      "source": "/home/park-ubuntu/park/SOLUTION/Mobile-SLAM/assets/datasets/tum/dataset-room1_512_16/mav0/cam0/data/1520530308199447626.png",
+      "pngSha256": "9c57c2b85643c2bc0291fdb4fc1aa6cc0018acaa5945e51c56b108fb2bb7e550",
+      "width": 512,
+      "height": 512,
+      "binary": "/home/park-ubuntu/park/SOLUTION/Mobile-SLAM/build/audit-browser/image-decode/frame-0-gray-u8.bin",
+      "decodedSha256": "238f451bb2b921cfcc4e5961a0b81ab6a5803c0980a36a739cb9b07f4ee54ff5"
+    },
+    {
+      "index": 45,
+      "source": "/home/park-ubuntu/park/SOLUTION/Mobile-SLAM/assets/datasets/tum/dataset-room1_512_16/mav0/cam0/data/1520530310449626679.png",
+      "pngSha256": "bc6098e0da13c85fc46e90d2540364135fd1f8f51ec8e3162be072feaa752c02",
+      "width": 512,
+      "height": 512,
+      "binary": "/home/park-ubuntu/park/SOLUTION/Mobile-SLAM/build/audit-browser/image-decode/frame-45-gray-u8.bin",
+      "decodedSha256": "2f02c2adfdc8143c39052efb20bc8fc11b7d3ea3ea0d1e69cadf087580c124a4"
+    },
+    {
+      "index": 600,
+      "source": "/home/park-ubuntu/park/SOLUTION/Mobile-SLAM/assets/datasets/tum/dataset-room1_512_16/mav0/cam0/data/1520530338200470451.png",
+      "pngSha256": "55446e6298555fa5bfd1849cf27392c678689db0fb0b0f846feb6683fcfb0719",
+      "width": 512,
+      "height": 512,
+      "binary": "/home/park-ubuntu/park/SOLUTION/Mobile-SLAM/build/audit-browser/image-decode/frame-600-gray-u8.bin",
+      "decodedSha256": "e596b22be82d260464ee0ededa51ae88b8ac2a1f14f4a57ec3034e6570d91079"
+    }
+  ],
+  "limits": "Three sampled PNGs only; not a camera photometric calibration or all-frame parity guarantee."
+}

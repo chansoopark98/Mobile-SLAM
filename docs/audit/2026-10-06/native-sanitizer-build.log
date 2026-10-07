@@ -1,0 +1,43 @@
+[1/12] Building CXX object CMakeFiles/audit_utility.dir/home/park-ubuntu/park/SOLUTION/Mobile-SLAM/src/utility/config.cpp.o
+[2/12] Building CXX object CMakeFiles/audit_utility.dir/home/park-ubuntu/park/SOLUTION/Mobile-SLAM/src/utility/utility.cpp.o
+[3/12] Linking CXX static library libaudit_utility.a
+[4/12] Building CXX object CMakeFiles/test_sliding_window.dir/home/park-ubuntu/park/SOLUTION/Mobile-SLAM/tests/test_sliding_window.cpp.o
+[5/12] Building CXX object CMakeFiles/test_integration_base.dir/home/park-ubuntu/park/SOLUTION/Mobile-SLAM/tests/test_integration_base.cpp.o
+[6/12] Linking CXX executable test_integration_base
+[7/12] Building CXX object CMakeFiles/test_sliding_window.dir/home/park-ubuntu/park/SOLUTION/Mobile-SLAM/src/common/frame.cpp.o
+[8/12] Building CXX object CMakeFiles/test_trajectory_evaluator.dir/home/park-ubuntu/park/SOLUTION/Mobile-SLAM/tests/test_trajectory_evaluator.cpp.o
+/home/park-ubuntu/park/SOLUTION/Mobile-SLAM/tests/test_trajectory_evaluator.cpp: In member function ‘virtual void TrajectoryEvaluatorTest::TearDown()’:
+/home/park-ubuntu/park/SOLUTION/Mobile-SLAM/tests/test_trajectory_evaluator.cpp:17:15: warning: ignoring return value of ‘int system(const char*)’ declared with attribute ‘warn_unused_result’ [-Wunused-result]
+   17 |         system(("rm -rf " + test_dir_).c_str());
+      |         ~~~~~~^~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+/home/park-ubuntu/park/SOLUTION/Mobile-SLAM/tests/test_trajectory_evaluator.cpp: In member function ‘virtual void TrajectoryEvaluatorTest::SetUp()’:
+/home/park-ubuntu/park/SOLUTION/Mobile-SLAM/tests/test_trajectory_evaluator.cpp:13:15: warning: ignoring return value of ‘int system(const char*)’ declared with attribute ‘warn_unused_result’ [-Wunused-result]
+   13 |         system(("mkdir -p " + test_dir_).c_str());
+      |         ~~~~~~^~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+[9/12] Building CXX object CMakeFiles/test_sliding_window.dir/home/park-ubuntu/park/SOLUTION/Mobile-SLAM/src/backend/sliding_window.cpp.o
+[10/12] Linking CXX executable test_sliding_window
+[11/12] Building CXX object CMakeFiles/test_trajectory_evaluator.dir/home/park-ubuntu/park/SOLUTION/Mobile-SLAM/src/utility/trajectory_evaluator.cpp.o
+[12/12] Linking CXX executable test_trajectory_evaluator
+	Command being timed: "cmake --build build/audit-native/sanitizer/build --parallel 2"
+	User time (seconds): 97.51
+	System time (seconds): 3.30
+	Percent of CPU this job got: 182%
+	Elapsed (wall clock) time (h:mm:ss or m:ss): 0:55.10
+	Average shared text size (kbytes): 0
+	Average unshared data size (kbytes): 0
+	Average stack size (kbytes): 0
+	Average total size (kbytes): 0
+	Maximum resident set size (kbytes): 1635008
+	Average resident set size (kbytes): 0
+	Major (requiring I/O) page faults: 1
+	Minor (reclaiming a frame) page faults: 2690846
+	Voluntary context switches: 318
+	Involuntary context switches: 564
+	Swaps: 0
+	File system inputs: 112
+	File system outputs: 1513520
+	Socket messages sent: 0
+	Socket messages received: 0
+	Signals delivered: 0
+	Page size (bytes): 4096
+	Exit status: 0
