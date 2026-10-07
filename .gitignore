@@ -2,6 +2,12 @@ web/datasets
 build_wasm/
 wasm/dist/
 wasm/libs/opencv_build/
+/wasm/libs/ceres_build/
+
+# Host-local runtime captures; audit evidence under docs/ remains versioned.
+/mobile_web_log.txt
+/node_server_log.txt
+/node_server_tum_log.txt
 
 # TLS certificates (dev server)
 web/.certs/
