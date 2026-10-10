@@ -4,6 +4,7 @@
 #include <ceres/ceres.h>
 #include <Eigen/Dense>
 #include <iostream>
+#include <array>
 
 #include "backend/factor/imu_factor.h"
 #include "backend/factor/integration_base.h"
@@ -46,8 +47,9 @@ public:
     }
 
 private:
+    friend struct OptimizerTestAccess;
     // Optimization setup
-    void setupOptimizationProblem(ceres::Problem& problem);
+    bool setupOptimizationProblem(ceres::Problem& problem);
     void addMarginalizationFactor(ceres::Problem& problem);
     void addIMUFactors(ceres::Problem& problem);
     int addFeatureFactors(ceres::Problem& problem);
@@ -68,6 +70,7 @@ private:
     void prepareOptimizationParameters();
     void applyOptimizationResults();
     bool validateOptimizationParameters() const;
+    int filterFinalLandmarks();
     void releaseMarginalizationPrior();
     void beginDiagnostics(common::MarginalizationFlag marginalization_flag);
     void finishDiagnostics();
@@ -87,6 +90,7 @@ private:
     double para_SpeedAndBiases[WINDOW_SIZE + 1][SIZE_SPEEDANDBIAS];
     double para_Feature[NUM_OF_FEATURES][SIZE_FEATURE];
     double para_Ex_Pose[SIZE_POSE];
+    std::array<bool, NUM_OF_FEATURES> current_feature_factors_{};
 
     // Marginalization info
     factor::MarginalizationInfo* last_marginalization_info_;

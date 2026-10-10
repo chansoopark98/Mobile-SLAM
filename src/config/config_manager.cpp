@@ -126,8 +126,8 @@ bool ConfigManager::validateEstimatorParams() const {
     return e.window_size>0 && e.window_size<=utility::WINDOW_SIZE && e.num_iterations>0 &&
         std::isfinite(e.solver_time) && e.solver_time>0 && std::isfinite(e.init_depth) && e.init_depth>0 &&
         e.g.allFinite() && e.g.norm()>0 && std::isfinite(e.acc_n) && e.acc_n>0 &&
-        std::isfinite(e.acc_w) && e.acc_w>=0 && std::isfinite(e.gyr_n) && e.gyr_n>0 &&
-        std::isfinite(e.gyr_w) && e.gyr_w>=0;
+        std::isfinite(e.acc_w) && e.acc_w>0 && std::isfinite(e.gyr_n) && e.gyr_n>0 &&
+        std::isfinite(e.gyr_w) && e.gyr_w>0;
 }
 bool ConfigManager::validateFeatureTrackerParams() const {
     if (!config_) return false;

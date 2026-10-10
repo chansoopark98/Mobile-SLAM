@@ -18,11 +18,6 @@ Initializer::Initializer(backend::SlidingWindow* sliding_window, FeatureManager*
       t_ic_(t_ic) {}
 
 bool Initializer::initialize() {
-    // Check IMU excitation for initialization readiness
-    if (!checkIMUExcitation(0.25)) {
-        return false;
-    }
-
     // Perform initial SfM reconstruction
     if (!solveInitialSfM()) {
 #ifndef NDEBUG
@@ -41,90 +36,6 @@ bool Initializer::initialize() {
         std::cout << "misalign visual structure with IMU" << std::endl;
 #endif
         return false;
-    }
-}
-
-bool Initializer::checkIMUExcitation(double threshold) {
-    if (all_image_frame_->size() <= 1) {
-#ifndef NDEBUG
-        std::cout << "Not enough image frames for IMU excitation check!" << std::endl;
-#endif
-        return false;
-    }
-
-    // Calculate average gravity vector from all frames
-    Vector3d sum_g = Vector3d::Zero();
-    int valid_frames = 0;
-
-    for (auto frame_it = all_image_frame_->begin(); frame_it != all_image_frame_->end(); frame_it++) {
-        if (frame_it == all_image_frame_->begin())
-            continue;  // Skip first frame
-
-        if (frame_it->second.pre_integration != nullptr) {
-            double dt = frame_it->second.pre_integration->sum_dt;
-            if (dt > 0) {
-                Vector3d tmp_g = frame_it->second.pre_integration->delta_v / dt;
-                sum_g += tmp_g;
-                valid_frames++;
-            }
-        }
-    }
-
-    if (valid_frames == 0) {
-#ifndef NDEBUG
-        std::cout << "No valid frames with pre-integration data!" << std::endl;
-#endif
-        return false;
-    }
-
-    Vector3d aver_g = sum_g / valid_frames;
-
-    // Calculate variance of gravity vectors
-    double variance = 0.0;
-    int variance_count = 0;
-
-    for (auto frame_it = all_image_frame_->begin(); frame_it != all_image_frame_->end(); frame_it++) {
-        if (frame_it == all_image_frame_->begin())
-            continue;  // Skip first frame
-
-        if (frame_it->second.pre_integration != nullptr) {
-            double dt = frame_it->second.pre_integration->sum_dt;
-            if (dt > 0) {
-                Vector3d tmp_g = frame_it->second.pre_integration->delta_v / dt;
-                Vector3d diff = tmp_g - aver_g;
-                variance += diff.transpose() * diff;
-                variance_count++;
-            }
-        }
-    }
-
-    if (variance_count <= 1) {
-#ifndef NDEBUG
-        std::cout << "Not enough frames for variance calculation!" << std::endl;
-#endif
-        return false;
-    }
-
-    // Calculate standard deviation of gravity vectors
-    double std_deviation = sqrt(variance / (variance_count - 1));
-
-#ifndef NDEBUG
-    std::cout << "IMU excitation check: std_deviation = " << std_deviation << ", threshold = " << threshold
-              << std::endl;
-#endif
-
-    if (std_deviation < threshold) {
-#ifndef NDEBUG
-        std::cout << "IMU excitation not enough! Please move the device with more "
-                     "rotation."
-                  << std::endl;
-#endif
-        return false;
-    } else {
-#ifndef NDEBUG
-        std::cout << "IMU excitation sufficient for initialization." << std::endl;
-#endif
-        return true;
     }
 }
 

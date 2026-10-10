@@ -110,6 +110,12 @@ export class VIOWrapper {
         return this._request('setFThreshold', { f_threshold: fThreshold });
     }
 
+    /** Read the configured engine's effective parameters without advancing its lifecycle. */
+    async getEffectiveConfig() {
+        if (!this.configured) throw new Error('Engine is not configured');
+        return this._request('getEffectiveConfig');
+    }
+
     async setTrackingParams(lkWindow, lkPyramid, minDist, fEdgeFactor) {
         return this._request('setTrackingParams', {
             lk_window: lkWindow, lk_pyramid: lkPyramid, min_dist: minDist, f_edge_factor: fEdgeFactor,
@@ -325,6 +331,16 @@ export class VIOWrapper {
             this._metrics.lastError = message.error;
             pending.reject(new Error(message.error));
         }
-        else pending.resolve(message.success === true);
+        else if (message.type === 'getEffectiveConfig') {
+            const data = message.data;
+            if (message.success !== true || data?.schema !== 'mobile-slam-effective-config-v1' ||
+                !data.params || typeof data.params !== 'object' || Array.isArray(data.params) || !Object.keys(data.params).length ||
+                !Object.values(data.params).every(Number.isFinite) || !Number.isSafeInteger(data.engineEpoch) || data.engineEpoch < 0 ||
+                !Number.isFinite(data.frameTimestamp) || typeof data.opencvVersion !== 'string' || !data.opencvVersion ||
+                !Number.isInteger(data.executionSeed) || !Number.isInteger(data.cvThreads) || data.cvThreads < 1) {
+                this._metrics.lastError = 'Invalid effective configuration response';
+                pending.reject(new Error(this._metrics.lastError));
+            } else pending.resolve(data);
+        } else pending.resolve(message.success === true);
     }
 }

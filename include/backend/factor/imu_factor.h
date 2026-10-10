@@ -41,6 +41,9 @@ public:
         Eigen::Vector3d Baj(parameters[3][3], parameters[3][4], parameters[3][5]);
         Eigen::Vector3d Bgj(parameters[3][6], parameters[3][7], parameters[3][8]);
 
+        double norm_i,norm_j;
+        if (!utility::so3::normalize(Qi,Qi,norm_i) || !utility::so3::normalize(Qj,Qj,norm_j)) return false;
+
         Eigen::Map<Eigen::Matrix<double, 15, 1>> residual(residuals);
         residual = pre_integration->evaluate(Pi, Qi, Vi, Bai, Bgi, Pj, Qj, Vj, Baj, Bgj);
 
@@ -53,14 +56,16 @@ public:
             Eigen::Matrix3d dp_dba = pre_integration->jacobian.template block<3, 3>(O_P, O_BA);
             Eigen::Matrix3d dp_dbg = pre_integration->jacobian.template block<3, 3>(O_P, O_BG);
 
-            Eigen::Matrix3d dq_dbg = pre_integration->jacobian.template block<3, 3>(O_R, O_BG);
-
             Eigen::Matrix3d dv_dba = pre_integration->jacobian.template block<3, 3>(O_V, O_BA);
             Eigen::Matrix3d dv_dbg = pre_integration->jacobian.template block<3, 3>(O_V, O_BG);
-            const Eigen::Quaterniond corrected_delta_q =
-                pre_integration->delta_q * Utility::deltaQ(dq_dbg * (Bgi - pre_integration->linearized_bg));
-            const double orientation_sign = IntegrationBase::canonicalOrientationErrorSign(
-                corrected_delta_q.inverse() * (Qi.inverse() * Qj));
+            Eigen::Matrix3d correction_jacobian;
+            const Eigen::Quaterniond corrected_delta_q = pre_integration->correctedDeltaQuaternion(Bgi,&correction_jacobian);
+            const Eigen::Quaterniond orientation_error = corrected_delta_q.inverse() * (Qi.inverse() * Qj);
+            const double orientation_sign = IntegrationBase::canonicalOrientationErrorSign(orientation_error);
+            const Eigen::Matrix3d orientation_left = orientation_sign *
+                (orientation_error.w()*Eigen::Matrix3d::Identity()-Utility::skewSymmetric(orientation_error.vec()));
+            const Eigen::Matrix3d orientation_right = orientation_sign *
+                (orientation_error.w()*Eigen::Matrix3d::Identity()+Utility::skewSymmetric(orientation_error.vec()));
 
             if (pre_integration->jacobian.maxCoeff() > 1e8 || pre_integration->jacobian.minCoeff() < -1e8) {
 #ifndef NDEBUG
@@ -77,13 +82,13 @@ public:
                     Qi.inverse() * (0.5 * g_config.estimator.g * sum_dt * sum_dt + Pj - Pi - Vi * sum_dt));
 
                 jacobian_pose_i.block<3, 3>(O_R, O_R) =
-                    -(Utility::Qleft(Qj.inverse() * Qi) * Utility::Qright(corrected_delta_q)).bottomRightCorner<3, 3>();
-                jacobian_pose_i.block<3, 3>(O_R, O_R) *= orientation_sign;
+                    -orientation_left * corrected_delta_q.toRotationMatrix().transpose();
 
                 jacobian_pose_i.block<3, 3>(O_V, O_R) =
                     Utility::skewSymmetric(Qi.inverse() * (g_config.estimator.g * sum_dt + Vj - Vi));
 
-                jacobian_pose_i = sqrt_info * jacobian_pose_i;
+                const Eigen::Matrix<double,15,6> local = jacobian_pose_i.leftCols<6>();
+                jacobian_pose_i = sqrt_info * local * utility::so3::poseLift(Qi,norm_i);
 
                 if (jacobian_pose_i.maxCoeff() > 1e8 || jacobian_pose_i.minCoeff() < -1e8) {
     #ifndef NDEBUG
@@ -98,9 +103,7 @@ public:
                 jacobian_speedbias_i.block<3, 3>(O_P, O_BA - O_V) = -dp_dba;
                 jacobian_speedbias_i.block<3, 3>(O_P, O_BG - O_V) = -dp_dbg;
 
-                jacobian_speedbias_i.block<3, 3>(O_R, O_BG - O_V) =
-                    -Utility::Qleft(Qj.inverse() * Qi * pre_integration->delta_q).bottomRightCorner<3, 3>() * dq_dbg;
-                jacobian_speedbias_i.block<3, 3>(O_R, O_BG - O_V) *= orientation_sign;
+                jacobian_speedbias_i.block<3, 3>(O_R, O_BG - O_V) = -orientation_left * correction_jacobian;
 
                 jacobian_speedbias_i.block<3, 3>(O_V, O_V - O_V) = -Qi.inverse().toRotationMatrix();
                 jacobian_speedbias_i.block<3, 3>(O_V, O_BA - O_V) = -dv_dba;
@@ -118,11 +121,10 @@ public:
 
                 jacobian_pose_j.block<3, 3>(O_P, O_P) = Qi.inverse().toRotationMatrix();
 
-                jacobian_pose_j.block<3, 3>(O_R, O_R) =
-                    Utility::Qleft(corrected_delta_q.inverse() * Qi.inverse() * Qj).bottomRightCorner<3, 3>();
-                jacobian_pose_j.block<3, 3>(O_R, O_R) *= orientation_sign;
+                jacobian_pose_j.block<3, 3>(O_R, O_R) = orientation_right;
 
-                jacobian_pose_j = sqrt_info * jacobian_pose_j;
+                const Eigen::Matrix<double,15,6> local = jacobian_pose_j.leftCols<6>();
+                jacobian_pose_j = sqrt_info * local * utility::so3::poseLift(Qj,norm_j);
             }
             if (jacobians[3]) {
                 Eigen::Map<Eigen::Matrix<double, 15, 9, Eigen::RowMajor>> jacobian_speedbias_j(jacobians[3]);

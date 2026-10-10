@@ -1,4 +1,5 @@
 #include "backend/factor/marginalization_factor.h"
+#include "utility/so3.h"
 #include <Eigen/QR>
 #include <chrono>
 #include <iomanip>
@@ -81,17 +82,35 @@ std::string MarginalizationInfo::getPriorNormalDiagnostics(const std::vector<dou
     if (!diagnostic_capture_) return "{\"enabled\":false}";
     if (linearized_jacobians.size() > kDiagnosticMatrixCells || parameters.size() != keep_block_size.size())
         return "{\"enabled\":true,\"truncated\":true,\"evaluationAvailable\":false}";
-    Eigen::VectorXd current_residual(n);
+    Eigen::VectorXd current_residual = Eigen::VectorXd::Constant(n,std::numeric_limits<double>::quiet_NaN());
+    std::vector<Eigen::Matrix<double,Eigen::Dynamic,Eigen::Dynamic,Eigen::RowMajor>> ambient;
+    std::vector<double*> raw;
+    ambient.reserve(keep_block_size.size());raw.reserve(keep_block_size.size());
+    for (int size : keep_block_size) ambient.emplace_back(n,size);
+    for (auto& jacobian : ambient) raw.push_back(jacobian.data());
     MarginalizationFactor prior(this);
-    const bool evaluated = prior.Evaluate(parameters.data(), current_residual.data(), nullptr);
-    const Eigen::MatrixXd normal = linearized_jacobians.transpose() * linearized_jacobians;
-    const Eigen::VectorXd current_gradient = linearized_jacobians.transpose() * current_residual;
-    const Eigen::VectorXd reference_gradient = linearized_jacobians.transpose() * linearized_residuals;
+    bool evaluated = prior.Evaluate(parameters.data(),current_residual.data(),raw.data());
+    Eigen::MatrixXd current_jacobian = Eigen::MatrixXd::Constant(n,n,std::numeric_limits<double>::quiet_NaN());
+    for (size_t i = 0; evaluated && i < keep_block_size.size(); ++i) {
+        const int column = keep_block_idx[i]-m;
+        if (keep_block_size[i] != 7) current_jacobian.middleCols(column,keep_block_size[i]) = ambient[i];
+        else {
+            Eigen::Quaterniond q;double norm;
+            evaluated = utility::so3::normalize(Eigen::Map<const Eigen::Quaterniond>(parameters[i]+3),q,norm);
+            if (evaluated) current_jacobian.middleCols(column,6) = ambient[i]*utility::so3::posePlusJacobian(q);
+        }
+    }
+    const Eigen::MatrixXd normal = linearized_jacobians.transpose()*linearized_jacobians;
+    const Eigen::MatrixXd current_normal = current_jacobian.transpose()*current_jacobian;
+    const Eigen::VectorXd current_gradient = current_jacobian.transpose()*current_residual;
+    const Eigen::VectorXd reference_gradient = linearized_jacobians.transpose()*linearized_residuals;
     std::ostringstream out;
     out << "{\"enabled\":true,\"truncated\":false,\"evaluationAvailable\":" << (evaluated ? "true" : "false")
-        << ",\"nonfinite\":" << (normal.allFinite() && current_gradient.allFinite() && reference_gradient.allFinite() ? "false" : "true")
+        << ",\"nonfinite\":" << (normal.allFinite() && current_normal.allFinite() && current_gradient.allFinite() && reference_gradient.allFinite() ? "false" : "true")
         << ",\"currentParameterResidualNorm\":"; diagnosticNumber(out, current_residual.norm());
+    out << ",\"normalConvention\":\"frozen_first_estimate_J0tJ0\",\"currentDerivativeConvention\":\"right_pose_tangent\"";
     out << ",\"normal\":"; diagnosticMatrix(out, normal);
+    out << ",\"currentParameterNormal\":"; diagnosticMatrix(out, current_normal);
     out << ",\"currentParameterGradient\":"; diagnosticMatrix(out, current_gradient);
     out << ",\"linearizationReferenceGradient\":"; diagnosticMatrix(out, reference_gradient);
     out << '}';
@@ -113,6 +132,14 @@ bool ResidualBlockInfo::Evaluate() {
         // dim += block_sizes[i] == 7 ? 6 : block_sizes[i];
     }
     if (!cost_function->Evaluate(parameter_blocks.data(), residuals.data(), raw_jacobians)) return false;
+
+    // CostFunction Jacobians are ambient. QR eliminates tangent coordinates.
+    for (size_t i = 0; i < block_sizes.size(); ++i) {
+        if (block_sizes[i] != 7) continue;
+        Eigen::Quaterniond q;double norm;
+        if (!utility::so3::normalize(Eigen::Map<const Eigen::Quaterniond>(parameter_blocks[i]+3),q,norm)) return false;
+        jacobians[i] = (jacobians[i] * utility::so3::posePlusJacobian(q)).eval();
+    }
 
     if (loss_function) {
         double residual_scaling_, alpha_sq_norm_;
@@ -425,43 +452,45 @@ MarginalizationFactor::MarginalizationFactor(MarginalizationInfo* _marginalizati
 };
 
 bool MarginalizationFactor::Evaluate(double const* const* parameters, double* residuals, double** jacobians) const {
-    int n = marginalization_info->n;
-    int m = marginalization_info->m;
+    const int n = marginalization_info->n, m = marginalization_info->m;
     Eigen::VectorXd dx(n);
-    for (int i = 0; i < static_cast<int>(marginalization_info->keep_block_size.size()); i++) {
-        int size = marginalization_info->keep_block_size[i];
-        int idx = marginalization_info->keep_block_idx[i] - m;
-        Eigen::VectorXd x = Eigen::Map<const Eigen::VectorXd>(parameters[i], size);
-        Eigen::VectorXd x0 = Eigen::Map<const Eigen::VectorXd>(marginalization_info->keep_block_data[i], size);
-        if (size != 7)
-            dx.segment(idx, size) = x - x0;
+    for (size_t i = 0; i < marginalization_info->keep_block_size.size(); ++i) {
+        const int size = marginalization_info->keep_block_size[i];
+        const int idx = marginalization_info->keep_block_idx[i] - m;
+        const Eigen::Map<const Eigen::VectorXd> x(parameters[i],size),x0(marginalization_info->keep_block_data[i],size);
+        if (!x.allFinite() || !x0.allFinite()) return false;
+        if (size != 7) dx.segment(idx,size) = x-x0;
         else {
-            dx.segment<3>(idx + 0) = x.head<3>() - x0.head<3>();
-            dx.segment<3>(idx + 3) = 2.0 * Utility::positify(Eigen::Quaterniond(x0(6), x0(3), x0(4), x0(5)).inverse() *
-                                                             Eigen::Quaterniond(x(6), x(3), x(4), x(5)))
-                                               .vec();
-            if (!((Eigen::Quaterniond(x0(6), x0(3), x0(4), x0(5)).inverse() *
-                   Eigen::Quaterniond(x(6), x(3), x(4), x(5)))
-                      .w() >= 0)) {
-                dx.segment<3>(idx + 3) =
-                    2.0 * -Utility::positify(Eigen::Quaterniond(x0(6), x0(3), x0(4), x0(5)).inverse() *
-                                             Eigen::Quaterniond(x(6), x(3), x(4), x(5)))
-                               .vec();
-            }
+            Eigen::Quaterniond q,q0;double norm,norm0;
+            if (!utility::so3::normalize(Eigen::Quaterniond(x[6],x[3],x[4],x[5]),q,norm) ||
+                !utility::so3::normalize(Eigen::Quaterniond(x0[6],x0[3],x0[4],x0[5]),q0,norm0)) return false;
+            const Eigen::Quaterniond difference = (q0.conjugate()*q).normalized();
+            dx.segment<3>(idx) = x.head<3>()-x0.head<3>();
+            dx.segment<3>(idx+3) = 2*utility::so3::canonicalSign(difference)*difference.vec();
         }
     }
-    Eigen::Map<Eigen::VectorXd>(residuals, n) =
-        marginalization_info->linearized_residuals + marginalization_info->linearized_jacobians * dx;
+    Eigen::Map<Eigen::VectorXd> result(residuals,n);
+    result = marginalization_info->linearized_residuals + marginalization_info->linearized_jacobians * dx;
+    if (!result.allFinite()) return false;
     if (jacobians) {
-        for (int i = 0; i < static_cast<int>(marginalization_info->keep_block_size.size()); i++) {
-            if (jacobians[i]) {
-                int size = marginalization_info->keep_block_size[i], local_size = marginalization_info->localSize(size);
-                int idx = marginalization_info->keep_block_idx[i] - m;
-                Eigen::Map<Eigen::Matrix<double, Eigen::Dynamic, Eigen::Dynamic, Eigen::RowMajor>> jacobian(
-                    jacobians[i], n, size);
-                jacobian.setZero();
-                jacobian.leftCols(local_size) = marginalization_info->linearized_jacobians.middleCols(idx, local_size);
+        for (size_t i = 0; i < marginalization_info->keep_block_size.size(); ++i) {
+            if (!jacobians[i]) continue;
+            const int size = marginalization_info->keep_block_size[i];
+            const int idx = marginalization_info->keep_block_idx[i] - m;
+            Eigen::Map<Eigen::Matrix<double,Eigen::Dynamic,Eigen::Dynamic,Eigen::RowMajor>> jacobian(jacobians[i],n,size);
+            if (size != 7) jacobian = marginalization_info->linearized_jacobians.middleCols(idx,size);
+            else {
+                Eigen::Quaterniond q,q0;double norm,norm0;
+                if (!utility::so3::normalize(Eigen::Map<const Eigen::Quaterniond>(parameters[i]+3),q,norm) ||
+                    !utility::so3::normalize(Eigen::Map<const Eigen::Quaterniond>(marginalization_info->keep_block_data[i]+3),q0,norm0)) return false;
+                const Eigen::Quaterniond difference = (q0.conjugate()*q).normalized();
+                const Eigen::Matrix3d chain = utility::so3::canonicalSign(difference) *
+                    (difference.w()*Eigen::Matrix3d::Identity()+Utility::skewSymmetric(difference.vec()));
+                Eigen::MatrixXd local = marginalization_info->linearized_jacobians.middleCols(idx,6);
+                local.rightCols<3>() = (local.rightCols<3>()*chain).eval();
+                jacobian = local * utility::so3::poseLift(q,norm);
             }
+            if (!jacobian.allFinite()) return false;
         }
     }
     return true;

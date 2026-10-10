@@ -27,7 +27,6 @@ public:
 
 private:
     friend struct InitializerTestAccess;
-    bool checkIMUExcitation(double threshold);
     bool solveInitialSfM();
     bool relativePose(Matrix3d& relative_R, Vector3d& relative_T, int& index);
     bool solvePnPForAllFrames(const Quaterniond Q[], const Vector3d T[],

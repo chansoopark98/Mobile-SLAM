@@ -17,7 +17,12 @@ using namespace std;
 namespace frontend {
 namespace initialization {
 
-bool VisualIMUAlignment(std::map<double, common::ImageFrame> const& all_image_frame,
+bool CheckIMUExcitation(const std::map<double, common::ImageFrame>& frames, double threshold);
+MatrixXd TangentBasis(Vector3d& gravity);
+bool RefineGravity(const std::map<double, common::ImageFrame>& frames, Vector3d& gravity, VectorXd& state);
+bool LinearAlignment(const std::map<double, common::ImageFrame>& frames, Vector3d& gravity, VectorXd& state);
+
+bool VisualIMUAlignment(std::map<double, common::ImageFrame>& all_image_frame,
                         backend::SlidingWindow& sliding_window, Vector3d& g, VectorXd& x);
 
 }  // namespace initialization

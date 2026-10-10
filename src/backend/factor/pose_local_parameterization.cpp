@@ -1,64 +1,49 @@
 #include "backend/factor/pose_local_parameterization.h"
+#include "utility/so3.h"
 
-namespace backend {
-namespace factor {
+namespace backend::factor {
 
-bool PoseLocalParameterization::Plus(const double* x, const double* delta, double* x_plus_delta) const {
-    Eigen::Map<const Eigen::Vector3d> _p(x);
-    Eigen::Map<const Eigen::Quaterniond> _q(x + 3);
-
-    Eigen::Map<const Eigen::Vector3d> dp(delta);
-
-    Eigen::Quaterniond dq = Utility::deltaQ(Eigen::Map<const Eigen::Vector3d>(delta + 3));
-
-    Eigen::Map<Eigen::Vector3d> p(x_plus_delta);
-    Eigen::Map<Eigen::Quaterniond> q(x_plus_delta + 3);
-
-    p = _p + dp;
-    q = (_q * dq).normalized();
-
+bool PoseLocalParameterization::Plus(const double* x, const double* delta, double* output) const {
+    const Eigen::Map<const Eigen::Matrix<double,6,1>> increment(delta);
+    const Eigen::Map<const Eigen::Vector3d> position(x);
+    Eigen::Quaterniond q;double norm;
+    if (!position.allFinite() || !increment.allFinite() ||
+        !utility::so3::normalize(Eigen::Map<const Eigen::Quaterniond>(x+3),q,norm)) return false;
+    const Eigen::Vector3d translated = position + increment.head<3>();
+    const Eigen::Quaterniond rotated = (q * utility::so3::exp(increment.tail<3>())).normalized();
+    if (!translated.allFinite() || !rotated.coeffs().allFinite()) return false;
+    Eigen::Map<Eigen::Vector3d> translated_output(output);translated_output = translated;
+    Eigen::Map<Eigen::Quaterniond> rotation(output+3);rotation = rotated;
     return true;
 }
 
 bool PoseLocalParameterization::PlusJacobian(const double* x, double* jacobian) const {
-    Eigen::Map<Eigen::Matrix<double, 7, 6, Eigen::RowMajor>> j(jacobian);
-    j.topRows<6>().setIdentity();
-    j.bottomRows<1>().setZero();
-
-    return true;
+    Eigen::Quaterniond q;double norm;
+    if (!Eigen::Map<const Eigen::Vector3d>(x).allFinite() ||
+        !utility::so3::normalize(Eigen::Map<const Eigen::Quaterniond>(x+3),q,norm)) return false;
+    Eigen::Map<Eigen::Matrix<double,7,6,Eigen::RowMajor>> mapped(jacobian);mapped = utility::so3::posePlusJacobian(q);
+    return mapped.allFinite();
 }
 
-bool PoseLocalParameterization::Minus(const double* y, const double* x, double* y_minus_x) const {
-    Eigen::Map<const Eigen::Vector3d> p_y(y);
-    Eigen::Map<const Eigen::Quaterniond> q_y(y + 3);
-    Eigen::Map<const Eigen::Vector3d> p_x(x);
-    Eigen::Map<const Eigen::Quaterniond> q_x(x + 3);
-
-    Eigen::Map<Eigen::Vector3d> dp(y_minus_x);
-    dp = p_y - p_x;
-
-    // Quaternion difference: delta_q = q_x^{-1} * q_y
-    Eigen::Quaterniond dq = q_x.inverse() * q_y;
-    // Convert to axis-angle (small angle: 2 * vec(dq))
-    y_minus_x[3] = 2.0 * dq.x();
-    y_minus_x[4] = 2.0 * dq.y();
-    y_minus_x[5] = 2.0 * dq.z();
-
+bool PoseLocalParameterization::Minus(const double* y, const double* x, double* output) const {
+    const Eigen::Vector3d translation = Eigen::Map<const Eigen::Vector3d>(y) - Eigen::Map<const Eigen::Vector3d>(x);
+    Eigen::Quaterniond qx,qy;double nx,ny;
+    if (!translation.allFinite() ||
+        !utility::so3::normalize(Eigen::Map<const Eigen::Quaterniond>(x+3),qx,nx) ||
+        !utility::so3::normalize(Eigen::Map<const Eigen::Quaterniond>(y+3),qy,ny)) return false;
+    const Eigen::Vector3d rotation = utility::so3::log((qx.conjugate()*qy).normalized());
+    if (!rotation.allFinite()) return false;
+    Eigen::Map<Eigen::Vector3d> translated_output(output),rotated_output(output+3);
+    translated_output = translation;rotated_output = rotation;
     return true;
 }
 
 bool PoseLocalParameterization::MinusJacobian(const double* x, double* jacobian) const {
-    Eigen::Map<Eigen::Matrix<double, 6, 7, Eigen::RowMajor>> j(jacobian);
-    j.setZero();
-    j.topLeftCorner<3, 3>().setIdentity();
-    // For the quaternion part, the MinusJacobian at identity is [0 0 0 | 2I]
-    // mapped from Eigen quaternion storage (x,y,z,w)
-    j(3, 3) = 2.0;  // d/dqx
-    j(4, 4) = 2.0;  // d/dqy
-    j(5, 5) = 2.0;  // d/dqz
-
-    return true;
+    Eigen::Quaterniond q;double norm;
+    if (!Eigen::Map<const Eigen::Vector3d>(x).allFinite() ||
+        !utility::so3::normalize(Eigen::Map<const Eigen::Quaterniond>(x+3),q,norm)) return false;
+    Eigen::Map<Eigen::Matrix<double,6,7,Eigen::RowMajor>> mapped(jacobian);mapped = utility::so3::poseLift(q,norm);
+    return mapped.allFinite();
 }
 
-}  // namespace factor
-}  // namespace backend
+}  // namespace backend::factor

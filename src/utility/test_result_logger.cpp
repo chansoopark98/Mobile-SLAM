@@ -18,13 +18,14 @@ bool TestResultLogger::initialize(const std::string& config_path) {
     try {
         std::cout << "=== TestResultLogger Initialization Start ===" << std::endl;
 
-        // Create log directory with timestamp
-        log_dir_ = "logs/" + getTimestampString();
-        if (fs::create_directories(log_dir_)) {
-            std::cout << "Log directory created: " << log_dir_ << std::endl;
-        } else {
-            std::cout << "Log directory already exists or failed to create: " << log_dir_ << std::endl;
+        fs::create_directories("logs");
+        const std::string base = "logs/" + getTimestampString();
+        for (unsigned suffix = 0; ; ++suffix) {
+            const std::string candidate = base + (suffix ? "-" + std::to_string(suffix) : "");
+            // Atomic directory creation also separates simultaneous application runs.
+            if (fs::create_directory(candidate)) { log_dir_ = candidate; break; }
         }
+        std::cout << "Log directory created: " << log_dir_ << std::endl;
 
         // Copy config file to log directory
         copyConfigFile(config_path);
@@ -81,7 +82,8 @@ void TestResultLogger::saveTrajectoryToFile() {
             return;
         }
 
-        pose_file << "# timestamp tx ty tz qx qy qz qw" << std::endl;
+        pose_file << "# timestamp tx ty tz qx qy qz qw; camera-to-world pose" << std::endl;
+        pose_file << std::setprecision(17);
 
         // Ensure we don't exceed the bounds
         size_t num_poses = std::min({camera_poses_.size(), camera_rotations_.size(), trajectory_timestamps_.size()});
@@ -93,8 +95,7 @@ void TestResultLogger::saveTrajectoryToFile() {
 
             if (pos.allFinite() && rot.allFinite()) {
                 Eigen::Quaterniond q(rot);
-                pose_file << std::fixed << std::setprecision(9) << timestamp << " " << std::fixed
-                          << std::setprecision(6) << pos.x() << " " << pos.y() << " " << pos.z() << " " << q.x() << " "
+                pose_file << timestamp << " " << pos.x() << " " << pos.y() << " " << pos.z() << " " << q.x() << " "
                           << q.y() << " " << q.z() << " " << q.w() << std::endl;
             }
         }

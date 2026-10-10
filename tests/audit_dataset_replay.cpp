@@ -1,4 +1,4 @@
-// Headless audit harness; no production-source changes.
+// Headless dataset audit harness.
 #include <algorithm>
 #include <array>
 #include <chrono>
@@ -111,9 +111,9 @@ void timingJson(std::ostream& output, const std::vector<double>& values) {
 }  // namespace
 
 int main(int argc, char** argv) {
-    if (argc < 4 || argc > 14) {
+    if (argc < 4 || argc > 15) {
         std::cerr << "Usage: native-replay DATASET CONFIG OUTPUT [MAX_FRAMES=600] "
-                     "[IMU_POLICY=bracket|until-image] [PNP=0|1] [CV_THREADS=1] [ITERATIONS=YAML] [SOLVER_TIME=YAML] [DUMP_INPUTS=0|1] [DIAGNOSTICS=0|1] [CAPTURE_START=0] [CAPTURE_END=PROCESSED_FRAMES]\n";
+                     "[IMU_POLICY=bracket|until-image] [PNP=0|1] [CV_THREADS=1] [ITERATIONS=YAML] [SOLVER_TIME=YAML] [DUMP_INPUTS=0|1] [DIAGNOSTICS=0|1] [CAPTURE_START=0] [CAPTURE_END=PROCESSED_FRAMES] [PROFILE=legacy|yaml]\n";
         return 2;
     }
     try {
@@ -124,6 +124,8 @@ int main(int argc, char** argv) {
         const std::string imu_policy = argc > 5 ? argv[5] : "bracket";
         const int pnp = argc > 6 ? std::stoi(argv[6]) : 0;
         const int cv_threads = argc > 7 ? std::stoi(argv[7]) : 1;
+        const std::string profile = argc > 14 ? argv[14] : "legacy";
+        if (profile != "legacy" && profile != "yaml") throw std::runtime_error("Invalid replay profile");
         const char* benchmark_environment = std::getenv("MOBILE_SLAM_BENCHMARK_ZERO_TOLERANCES");
         const std::string benchmark_option = benchmark_environment ? benchmark_environment : "0";
         if (benchmark_option != "0" && benchmark_option != "1")
@@ -179,11 +181,13 @@ int main(int argc, char** argv) {
             throw std::runtime_error("IMU does not cover camera sequence");
         utility::g_config = desired;
         VIOEngine engine;
-        if (!engine.configure(static_cast<int>(desired.camera.col), static_cast<int>(desired.camera.row),
+        const bool configured = profile == "yaml" ? engine.configureFromConfig(desired,config_path.string()) :
+            engine.configure(static_cast<int>(desired.camera.col), static_cast<int>(desired.camera.row),
                               desired.camera.fx, desired.camera.fy, desired.camera.cx, desired.camera.cy,
                               camera_model, k[0], k[1], k[2], k[3], rotation.data(), translation.data(),
                               desired.estimator.acc_n, desired.estimator.acc_w,
-                              desired.estimator.gyr_n, desired.estimator.gyr_w, desired.estimator.g.norm()))
+                              desired.estimator.gyr_n, desired.estimator.gyr_w, desired.estimator.g.norm());
+        if (!configured)
             throw std::runtime_error("Engine configure failed");
         engine.setExecutionParams(0, cv_threads);
         engine.setBenchmarkSolverProfile(benchmark_requested);
@@ -196,9 +200,17 @@ int main(int argc, char** argv) {
         utility::g_config = desired;
         utility::g_config.feature_tracker.show_track = 0;
         engine.setMobileParams(desired.estimator.solver_time, desired.estimator.num_iterations, desired.feature_tracker.max_cnt);
-        engine.setFThreshold(1.0);
-        engine.setTrackingParams(21, 3, 20, 0.0);
+        if (profile == "legacy") {
+            engine.setFThreshold(1.0);
+            engine.setTrackingParams(21, 3, 20, 0.0);
+        }
         engine.setPnPParams(pnp != 0, 3);
+        std::ofstream effective(output_dir / "effective-config.json");
+        engine.setDiagnosticCapture(true);
+        effective << engine.getFeatureDiagnostics() << '\n';
+        engine.setDiagnosticCapture(diagnostic_active);
+        effective.flush();
+        if (!effective) throw std::runtime_error("Failed to write effective configuration");
 
         std::ofstream frames(output_dir / "frames.csv");
         std::ofstream trajectory(output_dir / "trajectory-camera.txt");
@@ -312,7 +324,7 @@ int main(int argc, char** argv) {
         std::ofstream summary(output_dir / "summary.json");
         if (!summary) throw std::runtime_error("Cannot create summary");
         summary << std::setprecision(17)
-                << "{\n\"frames_available\":" << images.size() << ",\n\"frames_processed\":" << count
+                << "{\n\"profile\":\"" << profile << "\",\n\"frames_available\":" << images.size() << ",\n\"frames_processed\":" << count
                 << ",\n\"imu_available\":" << imu.size() << ",\n\"diagnostic_capture_range\":{\"enabled\":" << (diagnostic_capture?"true":"false") << ",\"start_inclusive\":" << capture_start << ",\"end_exclusive\":" << capture_end << "}" << ",\n\"input_oracle_enabled\":" << (dump_inputs ? "true" : "false") << ",\n\"imu_delivered\":" << imu_delivered << ",\n\"imu_policy\":\"" << imu_policy << "\""
                 << ",\n\"camera_model_enum\":" << camera_model << ",\n\"pnp_enabled\":" << pnp
                 << ",\n\"cv_threads\":" << cv::getNumThreads() << ",\n\"rng_seed\":" << engine.getExecutionSeed()

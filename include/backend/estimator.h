@@ -55,6 +55,7 @@ public:
     common::VINSResult getLatestVINSResult() const;
 
 private:
+    friend struct EstimatorTestAccess;
     void clearState();
 
     void slideWindow();

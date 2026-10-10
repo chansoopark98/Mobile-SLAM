@@ -7,6 +7,7 @@
 
 #include "utility/config.h"
 #include "utility/utility.h"
+#include "utility/so3.h"
 
 using namespace Eigen;
 using namespace utility;
@@ -68,12 +69,15 @@ public:
     }
 
     static double canonicalOrientationErrorSign(const Eigen::Quaterniond& error) {
-        if (error.w() != 0) return error.w() < 0 ? -1.0 : 1.0;
-        // The shortest-rotation chart is nondifferentiable at pi. Use a stable
-        // axis tie so q and -q still select the same residual at that cut.
-        for (int axis = 0; axis < 3; ++axis)
-            if (error.vec()[axis] != 0) return error.vec()[axis] < 0 ? -1.0 : 1.0;
-        return 1.0;
+        return utility::so3::canonicalSign(error);
+    }
+
+    Eigen::Quaterniond correctedDeltaQuaternion(const Eigen::Vector3d& bias,
+                                                Eigen::Matrix3d* bias_jacobian = nullptr) const {
+        const Eigen::Matrix3d dq_dbg = jacobian.block<3,3>(O_R,O_BG);
+        const Eigen::Vector3d correction = dq_dbg * (bias-linearized_bg);
+        if (bias_jacobian) *bias_jacobian = utility::so3::rightJacobian(correction) * dq_dbg;
+        return (delta_q * utility::so3::exp(correction)).normalized();
     }
 
     void repropagate(const Eigen::Vector3d& _linearized_ba, const Eigen::Vector3d& _linearized_bg) {
@@ -198,15 +202,13 @@ public:
         Eigen::Matrix3d dp_dba = jacobian.block<3, 3>(O_P, O_BA);
         Eigen::Matrix3d dp_dbg = jacobian.block<3, 3>(O_P, O_BG);
 
-        Eigen::Matrix3d dq_dbg = jacobian.block<3, 3>(O_R, O_BG);
-
         Eigen::Matrix3d dv_dba = jacobian.block<3, 3>(O_V, O_BA);
         Eigen::Matrix3d dv_dbg = jacobian.block<3, 3>(O_V, O_BG);
 
         Eigen::Vector3d dba = Bai - linearized_ba;
         Eigen::Vector3d dbg = Bgi - linearized_bg;
 
-        Eigen::Quaterniond corrected_delta_q = delta_q * Utility::deltaQ(dq_dbg * dbg);
+        const Eigen::Quaterniond corrected_delta_q = correctedDeltaQuaternion(Bgi);
         Eigen::Vector3d corrected_delta_v = delta_v + dv_dba * dba + dv_dbg * dbg;
         Eigen::Vector3d corrected_delta_p = delta_p + dp_dba * dba + dp_dbg * dbg;
 

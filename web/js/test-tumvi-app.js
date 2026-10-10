@@ -412,21 +412,21 @@ class TUMVITestApp {
         const canvas3d = document.getElementById('canvas-3d');
         if (canvas3d) {
             const container = canvas3d.parentElement;
-            canvas3d.width = container.clientWidth || 800;
-            canvas3d.height = container.clientHeight || 600;
-
             const backendSelect = document.getElementById('renderer-backend');
             const backend = backendSelect ? backendSelect.value : 'webgl';
             this.renderer = await Renderer.create(canvas3d, backend);
             this.renderer.render();
             this.log(`3D Renderer: ${this.renderer.backendName.toUpperCase()} backend`);
 
-            window.addEventListener('resize', () => {
-                const c = canvas3d.parentElement;
-                canvas3d.width = c.clientWidth;
-                canvas3d.height = c.clientHeight;
-                this.renderer.resize(c.clientWidth, c.clientHeight);
-            });
+            const resizeRenderer = () => {
+                this.renderer.resize(container.clientWidth, container.clientHeight);
+                this.renderer.render();
+            };
+            window.addEventListener('resize', resizeRenderer);
+            if (typeof ResizeObserver !== 'undefined') {
+                this._rendererResizeObserver = new ResizeObserver(resizeRenderer);
+                this._rendererResizeObserver.observe(container);
+            }
         }
 
         const datasetSelect = document.getElementById('dataset-select');

@@ -1,4 +1,5 @@
 #include "frontend/pnp_frontend.h"
+#include "utility/so3.h"
 
 #include <ceres/ceres.h>
 #include <unordered_set>
@@ -256,6 +257,23 @@ bool PnPFrontend::solveCeres() {
         diagnostics_.reason = "degenerate_current_correspondences";
         return false;
     }
+    // Manifold registration evaluates PlusJacobian immediately.
+    bool valid_rotations = utility::so3::isRotation(ric_);
+    for (int i = 0; i <= kPnPSize; ++i)
+        valid_rotations = valid_rotations && utility::so3::isRotation(Rs_[i]);
+    if (!valid_rotations) { diagnostics_.reason = "invalid_initial_parameters"; return false; }
+    old2new();
+    const auto valid_pose = [](const double* pose) {
+        return Eigen::Map<const Eigen::Matrix<double,7,1>>(pose).allFinite() &&
+               std::abs(Eigen::Map<const Eigen::Quaterniond>(pose+3).squaredNorm()-1) <= 1e-6;
+    };
+    bool valid_state = valid_pose(para_Ex_Pose_);
+    for (int i = 0; i <= kPnPSize; ++i) {
+        valid_state = valid_state && valid_pose(para_Pose_[i]) &&
+            Eigen::Map<const Eigen::Vector3d>(para_Speed_[i]).allFinite() &&
+            Eigen::Map<const Eigen::Matrix<double,6,1>>(para_Bias_[i]).allFinite();
+    }
+    if (!valid_state) { diagnostics_.reason = "invalid_initial_parameters"; return false; }
     ceres::Problem problem;
     auto loss_function = std::make_unique<ceres::CauchyLoss>(1.0);
 
@@ -279,8 +297,6 @@ bool PnPFrontend::solveCeres() {
     ceres::Manifold* ex_manifold = new backend::factor::PoseLocalParameterization();
     problem.AddParameterBlock(para_Ex_Pose_, 7, ex_manifold);
     problem.SetParameterBlockConstant(para_Ex_Pose_);
-
-    old2new();
 
     // IMU factors between consecutive frames
     for (int i = 0; i < kPnPSize; i++) {

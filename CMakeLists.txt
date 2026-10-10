@@ -270,6 +270,19 @@ add_executable(test_numerical_contracts tests/test_numerical_contracts.cpp)
 target_link_libraries(test_numerical_contracts PRIVATE estimator pnp_frontend gtest_main)
 add_test(NAME NumericalContractsTest COMMAND test_numerical_contracts)
 
+add_executable(test_projection_trial_contracts tests/test_projection_trial_contracts.cpp)
+target_link_libraries(test_projection_trial_contracts PRIVATE estimator gtest_main)
+add_test(NAME ProjectionTrialContractsTest COMMAND test_projection_trial_contracts)
+
+add_executable(test_math_geometry_contracts tests/test_math_geometry_contracts.cpp)
+target_link_libraries(test_math_geometry_contracts PRIVATE estimator pnp_frontend gtest_main)
+add_test(NAME MathGeometryContractsTest COMMAND test_math_geometry_contracts)
+
+add_executable(test_synthetic_estimator tests/test_synthetic_estimator.cpp)
+target_link_libraries(test_synthetic_estimator PRIVATE estimator gtest_main ${YAML_CPP_LIBRARIES})
+add_test(NAME SyntheticEstimatorTest COMMAND test_synthetic_estimator)
+set_tests_properties(SyntheticEstimatorTest PROPERTIES WORKING_DIRECTORY "${CMAKE_CURRENT_SOURCE_DIR}" TIMEOUT 300)
+
 add_executable(test_initial_sfm_contracts tests/test_initial_sfm_contracts.cpp)
 target_link_libraries(test_initial_sfm_contracts PRIVATE initializer gtest_main)
 add_test(NAME InitialSFMContractsTest COMMAND test_initial_sfm_contracts)
@@ -280,7 +293,7 @@ target_link_libraries(test_native_adapter PRIVATE vio_engine trajectory_evaluato
 add_test(NAME NativeAdapterTest COMMAND test_native_adapter)
 
 set_tests_properties(IntegrationBaseTest SlidingWindowTest TrajectoryEvaluatorTest ConfigValidationTest
-    MeasurementRobustnessTest VIOEngineParityTest EngineContractsTest NumericalContractsTest InitialSFMContractsTest NativeAdapterTest
+    MeasurementRobustnessTest VIOEngineParityTest EngineContractsTest NumericalContractsTest ProjectionTrialContractsTest MathGeometryContractsTest InitialSFMContractsTest NativeAdapterTest
     PROPERTIES WORKING_DIRECTORY "${CMAKE_CURRENT_SOURCE_DIR}" TIMEOUT 180)
 
 set_tests_properties(NativeAdapterTest PROPERTIES WORKING_DIRECTORY "${PROJECT_BINARY_DIR}")

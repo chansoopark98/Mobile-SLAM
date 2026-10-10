@@ -113,7 +113,9 @@ export async function installInRealm(win, recorder) {
     hook(IMU.prototype, '_pushSample', original => function (timestamp, ax, ay, az, gx, gy, gz) {
         imus.add(this);
         const sensorInfo = { sourceTiming: this.getDiagnostics?.().lastSample ?? null, api: this.getSensorType(), ios: this._isIOS, iosAccSign: this._iosAccSign, accelSensorTimestampMs: this._accel?.timestamp ?? null, gyroSensorTimestampMs: this._gyro?.timestamp ?? null, callbackArrivalMs: clock() };
-        record('device_imu_raw', { timestampS: timestamp, acceleration: [ax, ay, az], gyroRadS: [gx, gy, gz], gyroBias: { ...this._gyroBias }, ...sensorInfo });
+        record('device_imu_raw', { timestampS: timestamp, acceleration: [ax, ay, az], gyroRadS: [gx, gy, gz],
+            gyroBiasCandidate: this.getDiagnostics?.().gyroBiasCandidate ?? null,
+            gyroBiasApplied: this.getDiagnostics?.().gyroBiasApplied ?? false, ...sensorInfo });
         const emitted = this.getDiagnostics?.().emitted;
         const value = original.call(this, timestamp, ax, ay, az, gx, gy, gz);
         if (emitted === undefined || this.getDiagnostics?.().emitted > emitted) record('device_imu', { timestampS: timestamp, acceleration: [this.latest.acc_x, this.latest.acc_y, this.latest.acc_z], gyroRadS: [this.latest.gyro_x, this.latest.gyro_y, this.latest.gyro_z], ...sensorInfo });

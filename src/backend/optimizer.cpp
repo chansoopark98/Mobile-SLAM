@@ -1,4 +1,5 @@
 #include "backend/optimizer.h"
+#include "utility/so3.h"
 
 #include <cmath>
 #include <iomanip>
@@ -136,7 +137,14 @@ bool Optimizer::optimize(common::MarginalizationFlag marginalization_flag) {
     diagnostics_ = SolverDiagnostics{};
     // STEP 1: Setup optimization problem and parameter blocks
     ceres::Problem problem;
-    setupOptimizationProblem(problem);
+    const bool valid_initial_state = setupOptimizationProblem(problem);
+    if (!valid_initial_state) {
+        diagnostics_.reason = "invalid_initial_parameters";
+        releaseMarginalizationPrior();
+        beginDiagnostics(marginalization_flag);
+        finishDiagnostics();
+        return false;
+    }
     beginDiagnostics(marginalization_flag);
 
     // STEP 2: Add various constraint factors
@@ -166,10 +174,20 @@ bool Optimizer::optimize(common::MarginalizationFlag marginalization_flag) {
     // STEP 3: Solve the optimization problem
     solveCeresProblem(problem);
 
-    // NaN/Inf validation: rollback on failure
-    if (!diagnostics_.usable || !validateOptimizationParameters()) {
+    const bool valid_state = validateOptimizationParameters();
+    if (diagnostics_.usable && valid_state) {
+        diagnostics_.currentVisualFactors = filterFinalLandmarks();
+        if (diagnostics_.currentVisualFactors < 2) {
+            diagnostics_.usable = false;
+            diagnostics_.reason = "insufficient_final_current_features";
+        }
+    }
+
+    // Roll back unusable solver updates and invalid parameters.
+    if (!diagnostics_.usable || !valid_state) {
 #ifndef NDEBUG
-        std::cout << "Optimization produced NaN/Inf, rolling back parameters" << std::endl;
+        std::cout << "Optimization update unusable (" << diagnostics_.reason
+                  << "), rolling back parameters" << std::endl;
 #endif
         std::memcpy(para_Pose, saved_Pose, sizeof(para_Pose));
         std::memcpy(para_SpeedAndBiases, saved_SpeedAndBiases, sizeof(para_SpeedAndBiases));
@@ -188,7 +206,13 @@ bool Optimizer::optimize(common::MarginalizationFlag marginalization_flag) {
     return true;
 }
 
-void Optimizer::setupOptimizationProblem(ceres::Problem& problem) {
+bool Optimizer::setupOptimizationProblem(ceres::Problem& problem) {
+    // Ceres evaluates PlusJacobian during registration, so populate/validate first.
+    if (!utility::so3::isRotation(r_ic_)) return false;
+    for (int i = 0; i <= WINDOW_SIZE; ++i)
+        if (!utility::so3::isRotation((*sliding_window_)[i].R)) return false;
+    prepareOptimizationParameters();
+    if (!validateOptimizationParameters()) return false;
     // Add pose and speed-bias parameter blocks for sliding window
     for (int i = 0; i < WINDOW_SIZE + 1; i++) {
         ceres::Manifold* pose_manifold = new backend::factor::PoseLocalParameterization();
@@ -201,9 +225,8 @@ void Optimizer::setupOptimizationProblem(ceres::Problem& problem) {
     problem.AddParameterBlock(para_Ex_Pose, SIZE_POSE, pose_manifold);
     problem.SetParameterBlockConstant(para_Ex_Pose);
 
-    // Prepare optimization parameters
-    prepareOptimizationParameters();
     if (!last_marginalization_info_) problem.SetParameterBlockConstant(para_Pose[0]);
+    return true;
 }
 
 void Optimizer::addMarginalizationFactor(ceres::Problem& problem) {
@@ -239,6 +262,7 @@ void Optimizer::addIMUFactors(ceres::Problem& problem) {
 }
 
 int Optimizer::addFeatureFactors(ceres::Problem& problem) {
+    current_feature_factors_.fill(false);
     auto loss_function = std::make_unique<ceres::CauchyLoss>(1.0);
     std::unique_ptr<std::ostringstream> membership;
     size_t membership_count = 0;
@@ -300,7 +324,10 @@ int Optimizer::addFeatureFactors(ceres::Problem& problem) {
             problem.AddResidualBlock(f.release(), loss_function.get(), para_Pose[imu_i], para_Pose[imu_j], para_Ex_Pose,
                                      para_Feature[feature_index]);
             f_m_cnt++;
-            if (imu_j == WINDOW_SIZE) ++diagnostics_.currentVisualFactors;
+            if (imu_j == WINDOW_SIZE) {
+                ++diagnostics_.currentVisualFactors;
+                current_feature_factors_[feature_index] = true;
+            }
             if (membership) {
                 ++added_for_feature;
                 if (imu_j == WINDOW_SIZE) ++current_for_feature;
@@ -350,9 +377,22 @@ void Optimizer::solveCeresProblem(ceres::Problem& problem, int pending_frames) {
     diagnostics_.terminationType = static_cast<int>(summary.termination_type);
     diagnostics_.initialCost = summary.initial_cost;
     diagnostics_.finalCost = summary.final_cost;
+    int real_trials = 0, accepted_trials = 0, domain_failure_trials = 0;
+    for (const auto& iteration : summary.iterations) {
+        if (iteration.iteration == 0) continue; // Ceres labels the initial state successful.
+        ++real_trials;
+        if (iteration.step_is_successful) ++accepted_trials;
+        if (iteration.cost == std::numeric_limits<double>::max()) ++domain_failure_trials;
+    }
+    // Ceres uses DBL_MAX when a candidate Plus/Evaluate fails. Report that lack
+    // of correction separately: a finite solution still supports propagation
+    // and marginalization, including on calibrated sequences.
+    const bool candidate_evaluation_failed = summary.termination_type == ceres::NO_CONVERGENCE &&
+        real_trials > 0 && accepted_trials == 0 && domain_failure_trials == real_trials;
     diagnostics_.usable = summary.IsSolutionUsable() && std::isfinite(summary.initial_cost) &&
                           std::isfinite(summary.final_cost) && summary.num_residuals > 0;
     diagnostics_.reason = diagnostics_.usable ? "usable" : "unusable_solver_result";
+    diagnostics_.qualityReason = candidate_evaluation_failed ? "solver_candidate_evaluation_failed" : "";
     if (diagnostic_capture_) {
         std::ostringstream out;
         out << "{\"terminationType\":" << int(summary.termination_type) << ",\"message\":";
@@ -370,6 +410,8 @@ void Optimizer::solveCeresProblem(ceres::Problem& problem, int pending_frames) {
         out << ",\"parameterTolerance\":"; diagnosticNumber(out, options.parameter_tolerance);
         out << ",\"maxIterations\":" << options.max_num_iterations << ",\"maxTimeSeconds\":";
         diagnosticNumber(out, options.max_solver_time_in_seconds);
+        out << ",\"realTrials\":" << real_trials << ",\"acceptedTrials\":" << accepted_trials
+            << ",\"domainFailureTrials\":" << domain_failure_trials;
         const size_t count = std::min(summary.iterations.size(), size_t(100));
         out << ",\"iterationRowsLimit\":100,\"iterationRowsTruncated\":" << (summary.iterations.size() > count ? "true" : "false")
             << ",\"parameterRelativeStepAvailable\":false,\"iterations\":[";
@@ -706,6 +748,8 @@ void Optimizer::performMarginalizationForNewGeneralFrame(factor::Marginalization
 }
 
 bool Optimizer::validateOptimizationParameters() const {
+    if (!Eigen::Map<const Eigen::Matrix<double,7,1>>(para_Ex_Pose).allFinite() ||
+        std::abs(Eigen::Map<const Eigen::Quaterniond>(para_Ex_Pose+3).squaredNorm()-1) > 1e-6) return false;
     for (int i = 0; i < WINDOW_SIZE + 1; i++) {
         for (int j = 0; j < SIZE_POSE; j++) {
             if (!std::isfinite(para_Pose[i][j])) return false;
@@ -716,11 +760,42 @@ bool Optimizer::validateOptimizationParameters() const {
             if (!std::isfinite(para_SpeedAndBiases[i][j])) return false;
         }
     }
-    int feature_count = std::min(feature_manager_->getFeatureCount(), NUM_OF_FEATURES);
-    for (int i = 0; i < feature_count; i++) {
-        if (!std::isfinite(para_Feature[i][0]) || para_Feature[i][0] <= 1e-10) return false;
-    }
     return true;
+}
+
+int Optimizer::filterFinalLandmarks() {
+    const Eigen::Vector3d tic(para_Ex_Pose[0],para_Ex_Pose[1],para_Ex_Pose[2]);
+    const Eigen::Matrix3d ric = Eigen::Quaterniond(para_Ex_Pose[6],para_Ex_Pose[3],para_Ex_Pose[4],para_Ex_Pose[5]).toRotationMatrix();
+    int feature_index = -1, current_features = 0;
+    for (const auto& feature : feature_manager_->feature_bank_) {
+        if (feature.feature_per_frame.size() < 2 || feature.start_frame >= WINDOW_SIZE - 2) continue;
+        if (++feature_index >= NUM_OF_FEATURES) break;
+        const double rho = para_Feature[feature_index][0];
+        bool valid = feature.solve_flag != 2 && std::isfinite(rho) && rho > 1e-10 && feature.start_frame >= 0;
+        Eigen::Vector3d world;
+        if (valid) {
+            const double* anchor = para_Pose[feature.start_frame];
+            const Eigen::Quaterniond rotation(anchor[6],anchor[3],anchor[4],anchor[5]);
+            world = rotation * (ric * (feature.feature_per_frame.front().ray_vector / rho) + tic) +
+                    Eigen::Vector3d(anchor[0],anchor[1],anchor[2]);
+            valid = world.allFinite();
+        }
+        int frame = feature.start_frame;
+        for (const auto& observation : feature.feature_per_frame) {
+            if (!valid || frame > WINDOW_SIZE) break;
+            const double* state = para_Pose[frame++];
+            const Eigen::Quaterniond rotation(state[6],state[3],state[4],state[5]);
+            const Eigen::Vector3d camera = ric.transpose() *
+                (rotation.inverse() * (world - Eigen::Vector3d(state[0],state[1],state[2])) - tic);
+            valid = observation.ray_vector.allFinite() && observation.ray_vector.z() > 1e-10 &&
+                    camera.allFinite() && camera.z() > 1e-10;
+        }
+        // Preserve feature slots until apply/marginalization complete. setDepth
+        // marks this single landmark failed; the estimator removes it afterwards.
+        if (!valid) para_Feature[feature_index][0] = -1;
+        else if (current_feature_factors_[feature_index]) ++current_features;
+    }
+    return current_features;
 }
 
 }  // namespace backend

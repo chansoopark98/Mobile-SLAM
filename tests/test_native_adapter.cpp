@@ -1,6 +1,8 @@
 #include <gtest/gtest.h>
 #include <filesystem>
 #include <fstream>
+#include <iomanip>
+#include <yaml-cpp/yaml.h>
 #include <opencv2/imgcodecs.hpp>
 #include "utility/measurement_processor.h"
 #include "vio_engine.h"
@@ -9,12 +11,18 @@
 class NativeAdapter : public ::testing::Test {
 protected:
     std::filesystem::path root;
+    std::filesystem::path previous_cwd;
     void SetUp() override {
         root=std::filesystem::temp_directory_path()/"mobile-slam-native-adapter";
         std::filesystem::create_directories(root);
+        previous_cwd=std::filesystem::current_path();
+        std::filesystem::current_path(root);
         cv::imwrite((root/"frame.png").string(),cv::Mat(96,96,CV_8UC1,cv::Scalar(0)));
     }
-    void TearDown() override { std::filesystem::remove_all(root); }
+    void TearDown() override {
+        std::filesystem::current_path(previous_cwd);
+        std::filesystem::remove_all(root);
+    }
 };
 
 TEST_F(NativeAdapter, OriginalIMUBracketIsForwardedExactlyOnceWithoutFeatureTracking) {
@@ -154,4 +162,50 @@ TEST_F(NativeAdapter, ActualHeadlessVIOSystemDelegatesDecodedFramesToEngine) {
     EXPECT_EQ(adapter.getEngine().getLastReason(),"invalid_frame");
     EXPECT_FALSE(adapter.getEngine().getPoseFresh());
     EXPECT_EQ(adapter.getEngine().getEpoch(),1u);
+    const auto log_dir=std::filesystem::directory_iterator(root/"logs")->path();
+    ASSERT_TRUE(std::filesystem::exists(log_dir/"frames.csv"));
+    const auto summary=YAML::LoadFile((log_dir/"summary.json").string());
+    EXPECT_EQ(summary["frames_available"].as<int>(),4);
+    EXPECT_EQ(summary["frames_scheduled"].as<int>(),4);
+    EXPECT_EQ(summary["frames_processed"].as<int>(),4);
+    EXPECT_EQ(summary["frames_decoded"].as<int>(),3);
+    EXPECT_EQ(summary["missing_images"].as<int>(),1);
+    EXPECT_EQ(summary["imu_available"].as<int>(),31);
+    EXPECT_EQ(summary["imu_delivered"].as<int>(),12);
+    EXPECT_EQ(summary["pose_count"].as<int>(),0);
+    EXPECT_EQ(summary["first_pose_frame"].as<int>(),-1);
+    EXPECT_EQ(summary["pose_frame"].as<std::string>(),"T_W_C");
+    const auto effective=YAML::LoadFile((log_dir/"effective-config.json").string());
+    EXPECT_EQ(effective["params"]["lk_iterations"].as<int>(),30);
+    EXPECT_DOUBLE_EQ(effective["params"]["lk_eps"].as<double>(),.01);
+    std::ifstream frames(log_dir/"frames.csv");
+    std::string line;
+    int rows=0;
+    while(std::getline(frames,line)) ++rows;
+    EXPECT_EQ(rows,5); // Header plus every scheduled image, including its decode failure.
+}
+
+TEST_F(NativeAdapter, ConsecutiveLoggersCannotOverwriteEachOther) {
+    utility::TestResultLogger first,second;
+    ASSERT_TRUE(first.initialize("absent.yaml"));
+    ASSERT_TRUE(second.initialize("absent.yaml"));
+    EXPECT_NE(first.getLogDirectory(),second.getLogDirectory());
+}
+
+TEST_F(NativeAdapter, TrajectorySerializationPreservesDoublePrecision) {
+    utility::TestResultLogger logger;
+    ASSERT_TRUE(logger.initialize("absent.yaml"));
+    constexpr double timestamp=1520216380.2800002;
+    const Eigen::Vector3d position(.123456789012345,-1.23456789012345,2.34567890123456);
+    logger.addPose(position,Eigen::Matrix3d::Identity(),timestamp);
+    logger.saveTrajectoryToFile();
+    std::ifstream trajectory(logger.getLogDirectory()+"/trajectory_pose.txt");
+    std::string header;
+    std::getline(trajectory,header);
+    double actual_time,x,y,z;
+    trajectory>>actual_time>>x>>y>>z;
+    EXPECT_DOUBLE_EQ(actual_time,timestamp);
+    EXPECT_DOUBLE_EQ(x,position.x());
+    EXPECT_DOUBLE_EQ(y,position.y());
+    EXPECT_DOUBLE_EQ(z,position.z());
 }

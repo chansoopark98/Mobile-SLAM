@@ -101,9 +101,10 @@ test('DeviceMotion normalizes epoch event time and preserves axis/sign/radian co
         const { data, count } = imu.flush(); assert.equal(count, 1);
         assert.equal(data[0], 1.25);
         assert.deepEqual(Array.from(data.slice(1, 4)), ios ? [-1, -2, -3] : [1, 2, 3]);
-        assert.ok(Math.abs(data[4] - Math.PI / 2) < 1e-12);
-        assert.ok(Math.abs(data[5] - Math.PI) < 1e-12);
-        assert.ok(Math.abs(data[6] + Math.PI / 2) < 1e-12);
+        // W3C rotationRate alpha=x, beta=y, gamma=z; Chrome154 pump passes gyro x/y/z in that order.
+        assert.ok(Math.abs(data[4] + Math.PI / 2) < 1e-12);
+        assert.ok(Math.abs(data[5] - Math.PI / 2) < 1e-12);
+        assert.ok(Math.abs(data[6] - Math.PI) < 1e-12);
     }
 });
 
@@ -137,9 +138,10 @@ test('Main adapter preserves fixed body axes for Android/iOS portrait/landscape 
         let sent; app.vio.sendIMU = (data, count) => { sent = { data, count }; return true; };
         assert.equal(app._flushAndSendIMU(), 1);
         assert.deepEqual(Array.from(sent.data.slice(1,4)), [1,-3,2], `${ios ? 'iOS' : 'Android'} ${type}`);
-        assert.ok(Math.abs(sent.data[4] - Math.PI/2) < 1e-12);
-        assert.ok(Math.abs(sent.data[5] - Math.PI/2) < 1e-12);
-        assert.ok(Math.abs(sent.data[6] - Math.PI) < 1e-12);
+        // Device [-pi/2,pi/2,pi] -> fixed body [x,-z,y].
+        assert.ok(Math.abs(sent.data[4] + Math.PI/2) < 1e-12);
+        assert.ok(Math.abs(sent.data[5] + Math.PI) < 1e-12);
+        assert.ok(Math.abs(sent.data[6] - Math.PI/2) < 1e-12);
     }
 });
 
@@ -195,6 +197,19 @@ test('Live result consumes a pose only once and clears state on loss/engine epoc
     assert.equal(events.at(-1), 'clear');
     app._consumeResult({ ...result, sequence: 3, engineEpoch: 2 });
     assert.equal(events.filter(e => e === 'clear').length, 2);
+});
+
+test('Future IMU time cannot be labeled active while the engine waits for past samples', () => {
+    const { app } = appRealm();
+    app.statusEl = {};
+    app.imu.running = true;
+    app.imu._diagnostics.lastSample = { timestampS: 65 };
+    app._consumeResult({ clientEpoch: 1, engineEpoch: 1, sequence: 1,
+        statusCode: 1, reason: 'imu_missing_past', initialized: false,
+        inputTimestamp: 5, pose: null, poseFresh: false, poseValid: false });
+    assert.doesNotMatch(app.statusEl.textContent, /IMU active/);
+    assert.match(app.statusEl.textContent, /clock ahead/);
+    assert.match(app.statusEl.textContent, /60000ms/);
 });
 
 function replayRealm(options = {}) {

@@ -18,9 +18,12 @@ check_mode() {
       for file in scripts/dev/*.sh; do bash -n "$file" || return "$?"; done
       "$python_path" -m py_compile scripts/dev/*.py
       ;;
-    eval) "$python_path" -m unittest discover -s tests -p test_audit_metrics.py -v ;;
+    eval)
+      "$python_path" -m unittest discover -s tests -p test_audit_metrics.py -v || return "$?"
+      "$python_path" -m unittest discover -s tests -p test_synthetic_vio.py -v
+      ;;
     browser-contracts)
-      node --test tests/browser/contracts.test.mjs tests/browser/transport.test.mjs || return "$?"
+      node --test tests/browser/*.test.mjs || return "$?"
       "$python_path" -m unittest discover -s tests/browser -p test_export_trajectory.py -v
       ;;
     mobile-contracts) node --test tests/browser/mobile-audit-contracts.test.mjs ;;

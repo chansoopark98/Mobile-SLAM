@@ -20,8 +20,8 @@ import { OrientationHandler } from './orientation.js?v=11';
  *
  *   ?fx=NNN        — Override focal length (pixels). Bypasses FOV estimation.
  *   ?config=NAME   — Config profile: mobile_default, mobile_highend, euroc, tum_vi
- *   ?fth=N.N       — Override fundamental matrix RANSAC threshold (default: 5.0)
- *   ?rotate=none|cw|ccw — Force rotation mode (overrides auto-detection)
+ *   ?fth=N.N       — Override fundamental matrix RANSAC threshold (engine default: 1.0)
+ *   ?rotate=none|cw|ccw — Explicit pixel rotation; default preserves video orientation
  */
 const URL_PARAMS = new URLSearchParams(window.location.search);
 
@@ -38,15 +38,9 @@ function remoteLog(level, msg) {
  */
 const VIO_CONFIGS = {
     // Default mobile phone config
-    // NOTE: Noise values enter pre-integration covariance as acc_n², so even
-    // small changes have quadratic effect. Values must match VINS-Mono's
-    // continuous-time noise density model (NOT raw sensor specs).
-    // Reference: EuRoC acc_n=0.08, TUM-VI acc_n=0.028
-    //
-    // Previous values (acc_n=0.2, gyr_n=0.03) were ~50x too loose in covariance
-    // (0.2²/0.028² ≈ 51), making the optimizer barely trust IMU data.
-    // Result: visual-only tracking → rapid divergence on fast motion.
-    // Tightened to ~2-3x EuRoC level, appropriate for modern mobile MEMS.
+    // Legacy covariance coefficients: Q contains their squares, P += V Q V^T.
+    // They are not calibrated phone noise densities; sampling-rate semantics
+    // follow IntegrationBase, not an assumed continuous-time density model.
     mobile_default: {
         label: 'Mobile Default (VINS-Mobile)',
         // IMU noise — VINS-Mobile baseline (ACC_N=0.5, GYR_N=0.2)
@@ -241,7 +235,7 @@ function estimateFocalLength(videoTrack, width, height, configFactor) {
             // getSettings/getCapabilities not available
         }
 
-        // Try to detect ultrawide lens (some devices expose this info)
+        // Focus-distance ranges describe focusing, not lens FOV or lens type.
         try {
             const capabilities = videoTrack.getCapabilities ? videoTrack.getCapabilities() : null;
             if (capabilities) {
@@ -250,14 +244,6 @@ function estimateFocalLength(videoTrack, width, height, configFactor) {
                 console.log(`[VIO] Track capabilities: ${capKeys.join(', ')}`);
                 if (capabilities.width && capabilities.height) {
                     console.log(`[VIO] Track resolution range: ${capabilities.width.min}-${capabilities.width.max} x ${capabilities.height.min}-${capabilities.height.max}`);
-                }
-                // Some devices expose focusDistance; very short min suggests ultrawide
-                if (capabilities.focusDistance && capabilities.focusDistance.min < 0.05) {
-                    const ultrawideFovDeg = 100;
-                    const refDim = Math.max(width, height);
-                    const fx = (refDim / 2) / Math.tan((ultrawideFovDeg * Math.PI / 180) / 2);
-                    console.log(`[VIO] Likely ultrawide lens (focusDist min=${capabilities.focusDistance.min}m) → FOV~${ultrawideFovDeg}°, fx=${fx.toFixed(1)}`);
-                    return { fx, method: `ultrawide detect ${ultrawideFovDeg}°` };
                 }
             }
         } catch (_) {
@@ -276,7 +262,7 @@ function estimateFocalLength(videoTrack, width, height, configFactor) {
     // Method 3: Default — assume typical mobile rear camera ~69° horizontal FOV
     // Measured main camera FOVs (2023-2026):
     //   iPhone 14 main: 69°, Pixel 7: 72°, Galaxy S23: 70°
-    //   Ultrawide: 100-120° (detected by focusDistance check above)
+    //   Ultrawide: 100-120° (not identifiable from focusDistance capabilities)
     //   Telephoto: 35-50°
     // Using 69° based on iPhone 14 main camera (most common baseline).
     //
@@ -443,10 +429,15 @@ class App {
         this.running = false;
         this.frameCount = 0;
         this.totalFrameCount = 0;
-        this.frameMetrics = { captured: 0, attempted: 0, accepted: 0, completed: 0, dropped: 0 };
+        this.frameMetrics = { captured: 0, attempted: 0, accepted: 0, completed: 0, dropped: 0,
+            snapshotCaptured: 0, snapshotCoalesced: 0, snapshotConsumed: 0, snapshotDiscarded: 0,
+            snapshotCaptureFailed: 0, snapshotGeometryRejected: 0, warmupSkipped: 0, shortIntervalSkipped: 0 };
         this._renderResultKey = null;
         this._renderEpoch = null;
         this._cameraProfile = null;
+        this._orientationUpdate = null;
+        this._pendingOrientation = null;
+        this._videoResizeHandler = null;
         this.calibrationProvenance = { status: 'heuristic_unverified' };
         this.lastFPSTime = 0;
         this.fps = 0;
@@ -482,7 +473,15 @@ class App {
         this._gravityHint = null;        // {x, y, z} gravity in VIO body frame
         this._gravityHintRaw = null;     // {x, y, z} gravity in device frame
 
-        // Frame deduplication: skip if video.currentTime hasn't changed
+        // Callback frame IDs avoid comparing unrelated live media clock origins.
+        this._videoFrameCallbackActive = false;
+        this._videoFrameTiming = null;
+        this._pendingVideoFrame = null;
+        this._videoCaptureGeneration = 0;
+        this._videoFrameCallbackVideo = null;
+        this._lastVideoCallbackFrames = -1;
+        this._lastPresentedFrames = -1;
+        // Legacy API-unsupported frame deduplication.
         this._lastVideoTime = -1;
         // Frame rate limiting: ensure enough IMU between VIO frames
         this._lastVIOFrameTime = 0;
@@ -564,11 +563,18 @@ class App {
         if (canvas3d) {
             this.renderer = new Renderer(canvas3d);
             this.renderer.render();
-            window.addEventListener('resize', () => {
-                const container = canvas3d.parentElement;
+            const container = canvas3d.parentElement;
+            const resizeRenderer = () => {
                 this.renderer.resize(container.clientWidth, container.clientHeight);
-                canvas3d.width = container.clientWidth;
-                canvas3d.height = container.clientHeight;
+                this.renderer.render();
+            };
+            // Status wrapping and browser toolbars also change the flex area.
+            if (typeof ResizeObserver !== 'undefined') {
+                this._renderResizeObserver = new ResizeObserver(resizeRenderer);
+                this._renderResizeObserver.observe(container);
+            }
+            window.addEventListener('resize', () => {
+                resizeRenderer();
                 // iOS: scroll to stable position after resize to suppress address bar bounce
                 // 8th Wall pattern: full-window-canvas-module.ts
                 if (/iPad|iPhone|iPod/.test(navigator.userAgent)) {
@@ -599,9 +605,8 @@ class App {
             await this.orientation.tryLockPortrait();
             const orientationType = this.orientation.getType();
 
-            // Initialize camera — requests 640x480 from sensor, outputs portrait
-            // (480x640) with actual pixel rotation if needed (camera.js v9).
-            // Then crop to landscape 4:3 for VIO processing.
+            // Preserve the browser's natural video pixels; only ?rotate requests
+            // an additional pixel rotation. Calibration follows that transform.
             await this.camera.initialize(640, 480);
 
             // VINS-Mobile: use portrait 480x640 directly (no landscape crop).
@@ -646,10 +651,9 @@ class App {
             // Get active config profile
             const config = VIO_CONFIGS[this.activeConfig];
 
-            // Get orientation-aware camera-IMU extrinsic rotation (R_ic).
-            // Camera v9 outputs landscape 4:3 crop, but R_ic is a physical rotation
-            // (camera→body), unchanged by crop since camera axes stay the same.
-            let r_ic = this.orientation.getRIC();
+            // Heuristic camera-to-body rotation describes the natural video domain.
+            // Explicit pixel rotation is composed by _cameraCalibration below.
+            const r_ic = this.orientation.getRIC();
 
             // Log coordinate system configuration
             const video = this.camera.getVideoElement();
@@ -657,7 +661,7 @@ class App {
             console.log('[VIO] ═══════ Configuration Summary ═══════');
             console.log(`[VIO] Screen orientation: ${orientationType}`);
             console.log(`[VIO] Camera native: ${video.videoWidth}x${video.videoHeight}`);
-            console.log(`[VIO] Camera portrait: ${portraitDims.width}x${portraitDims.height} (rotate=${this.camera.getRotateMode()})`);
+            console.log(`[VIO] Camera rotated: ${portraitDims.width}x${portraitDims.height} (rotate=${this.camera.getRotateMode()})`);
             console.log(`[VIO] Camera crop: ${width}x${height} (${width > height ? 'LANDSCAPE' : 'PORTRAIT'} ${(width/height).toFixed(2)})`);
             console.log(`[VIO] Config profile: ${this.activeConfig} (${config.label})`);
             console.log('[VIO] Camera frame (OpenCV): x=right, y=down, z=forward');
@@ -677,92 +681,21 @@ class App {
             const pW = this._processWidth;
             const pH = this._processHeight;
 
-            // Estimate focal length using FOV or config factor.
-            // IMPORTANT: fx is a lens property — must use native portrait dimensions
-            // (before crop) for FOV→focal length conversion, since the 69° FOV
-            // spans the camera's full native longer dimension (640px), not the crop.
-            const videoTrack = this.camera.getVideoTrack ? this.camera.getVideoTrack() : null;
-            // portraitDims already declared above for logging
-            let { fx, method: fxMethod } = estimateFocalLength(videoTrack, portraitDims.width, portraitDims.height, config.focalLengthFactor);
-            const fxValidation = validateFocalLength(fx, portraitDims.width, portraitDims.height);
-            if (!fxValidation.valid) {
-                fx = fxValidation.fx;
-                fxMethod += ' (corrected)';
-            }
-            // Scale focal length to processing resolution
-            let fxScaled = fx * (pW / width);
-            let fyScaled = fx * (pH / height);
-
-            // Camera-IMU translation offset in VIO body frame
-            // VIO body frame: X=right, Y=forward, Z=up
-            // Camera ~2cm below IMU center along Z_vio (gravity direction)
-            let t_ic = [0, 0, -0.02];
-            let calibration = { width: pW, height: pH, fx: fxScaled, fy: fyScaled,
-                cx: (pW - 1) / 2, cy: (pH - 1) / 2, modelType: config.modelType,
-                k2: 0, k3: 0, k4: 0, k5: 0, r_ic, t_ic };
-            this.calibrationProvenance = { status: 'heuristic_unverified', intrinsics: fxMethod,
-                extrinsic: 'orientation table and assumed 2cm lever arm; no device calibration', distortion: 'assumed zero' };
-            if (this._cameraProfile) {
-                calibration = this._profileCalibration(this._cameraProfile, orientationType, pW, pH);
-                this.calibrationProvenance = { status: 'supplied_calibration_unverified', provenance: this._cameraProfile.provenance,
-                    profilePath: URL_PARAMS.get('cameraProfile'), pixelFrame: this._cameraProfile.pixelFrame,
-                    transform: this.camera.getPixelTransform(pW, pH) };
-                fxMethod = 'supplied calibration';
-                fxScaled = calibration.fx; fyScaled = calibration.fy;
-                r_ic = calibration.r_ic; t_ic = calibration.t_ic;
-            }
+            const { calibration, fx, method: fxMethod } = this._cameraCalibration(config, orientationType, r_ic, pW, pH);
+            const fxScaled = calibration.fx, fyScaled = calibration.fy;
             const params = { ...calibration, acc_n: config.acc_n, acc_w: config.acc_w,
-                gyr_n: config.gyr_n, gyr_w: config.gyr_w, g_norm: config.g_norm };
+                gyr_n: config.gyr_n, gyr_w: config.gyr_w, g_norm: config.g_norm,
+                mobileMotionGuard: true };
             const configured = await this.vio.configure(params);
             if (!configured) throw new Error('VIO configuration failed');
             this._lastConfigParams = params;
             console.log('[VIO] Calibration provenance', this.calibrationProvenance);
             console.log(`[VIO] R_ic: [${params.r_ic.join(', ')}]`);
 
-            // Apply mobile solver parameters if present in config
-            if (config.solver_time !== undefined) {
-                await this.vio.setMobileParams(
-                    config.solver_time,
-                    config.num_iterations,
-                    config.max_features
-                );
-            }
-
-            // Apply mobile-optimized tracking parameters
-            if (config.lk_window !== undefined) {
-                await this.vio.setTrackingParams(
-                    config.lk_window,
-                    config.lk_pyramid || 4,
-                    config.min_dist || 20,
-                    config.f_edge_factor || 0.0
-                );
-            }
-
-            // PnP dual-rate pipeline (30Hz PnP + ~10Hz backend)
-            // Disabled by default until fully verified. Enable with ?pnp=1
-            // URL override: ?pnp=1 to enable, ?freq=N to set FREQ
-            {
-                const urlPnP = URL_PARAMS.get('pnp');
-                const urlFreq = URL_PARAMS.get('freq');
-                const enablePnP = urlPnP === '1';  // disabled by default, opt-in with ?pnp=1
-                const freq = (urlFreq && parseInt(urlFreq) >= 1 && parseInt(urlFreq) <= 10)
-                    ? parseInt(urlFreq) : 3;
-                await this.vio.setPnPParams(enablePnP, freq);
-                console.log(`[VIO] PnP: ${enablePnP ? 'enabled' : 'disabled'}, FREQ=${freq}`);
-            }
-
-            // Apply f_threshold override from URL (?fth=N.N)
-            const urlFth = URL_PARAMS.get('fth');
-            if (urlFth) {
-                const fth = parseFloat(urlFth);
-                if (Number.isFinite(fth) && fth > 0 && fth < 100) {
-                    await this.vio.setFThreshold(fth);
-                    console.log(`[VIO] f_threshold overridden to ${fth} via URL`);
-                }
-            }
+            await this._applyRuntimeParameters(config);
 
             console.log(`[VIO] ═══════ VIO Engine Configured ═══════`);
-            console.log(`[VIO]   Portrait: ${portraitDims.width}x${portraitDims.height} → Crop: ${width}x${height} → Process: ${pW}x${pH} (scale=${scale})`);
+            console.log(`[VIO]   Rotated: ${portraitDims.width}x${portraitDims.height} → Crop: ${width}x${height} → Process: ${pW}x${pH} (scale=${scale})`);
             console.log(`[VIO]   Native: ${video.videoWidth}x${video.videoHeight}`);
             console.log(`[VIO]   ★ Focal: fx=${params.fx.toFixed(1)}, fy=${params.fy.toFixed(1)} (${fxMethod}${this._cameraProfile ? '' : `, scaled from ${fx.toFixed(1)}`})`);
             console.log(`[VIO]   ★ fx/width=${(fxScaled/pW).toFixed(3)}, fx/max(w,h)=${(fxScaled/Math.max(pW,pH)).toFixed(3)}`);
@@ -776,7 +709,7 @@ class App {
             console.log(`[VIO]   URL overrides: fx=${URL_PARAMS.get('fx')||'(none)'}, config=${URL_PARAMS.get('config')||'(none)'}, fth=${URL_PARAMS.get('fth')||'(none)'}, rotate=${URL_PARAMS.get('rotate')||'(auto)'}`);
 
             // Remote log key params for mobile debugging
-            remoteLog('info', `VIO configured: ${pW}x${pH} (portrait ${portraitDims.width}x${portraitDims.height} → crop ${width}x${height}, scale=${scale}) ` +
+            remoteLog('info', `VIO configured: ${pW}x${pH} (rotated ${portraitDims.width}x${portraitDims.height} → crop ${width}x${height}, scale=${scale}) ` +
                 `fx=${fxScaled.toFixed(1)} (${fxMethod}) ` +
                 `hFOV=${(2*Math.atan(pW/(2*fxScaled))*180/Math.PI).toFixed(1)}° ` +
                 `profile=${this.activeConfig} rotate=${this.camera.getRotateMode()}`);
@@ -785,9 +718,9 @@ class App {
             if (granted) {
                 this.imu.start(60);
                 if (this.imu.running) {
-                    this.updateStatus('Calibrating gyro bias (keep still)...');
+                    this.updateStatus('Checking IMU (keep still)...');
                     const calibration = await this.imu.calibrate(1500);
-                    this._inputStatus = calibration ? 'IMU active' : 'IMU active / bias unverified';
+                    this._inputStatus = calibration ? 'IMU active / bias unverified' : 'IMU active / stationary check incomplete';
                 } else this._inputStatus = `IMU ${this.imu.getDiagnostics().status}`;
             } else this._inputStatus = `IMU permission ${this.imu.permission.state}`;
             this.updateStatus(`${this._inputStatus} · ${this.calibrationProvenance.status}`);
@@ -807,6 +740,7 @@ class App {
             this._onWindowBlur = () => {
                 if (!this.running || this._blurPaused) return;
                 this._blurPaused = true;
+                this._clearVideoFrameCapture();
                 this._stopIMUFlush();
                 console.log('[VIO] Window blur — pausing IMU flush');
             };
@@ -824,26 +758,18 @@ class App {
             // Start deviceorientation listener for gravity hint (8th Wall approach)
             this._startDeviceOrientationListener();
 
-            // Start listening for orientation changes (reconfigures VIO if phone rotates)
-            this.orientation.startListening(info => this._onOrientationChange(info).catch(error => {
-                this._reconfiguring = false; this.updateStatus(`Orientation error: ${error.message}`); this.stop();
-            }));
+            const reconfigure = info => this._onOrientationChange(info).catch(error => {
+                this.updateStatus(`Camera geometry error: ${error.message}`); this.stop();
+            });
+            this.orientation.startListening(reconfigure);
+            this._videoResizeHandler = () => {
+                if (video.videoWidth === this.camera._nativeWidth && video.videoHeight === this.camera._nativeHeight) return;
+                reconfigure({ type: this.orientation.getType(), r_ic: this.orientation.getRIC() });
+            };
+            video.addEventListener('resize', this._videoResizeHandler);
+            this._videoResizeHandler();
 
-            // presentationTime is a compositor timestamp proxy, not exposure.
-            // Keep metadata and callback arrival distinct; never invent captureTime.
-            if ('requestVideoFrameCallback' in HTMLVideoElement.prototype) {
-                const trackTimestamp = (now, metadata) => {
-                    if (!this.running) return;
-                    const source = Number.isFinite(metadata.presentationTime) ? 'video_presentation' : 'video_callback_arrival';
-                    this._videoFrameTiming = { timestampS: (source === 'video_presentation' ? metadata.presentationTime : now) / 1000,
-                        source, callbackArrivalMs: performance.now(), mediaTimeS: metadata.mediaTime,
-                        captureTimeMs: Number.isFinite(metadata.captureTime) ? metadata.captureTime : null,
-                        presentationTimeMs: Number.isFinite(metadata.presentationTime) ? metadata.presentationTime : null,
-                        timeOriginMs: performance.timeOrigin, physicalExposureVerified: false };
-                    this._videoFrameCallbackHandle = video.requestVideoFrameCallback(trackTimestamp);
-                };
-                this._videoFrameCallbackHandle = video.requestVideoFrameCallback(trackTimestamp);
-            }
+            this._startVideoFrameCallbacks(video);
 
             // Wait for IMU buffer to accumulate before first frame
             // Without this, Frame #0 gets imuCount=0 (race condition after calibration flush)
@@ -858,6 +784,47 @@ class App {
             this.camera.stop();
             this.imu.stop();
             this.startBtn.disabled = false;
+        }
+    }
+
+    _cameraCalibration(config, orientationType, baseRIC, width, height) {
+        const transform = this.camera.getPixelTransform(width, height);
+        if (this._cameraProfile) {
+            const calibration = this._profileCalibration(this._cameraProfile, orientationType, width, height);
+            this.calibrationProvenance = { status: 'supplied_calibration_unverified', provenance: this._cameraProfile.provenance,
+                profilePath: URL_PARAMS.get('cameraProfile'), pixelFrame: this._cameraProfile.pixelFrame, transform };
+            return { calibration, fx: calibration.fx, method: 'supplied calibration' };
+        }
+        const track = this.camera.getVideoTrack();
+        const sourceWidth = transform.sourceWidth, sourceHeight = transform.sourceHeight;
+        let { fx, method } = estimateFocalLength(track, sourceWidth, sourceHeight, config.focalLengthFactor);
+        const validated = validateFocalLength(fx, sourceWidth, sourceHeight);
+        if (!validated.valid) { fx = validated.fx; method += ' (corrected)'; }
+        const profile = { schema: 'mobile-slam-camera-profile-v1', pixelFrame: 'drawImage', orientationType,
+            provenance: 'screen-orientation heuristic in natural video pixels; no device calibration',
+            width: sourceWidth, height: sourceHeight, fx, fy: fx, cx: (sourceWidth - 1) / 2, cy: (sourceHeight - 1) / 2,
+            modelType: config.modelType, distortion: [0,0,0,0], r_ic: baseRIC, t_ic: [0,0,-0.02] };
+        const calibration = transformCameraProfile(profile, transform);
+        this.calibrationProvenance = { status: 'heuristic_unverified', intrinsics: method,
+            extrinsic: 'screen-orientation heuristic composed with pixel rotation; assumed 2cm lever arm; no device calibration',
+            distortion: 'assumed zero', pixelFrame: 'drawImage', transform };
+        return { calibration, fx, method };
+    }
+
+    async _applyRuntimeParameters(config) {
+        if (config.solver_time !== undefined && !await this.vio.setMobileParams(config.solver_time, config.num_iterations, config.max_features)) {
+            throw new Error('Mobile solver parameters rejected');
+        }
+        if (config.lk_window !== undefined && !await this.vio.setTrackingParams(config.lk_window, config.lk_pyramid || 4, config.min_dist || 20, config.f_edge_factor || 0)) {
+            throw new Error('Tracking parameters rejected');
+        }
+        const enablePnP = URL_PARAMS.get('pnp') === '1';
+        const requestedFrequency = parseInt(URL_PARAMS.get('freq'));
+        const frequency = requestedFrequency >= 1 && requestedFrequency <= 10 ? requestedFrequency : 3;
+        if (!await this.vio.setPnPParams(enablePnP, frequency)) throw new Error('PnP parameters rejected');
+        const fThreshold = parseFloat(URL_PARAMS.get('fth'));
+        if (Number.isFinite(fThreshold) && fThreshold > 0 && fThreshold < 100 && !await this.vio.setFThreshold(fThreshold)) {
+            throw new Error('F threshold rejected');
         }
     }
 
@@ -912,7 +879,7 @@ class App {
             if (this.imuLogCount === 0) {
                 console.log(`[VIO] IMU sensor type: ${this.imu.getSensorType()}`);
                 console.log(`[VIO] IMU rate: ${Math.round(this.imu.getRate())}Hz`);
-                console.log(`[VIO] Gyro bias calibrated: ${this.imu.isCalibrated()}`);
+                console.log(`[VIO] Browser gyro correction applied: ${this.imu.getDiagnostics().gyroBiasApplied}`);
                 // Gravity direction validation
                 // In VIO body frame: phone upright portrait → acc_z ≈ +9.81
                 if (accMag > 8.5 && accMag < 11.0) {
@@ -956,6 +923,7 @@ class App {
      */
     _startIMUFlush() {
         this._stopIMUFlush();
+        if (!this.running || this._reconfiguring || document.hidden || this._blurPaused) return;
         this._imuFlushTimer = setInterval(() => {
             if (!this.running) return;
             this._flushAndSendIMU();
@@ -1009,9 +977,110 @@ class App {
         this._gravityHintRaw = null;
     }
 
+    get captureGeneration() { return this._videoCaptureGeneration ?? 0; }
+
+    _discardVideoFrameSnapshot() {
+        if (this._pendingVideoFrame) this.frameMetrics.snapshotDiscarded++;
+        this._pendingVideoFrame = null;
+        this._videoFrameTiming = null;
+    }
+
+    _clearVideoFrameCapture() {
+        this._videoFrameCallbackVideo?.cancelVideoFrameCallback?.(this._videoFrameCallbackHandle);
+        this._videoFrameCallbackHandle = null;
+        this._videoFrameCallbackVideo = null;
+        this._videoCaptureGeneration = this.captureGeneration + 1;
+        this._discardVideoFrameSnapshot();
+        this._lastVideoCallbackFrames = -1;
+        this._lastPresentedFrames = -1;
+        this.lastFrameTiming = null;
+    }
+
+    _videoCaptureGeometry(video) {
+        if (!video || !this._lastConfigParams) return null;
+        const transform = this.camera.getPixelTransform(this._processWidth, this._processHeight);
+        const clientEpoch = this.vio.getMetrics().clientEpoch;
+        if (!Number.isSafeInteger(clientEpoch) || clientEpoch < 0 ||
+            video.videoWidth !== transform.sourceWidth || video.videoHeight !== transform.sourceHeight ||
+            this.camera.width !== this._captureWidth || this.camera.height !== this._captureHeight ||
+            this._lastConfigParams.width !== this._processWidth || this._lastConfigParams.height !== this._processHeight) return null;
+        return { ...transform, captureWidth: this._captureWidth, captureHeight: this._captureHeight, clientEpoch };
+    }
+
+    _videoSnapshotCurrent(packet, video) {
+        if (packet.video !== video || packet.captureGeneration !== this.captureGeneration || packet.configuration !== this._lastConfigParams) return false;
+        const current = this._videoCaptureGeometry(video);
+        return current && Object.entries(packet.geometry).every(([key,value]) => current[key] === value);
+    }
+
+    _startVideoFrameCallbacks(video) {
+        this._clearVideoFrameCapture();
+        this._videoFrameCallbackVideo = video;
+        this._videoFrameCallbackActive = typeof video?.requestVideoFrameCallback === 'function';
+        if (!this._videoFrameCallbackActive || !this.running || document.hidden || this._blurPaused || this._reconfiguring) return;
+        const generation = this.captureGeneration;
+        const currentSession = () => this.running && generation === this.captureGeneration && this.camera.getVideoElement() === video;
+        const trackTimestamp = (now, metadata) => {
+            if (!currentSession()) return;
+            try {
+                if (document.hidden || this._blurPaused || this._reconfiguring) { this._discardVideoFrameSnapshot(); return; }
+                const frameId = metadata.presentedFrames;
+                if (!Number.isSafeInteger(frameId) || frameId < 0 || frameId <= this._lastVideoCallbackFrames) return;
+                this._lastVideoCallbackFrames = frameId;
+                const arrival = performance.now();
+                const geometry = this._videoCaptureGeometry(video);
+                if (!geometry) { this.frameMetrics.snapshotGeometryRejected++; this._discardVideoFrameSnapshot(); return; }
+                const packet = { video, geometry, captureGeneration: generation, configuration: this._lastConfigParams };
+                const pixelReadStartMs = performance.now();
+                const gray = this.camera.captureGrayscale();
+                const pixelReadEndMs = performance.now();
+                if (!currentSession()) return;
+                if (!this._videoSnapshotCurrent(packet, video)) { this.frameMetrics.snapshotGeometryRejected++; this._discardVideoFrameSnapshot(); return; }
+                if (!(gray instanceof Uint8Array) || gray.length !== geometry.captureWidth * geometry.captureHeight) {
+                    this.frameMetrics.snapshotCaptureFailed++; this._discardVideoFrameSnapshot(); return;
+                }
+                // Camera reuses its buffer. The pending slot owns these pixels
+                // until replacement or consumption; RAF never reads video again.
+                const copyStartedMs = performance.now();
+                packet.gray = gray.slice();
+                const snapshotCopyMs = performance.now() - copyStartedMs;
+                const validDOMTime = value => Number.isFinite(value) && value >= 0 && value <= arrival + 1;
+                const captureValid = validDOMTime(metadata.captureTime);
+                const presentationValid = validDOMTime(metadata.presentationTime);
+                const timestamp = captureValid ? metadata.captureTime : presentationValid ? metadata.presentationTime : arrival;
+                packet.timing = { timestampS: timestamp / 1000,
+                    source: captureValid ? 'video_capture_time' : presentationValid ? 'video_presentation' : 'video_callback_arrival',
+                    association: 'video_frame_callback_snapshot', presentedFrames: frameId, captureGeneration: generation,
+                    clientEpoch: geometry.clientEpoch, sourceWidth: geometry.sourceWidth, sourceHeight: geometry.sourceHeight,
+                    captureWidth: geometry.captureWidth, captureHeight: geometry.captureHeight,
+                    processWidth: geometry.width, processHeight: geometry.height, pixelReadStartMs, pixelReadEndMs, snapshotCopyMs,
+                    callbackArrivalMs: arrival, callbackTimestampMs: Number.isFinite(now) ? now : null,
+                    mediaTimeS: Number.isFinite(metadata.mediaTime) ? metadata.mediaTime : null,
+                    captureTimeMs: Number.isFinite(metadata.captureTime) ? metadata.captureTime : null,
+                    presentationTimeMs: Number.isFinite(metadata.presentationTime) ? metadata.presentationTime : null,
+                    timeOriginMs: performance.timeOrigin, physicalExposureVerified: false };
+                if (this._pendingVideoFrame) this.frameMetrics.snapshotCoalesced++;
+                this._pendingVideoFrame = packet;
+                this._videoFrameTiming = packet.timing;
+                this.frameMetrics.captured++;
+                this.frameMetrics.snapshotCaptured++;
+            } catch (error) {
+                if (currentSession()) {
+                    this.frameMetrics.snapshotCaptureFailed++;
+                    this._lastFrameCaptureError = error.message;
+                    this._discardVideoFrameSnapshot();
+                }
+            } finally {
+                if (currentSession()) this._videoFrameCallbackHandle = video.requestVideoFrameCallback(trackTimestamp);
+            }
+        };
+        this._videoFrameCallbackHandle = video.requestVideoFrameCallback(trackTimestamp);
+    }
+
     processLoop() {
         if (!this.running) return;
         if (document.hidden || this._blurPaused || this._reconfiguring) {
+            this._discardVideoFrameSnapshot();
             requestAnimationFrame(() => this.processLoop());
             return;
         }
@@ -1030,23 +1099,37 @@ class App {
         const frameInterval = this._vioInitialized ? MIN_FRAME_INTERVAL_MS : INIT_FRAME_INTERVAL_MS;
         const video = this.camera.getVideoElement();
         const videoTime = video ? video.currentTime : -1;
-        const isNewFrame = videoTime > 0 && videoTime !== this._lastVideoTime;
+        let packet = this._pendingVideoFrame;
+        if (packet && !this._videoSnapshotCurrent(packet, video)) {
+            this.frameMetrics.snapshotGeometryRejected++;
+            this._discardVideoFrameSnapshot();
+            packet = null;
+        }
+        const timing = packet?.timing;
+        const isNewFrame = this._videoFrameCallbackActive ?
+            Boolean(packet && timing.presentedFrames > this._lastPresentedFrames) :
+            videoTime > 0 && videoTime !== this._lastVideoTime;
         const enoughTime = (now - this._lastVIOFrameTime) >= frameInterval;
 
         if (isNewFrame && enoughTime) {
-            this._lastVideoTime = videoTime;
+            if (this._videoFrameCallbackActive) {
+                this._lastPresentedFrames = timing.presentedFrames;
+                this._pendingVideoFrame = null;
+                this.frameMetrics.snapshotConsumed++;
+            } else this._lastVideoTime = videoTime;
             this._lastVIOFrameTime = now;
 
-            // Associate cached callback metadata only with that media frame.
-            const timing = this._videoFrameTiming;
-            const matched = timing && Math.abs(timing.mediaTimeS - videoTime) < 1e-6;
-            const frameTimestamp = matched ? timing.timestampS : now / 1000;
-            this.lastFrameTiming = matched ? { ...timing } : { timestampS: frameTimestamp,
+            // Timestamp and owned pixels come from the same callback. Physical
+            // camera exposure alignment remains a browser metadata assumption.
+            const frameTimestamp = this._videoFrameCallbackActive ? timing.timestampS : now / 1000;
+            this.lastFrameTiming = this._videoFrameCallbackActive ? { ...timing } : { timestampS: frameTimestamp,
                 source: 'canvas_read_arrival', callbackArrivalMs: now, captureTimeMs: null,
+                association: 'video_current_time_fallback',
                 timeOriginMs: performance.timeOrigin, physicalExposureVerified: false };
-            const gray = this.camera.captureGrayscale();
+            const gray = this._videoFrameCallbackActive ? packet.gray :
+                this._videoCaptureGeometry(video) ? this.camera.captureGrayscale() : null;
             if (gray) {
-                this.frameMetrics.captured++;
+                if (!this._videoFrameCallbackActive) this.frameMetrics.captured++;
                 // Draw grayscale preview at capture resolution (debug visualization).
                 // Render every 5th frame to reduce main-thread load.
                 // Previous every-3rd at 30fps camera = ~10fps visual → still felt slow.
@@ -1084,6 +1167,7 @@ class App {
                 // 8th Wall pattern: loading-module.js FIRST_FRAME_DELAY=5.
                 if (this._frameWarmupCount < CAMERA_WARMUP_FRAMES) {
                     this._frameWarmupCount++;
+                    this.frameMetrics.warmupSkipped++;
                     console.log(`[VIO] Camera warmup frame ${this._frameWarmupCount}/${CAMERA_WARMUP_FRAMES}, skipping`);
                     requestAnimationFrame(() => this.processLoop());
                     return;
@@ -1101,6 +1185,7 @@ class App {
                 const captureIntervalMs = (frameTimestamp - this._lastFrameTimestamp) * 1000;
                 const degenerateBaseline = this._lastFrameTimestamp > 0 && captureIntervalMs < 20;
 
+                if (degenerateBaseline) this.frameMetrics.shortIntervalSkipped++;
                 if (!degenerateBaseline) {
                     // Flush all pending IMU right before the frame so the worker
                     // has the most up-to-date IMU data for pre-integration.
@@ -1175,9 +1260,13 @@ class App {
             result.pose?.length === 16 && Array.from(result.pose).every(Number.isFinite);
         const names = { 0: 'Not configured', 1: 'Initializing', 2: 'Tracking', 3: 'Lost', 4: 'Cooldown' };
         const imu = this.imu.getDiagnostics();
-        const sourceFresh = imu.lastSample && performance.now() / 1000 - imu.lastSample.timestampS <= 0.5;
-        if (!['denied', 'error'].includes(imu.permission.state)) this._inputStatus = this.imu.running && sourceFresh ?
-            (this.imu.isCalibrated() ? 'IMU active' : 'IMU active / bias unverified') : `IMU ${this.imu.running ? 'waiting for data' : imu.status}`;
+        const sourceAgeMs = imu.lastSample ? performance.now() - imu.lastSample.timestampS * 1000 : null;
+        const sourceFresh = Number.isFinite(sourceAgeMs) && sourceAgeMs >= -1 && sourceAgeMs <= 500;
+        if (!['denied', 'error'].includes(imu.permission.state)) {
+            if (Number.isFinite(sourceAgeMs) && sourceAgeMs < -1) this._inputStatus = `IMU clock ahead (+${Math.round(-sourceAgeMs)}ms)`;
+            else this._inputStatus = this.imu.running && sourceFresh ?
+                (this.imu.isCalibrated() ? 'IMU active' : 'IMU active / bias unverified') : `IMU ${this.imu.running ? 'waiting for data' : imu.status}`;
+        }
         const source = this.lastFrameTiming?.source || 'camera time proxy';
         const ageMs = fresh ? performance.now() - result.poseTimestamp * 1000 : null;
         this.updateStatus(`${this._inputStatus || 'IMU'} · ${names[result.statusCode] || 'Unknown'}${result.reason ? ` / ${result.reason}` : ''} · ${this.calibrationProvenance.status}${ageMs !== null ? ` · pose age ${Math.round(ageMs)}ms (${source})` : ''}`);
@@ -1212,6 +1301,7 @@ class App {
         if (!this.running) return;
 
         if (document.hidden) {
+            this._clearVideoFrameCapture();
             // Tab going to background: stop IMU flush to prevent stale accumulation
             this._stopIMUFlush();
             this._stopDeviceOrientationListener();
@@ -1230,36 +1320,42 @@ class App {
         }
     }
 
-    /**
-     * Handle screen orientation change.
-     * Reconfigures VIO with updated camera-IMU extrinsic (R_ic).
-     * IMU data stays in device body frame — only the camera image frame rotates.
-     *
-     * Also re-detects camera rotation mode because the browser may change
-     * how drawImage() renders the video after orientation change (some browsers
-     * auto-rotate pixel content, others don't).
-     */
-    async _onOrientationChange(info) {
-        if (!this.running || !this._lastConfigParams) return;
-
-        console.log(`[VIO] Orientation changed to ${info.type} — resetting VIO`);
-
-        // Flush stale IMU data
+    /** Serialize screen/video geometry updates; process frames only after the latest configure. */
+    _onOrientationChange(info) {
+        if (!this.running || !this._lastConfigParams) return Promise.resolve();
+        this._pendingOrientation = info;
+        if (this._orientationUpdate) return this._orientationUpdate;
         this._reconfiguring = true;
+        this._clearVideoFrameCapture();
+        this._stopIMUFlush();
+        this._orientationUpdate = (async () => {
+            try {
+                while (this.running && this._pendingOrientation) {
+                    const next = this._pendingOrientation;
+                    this._pendingOrientation = null;
+                    await this._reconfigureCamera(next);
+                }
+            } catch (error) {
+                if (this.running) { this.stop(); throw error; }
+            } finally {
+                this._orientationUpdate = null;
+                this._reconfiguring = false;
+                if (this.running && !document.hidden && !this._blurPaused) {
+                    this._startVideoFrameCallbacks(this.camera.getVideoElement());
+                    this._startIMUFlush();
+                }
+            }
+        })();
+        return this._orientationUpdate;
+    }
+
+    async _reconfigureCamera(info) {
         this.imu.discard('orientation_change');
-
-        // Reset VIO state (visual feature tracks become invalid after rotation)
-        this.vio.reset();
-        if (this.renderer) {
-            this.renderer.clear();
-        }
-
-        // Re-detect camera rotation mode for the new orientation.
-        // Camera stream stays the same, but drawImage behavior may change.
+        this.renderer?.clear();
         await this.camera.redetectOrientation();
+        if (!this.running) return;
         const newWidth = this.camera.width;
         const newHeight = this.camera.height;
-        console.log(`[VIO] Camera after orientation change: ${newWidth}x${newHeight}, rotate=${this.camera.getRotateMode()}`);
 
         // Update grayscale preview canvas if dimensions changed
         if (this._grayPreviewCanvas &&
@@ -1280,58 +1376,12 @@ class App {
         this._processHeight = dimensions.height;
         this._processScale = processScale;
 
-        // Reconfigure with new R_ic and potentially new dimensions.
-        // Focal length (fx/fy) is a lens property — stays the same.
-        // Principal point (cx/cy) must match new processing dimensions.
-        let params;
-        if (this._cameraProfile) {
-            // A per-orientation measured profile cannot silently become a heuristic.
-            try { params = { ...this._lastConfigParams, ...this._profileCalibration(this._cameraProfile, info.type, this._processWidth, this._processHeight) }; }
-            catch (error) { this.updateStatus(error.message); this._reconfiguring = false; this.stop(); return; }
-        } else {
-            const track = this.camera.getVideoTrack();
-            const portrait = this.camera.getPortraitDimensions();
-            const focal = estimateFocalLength(track, portrait.width, portrait.height, config.focalLengthFactor).fx;
-            params = { ...this._lastConfigParams, r_ic: info.r_ic, width: this._processWidth, height: this._processHeight,
-                fx: focal * this._processWidth / newWidth, fy: focal * this._processHeight / newHeight,
-                cx: (this._processWidth - 1) / 2, cy: (this._processHeight - 1) / 2 };
-        }
-        const configured = await this.vio.configure(params);
-        if (!configured) {
-            this.updateStatus('Reconfiguration failed after orientation change');
-            this._reconfiguring = false;
-            this.stop();
-            return;
-        }
-
-        // Re-apply mobile solver params
-        if (config.solver_time !== undefined) {
-            await this.vio.setMobileParams(
-                config.solver_time,
-                config.num_iterations,
-                config.max_features
-            );
-        }
-
-        // Re-apply tracking params
-        if (config.lk_window !== undefined) {
-            await this.vio.setTrackingParams(
-                config.lk_window,
-                config.lk_pyramid || 4,
-                config.min_dist || 20,
-                config.f_edge_factor || 0.0
-            );
-        }
-
-        // Re-apply PnP params
-        {
-            const urlPnP = URL_PARAMS.get('pnp');
-            const urlFreq = URL_PARAMS.get('freq');
-            const enablePnP = urlPnP === '1';
-            const freq = (urlFreq && parseInt(urlFreq) >= 1 && parseInt(urlFreq) <= 10)
-                ? parseInt(urlFreq) : 3;
-            await this.vio.setPnPParams(enablePnP, freq);
-        }
+        const { calibration } = this._cameraCalibration(config, info.type, info.r_ic, this._processWidth, this._processHeight);
+        const params = { ...this._lastConfigParams, ...calibration };
+        if (!await this.vio.configure(params)) throw new Error('Reconfiguration failed after camera geometry change');
+        if (!this.running) return;
+        await this._applyRuntimeParameters(config);
+        if (!this.running) return;
 
         this.imuLogCount = 0;
         this._lastVideoTime = -1;
@@ -1340,16 +1390,18 @@ class App {
         this._vioInitialized = false;
         this._initFrameCount = 0;
         this._lastConfigParams = params;
-        this._reconfiguring = false;
         console.log(`[VIO] Reconfigured for ${info.type}, process=${this._processWidth}x${this._processHeight}, R_ic:`, params.r_ic);
     }
 
     resetVIO() {
+        // configure() already resets the estimator; another reset would cancel
+        // that in-flight lifecycle request and leave calibration incomplete.
+        if (this._reconfiguring) return;
         this.vio.reset();
         this.imu.discard('engine_reset');
         this._renderResultKey = null;
         this._renderEpoch = null;
-        this._videoFrameTiming = null;
+        this._startVideoFrameCallbacks(this.camera.getVideoElement());
         if (this.renderer) {
             this.renderer.clear();
         }
@@ -1373,8 +1425,12 @@ class App {
 
     stop() {
         this.running = false;
-        this.camera.getVideoElement()?.cancelVideoFrameCallback?.(this._videoFrameCallbackHandle);
-        this._videoFrameTiming = null;
+        this._pendingOrientation = null;
+        this.camera.getVideoElement()?.removeEventListener?.('resize', this._videoResizeHandler);
+        this._videoResizeHandler = null;
+        this._renderResizeObserver?.disconnect();
+        this._clearVideoFrameCapture();
+        this._videoFrameCallbackActive = false;
         this.renderer?.clear();
         this._stopIMUFlush();
         this._stopDeviceOrientationListener();
@@ -1397,5 +1453,7 @@ class App {
 // Initialize on page load
 const app = new App();
 window.__mobileSLAM = { app, diagnostics: () => ({ frames: { ...app.frameMetrics }, transport: app.vio.getMetrics(),
-    imu: app.imu.getDiagnostics(), calibration: app.calibrationProvenance, cameraTiming: app.lastFrameTiming ?? null }) };
+    imu: app.imu.getDiagnostics(), calibration: app.calibrationProvenance, cameraTiming: app.lastFrameTiming ?? null,
+    cameraCapture: { generation: app.captureGeneration, pendingSnapshots: app._pendingVideoFrame ? 1 : 0,
+        lastError: app._lastFrameCaptureError ?? null } }) };
 document.addEventListener('DOMContentLoaded', () => app.initialize());

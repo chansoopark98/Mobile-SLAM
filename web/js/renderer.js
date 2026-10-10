@@ -23,11 +23,12 @@ export class Renderer {
      * @param {string} [backendName='webgl'] - 'webgl' or 'webgpu'
      */
     constructor(canvas, rendererInstance, backendName) {
+        // Read CSS pixels before Three.js scales the canvas backing buffer for DPR.
+        const width = canvas.clientWidth || canvas.width || 1;
+        const height = canvas.clientHeight || canvas.height || 1;
         // Legacy direct construction: create WebGL renderer
         if (!rendererInstance) {
             rendererInstance = new THREE.WebGLRenderer({ canvas, antialias: true });
-            rendererInstance.setSize(canvas.width, canvas.height);
-            rendererInstance.setPixelRatio(Math.min(window.devicePixelRatio, 2));
             backendName = 'webgl';
         }
 
@@ -36,12 +37,13 @@ export class Renderer {
         this.scene.background = new THREE.Color(0x1a1a2e);
 
         // Camera
-        this.camera = new THREE.PerspectiveCamera(60, canvas.width / canvas.height, 0.01, 1000);
+        this.camera = new THREE.PerspectiveCamera(60, width / height, 0.01, 1000);
         this.camera.position.set(-3, 3, 3);
         this.camera.lookAt(0, 0, 0);
 
         // Renderer (pre-created or freshly constructed)
         this.renderer = rendererInstance;
+        this.resize(width, height);
 
         // OrbitControls for manual mouse interaction
         this.controls = new OrbitControls(this.camera, canvas);
@@ -155,9 +157,6 @@ export class Renderer {
             rendererInstance = new THREE.WebGLRenderer({ canvas, antialias: true });
             actualBackend = 'webgl';
         }
-
-        rendererInstance.setSize(canvas.width, canvas.height);
-        rendererInstance.setPixelRatio(Math.min(window.devicePixelRatio, 2));
 
         return new Renderer(canvas, rendererInstance, actualBackend);
     }
@@ -278,11 +277,19 @@ export class Renderer {
         this.renderer.render(this.scene, this.camera);
     }
 
-    /** Handle window resize */
+    /** Resize in CSS pixels; Three.js owns the DPR-scaled backing buffer. */
     resize(width, height) {
+        if (!Number.isFinite(width) || !Number.isFinite(height) || width <= 0 || height <= 0) return false;
+        const pixelRatio = Math.min(window.devicePixelRatio || 1, 2);
+        if (width === this._width && height === this._height && pixelRatio === this.renderer.getPixelRatio()) return false;
         this.camera.aspect = width / height;
         this.camera.updateProjectionMatrix();
-        this.renderer.setSize(width, height);
+        this.renderer.setPixelRatio(pixelRatio);
+        // Keep width/height CSS responsive to the flex container.
+        this.renderer.setSize(width, height, false);
+        this._width = width;
+        this._height = height;
+        return true;
     }
 
     /** Clear trajectory and points */

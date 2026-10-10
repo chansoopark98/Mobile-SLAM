@@ -6,6 +6,9 @@ let processing = false;
 let clientEpoch = 0;
 let lastSequence = 0;
 let engineEpoch = null;
+let mobileMotionGuard = false;
+let lastPublishedPose = null;
+const MAX_MOBILE_POSE_TRANSLATION_M = 5;
 let activeRequest = null;
 let frameWait = null;
 const IMU_BRACKET_WAIT_MS = 40;
@@ -33,6 +36,7 @@ const imuDrops = {
 };
 
 function clearIMURing(resetCounters = false) {
+    lastPublishedPose = null;
     if (resetCounters) {
         for (const key of Object.keys(imuDrops)) imuDrops[key] = key === 'lastGapSeconds' ? null : 0;
     } else imuDrops.reset += imuRingWriteIdx - imuRingReadIdx;
@@ -230,6 +234,33 @@ function engineState() {
     };
 }
 
+function effectiveConfig() {
+    if (!configured || !engine) throw new Error('Engine is not configured');
+    if (typeof engine.setDiagnosticCapture !== 'function' || typeof engine.getFeatureDiagnostics !== 'function') {
+        throw new Error('Effective configuration diagnostics API unavailable');
+    }
+    let snapshot;
+    // This synchronous RPC cannot interleave a frame with temporary capture.
+    // The Worker never enables persistent diagnostic capture.
+    try {
+        engine.setDiagnosticCapture(true);
+        snapshot = JSON.parse(engine.getFeatureDiagnostics());
+    } finally {
+        engine.setDiagnosticCapture(false);
+    }
+    if (snapshot?.enabled !== true || !snapshot.params || Array.isArray(snapshot.params) ||
+        typeof snapshot.params !== 'object' || !Object.keys(snapshot.params).length ||
+        !Object.values(snapshot.params).every(Number.isFinite) ||
+        !Number.isSafeInteger(snapshot.epoch) || snapshot.epoch < 0 || !Number.isFinite(snapshot.frameTimestamp) ||
+        typeof snapshot.opencvVersion !== 'string' || !snapshot.opencvVersion ||
+        !Number.isInteger(snapshot.executionSeed) || !Number.isInteger(snapshot.cvThreads) || snapshot.cvThreads < 1) {
+        throw new Error('Invalid effective configuration snapshot');
+    }
+    return { schema: 'mobile-slam-effective-config-v1', engineEpoch: snapshot.epoch, frameTimestamp: snapshot.frameTimestamp,
+        opencvVersion: snapshot.opencvVersion, executionSeed: snapshot.executionSeed, cvThreads: snapshot.cvThreads,
+        params: snapshot.params };
+}
+
 function emptyResult(timestamp, reason, imuCount = 0) {
     return { ...engineState(), pose: null, poseValid: false, poseFresh: false, poseTimestamp: null,
         inputTimestamp: Number.isFinite(timestamp) ? timestamp : null, timestamp: Number.isFinite(timestamp) ? timestamp : null,
@@ -258,6 +289,7 @@ function processFrame(gray, timestamp) {
             engineEndpointDisconnected: endpointAvailable ? knownEndpoint : null,
             endpointStatus: knownEndpoint ? 'known' : endpointAvailable ? 'none' : 'unavailable', engineEpochBeforeReset: engineState().engineEpoch };
         engine.reset();
+        lastPublishedPose = null;
         engineEpoch = engineState().engineEpoch;
         loss.engineEpochAfterReset = engineEpoch;
         intervalLoss = null;
@@ -285,6 +317,24 @@ function processFrame(gray, timestamp) {
     if (poseValid) {
         const pose = memPose.read(16);
         if (pose.every(Number.isFinite)) {
+            const previous = lastPublishedPose?.clientEpoch === clientEpoch && lastPublishedPose.engineEpoch === state.engineEpoch ? lastPublishedPose : null;
+            const translationM = previous ? Math.hypot(pose[3] - previous.pose[3], pose[7] - previous.pose[7], pose[11] - previous.pose[11]) : null;
+            const measuredWarning = typeof state.reason === 'string' && state.reason.replace(/^tracking:/, '').split(';').includes('relative_translation_threshold');
+            if (mobileMotionGuard && (measuredWarning || (translationM !== null && translationM > MAX_MOBILE_POSE_TRANSLATION_M))) {
+                // Discard the corrupted estimator window/prior before another frame;
+                // suppressing only the rendered pose would leave that state running.
+                engine.reset();
+                clearIMURing();
+                engineEpoch = engineState().engineEpoch;
+                return { ...emptyResult(timestamp, 'pose_translation_discontinuity', imuCount), engineProcessingMs,
+                    motionDiscontinuity: {
+                        trigger: measuredWarning ? 'engine_relative_translation_threshold' : 'published_pose_translation',
+                        engineReason: state.reason, translationM, thresholdM: MAX_MOBILE_POSE_TRANSLATION_M,
+                        previousPoseTimestamp: previous?.timestamp ?? null, candidatePoseTimestamp: poseTimestamp,
+                        engineEpochBeforeReset: state.engineEpoch, engineEpochAfterReset: engineEpoch,
+                    } };
+            }
+            if (mobileMotionGuard) lastPublishedPose = { pose, timestamp: poseTimestamp, engineEpoch: state.engineEpoch, clientEpoch };
             result.pose = pose;
             result.poseTimestamp = poseTimestamp;
             result.poseFresh = result.poseValid = true;
@@ -367,10 +417,13 @@ self.onmessage = async function(event) {
             wasm = loadedWasm;
             engine = new wasm.VIOEngine();
             configured = false;
+            mobileMotionGuard = false;
             clearIMURing(true);
             reply(request, 'init', { success: true });
         } else if (type === 'configure') {
             configured = false;
+            mobileMotionGuard = false;
+            lastPublishedPose = null;
             if (!engine || !Number.isInteger(data?.width) || !Number.isInteger(data?.height) ||
                 data.width < 1 || data.height < 1 || data.width * data.height > 16777216) throw new Error('Invalid image dimensions');
             const r = data.r_ic || [1, 0, 0, 0, 1, 0, 0, 0, 1];
@@ -387,6 +440,7 @@ self.onmessage = async function(event) {
                 memExtrinsicR.ptr, memExtrinsicT.ptr, data.acc_n ?? 0.08, data.acc_w ?? 0.0004,
                 data.gyr_n ?? 0.01, data.gyr_w ?? 0.0001, data.g_norm ?? 9.81) === true;
             if (configured) {
+                mobileMotionGuard = data.mobileMotionGuard === true;
                 const requested = data.benchmark_zero_positive_tolerances === true;
                 const profileAPI = typeof engine.setBenchmarkSolverProfile === 'function' && typeof engine.getBenchmarkSolverProfile === 'function';
                 if (requested && !profileAPI) throw new Error('Benchmark solver profile API unavailable');
@@ -396,6 +450,8 @@ self.onmessage = async function(event) {
             if (configured && typeof engine.setExecutionParams === 'function') engine.setExecutionParams(data.execution_seed ?? 0, data.cv_threads ?? 1);
             engineEpoch = engineState().engineEpoch;
             reply(request, type, { success: configured, benchmarkSolverProfile: engineState().benchmarkSolverProfile, imuDrops: { ...imuDrops } });
+        } else if (type === 'getEffectiveConfig') {
+            reply(request, type, { success: true, data: effectiveConfig() });
         } else if (Object.hasOwn(parameterCalls, type)) {
             if (!engine) throw new Error('Engine is not loaded');
             engine[type](...parameterCalls[type].map(name => data?.[name]));
@@ -444,6 +500,7 @@ self.onmessage = async function(event) {
             reply(request, type, { success: true, imuDrops: { ...imuDrops } });
         } else if (type === 'dispose') {
             configured = false;
+            mobileMotionGuard = false;
             disposeBuffers();
             if (engine) engine.delete();
             engine = wasm = null;

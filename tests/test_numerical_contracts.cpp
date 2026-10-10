@@ -13,7 +13,12 @@ namespace frontend::initialization {
 struct InitializerTestAccess {
     static bool align(Initializer& initializer) { return initializer.visualInitialAlign(); }
 };
-void RefineGravity(const std::map<double, common::ImageFrame>&, Eigen::Vector3d&, Eigen::VectorXd&);
+}
+
+namespace backend {
+struct OptimizerTestAccess {
+    static void solve(Optimizer& optimizer, ceres::Problem& problem) { optimizer.solveCeresProblem(problem); }
+};
 }
 
 namespace {
@@ -126,7 +131,11 @@ TEST(NumericalContracts, ProjectionRejectsInvalidGeometryAndPreservesValidGolden
     ASSERT_TRUE(factor.Evaluate(parameters, residual, nullptr));
     EXPECT_NEAR(residual[0], 0, 1e-14);
     EXPECT_NEAR(residual[1], 0, 1e-14);
-    for (double bad : {0.0, -1.0, std::numeric_limits<double>::quiet_NaN()}) {
+    for (double trial : {0.0, -1.0}) {
+        inverse_depth = trial;
+        EXPECT_TRUE(factor.Evaluate(parameters, residual, nullptr));
+    }
+    for (double bad : {std::numeric_limits<double>::infinity(), std::numeric_limits<double>::quiet_NaN()}) {
         inverse_depth = bad;
         EXPECT_FALSE(factor.Evaluate(parameters, residual, nullptr));
     }
@@ -134,7 +143,7 @@ TEST(NumericalContracts, ProjectionRejectsInvalidGeometryAndPreservesValidGolden
     pose_j[2] = 5;  // Zero target optical Z.
     EXPECT_FALSE(factor.Evaluate(parameters, residual, nullptr));
     pose_j[2] = 6;
-    EXPECT_FALSE(factor.Evaluate(parameters, residual, nullptr));
+    EXPECT_TRUE(factor.Evaluate(parameters, residual, nullptr)); // Signed finite trial; final landmark filtering is separate.
 }
 
 TEST(NumericalContracts, PerspectiveRejectsZeroBehindAndNonfinitePoints) {
@@ -459,6 +468,71 @@ double capturedSolverOption(const std::string& details, const std::string& name)
     return std::stod(details.substr(position + token.size()));
 }
 
+class PositiveDomainScalarCost final : public ceres::SizedCostFunction<1, 1> {
+public:
+    explicit PositiveDomainScalarCost(double target) : target_(target) {}
+    bool Evaluate(double const* const* parameters, double* residual, double** jacobians) const override {
+        // Independent analogue of the positive inverse-depth factor domain.
+        if (!(parameters[0][0] > 0)) return false;
+        residual[0] = parameters[0][0] - target_;
+        if (jacobians && jacobians[0]) jacobians[0][0] = 1;
+        return true;
+    }
+private:
+    double target_;
+};
+
+TEST(NumericalContracts, SolverReportsFailedCandidateEvaluationsWithoutDiscardingUsableState) {
+    const auto saved = utility::g_config;
+    struct Scenario { double start, target; int iterations; bool failed_evaluation; ceres::TerminationType termination; };
+    const Scenario cases[] = {
+        {.2,-1,10,true,ceres::NO_CONVERGENCE}, // Every real step leaves the positive domain.
+        {.2,1,1,false,ceres::NO_CONVERGENCE},  // A bounded solve accepts a real reduction.
+        {.2,1,0,false,ceres::NO_CONVERGENCE},  // Only iteration0: budget, no rejected trials.
+        {1,1,10,false,ceres::CONVERGENCE},    // Already optimal: a real step is unnecessary.
+    };
+    for (const auto& scenario : cases) {
+        SCOPED_TRACE(scenario.target);
+        utility::g_config.estimator.num_iterations = scenario.iterations;
+        utility::g_config.estimator.solver_time = 10;
+        backend::SlidingWindow window;
+        frontend::FeatureManager manager;
+        backend::Optimizer optimizer(&window,&manager);
+        optimizer.setDiagnosticCapture(true);
+        double parameter = scenario.start;
+        ceres::Problem problem;
+        problem.AddResidualBlock(new PositiveDomainScalarCost(scenario.target),nullptr,&parameter);
+        backend::OptimizerTestAccess::solve(optimizer,problem);
+        const auto& diagnostics = optimizer.getLastSolverDiagnostics();
+        EXPECT_EQ(diagnostics.terminationType,scenario.termination);
+        EXPECT_TRUE(diagnostics.usable);
+        EXPECT_EQ(diagnostics.reason,"usable");
+        EXPECT_EQ(diagnostics.qualityReason,scenario.failed_evaluation ? "solver_candidate_evaluation_failed" : "");
+        if (scenario.failed_evaluation) {
+            EXPECT_EQ(diagnostics.iterations,11);
+            EXPECT_EQ(capturedSolverOption(diagnostics.numericalDetails,"realTrials"),10);
+            EXPECT_EQ(capturedSolverOption(diagnostics.numericalDetails,"acceptedTrials"),0);
+            EXPECT_EQ(capturedSolverOption(diagnostics.numericalDetails,"domainFailureTrials"),10);
+            EXPECT_DOUBLE_EQ(diagnostics.initialCost,.72);
+            EXPECT_DOUBLE_EQ(diagnostics.finalCost,diagnostics.initialCost);
+            EXPECT_DOUBLE_EQ(parameter,scenario.start);
+        } else if (scenario.iterations == 1) {
+            EXPECT_EQ(capturedSolverOption(diagnostics.numericalDetails,"realTrials"),1);
+            EXPECT_EQ(capturedSolverOption(diagnostics.numericalDetails,"acceptedTrials"),1);
+            EXPECT_EQ(capturedSolverOption(diagnostics.numericalDetails,"domainFailureTrials"),0);
+            EXPECT_LT(diagnostics.finalCost,diagnostics.initialCost);
+            EXPECT_NE(parameter,scenario.start);
+        } else {
+            EXPECT_EQ(diagnostics.iterations,1);
+            EXPECT_EQ(capturedSolverOption(diagnostics.numericalDetails,"realTrials"),0);
+            EXPECT_EQ(capturedSolverOption(diagnostics.numericalDetails,"acceptedTrials"),0);
+            EXPECT_EQ(capturedSolverOption(diagnostics.numericalDetails,"domainFailureTrials"),0);
+            EXPECT_DOUBLE_EQ(parameter,scenario.start);
+        }
+    }
+    utility::g_config = saved;
+}
+
 TEST(NumericalContracts, BenchmarkProfileReportsActualOptionsAndResetPreservesMode) {
     backend::SlidingWindow window;
     frontend::FeatureManager manager;
@@ -598,6 +672,319 @@ TEST(NumericalContracts, PnpCurrentAnchoredSolveAndEmptyFrameFreshness) {
     EXPECT_FALSE(pnp.hasPose());
 }
 
+namespace {
+struct AlignmentConfigRestore {
+    utility::Config saved = utility::g_config;
+    AlignmentConfigRestore() { utility::g_config.camera.t_ic.setZero(); }
+    ~AlignmentConfigRestore() { utility::g_config = saved; }
+};
+
+std::map<double, common::ImageFrame> analyticAlignmentFrames(bool excited, bool stationary,
+                                                           const Eigen::Vector3d& true_gravity, double scale = 2.3) {
+    const double dt = 0.13;
+    const auto position = [&](double t) -> Eigen::Vector3d {
+        if (stationary) return zero;
+        if (!excited) return Eigen::Vector3d(.3,-.1,.2) * t;
+        return Eigen::Vector3d(std::sin(3*t),std::cos(2*t),.3*std::sin(5*t));
+    };
+    const auto velocity = [&](double t) -> Eigen::Vector3d {
+        if (stationary) return zero;
+        if (!excited) return Eigen::Vector3d(.3,-.1,.2);
+        return Eigen::Vector3d(3*std::cos(3*t),-2*std::sin(2*t),1.5*std::cos(5*t));
+    };
+    std::map<double, common::ImageFrame> frames;
+    for (int i = 0; i < 11; ++i) {
+        const double time = i*dt;
+        common::ImageFrame frame({},time);
+        frame.R = Eigen::AngleAxisd(.08*time,Eigen::Vector3d::UnitX()).toRotationMatrix();
+        frame.T = position(time);
+        frame.pre_integration = std::make_unique<backend::factor::IntegrationBase>(zero,zero,zero,zero);
+        if (i) {
+            auto& pre = *frame.pre_integration;
+            const auto& previous = frames.rbegin()->second;
+            pre.sum_dt = dt;
+            // Independent closed-form kinematics of the declared physical motion.
+            pre.delta_p = previous.R.transpose() * (scale*(position(time)-position(time-dt)-velocity(time-dt)*dt) + .5*true_gravity*dt*dt);
+            pre.delta_v = previous.R.transpose() * (scale*(velocity(time)-velocity(time-dt)) + true_gravity*dt);
+            pre.delta_q = Eigen::Quaterniond(previous.R.transpose()*frame.R);
+        }
+        frames.emplace(time,std::move(frame));
+    }
+    return frames;
+}
+}
+
+TEST(NumericalContracts, AlignmentTangentBasisIsOrthonormalAtBothGravityPoles) {
+    for (double sign : {-1.0,1.0}) {
+        Eigen::Vector3d g(0,0,sign*9.81);
+        const auto basis = frontend::initialization::TangentBasis(g);
+        ASSERT_TRUE(basis.allFinite());
+        EXPECT_LT((basis.transpose()*basis-Eigen::Matrix2d::Identity()).norm(),1e-12);
+        EXPECT_LT((basis.transpose()*g).norm(),1e-12);
+    }
+}
+
+TEST(NumericalContracts, AlignmentRejectsStationaryAndConstantVelocityScaleNullspaceDespiteRotation) {
+    AlignmentConfigRestore restore;
+    for (bool stationary : {true,false}) {
+        auto frames = analyticAlignmentFrames(false,stationary,gravity);
+        Eigen::Vector3d g = zero;
+        // Constant world force cannot excite metric scale, even when body gravity rotates.
+        EXPECT_FALSE(frontend::initialization::CheckIMUExcitation(frames,0.25));
+        Eigen::VectorXd x;
+        EXPECT_FALSE(frontend::initialization::LinearAlignment(frames,g,x)) << "stationary=" << stationary;
+    }
+}
+
+TEST(NumericalContracts, AlignmentExcitedMotionRecoversScaleAndBothGravityDirections) {
+    AlignmentConfigRestore restore;
+    for (double sign : {-1.0,1.0}) {
+        const Eigen::Vector3d true_gravity(0,0,sign*restore.saved.estimator.g.norm());
+        auto frames = analyticAlignmentFrames(true,false,true_gravity);
+        Eigen::Vector3d g = zero;
+        Eigen::VectorXd x;
+        ASSERT_TRUE(frontend::initialization::LinearAlignment(frames,g,x));
+        ASSERT_TRUE(x.allFinite());
+        EXPECT_NEAR(x.tail<1>()[0],2.3,1e-8);
+        EXPECT_LT((g-true_gravity).norm(),1e-8);
+        for (int i = 0; i < 11; ++i) {
+            const double t = i*.13;
+            const Eigen::Vector3d velocity = 2.3*Eigen::Vector3d(3*std::cos(3*t),-2*std::sin(2*t),1.5*std::cos(5*t));
+            EXPECT_LT((frames.at(t).R*x.segment<3>(3*i)-velocity).norm(),1e-8);
+        }
+    }
+}
+
+namespace {
+bool physicalExcitation(std::map<double, common::ImageFrame>& frames) {
+    return frontend::initialization::CheckIMUExcitation(frames,0.25);
+}
+}
+
+TEST(NumericalContracts, ExcitationRejectsRotatingGravityAndConstantVelocityUsingIntervalStartFrame) {
+    for (bool moving : {false,true}) {
+        std::map<double, common::ImageFrame> frames;
+        double time = 0;
+        for (int i = 0; i < 11; ++i) {
+            const double dt = i%2 ? .05 : .30;
+            if (i) time += dt;
+            common::ImageFrame frame({},time);
+            frame.R = Eigen::AngleAxisd(.3*time,Eigen::Vector3d::UnitX()).toRotationMatrix();
+            frame.T = moving ? Eigen::Vector3d(.3,-.1,.2)*time : zero;
+            frame.pre_integration = std::make_unique<backend::factor::IntegrationBase>(zero,zero,zero,zero);
+            if (i) {
+                frame.pre_integration->sum_dt = dt;
+                // At rest and at constant world velocity, integral specific force = gravity*dt.
+                frame.pre_integration->delta_v = frames.rbegin()->second.R.transpose()*gravity*dt;
+            }
+            frames.emplace(time,std::move(frame));
+        }
+        // R_j instead of R_i alternates gravity rotations of .015 and .09 radians.
+        EXPECT_GT(2*gravity.norm()*std::sin(.3*(.30-.05)/2)*std::sqrt(5.0/18),.25);
+        EXPECT_FALSE(physicalExcitation(frames));
+    }
+}
+
+TEST(NumericalContracts, ExcitationAcceptsPhysicalVaryingTranslationAndRejectsInvalidIntervals) {
+    for (bool rotated : {false,true}) {
+        const Eigen::Matrix3d orientation = rotated ?
+            (Eigen::AngleAxisd(.7,Eigen::Vector3d::UnitX())*Eigen::AngleAxisd(.5,Eigen::Vector3d::UnitZ())).toRotationMatrix() :
+            Eigen::Matrix3d::Identity();
+        std::map<double, common::ImageFrame> frames;
+        for (int i = 0; i < 11; ++i) {
+            const double time = i*.13;
+            common::ImageFrame frame({},time);
+            frame.R = orientation;
+            frame.T = Eigen::Vector3d(.5/9*(1-std::cos(3*time)),0,0);
+            frame.pre_integration = std::make_unique<backend::factor::IntegrationBase>(zero,zero,zero,zero);
+            if (i) {
+                frame.pre_integration->sum_dt = .13;
+                const Eigen::Vector3d delta_velocity(.5/3*(std::sin(3*time)-std::sin(3*(time-.13))),0,0);
+                frame.pre_integration->delta_v = orientation.transpose()*(delta_velocity+gravity*.13);
+            }
+            frames.emplace(time,std::move(frame));
+        }
+        ASSERT_TRUE(physicalExcitation(frames));
+        auto& pre = std::next(frames.begin())->second.pre_integration;
+        pre->delta_v.x() = std::numeric_limits<double>::quiet_NaN();
+        EXPECT_FALSE(physicalExcitation(frames));
+        pre->delta_v.setZero();
+        pre->sum_dt = 0;
+        EXPECT_FALSE(physicalExcitation(frames));
+        pre->sum_dt = .13;
+        frames.begin()->second.R.col(0) *= -1;
+        EXPECT_FALSE(physicalExcitation(frames));
+    }
+}
+
+namespace {
+std::map<double, common::ImageFrame> biasedAlignmentFrames(const Eigen::Vector3d& gyro_bias,
+        const Eigen::Vector3d& anchor, bool stale_last, double motion_scale, bool varying_intervals = false) {
+    const double scale = 2.3, imu_dt = .0005;
+    const auto position = [=](double t) -> Eigen::Vector3d {
+        return motion_scale * Eigen::Vector3d(std::sin(3*t), std::cos(2*t), .3*std::sin(5*t));
+    };
+    const auto force = [=](double t) -> Eigen::Vector3d {
+        return motion_scale * Eigen::Vector3d(-9*std::sin(3*t), -4*std::cos(2*t), -7.5*std::sin(5*t)) +
+               utility::g_config.estimator.g;
+    };
+    std::map<double, common::ImageFrame> frames;
+    double time = 0;
+    for (int i = 0; i <= WINDOW_SIZE; ++i) {
+        const double dt = varying_intervals ? (i%2 ? .05 : .50) : .13;
+        const double begin = time;
+        if (i) time += dt;
+        common::ImageFrame frame({},time);
+        frame.T = position(time)/scale;
+        if (i) {
+            const Eigen::Vector3d linearized = stale_last && i == WINDOW_SIZE ? zero : anchor;
+            frame.pre_integration = std::make_unique<backend::factor::IntegrationBase>(force(begin),gyro_bias,zero,linearized);
+            for (int sample = 1; sample <= std::lround(dt/imu_dt); ++sample)
+                frame.pre_integration->push_back(imu_dt,force(begin+sample*imu_dt),gyro_bias);
+        }
+        frames.emplace(time,std::move(frame));
+    }
+    return frames;
+}
+}
+
+TEST(NumericalContracts, AlignmentFailurePreservesGyroBiasAndEveryPreintegration) {
+    AlignmentConfigRestore restore;
+    auto frames = biasedAlignmentFrames(Eigen::Vector3d(.2,0,0),zero,false,0);
+    std::vector<backend::factor::IntegrationBase> before;
+    for (auto frame = std::next(frames.begin()); frame != frames.end(); ++frame)
+        before.push_back(*frame->second.pre_integration);
+    backend::SlidingWindow window;
+    Eigen::Vector3d g(1,2,3);
+    Eigen::VectorXd x = Eigen::VectorXd::Constant(4,77);
+    for (int attempt = 0; attempt < 3; ++attempt) {
+        EXPECT_FALSE(frontend::initialization::VisualIMUAlignment(frames,window,g,x));
+        for (int i = 0; i <= WINDOW_SIZE; ++i) EXPECT_TRUE(window[i].Bg.isZero(0));
+        EXPECT_TRUE(g.isApprox(Eigen::Vector3d(1,2,3),0));
+        EXPECT_TRUE(x.isApprox(Eigen::VectorXd::Constant(4,77),0));
+        int row = 0;
+        for (auto frame = std::next(frames.begin()); frame != frames.end(); ++frame,++row) {
+            const auto& actual = *frame->second.pre_integration;
+            const auto& expected = before[row];
+            EXPECT_TRUE(actual.linearized_bg.isApprox(expected.linearized_bg,0));
+            EXPECT_TRUE(actual.delta_p.isApprox(expected.delta_p,0));
+            EXPECT_TRUE(actual.delta_v.isApprox(expected.delta_v,0));
+            EXPECT_TRUE(actual.delta_q.coeffs().isApprox(expected.delta_q.coeffs(),0));
+            EXPECT_TRUE(actual.jacobian.isApprox(expected.jacobian,0));
+            EXPECT_TRUE(actual.covariance.isApprox(expected.covariance,0));
+            EXPECT_EQ(actual.dt_buf,expected.dt_buf);
+        }
+    }
+}
+
+TEST(NumericalContracts, AlignmentUsesCommonBiasAnchorForRetriedIntervals) {
+    AlignmentConfigRestore restore;
+    const Eigen::Vector3d truth(.15,-.08,.05);
+    for (bool stale_last : {false,true}) {
+        auto frames = biasedAlignmentFrames(truth,truth,stale_last,1);
+        backend::SlidingWindow window;
+        for (int i = 0; i <= WINDOW_SIZE; ++i) window[i].Bg = truth;
+        Eigen::Vector3d g = zero;
+        Eigen::VectorXd x;
+        ASSERT_TRUE(frontend::initialization::VisualIMUAlignment(frames,window,g,x));
+        EXPECT_LT((window.front().Bg-truth).norm(),1e-10);
+        EXPECT_LT((g-utility::g_config.estimator.g).norm(),2e-5);
+        EXPECT_NEAR(x.tail<1>()[0],2.3,2e-5);
+        for (auto frame = std::next(frames.begin()); frame != frames.end(); ++frame)
+            EXPECT_LT((frame->second.pre_integration->linearized_bg-truth).norm(),1e-10);
+    }
+}
+
+TEST(NumericalContracts, AlignmentChecksExcitationAfterRemovingGyroBias) {
+    AlignmentConfigRestore restore;
+    auto frames = biasedAlignmentFrames(Eigen::Vector3d(.35,0,0),zero,false,.01,true);
+    // Physical acceleration is below .13m/s^2; the varying-duration raw gyro bias
+    // tilts gravity enough that the old pre-bias excitation check passes .25.
+    ASSERT_TRUE(physicalExcitation(frames));
+    backend::SlidingWindow window;
+    Eigen::Vector3d g(1,2,3);
+    Eigen::VectorXd x = Eigen::VectorXd::Constant(4,77);
+    EXPECT_FALSE(frontend::initialization::VisualIMUAlignment(frames,window,g,x));
+    EXPECT_TRUE(window.front().Bg.isZero(0));
+    EXPECT_TRUE(g.isApprox(Eigen::Vector3d(1,2,3),0));
+    EXPECT_TRUE(x.isApprox(Eigen::VectorXd::Constant(4,77),0));
+}
+
+TEST(NumericalContracts, AlignmentRejectsZeroMetricScaleAndInvalidPreintegration) {
+    AlignmentConfigRestore restore;
+    const Eigen::Vector3d true_gravity(0,0,restore.saved.estimator.g.norm());
+    auto frames = analyticAlignmentFrames(true,false,true_gravity,0);
+    Eigen::Vector3d g = zero;
+    Eigen::VectorXd x;
+    EXPECT_FALSE(frontend::initialization::LinearAlignment(frames,g,x));
+    frames = analyticAlignmentFrames(true,false,gravity);
+    std::next(frames.begin())->second.pre_integration->sum_dt = std::numeric_limits<double>::quiet_NaN();
+    EXPECT_FALSE(frontend::initialization::LinearAlignment(frames,g,x));
+}
+
+TEST(NumericalContracts, AlignmentScaleHasNoArbitraryUnitOrMagnitudeCap) {
+    AlignmentConfigRestore restore;
+    const Eigen::Vector3d true_gravity(0,0,restore.saved.estimator.g.norm());
+    for (double visual_units : {1e-12,1e12}) {
+        auto frames = analyticAlignmentFrames(true,false,true_gravity);
+        for (auto& frame : frames) frame.second.T *= visual_units;
+        Eigen::Vector3d g = zero;
+        Eigen::VectorXd x;
+        ASSERT_TRUE(frontend::initialization::LinearAlignment(frames,g,x));
+        EXPECT_LT(std::abs(x.tail<1>()[0]/(2.3/visual_units)-1),1e-10);
+        EXPECT_LT((g-true_gravity).norm(),1e-8);
+    }
+}
+
+TEST(NumericalContracts, AlignmentFailurePreservesCallerStateAndRefinementReportsFailure) {
+    AlignmentConfigRestore restore;
+    for (int invalid = 0; invalid < 11; ++invalid) {
+        SCOPED_TRACE(invalid);
+        utility::g_config = restore.saved;
+        utility::g_config.camera.t_ic.setZero();
+        auto frames = analyticAlignmentFrames(true,false,gravity);
+        auto& pre = std::next(frames.begin())->second.pre_integration;
+        switch (invalid) {
+            case 0: frames.clear(); break;
+            case 1: frames.erase(std::next(frames.begin()),frames.end()); break;
+            case 2: frames.begin()->second.R.col(0) *= -1; break;
+            case 3: pre.reset(); break;
+            case 4: pre->sum_dt = 0; break;
+            case 5: pre->sum_dt += .01; break;
+            case 6: pre->delta_p.x() = std::numeric_limits<double>::quiet_NaN(); break;
+            case 7: pre->delta_q.coeffs().setZero(); break;
+            case 8: utility::g_config.camera.t_ic.x() = std::numeric_limits<double>::quiet_NaN(); break;
+            case 9: for (auto frame = std::next(frames.begin()); frame != frames.end(); ++frame) frame->second.pre_integration->delta_v.setConstant(1e307); break;
+            case 10: utility::g_config.estimator.g.setZero(); break;
+        }
+        const Eigen::Vector3d saved_gravity(1,2,9);
+        Eigen::Vector3d g = saved_gravity;
+        const Eigen::VectorXd saved_state = Eigen::VectorXd::Constant(4,77);
+        Eigen::VectorXd x = saved_state;
+        EXPECT_FALSE(frontend::initialization::LinearAlignment(frames,g,x));
+        EXPECT_TRUE(g.isApprox(saved_gravity,0));
+        EXPECT_TRUE(x.isApprox(saved_state,0));
+        EXPECT_FALSE(frontend::initialization::RefineGravity(frames,g,x));
+        EXPECT_TRUE(g.isApprox(saved_gravity,0));
+        EXPECT_TRUE(x.isApprox(saved_state,0));
+    }
+}
+
+TEST(NumericalContracts, GravityRefinementRejectsUnobservableZeroScaleAndInvalidGravity) {
+    AlignmentConfigRestore restore;
+    const Eigen::Vector3d true_gravity(0,0,restore.saved.estimator.g.norm());
+    for (int invalid = 0; invalid < 4; ++invalid) {
+        SCOPED_TRACE(invalid);
+        auto frames = analyticAlignmentFrames(invalid != 0,false,true_gravity,invalid == 1 ? 0 : 2.3);
+        Eigen::Vector3d g = true_gravity;
+        if (invalid == 2) g.setZero();
+        if (invalid == 3) g.x() = std::numeric_limits<double>::quiet_NaN();
+        Eigen::VectorXd x = Eigen::VectorXd::Constant(4,77);
+        EXPECT_FALSE(frontend::initialization::RefineGravity(frames,g,x));
+        EXPECT_TRUE(x.isApprox(Eigen::VectorXd::Constant(4,77),0));
+    }
+}
+
 TEST(NumericalContracts, GravityRefinementUsesCurrentLinearizationOnly) {
     const int count = 12;
     const double dt = 0.13;
@@ -630,8 +1017,9 @@ TEST(NumericalContracts, GravityRefinementUsesCurrentLinearizationOnly) {
     }
     Eigen::Vector3d estimate = (truth + Eigen::Vector3d(1.2, -0.8, 0.3)).normalized() * gravity_magnitude;
     Eigen::VectorXd x;
-    frontend::initialization::RefineGravity(frames, estimate, x);
+    const bool refined = frontend::initialization::RefineGravity(frames, estimate, x);
     utility::g_config.camera.t_ic = saved_tic;
+    ASSERT_TRUE(refined);
     ASSERT_TRUE(x.allFinite());
     EXPECT_LT((estimate - truth).norm(), 1e-5);
     EXPECT_NEAR(x.tail<1>()[0] / 100, scale, 1e-5);

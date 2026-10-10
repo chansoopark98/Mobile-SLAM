@@ -2,6 +2,7 @@
 #include <cmath>
 
 #include "utility/utility.h"
+#include "utility/so3.h"
 
 namespace backend {
 namespace factor {
@@ -26,6 +27,9 @@ bool PerspectiveFactor::Evaluate(double const* const* parameters,
     Eigen::Vector3d tic(parameters[1][0], parameters[1][1], parameters[1][2]);
     Eigen::Quaterniond qic(parameters[1][6], parameters[1][3], parameters[1][4], parameters[1][5]);
     if (Qi.squaredNorm() <= 1e-12 || qic.squaredNorm() <= 1e-12) return false;
+
+    double norm_i,norm_ic;
+    if (!utility::so3::normalize(Qi,Qi,norm_i) || !utility::so3::normalize(qic,qic,norm_ic)) return false;
 
     // Transform known 3D point from world to camera frame
     Eigen::Vector3d pts_imu_i = Qi.inverse() * (pts_3d_ - Pi);
@@ -56,8 +60,7 @@ bool PerspectiveFactor::Evaluate(double const* const* parameters,
             jaco_i.leftCols<3>() = -ric.transpose() * Ri.transpose();
             jaco_i.rightCols<3>() = ric.transpose() * Utility::skewSymmetric(pts_imu_i);
 
-            jacobian_pose_i.leftCols<6>() = reduce * jaco_i;
-            jacobian_pose_i.rightCols<1>().setZero();
+            jacobian_pose_i = reduce * jaco_i * utility::so3::poseLift(Qi,norm_i);
         }
 
         if (jacobians[1]) {
@@ -65,8 +68,7 @@ bool PerspectiveFactor::Evaluate(double const* const* parameters,
             Eigen::Matrix<double, 3, 6> jaco_ex;
             jaco_ex.leftCols<3>() = -ric.transpose();
             jaco_ex.rightCols<3>() = Utility::skewSymmetric(pts_camera_i);
-            jacobian_ex_pose.leftCols<6>() = reduce * jaco_ex;
-            jacobian_ex_pose.rightCols<1>().setZero();
+            jacobian_ex_pose = reduce * jaco_ex * utility::so3::poseLift(qic,norm_ic);
         }
     }
 

@@ -38,11 +38,11 @@ python3 scripts/dev/doctor.py --strict --output build/dev-tools/doctor.json
 |---|---|---|
 | `bash scripts/dev/check.sh doctor` | 실제 실행 파일 버전, package pin, hot-file SHA256 | 빌드 신선도/정확도 보증 없음 |
 | `bash scripts/dev/check.sh syntax` | 기존 web JS + 개발 MJS parse, Python compile | ESLint/TypeScript typecheck 아님 |
-| `bash scripts/dev/check.sh eval` | 독립 analytic fixture로 ATE/RPE/frame/scale/rank 평가 9개 회귀 | 실데이터 정확도와 구분 |
+| `bash scripts/dev/check.sh eval` | ATE/RPE/frame/scale/rank 9개 + 합성 생성·평가 계약 18개 회귀 | 실데이터 정확도와 구분 |
 | `bash scripts/dev/check.sh quick` | syntax + evaluator regression | native/WASM/browser는 별도 |
 | `bash scripts/dev/check.sh browser-contracts` | strict browser contracts + transport + exporter analytic | mandatory TODO/skip는 gate 실패; 실기기와 구분 |
 | `bash scripts/dev/check.sh mobile-contracts` | dev mobile recorder bounded/copy/pose-delta 계약 | 실제 전화 camera/IMU/추정 정확도와 구분 |
-| `bash scripts/dev/check.sh native` | headless configure → 현재9개 suite target build → discovered CTest | empty/missing suite·mandatory skip·실패는 gate 실패 |
+| `bash scripts/dev/check.sh native` | headless configure → 현재13개 suite target build → discovered CTest | empty/missing suite·mandatory skip·실패는 gate 실패 |
 | `bash scripts/dev/check.sh wasm-build` | Emsdk subprocess 활성화 → 별도 WASM configure/build | `web/`로 미배포, 실기기 성능 미확인 |
 | `bash scripts/dev/check.sh clangd` | C++ LSP initialize/symbol/diagnostics | 컴파일 DB 필수, 단일 source 검사 |
 | `bash scripts/dev/check.sh mcp` | MCP initialize/tools/list + 브라우저 fixture + 문서 조회 | Codex 현재 세션 도구 reload와 구분 |
@@ -62,11 +62,42 @@ MOBILE_SLAM_COMPILE_DB=build/audit-native bash scripts/dev/check.sh clangd
 python3 scripts/dev/clangd-probe.py --compile-db build/audit-native --file src/backend/estimator.cpp
 ```
 
-- 기본 병렬 jobs=2; `MOBILE_SLAM_JOBS=1..8`
+- 기본 병렬 jobs=2; `MOBILE_SLAM_JOBS=1..4`
 - configure/build/test subprocess 기본 timeout=900초; `MOBILE_SLAM_TIMEOUT`으로 조정
 - 각 CTest 기본 timeout=180초; 모든 실패 결과 확인, empty CTest는 오류
 - dependency source cache 재사용 예시: `cmake --preset native-dev -DFETCHCONTENT_SOURCE_DIR_CERES-SOLVER="$PWD/build/_deps/ceres-solver-src" -DFETCHCONTENT_SOURCE_DIR_GOOGLETEST="$PWD/build/_deps/googletest-src"`
 - 최초 설정과 기존 test 실패 원인은 날짜별 audit 문서/로그 확인
+
+## PC·실제 App 합성 검증
+
+- [2026-10-09 통합 결과](../../docs/fixes/2026-10-09-mobile-web-system.md), [레퍼런스 비교](../../docs/research/2026-10-09/reference-comparison.md)
+- `generate-synthetic-vio.py`: 독립 analytic GT·ray-cast gray·IMU·YAML·camera profile·hash manifest 생성. 출력은 새 폴더만 허용, canonical dataset 쓰기 금지
+- `pc-entry-check.py`: 실제 `tiny_vins_mono`와 direct engine의 input bytes·IMU bracket·실제 설정·source timestamp·pose 비교
+- `synthetic-browser.mjs`: 실제 HTMLVideo·Camera·IMU·App·Worker·renderer 경로. fixture의 GT는 estimator에 전달하지 않음
+- `evaluate-synthetic-vio.py`: camera→body, 일대일 source 시각, 단일 SE3/scale1, ATE·APE·RPE·고정 coverage. 결과의 `passed`는 합성 rig 수락 기준
+
+```bash
+# 예시 output 이름이 이미 있으면 새 이름 사용
+python3 scripts/dev/generate-synthetic-vio.py --output build/synthetic-example \
+  --seed 101 --scenario clean
+python3 scripts/dev/pc-entry-check.py --dataset build/synthetic-example \
+  --pc build/dev-native/tiny_vins_mono --native build/dev-native/native_replay \
+  --output build/synthetic-example-pc
+node scripts/dev/synthetic-browser.mjs --input build/synthetic-example/input.json \
+  --loader build/dev-wasm/vio_engine.js --output build/synthetic-example-browser \
+  --mode live-paced-native-raf --sensor generic --frames 400
+python3 scripts/dev/evaluate-synthetic-vio.py --dataset build/synthetic-example \
+  --results build/synthetic-example-browser/report.json --estimate-frame camera \
+  --output build/synthetic-example-evaluation.json
+```
+
+- browser modes: `raw`=직접 Worker, `live-deterministic`=가상 시계·직렬 처리, `live-paced`=제어된 callback cadence, `live-paced-native-raf`=실제 desktop rAF
+- 기본 harness는 명시 `fth=1`; `--f-threshold default`는 URL override 생략 후 실제 C++ readback 확인. 현재 engine 기본값도1
+- `live-deterministic`의 가상 clock 비용을 실제 latency로 보고하지 않음. 실제 rAF도 camera captureTime·sensor API는 mock이며 물리 phone 검증과 구분
+- 원본400frame·warmup 이후300frame 분모 유지. 누락·busy·실패·pose 없는 frame을 평가에서 숨기지 않음
+- 캡처한 App 입력 재생: 생성된 `captured-input.json`을 `--mode raw`에 전달하고 `--frames`를 실제 accepted 수로 지정. 실제 C++ readback 설정·accepted pixels·IMU batch 경계 보존
+- native replay의 마지막 `legacy|yaml` 인자로 profile 명시. 기본 `legacy`는 기존 고정 tracker 유지, `yaml`은 supplied tracker 설정 사용
+- 초기 covariance 파라미터는 기존 `V noise Vᵀ` 구현의 수치 profile. 주입한 sensor noise density와 같은 단위라고 가정하거나 dt 보정 없이 서로 복사하지 않음
 
 ## 실기기 pose 흔들림 기록
 
@@ -94,6 +125,69 @@ python3 scripts/dev/serve-mobile-audit.py --generate-dev-cert --host 127.0.0.1 -
 - 기존 `index.html?v=11` 관측 prototype 사용; 기본 제품 페이지/SLAM 추정 알고리즘 변경 없이 별도 audit 페이지 사용
 - 기존 `sendBeacon` 차단 및 server POST405; 서버로 관측 로그 자동 업로드 없음
 - 임시 인증서: `build/dev-mobile-audit/certs`, 7일/localhost SAN; phone 신뢰 인증서로 해석 금지
+
+## Android 무선 ADB·Chrome 실제 탭 관측
+
+- 도구: 기존 Android SDK `adb`; 추가 제품·개발 package 설치 없음
+- 휴대전화: 같은 LAN의 개발자 옵션 → 무선 디버깅. 새 PC는 페어링 코드 창의 IP/port로 `adb pair`; 기본 화면의 연결 port와 구분
+- 실기기 Chrome에서 `https://dev.serdic.com:7002/` 유지·화면 잠금 해제; 화면이 `Dozing`이면 CDP 요청 timeout 가능
+- 대상 선택: USB·무선이 동시에 보여도 무선 IP:port를 `-s`로 명시
+
+```bash
+adb version
+adb mdns services
+adb devices -l
+
+# 실제 휴대전화에 표시되는 값 사용. 포트는 무선 디버깅 재시작 시 변경 가능.
+phone_address=192.168.0.126:46635
+adb connect "$phone_address"
+adb -s "$phone_address" shell getprop ro.product.model
+adb -s "$phone_address" forward --no-rebind tcp:9222 localabstract:chrome_devtools_remote
+
+node scripts/dev/android-snapshot.mjs --samples 8
+node scripts/dev/android-snapshot.mjs --samples 5 --record-seconds 30
+
+# 이 작업에서 만든 9222 포워딩만 종료
+adb -s "$phone_address" forward --remove tcp:9222
+```
+
+- `9222` 충돌: 기존 forwarding 보존, 다른 port 선택 후 `--cdp http://127.0.0.1:PORT`
+- helper: 해당 origin의 기존 `/` 또는 `/index.html` 탭 1개만 page WebSocket으로 관측; 다른 탭·Chrome 재시작·navigation·권한 emulation 없음
+- 기본 출력: 고유 `build/dev-android/snapshot-<UTC>.json`; 명시 `--output`도 기존 파일 덮어쓰기 금지
+- `--record-seconds 1..60`: 실제 Worker 결과 최대1,500개, 전송 시도 IMU 최대12,000개; hook은 시간 상한·종료에서 복원
+- 기록: raw pose·timestamp·상태·epoch·solver·입력 IMU·camera 수치·gyro candidate/적용 여부; 영상·camera label/device ID·개인 탭 URL 제외
+- 판정: IMU 호출 인자는 Worker 수락·엔진 입력과 구분; callback·presentation은 physical exposure 시각과 구분; 정지 자기일관성은 독립 GT 정확도와 구분
+- 2026-10-07 연결 확인: Z Flip 6 `SM-F741N`, Android16/API36, Chrome154.0.8037.126, ADB36.0.2; 무선 shell·Chrome CDP 실제 호출 성공
+- 실제 발산·입력 수정: [gyro 원본 보존](../../docs/fixes/2026-10-07-imu-bias.md), [FOV 오판 제거](../../docs/fixes/2026-10-07-focal-length.md), [모바일 이동 불연속 회복](../../docs/fixes/2026-10-07-mobile-motion-guard.md)
+- 공식 절차: [Android ADB](https://developer.android.com/tools/adb), [Chrome Android CDP](https://developer.chrome.com/docs/devtools/remote-debugging/)
+
+### Grayscale·IMU 입력 보존과 오프라인 재생
+
+```bash
+# 준비된 실제 기기에서 app 실행 후 시작. 원래 첫300장 제한 대신 PC로 계속 저장.
+node scripts/dev/android-input-record.mjs --seconds 60 --frames 24 --timer \
+  --output build/dev-android/new-controlled-minute
+
+# 별도 검증된 loader를 지정; VIO 시작부터 저장된 전체 prefix 처리.
+node scripts/dev/replay-android-input.mjs \
+  --record build/dev-android/new-controlled-minute/record.json \
+  --input-dir build/dev-android/new-controlled-minute/mav0/cam0/data \
+  --loader build/zflip6-followup-wasm/vio_engine.js \
+  --frames 2000 --output build/dev-android/new-controlled-minute-replay
+```
+
+- 기록 `--frames`: 총 저장 수가 아닌 동시 대기 이미지 수, 기본24·최대300; raw queue 최대16MiB
+- PC 배출: 100ms 간격·최대4MiB batch; PGM과 timestamp/hash receipt 동기화 후 queue 해제
+- 시작 시 estimator reset1회·전후 epoch 기록; 기존 다른 capture hook은 거부
+- `acceptedFrameMetadata`: 모든 accepted 요청과 payload 상태; `frames`: 저장 확인된 이미지
+- `completion`: missing payload·pending/foreign result·partial 구분; 포즈0·측정 종료를 정확도 통과로 해석 금지
+- 설정/해상도 변경·overflow·연결/디스크 오류: partial 기록, 저장된 입력 보존; 복구 token과 `capture-start.json`, `received-frames.jsonl` 확인
+- phone 복구 객체: 최종 `record.json` 동기화 완료 후 삭제; `cleanup.json`에 실제 삭제 결과
+- 재생: 기본300·최대2,000장, 선택 raw 영상 합계512MiB 상한; PGM/hash·연속 frame·IMU endpoint 검증
+- 재생 profile: `mobile_default`만 지원; solver/tracking RPC는 과거 app 기본값으로 복원한 설정임을 결과에 명시
+- 결과: `report.json`의 loader/Worker/input hash, 실제 처리 수, 초기화·fresh pose 비율·reset·IMU drop 별도 기록
+- desktop 순차 재생·미리 공급된 IMU bracket; 원래 전화 scheduling·capture latency·누락 영상·독립 GT 재현과 구분
+- [Z Flip6 후속 진단·검증](../../docs/fixes/2026-10-07-zflip6-followup.md)
 
 ## 실제 HTTPS 7002 수동 운영
 

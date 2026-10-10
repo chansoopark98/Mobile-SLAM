@@ -16,10 +16,11 @@ if (!Number.isInteger(replayFrames) || replayFrames < 0 || replayFrames > 5000) 
 const replayTimeout = Number(process.env.BROWSER_AUDIT_REPLAY_TIMEOUT_MS || 60000);
 if (!Number.isInteger(replayTimeout) || replayTimeout < 1000 || replayTimeout > 600000) throw new Error('BROWSER_AUDIT_REPLAY_TIMEOUT_MS must be 1000..600000');
 const wasmVariant = process.env.BROWSER_AUDIT_WASM || 'active';
+const freshRoot = path.resolve(process.env.BROWSER_AUDIT_FRESH_DIR || path.join(root, 'build/audit-wasm'));
 if (!['active', 'fresh'].includes(wasmVariant)) throw new Error('BROWSER_AUDIT_WASM must be active or fresh');
 const wasmPath = wasmVariant === 'fresh' ? '/__audit-wasm__/vio_engine.js' : '/vio_engine.js';
 const artifacts = ['web/vio_engine.js', 'web/js/vio_engine_worker.js', 'wasm/build/vio_engine.js', 'wasm/build/vio_engine_worker.js', 'wasm/dist/vio_engine.js', 'web/js/app.js', 'web/js/vio-wrapper.js', 'web/js/vio-worker.js', 'web/js/test-tumvi-app.js', 'src/vio_engine.cpp', 'src/backend/estimator.cpp', 'wasm/vio_bindings.cpp', 'wasm/CMakeLists.txt'];
-if (wasmVariant === 'fresh') artifacts.push('build/audit-wasm/vio_engine.js');
+if (wasmVariant === 'fresh') artifacts.push(path.relative(root, path.join(freshRoot, 'vio_engine.js')));
 const fingerprints = {};
 for (const file of artifacts) {
     const data = await fs.readFile(path.join(root, file));
@@ -37,7 +38,7 @@ const server = http.createServer(async (req, res) => {
     if (url.pathname === '/favicon.ico') { res.writeHead(204).end(); return; }
     let decoded;
     try { decoded = decodeURIComponent(url.pathname); } catch { res.writeHead(400).end(); return; }
-    const base = path.join(root, decoded.startsWith('/datasets/') ? 'assets/datasets' : decoded.startsWith('/__audit-wasm__/') ? 'build/audit-wasm' : 'web');
+    const base = decoded.startsWith('/__audit-wasm__/') ? freshRoot : path.join(root, decoded.startsWith('/datasets/') ? 'assets/datasets' : 'web');
     const relative = decoded.startsWith('/datasets/') ? decoded.slice('/datasets/'.length) : decoded.startsWith('/__audit-wasm__/') ? decoded.slice('/__audit-wasm__/'.length) : decoded === '/' ? 'index.html' : decoded.slice(1);
     const file = path.resolve(base, relative);
     if (!file.startsWith(base + path.sep) || decoded.includes('\0')) { res.writeHead(403).end(); return; }
