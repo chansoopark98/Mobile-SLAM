@@ -1,7 +1,7 @@
 {
   "schema": "mobile-slam-build-v1",
-  "head": "9624998fc8472267dcbcab7bed39d2e93bcd8e83",
-  "dirty_diff_sha256": "2a51514cae227b65f6a9c7a244af699aafb43fabfe11e807446f57738b584399",
+  "head": "009006db49bdf627f2c40c1c795343de3693cdc5",
+  "dirty_diff_sha256": "59579c0a8018358fc177e85a4b3d7a1c7fa712cbbac2a2f698d2b868fe65e425",
   "source_files": {
     "CMakeLists.txt": "0062104d4bb825b04b0975d744f420b81c65d783d50f20cc0373a4f57624e744",
     "cmake/SLAMCoreSources.cmake": "b2879382e0ecd7f4054837a60210d41f467ba67d06e224c1cacfde85282bceb5",
@@ -33,7 +33,7 @@
     "include/config/config_manager.h": "6d64a895c06a07e7a2064810a746f9bdd38ad611a7059c9e8d94d182ac9aa1a5",
     "include/frontend/failure_detector.h": "a6e103c76de8d9de4b656c00bb53830bdcbce9aebcfe05af59368cd3321e8c54",
     "include/frontend/feature_manager.h": "017ffad6df93eb5b3e41121fd5855d31d47d12fa235e6decf33e46a88201e502",
-    "include/frontend/feature_tracker.h": "f2d0865c473b97f215d31bdd49b992c829cea999427a5e7167beda93cba7cea6",
+    "include/frontend/feature_tracker.h": "288869b66319969735cf056faad0d74c0c7115cca3f83b784f46e10fbee6584d",
     "include/frontend/initialization/initial_alignment.h": "323f59154e3b1b5fc439e7eb3bbe0a60abd9c93ae077b17f0ad43abfbe109c15",
     "include/frontend/initialization/initial_sfm.h": "645cce7b81579dda805cf0b45977f33593e83fb65695aca29e2404ac764c4e27",
     "include/frontend/initialization/initializer.h": "34f8f56ba6db755675ea9cf1dd9a9895af1bedb2905ea02bb72c35f096f031d3",
@@ -48,9 +48,9 @@
     "include/utility/trajectory_evaluator.h": "b63d3ff7044b5218758efe584d8012bcffb84f499dae617e68d0ee9536eaeb6a",
     "include/utility/utility.h": "da35ccd7de1bb502bfa760980fdbde29d673910135a9b42c2db0fa5163d16c14",
     "include/utility/visualizer.h": "17a5bf0b0da411e1e8d89f2be9371acedb7a18c42c19621c9f8092ba52903631",
-    "include/vio_engine.h": "eb7a72bb0433884890df0de8bc13645ee4371110e3024d62fc517c6973bec295",
+    "include/vio_engine.h": "7ea07ef1dd6150858f3c9116134ef3ba543d60999bb7d5a32f28ea3456bc9349",
     "include/vio_system.h": "0e6f013c4298f31468616477691c38efeaba6419fafbcae7ec43eeaca3d35f31",
-    "src/backend/estimator.cpp": "e89aff451a162540fd4a4c742f417f79912a8f4bf120eee4e3203323523e40d2",
+    "src/backend/estimator.cpp": "61d9d31941a82ece83fb68a4e7a8e547171d1579b6d39b5b177656e9a59648a5",
     "src/backend/factor/marginalization_factor.cpp": "05c1cf2ef21b838e0060423f27636688ed687e857da397a4efe6a30c6c1ff613",
     "src/backend/factor/perspective_factor.cpp": "b221c138d8d63bc8ddb5712b1e07e093cf301e74c0ce6fdc7f2a40afe4f0f345",
     "src/backend/factor/pose_local_parameterization.cpp": "143b0df21f6d67a3501b10a3ecf0762dcf8510d31da8bacc1eaad8af6391d655",
@@ -70,7 +70,7 @@
     "src/config/config_manager.cpp": "48095d5b9088bcbfeec8b3003fbe68639fc8e9897ec70545100e70c32334792e",
     "src/frontend/failure_detector.cpp": "e7099a405666e5e86079b3b525206d8e20dd63a41246303d3af148ff359a1be6",
     "src/frontend/feature_manager.cpp": "9eeb956971f620a37accb573e6e14ff403c1f348edf2fdd4d0fa71f7bbe30609",
-    "src/frontend/feature_tracker.cpp": "7901617616f836b7dab62f00af93e269450f6a831a1151b5ddbd2efa39345ea5",
+    "src/frontend/feature_tracker.cpp": "d64ed294fc848de64372fb8fec2515cc8e975e9c781e8ee2e3159a3239a5ab1a",
     "src/frontend/initialization/initial_alignment.cpp": "8a077ee635ff852a19b69e994519f4440003703c6913f04cc209918dfdd24c44",
     "src/frontend/initialization/initial_sfm.cpp": "e36a0a2e54810fd0f3ca75d4b13b375919e69d50a1bfeb9bbfd566bb7a8ccdd4",
     "src/frontend/initialization/initializer.cpp": "0aafaf9f2ef3fd61fe19a79c28c8978548d5d0c9b0037d80a4c55e7a31869df0",
@@ -84,297 +84,297 @@
     "src/utility/trajectory_evaluator.cpp": "5a67ae4ca81ec71a20077ddd69f7b6370e4d676b11e8726c81c46ca7a7ad73b0",
     "src/utility/utility.cpp": "945a46fe5e34544ac56bf5bd6acd167c8f5982563ec73cf33621a3f9dc14c622",
     "src/utility/visualizer.cpp": "cff0973109007c166791faae394577cf15d53ac126398579e415bf895a4d2137",
-    "src/vio_engine.cpp": "63a7e27bfd3cb589012fbb9ffba5d381849ead01b9c218fc5f51bae191d048f8",
+    "src/vio_engine.cpp": "5ba362d57625ceb65c0125bbb6daecd27144288746199b074a22c207ef9c4572",
     "src/vio_system.cpp": "8eb51bb742a9479de6ca8ccb66ff10d4c9b923018e8014f4b5f8e9ac9ec04346",
-    "tests/audit_dataset_replay.cpp": "277434c13820e1d52d867f53e114079020b5dc2dd189c9e9ce423beb56d04741",
+    "tests/audit_dataset_replay.cpp": "2aa730af07648941aaf44c73d6dd1f90fca46eb7fb17a354c9101c92cdbe08c9",
     "wasm/CMakeLists.txt": "9fd37ed10de5f83f7f668d68bd7b4b381d0ad2e7755b675724d037ac66280237",
-    "wasm/vio_bindings.cpp": "dc15e2af2c228467370427406b2a663a41560f8ba8c77bb129aa445f12ebcb92"
+    "wasm/vio_bindings.cpp": "f56811dcdf9f9cefcd9a9fd85cfc634a53e7a48c17480f08f965e40b5a724dfb"
   },
-  "source_manifest_sha256": "103c7d09bf690c85111ebecc4c414bf1d02db9ae884ddf8f0f88dd40ef45cf33",
-  "build_directory": "/home/park-ubuntu/park/SOLUTION/Mobile-SLAM/build/refresh-wasm-20261010",
+  "source_manifest_sha256": "c47bf0a43a14f06a19fd311527464f31359b8f6612be9865ef8b7eeeca14490b",
+  "build_directory": "/home/park-ubuntu/park/SOLUTION/Mobile-SLAM/build/motion-wasm-20261010",
   "core_compile_commands": [
     {
-      "directory": "/home/park-ubuntu/park/SOLUTION/Mobile-SLAM/build/refresh-wasm-20261010",
+      "directory": "/home/park-ubuntu/park/SOLUTION/Mobile-SLAM/build/motion-wasm-20261010",
       "command": "/home/park-ubuntu/emsdk/upstream/emscripten/em++ -DEIGEN_DISABLE_UNALIGNED_ARRAY_ASSERT=1 -DEIGEN_FAST_MATH=0 -DNDEBUG -DSLAM_LOG_LEVEL=3 -D__EMSCRIPTEN__ -I/home/park-ubuntu/park/SOLUTION/Mobile-SLAM/wasm/../include -I/usr/include/eigen3 -I/home/park-ubuntu/park/SOLUTION/Mobile-SLAM/wasm/libs/opencv/include/opencv4 -I/home/park-ubuntu/park/SOLUTION/Mobile-SLAM/wasm/libs/ceres/include -O3 -DNDEBUG -O3 -msimd128 -fno-fast-math -std=gnu++17 -o CMakeFiles/vio_engine.dir/home/park-ubuntu/park/SOLUTION/Mobile-SLAM/src/utility/utility.cpp.o -c /home/park-ubuntu/park/SOLUTION/Mobile-SLAM/src/utility/utility.cpp",
       "file": "/home/park-ubuntu/park/SOLUTION/Mobile-SLAM/src/utility/utility.cpp"
     },
     {
-      "directory": "/home/park-ubuntu/park/SOLUTION/Mobile-SLAM/build/refresh-wasm-20261010",
+      "directory": "/home/park-ubuntu/park/SOLUTION/Mobile-SLAM/build/motion-wasm-20261010",
       "command": "/home/park-ubuntu/emsdk/upstream/emscripten/em++ -DEIGEN_DISABLE_UNALIGNED_ARRAY_ASSERT=1 -DEIGEN_FAST_MATH=0 -DNDEBUG -DSLAM_LOG_LEVEL=3 -D__EMSCRIPTEN__ -I/home/park-ubuntu/park/SOLUTION/Mobile-SLAM/wasm/../include -I/usr/include/eigen3 -I/home/park-ubuntu/park/SOLUTION/Mobile-SLAM/wasm/libs/opencv/include/opencv4 -I/home/park-ubuntu/park/SOLUTION/Mobile-SLAM/wasm/libs/ceres/include -O3 -DNDEBUG -O3 -msimd128 -fno-fast-math -std=gnu++17 -o CMakeFiles/vio_engine.dir/home/park-ubuntu/park/SOLUTION/Mobile-SLAM/src/utility/config.cpp.o -c /home/park-ubuntu/park/SOLUTION/Mobile-SLAM/src/utility/config.cpp",
       "file": "/home/park-ubuntu/park/SOLUTION/Mobile-SLAM/src/utility/config.cpp"
     },
     {
-      "directory": "/home/park-ubuntu/park/SOLUTION/Mobile-SLAM/build/refresh-wasm-20261010",
+      "directory": "/home/park-ubuntu/park/SOLUTION/Mobile-SLAM/build/motion-wasm-20261010",
       "command": "/home/park-ubuntu/emsdk/upstream/emscripten/em++ -DEIGEN_DISABLE_UNALIGNED_ARRAY_ASSERT=1 -DEIGEN_FAST_MATH=0 -DNDEBUG -DSLAM_LOG_LEVEL=3 -D__EMSCRIPTEN__ -I/home/park-ubuntu/park/SOLUTION/Mobile-SLAM/wasm/../include -I/usr/include/eigen3 -I/home/park-ubuntu/park/SOLUTION/Mobile-SLAM/wasm/libs/opencv/include/opencv4 -I/home/park-ubuntu/park/SOLUTION/Mobile-SLAM/wasm/libs/ceres/include -O3 -DNDEBUG -O3 -msimd128 -fno-fast-math -std=gnu++17 -o CMakeFiles/vio_engine.dir/home/park-ubuntu/park/SOLUTION/Mobile-SLAM/src/backend/factor/pose_local_parameterization.cpp.o -c /home/park-ubuntu/park/SOLUTION/Mobile-SLAM/src/backend/factor/pose_local_parameterization.cpp",
       "file": "/home/park-ubuntu/park/SOLUTION/Mobile-SLAM/src/backend/factor/pose_local_parameterization.cpp"
     },
     {
-      "directory": "/home/park-ubuntu/park/SOLUTION/Mobile-SLAM/build/refresh-wasm-20261010",
+      "directory": "/home/park-ubuntu/park/SOLUTION/Mobile-SLAM/build/motion-wasm-20261010",
       "command": "/home/park-ubuntu/emsdk/upstream/emscripten/em++ -DEIGEN_DISABLE_UNALIGNED_ARRAY_ASSERT=1 -DEIGEN_FAST_MATH=0 -DNDEBUG -DSLAM_LOG_LEVEL=3 -D__EMSCRIPTEN__ -I/home/park-ubuntu/park/SOLUTION/Mobile-SLAM/wasm/../include -I/usr/include/eigen3 -I/home/park-ubuntu/park/SOLUTION/Mobile-SLAM/wasm/libs/opencv/include/opencv4 -I/home/park-ubuntu/park/SOLUTION/Mobile-SLAM/wasm/libs/ceres/include -O3 -DNDEBUG -O3 -msimd128 -fno-fast-math -std=gnu++17 -o CMakeFiles/vio_engine.dir/home/park-ubuntu/park/SOLUTION/Mobile-SLAM/src/backend/factor/marginalization_factor.cpp.o -c /home/park-ubuntu/park/SOLUTION/Mobile-SLAM/src/backend/factor/marginalization_factor.cpp",
       "file": "/home/park-ubuntu/park/SOLUTION/Mobile-SLAM/src/backend/factor/marginalization_factor.cpp"
     },
     {
-      "directory": "/home/park-ubuntu/park/SOLUTION/Mobile-SLAM/build/refresh-wasm-20261010",
+      "directory": "/home/park-ubuntu/park/SOLUTION/Mobile-SLAM/build/motion-wasm-20261010",
       "command": "/home/park-ubuntu/emsdk/upstream/emscripten/em++ -DEIGEN_DISABLE_UNALIGNED_ARRAY_ASSERT=1 -DEIGEN_FAST_MATH=0 -DNDEBUG -DSLAM_LOG_LEVEL=3 -D__EMSCRIPTEN__ -I/home/park-ubuntu/park/SOLUTION/Mobile-SLAM/wasm/../include -I/usr/include/eigen3 -I/home/park-ubuntu/park/SOLUTION/Mobile-SLAM/wasm/libs/opencv/include/opencv4 -I/home/park-ubuntu/park/SOLUTION/Mobile-SLAM/wasm/libs/ceres/include -O3 -DNDEBUG -O3 -msimd128 -fno-fast-math -std=gnu++17 -o CMakeFiles/vio_engine.dir/home/park-ubuntu/park/SOLUTION/Mobile-SLAM/src/backend/factor/projection_factor.cpp.o -c /home/park-ubuntu/park/SOLUTION/Mobile-SLAM/src/backend/factor/projection_factor.cpp",
       "file": "/home/park-ubuntu/park/SOLUTION/Mobile-SLAM/src/backend/factor/projection_factor.cpp"
     },
     {
-      "directory": "/home/park-ubuntu/park/SOLUTION/Mobile-SLAM/build/refresh-wasm-20261010",
+      "directory": "/home/park-ubuntu/park/SOLUTION/Mobile-SLAM/build/motion-wasm-20261010",
       "command": "/home/park-ubuntu/emsdk/upstream/emscripten/em++ -DEIGEN_DISABLE_UNALIGNED_ARRAY_ASSERT=1 -DEIGEN_FAST_MATH=0 -DNDEBUG -DSLAM_LOG_LEVEL=3 -D__EMSCRIPTEN__ -I/home/park-ubuntu/park/SOLUTION/Mobile-SLAM/wasm/../include -I/usr/include/eigen3 -I/home/park-ubuntu/park/SOLUTION/Mobile-SLAM/wasm/libs/opencv/include/opencv4 -I/home/park-ubuntu/park/SOLUTION/Mobile-SLAM/wasm/libs/ceres/include -O3 -DNDEBUG -O3 -msimd128 -fno-fast-math -std=gnu++17 -o CMakeFiles/vio_engine.dir/home/park-ubuntu/park/SOLUTION/Mobile-SLAM/src/backend/factor/perspective_factor.cpp.o -c /home/park-ubuntu/park/SOLUTION/Mobile-SLAM/src/backend/factor/perspective_factor.cpp",
       "file": "/home/park-ubuntu/park/SOLUTION/Mobile-SLAM/src/backend/factor/perspective_factor.cpp"
     },
     {
-      "directory": "/home/park-ubuntu/park/SOLUTION/Mobile-SLAM/build/refresh-wasm-20261010",
+      "directory": "/home/park-ubuntu/park/SOLUTION/Mobile-SLAM/build/motion-wasm-20261010",
       "command": "/home/park-ubuntu/emsdk/upstream/emscripten/em++ -DEIGEN_DISABLE_UNALIGNED_ARRAY_ASSERT=1 -DEIGEN_FAST_MATH=0 -DNDEBUG -DSLAM_LOG_LEVEL=3 -D__EMSCRIPTEN__ -I/home/park-ubuntu/park/SOLUTION/Mobile-SLAM/wasm/../include -I/usr/include/eigen3 -I/home/park-ubuntu/park/SOLUTION/Mobile-SLAM/wasm/libs/opencv/include/opencv4 -I/home/park-ubuntu/park/SOLUTION/Mobile-SLAM/wasm/libs/ceres/include -O3 -DNDEBUG -O3 -msimd128 -fno-fast-math -std=gnu++17 -o CMakeFiles/vio_engine.dir/home/park-ubuntu/park/SOLUTION/Mobile-SLAM/src/backend/optimizer.cpp.o -c /home/park-ubuntu/park/SOLUTION/Mobile-SLAM/src/backend/optimizer.cpp",
       "file": "/home/park-ubuntu/park/SOLUTION/Mobile-SLAM/src/backend/optimizer.cpp"
     },
     {
-      "directory": "/home/park-ubuntu/park/SOLUTION/Mobile-SLAM/build/refresh-wasm-20261010",
+      "directory": "/home/park-ubuntu/park/SOLUTION/Mobile-SLAM/build/motion-wasm-20261010",
       "command": "/home/park-ubuntu/emsdk/upstream/emscripten/em++ -DEIGEN_DISABLE_UNALIGNED_ARRAY_ASSERT=1 -DEIGEN_FAST_MATH=0 -DNDEBUG -DSLAM_LOG_LEVEL=3 -D__EMSCRIPTEN__ -I/home/park-ubuntu/park/SOLUTION/Mobile-SLAM/wasm/../include -I/usr/include/eigen3 -I/home/park-ubuntu/park/SOLUTION/Mobile-SLAM/wasm/libs/opencv/include/opencv4 -I/home/park-ubuntu/park/SOLUTION/Mobile-SLAM/wasm/libs/ceres/include -O3 -DNDEBUG -O3 -msimd128 -fno-fast-math -std=gnu++17 -o CMakeFiles/vio_engine.dir/home/park-ubuntu/park/SOLUTION/Mobile-SLAM/src/frontend/pnp_frontend.cpp.o -c /home/park-ubuntu/park/SOLUTION/Mobile-SLAM/src/frontend/pnp_frontend.cpp",
       "file": "/home/park-ubuntu/park/SOLUTION/Mobile-SLAM/src/frontend/pnp_frontend.cpp"
     },
     {
-      "directory": "/home/park-ubuntu/park/SOLUTION/Mobile-SLAM/build/refresh-wasm-20261010",
+      "directory": "/home/park-ubuntu/park/SOLUTION/Mobile-SLAM/build/motion-wasm-20261010",
       "command": "/home/park-ubuntu/emsdk/upstream/emscripten/em++ -DEIGEN_DISABLE_UNALIGNED_ARRAY_ASSERT=1 -DEIGEN_FAST_MATH=0 -DNDEBUG -DSLAM_LOG_LEVEL=3 -D__EMSCRIPTEN__ -I/home/park-ubuntu/park/SOLUTION/Mobile-SLAM/wasm/../include -I/usr/include/eigen3 -I/home/park-ubuntu/park/SOLUTION/Mobile-SLAM/wasm/libs/opencv/include/opencv4 -I/home/park-ubuntu/park/SOLUTION/Mobile-SLAM/wasm/libs/ceres/include -O3 -DNDEBUG -O3 -msimd128 -fno-fast-math -std=gnu++17 -o CMakeFiles/vio_engine.dir/home/park-ubuntu/park/SOLUTION/Mobile-SLAM/src/frontend/failure_detector.cpp.o -c /home/park-ubuntu/park/SOLUTION/Mobile-SLAM/src/frontend/failure_detector.cpp",
       "file": "/home/park-ubuntu/park/SOLUTION/Mobile-SLAM/src/frontend/failure_detector.cpp"
     },
     {
-      "directory": "/home/park-ubuntu/park/SOLUTION/Mobile-SLAM/build/refresh-wasm-20261010",
+      "directory": "/home/park-ubuntu/park/SOLUTION/Mobile-SLAM/build/motion-wasm-20261010",
       "command": "/home/park-ubuntu/emsdk/upstream/emscripten/em++ -DEIGEN_DISABLE_UNALIGNED_ARRAY_ASSERT=1 -DEIGEN_FAST_MATH=0 -DNDEBUG -DSLAM_LOG_LEVEL=3 -D__EMSCRIPTEN__ -I/home/park-ubuntu/park/SOLUTION/Mobile-SLAM/wasm/../include -I/usr/include/eigen3 -I/home/park-ubuntu/park/SOLUTION/Mobile-SLAM/wasm/libs/opencv/include/opencv4 -I/home/park-ubuntu/park/SOLUTION/Mobile-SLAM/wasm/libs/ceres/include -O3 -DNDEBUG -O3 -msimd128 -fno-fast-math -std=gnu++17 -o CMakeFiles/vio_engine.dir/home/park-ubuntu/park/SOLUTION/Mobile-SLAM/src/frontend/initialization/initializer.cpp.o -c /home/park-ubuntu/park/SOLUTION/Mobile-SLAM/src/frontend/initialization/initializer.cpp",
       "file": "/home/park-ubuntu/park/SOLUTION/Mobile-SLAM/src/frontend/initialization/initializer.cpp"
     },
     {
-      "directory": "/home/park-ubuntu/park/SOLUTION/Mobile-SLAM/build/refresh-wasm-20261010",
+      "directory": "/home/park-ubuntu/park/SOLUTION/Mobile-SLAM/build/motion-wasm-20261010",
       "command": "/home/park-ubuntu/emsdk/upstream/emscripten/em++ -DEIGEN_DISABLE_UNALIGNED_ARRAY_ASSERT=1 -DEIGEN_FAST_MATH=0 -DNDEBUG -DSLAM_LOG_LEVEL=3 -D__EMSCRIPTEN__ -I/home/park-ubuntu/park/SOLUTION/Mobile-SLAM/wasm/../include -I/usr/include/eigen3 -I/home/park-ubuntu/park/SOLUTION/Mobile-SLAM/wasm/libs/opencv/include/opencv4 -I/home/park-ubuntu/park/SOLUTION/Mobile-SLAM/wasm/libs/ceres/include -O3 -DNDEBUG -O3 -msimd128 -fno-fast-math -std=gnu++17 -o CMakeFiles/vio_engine.dir/home/park-ubuntu/park/SOLUTION/Mobile-SLAM/src/frontend/initialization/initial_alignment.cpp.o -c /home/park-ubuntu/park/SOLUTION/Mobile-SLAM/src/frontend/initialization/initial_alignment.cpp",
       "file": "/home/park-ubuntu/park/SOLUTION/Mobile-SLAM/src/frontend/initialization/initial_alignment.cpp"
     },
     {
-      "directory": "/home/park-ubuntu/park/SOLUTION/Mobile-SLAM/build/refresh-wasm-20261010",
+      "directory": "/home/park-ubuntu/park/SOLUTION/Mobile-SLAM/build/motion-wasm-20261010",
       "command": "/home/park-ubuntu/emsdk/upstream/emscripten/em++ -DEIGEN_DISABLE_UNALIGNED_ARRAY_ASSERT=1 -DEIGEN_FAST_MATH=0 -DNDEBUG -DSLAM_LOG_LEVEL=3 -D__EMSCRIPTEN__ -I/home/park-ubuntu/park/SOLUTION/Mobile-SLAM/wasm/../include -I/usr/include/eigen3 -I/home/park-ubuntu/park/SOLUTION/Mobile-SLAM/wasm/libs/opencv/include/opencv4 -I/home/park-ubuntu/park/SOLUTION/Mobile-SLAM/wasm/libs/ceres/include -O3 -DNDEBUG -O3 -msimd128 -fno-fast-math -std=gnu++17 -o CMakeFiles/vio_engine.dir/home/park-ubuntu/park/SOLUTION/Mobile-SLAM/src/frontend/initialization/initial_sfm.cpp.o -c /home/park-ubuntu/park/SOLUTION/Mobile-SLAM/src/frontend/initialization/initial_sfm.cpp",
       "file": "/home/park-ubuntu/park/SOLUTION/Mobile-SLAM/src/frontend/initialization/initial_sfm.cpp"
     },
     {
-      "directory": "/home/park-ubuntu/park/SOLUTION/Mobile-SLAM/build/refresh-wasm-20261010",
+      "directory": "/home/park-ubuntu/park/SOLUTION/Mobile-SLAM/build/motion-wasm-20261010",
       "command": "/home/park-ubuntu/emsdk/upstream/emscripten/em++ -DEIGEN_DISABLE_UNALIGNED_ARRAY_ASSERT=1 -DEIGEN_FAST_MATH=0 -DNDEBUG -DSLAM_LOG_LEVEL=3 -D__EMSCRIPTEN__ -I/home/park-ubuntu/park/SOLUTION/Mobile-SLAM/wasm/../include -I/usr/include/eigen3 -I/home/park-ubuntu/park/SOLUTION/Mobile-SLAM/wasm/libs/opencv/include/opencv4 -I/home/park-ubuntu/park/SOLUTION/Mobile-SLAM/wasm/libs/ceres/include -O3 -DNDEBUG -O3 -msimd128 -fno-fast-math -std=gnu++17 -o CMakeFiles/vio_engine.dir/home/park-ubuntu/park/SOLUTION/Mobile-SLAM/src/frontend/initialization/solve_5pts.cpp.o -c /home/park-ubuntu/park/SOLUTION/Mobile-SLAM/src/frontend/initialization/solve_5pts.cpp",
       "file": "/home/park-ubuntu/park/SOLUTION/Mobile-SLAM/src/frontend/initialization/solve_5pts.cpp"
     },
     {
-      "directory": "/home/park-ubuntu/park/SOLUTION/Mobile-SLAM/build/refresh-wasm-20261010",
+      "directory": "/home/park-ubuntu/park/SOLUTION/Mobile-SLAM/build/motion-wasm-20261010",
       "command": "/home/park-ubuntu/emsdk/upstream/emscripten/em++ -DEIGEN_DISABLE_UNALIGNED_ARRAY_ASSERT=1 -DEIGEN_FAST_MATH=0 -DNDEBUG -DSLAM_LOG_LEVEL=3 -D__EMSCRIPTEN__ -I/home/park-ubuntu/park/SOLUTION/Mobile-SLAM/wasm/../include -I/usr/include/eigen3 -I/home/park-ubuntu/park/SOLUTION/Mobile-SLAM/wasm/libs/opencv/include/opencv4 -I/home/park-ubuntu/park/SOLUTION/Mobile-SLAM/wasm/libs/ceres/include -O3 -DNDEBUG -O3 -msimd128 -fno-fast-math -std=gnu++17 -o CMakeFiles/vio_engine.dir/home/park-ubuntu/park/SOLUTION/Mobile-SLAM/src/common/gpl/gpl.cc.o -c /home/park-ubuntu/park/SOLUTION/Mobile-SLAM/src/common/gpl/gpl.cc",
       "file": "/home/park-ubuntu/park/SOLUTION/Mobile-SLAM/src/common/gpl/gpl.cc"
     },
     {
-      "directory": "/home/park-ubuntu/park/SOLUTION/Mobile-SLAM/build/refresh-wasm-20261010",
+      "directory": "/home/park-ubuntu/park/SOLUTION/Mobile-SLAM/build/motion-wasm-20261010",
       "command": "/home/park-ubuntu/emsdk/upstream/emscripten/em++ -DEIGEN_DISABLE_UNALIGNED_ARRAY_ASSERT=1 -DEIGEN_FAST_MATH=0 -DNDEBUG -DSLAM_LOG_LEVEL=3 -D__EMSCRIPTEN__ -I/home/park-ubuntu/park/SOLUTION/Mobile-SLAM/wasm/../include -I/usr/include/eigen3 -I/home/park-ubuntu/park/SOLUTION/Mobile-SLAM/wasm/libs/opencv/include/opencv4 -I/home/park-ubuntu/park/SOLUTION/Mobile-SLAM/wasm/libs/ceres/include -O3 -DNDEBUG -O3 -msimd128 -fno-fast-math -std=gnu++17 -o CMakeFiles/vio_engine.dir/home/park-ubuntu/park/SOLUTION/Mobile-SLAM/src/common/gpl/EigenQuaternionParameterization.cc.o -c /home/park-ubuntu/park/SOLUTION/Mobile-SLAM/src/common/gpl/EigenQuaternionParameterization.cc",
       "file": "/home/park-ubuntu/park/SOLUTION/Mobile-SLAM/src/common/gpl/EigenQuaternionParameterization.cc"
     },
     {
-      "directory": "/home/park-ubuntu/park/SOLUTION/Mobile-SLAM/build/refresh-wasm-20261010",
+      "directory": "/home/park-ubuntu/park/SOLUTION/Mobile-SLAM/build/motion-wasm-20261010",
       "command": "/home/park-ubuntu/emsdk/upstream/emscripten/em++ -DEIGEN_DISABLE_UNALIGNED_ARRAY_ASSERT=1 -DEIGEN_FAST_MATH=0 -DNDEBUG -DSLAM_LOG_LEVEL=3 -D__EMSCRIPTEN__ -I/home/park-ubuntu/park/SOLUTION/Mobile-SLAM/wasm/../include -I/usr/include/eigen3 -I/home/park-ubuntu/park/SOLUTION/Mobile-SLAM/wasm/libs/opencv/include/opencv4 -I/home/park-ubuntu/park/SOLUTION/Mobile-SLAM/wasm/libs/ceres/include -O3 -DNDEBUG -O3 -msimd128 -fno-fast-math -std=gnu++17 -o CMakeFiles/vio_engine.dir/home/park-ubuntu/park/SOLUTION/Mobile-SLAM/src/common/camera_models/CameraFactory.cc.o -c /home/park-ubuntu/park/SOLUTION/Mobile-SLAM/src/common/camera_models/CameraFactory.cc",
       "file": "/home/park-ubuntu/park/SOLUTION/Mobile-SLAM/src/common/camera_models/CameraFactory.cc"
     },
     {
-      "directory": "/home/park-ubuntu/park/SOLUTION/Mobile-SLAM/build/refresh-wasm-20261010",
+      "directory": "/home/park-ubuntu/park/SOLUTION/Mobile-SLAM/build/motion-wasm-20261010",
       "command": "/home/park-ubuntu/emsdk/upstream/emscripten/em++ -DEIGEN_DISABLE_UNALIGNED_ARRAY_ASSERT=1 -DEIGEN_FAST_MATH=0 -DNDEBUG -DSLAM_LOG_LEVEL=3 -D__EMSCRIPTEN__ -I/home/park-ubuntu/park/SOLUTION/Mobile-SLAM/wasm/../include -I/usr/include/eigen3 -I/home/park-ubuntu/park/SOLUTION/Mobile-SLAM/wasm/libs/opencv/include/opencv4 -I/home/park-ubuntu/park/SOLUTION/Mobile-SLAM/wasm/libs/ceres/include -O3 -DNDEBUG -O3 -msimd128 -fno-fast-math -std=gnu++17 -o CMakeFiles/vio_engine.dir/home/park-ubuntu/park/SOLUTION/Mobile-SLAM/src/common/camera_models/CataCamera.cc.o -c /home/park-ubuntu/park/SOLUTION/Mobile-SLAM/src/common/camera_models/CataCamera.cc",
       "file": "/home/park-ubuntu/park/SOLUTION/Mobile-SLAM/src/common/camera_models/CataCamera.cc"
     },
     {
-      "directory": "/home/park-ubuntu/park/SOLUTION/Mobile-SLAM/build/refresh-wasm-20261010",
+      "directory": "/home/park-ubuntu/park/SOLUTION/Mobile-SLAM/build/motion-wasm-20261010",
       "command": "/home/park-ubuntu/emsdk/upstream/emscripten/em++ -DEIGEN_DISABLE_UNALIGNED_ARRAY_ASSERT=1 -DEIGEN_FAST_MATH=0 -DNDEBUG -DSLAM_LOG_LEVEL=3 -D__EMSCRIPTEN__ -I/home/park-ubuntu/park/SOLUTION/Mobile-SLAM/wasm/../include -I/usr/include/eigen3 -I/home/park-ubuntu/park/SOLUTION/Mobile-SLAM/wasm/libs/opencv/include/opencv4 -I/home/park-ubuntu/park/SOLUTION/Mobile-SLAM/wasm/libs/ceres/include -O3 -DNDEBUG -O3 -msimd128 -fno-fast-math -std=gnu++17 -o CMakeFiles/vio_engine.dir/home/park-ubuntu/park/SOLUTION/Mobile-SLAM/src/common/camera_models/PinholeCamera.cc.o -c /home/park-ubuntu/park/SOLUTION/Mobile-SLAM/src/common/camera_models/PinholeCamera.cc",
       "file": "/home/park-ubuntu/park/SOLUTION/Mobile-SLAM/src/common/camera_models/PinholeCamera.cc"
     },
     {
-      "directory": "/home/park-ubuntu/park/SOLUTION/Mobile-SLAM/build/refresh-wasm-20261010",
+      "directory": "/home/park-ubuntu/park/SOLUTION/Mobile-SLAM/build/motion-wasm-20261010",
       "command": "/home/park-ubuntu/emsdk/upstream/emscripten/em++ -DEIGEN_DISABLE_UNALIGNED_ARRAY_ASSERT=1 -DEIGEN_FAST_MATH=0 -DNDEBUG -DSLAM_LOG_LEVEL=3 -D__EMSCRIPTEN__ -I/home/park-ubuntu/park/SOLUTION/Mobile-SLAM/wasm/../include -I/usr/include/eigen3 -I/home/park-ubuntu/park/SOLUTION/Mobile-SLAM/wasm/libs/opencv/include/opencv4 -I/home/park-ubuntu/park/SOLUTION/Mobile-SLAM/wasm/libs/ceres/include -O3 -DNDEBUG -O3 -msimd128 -fno-fast-math -std=gnu++17 -o CMakeFiles/vio_engine.dir/home/park-ubuntu/park/SOLUTION/Mobile-SLAM/src/common/camera_models/Camera.cc.o -c /home/park-ubuntu/park/SOLUTION/Mobile-SLAM/src/common/camera_models/Camera.cc",
       "file": "/home/park-ubuntu/park/SOLUTION/Mobile-SLAM/src/common/camera_models/Camera.cc"
     },
     {
-      "directory": "/home/park-ubuntu/park/SOLUTION/Mobile-SLAM/build/refresh-wasm-20261010",
+      "directory": "/home/park-ubuntu/park/SOLUTION/Mobile-SLAM/build/motion-wasm-20261010",
       "command": "/home/park-ubuntu/emsdk/upstream/emscripten/em++ -DEIGEN_DISABLE_UNALIGNED_ARRAY_ASSERT=1 -DEIGEN_FAST_MATH=0 -DNDEBUG -DSLAM_LOG_LEVEL=3 -D__EMSCRIPTEN__ -I/home/park-ubuntu/park/SOLUTION/Mobile-SLAM/wasm/../include -I/usr/include/eigen3 -I/home/park-ubuntu/park/SOLUTION/Mobile-SLAM/wasm/libs/opencv/include/opencv4 -I/home/park-ubuntu/park/SOLUTION/Mobile-SLAM/wasm/libs/ceres/include -O3 -DNDEBUG -O3 -msimd128 -fno-fast-math -std=gnu++17 -o CMakeFiles/vio_engine.dir/home/park-ubuntu/park/SOLUTION/Mobile-SLAM/src/common/camera_models/EquidistantCamera.cc.o -c /home/park-ubuntu/park/SOLUTION/Mobile-SLAM/src/common/camera_models/EquidistantCamera.cc",
       "file": "/home/park-ubuntu/park/SOLUTION/Mobile-SLAM/src/common/camera_models/EquidistantCamera.cc"
     },
     {
-      "directory": "/home/park-ubuntu/park/SOLUTION/Mobile-SLAM/build/refresh-wasm-20261010",
+      "directory": "/home/park-ubuntu/park/SOLUTION/Mobile-SLAM/build/motion-wasm-20261010",
       "command": "/home/park-ubuntu/emsdk/upstream/emscripten/em++ -DEIGEN_DISABLE_UNALIGNED_ARRAY_ASSERT=1 -DEIGEN_FAST_MATH=0 -DNDEBUG -DSLAM_LOG_LEVEL=3 -D__EMSCRIPTEN__ -I/home/park-ubuntu/park/SOLUTION/Mobile-SLAM/wasm/../include -I/usr/include/eigen3 -I/home/park-ubuntu/park/SOLUTION/Mobile-SLAM/wasm/libs/opencv/include/opencv4 -I/home/park-ubuntu/park/SOLUTION/Mobile-SLAM/wasm/libs/ceres/include -O3 -DNDEBUG -O3 -msimd128 -fno-fast-math -std=gnu++17 -o CMakeFiles/vio_engine.dir/home/park-ubuntu/park/SOLUTION/Mobile-SLAM/src/common/camera_models/ScaramuzzaCamera.cc.o -c /home/park-ubuntu/park/SOLUTION/Mobile-SLAM/src/common/camera_models/ScaramuzzaCamera.cc",
       "file": "/home/park-ubuntu/park/SOLUTION/Mobile-SLAM/src/common/camera_models/ScaramuzzaCamera.cc"
     },
     {
-      "directory": "/home/park-ubuntu/park/SOLUTION/Mobile-SLAM/build/refresh-wasm-20261010",
+      "directory": "/home/park-ubuntu/park/SOLUTION/Mobile-SLAM/build/motion-wasm-20261010",
       "command": "/home/park-ubuntu/emsdk/upstream/emscripten/em++ -DEIGEN_DISABLE_UNALIGNED_ARRAY_ASSERT=1 -DEIGEN_FAST_MATH=0 -DNDEBUG -DSLAM_LOG_LEVEL=3 -D__EMSCRIPTEN__ -I/home/park-ubuntu/park/SOLUTION/Mobile-SLAM/wasm/../include -I/usr/include/eigen3 -I/home/park-ubuntu/park/SOLUTION/Mobile-SLAM/wasm/libs/opencv/include/opencv4 -I/home/park-ubuntu/park/SOLUTION/Mobile-SLAM/wasm/libs/ceres/include -O3 -DNDEBUG -O3 -msimd128 -fno-fast-math -std=gnu++17 -o CMakeFiles/vio_engine.dir/home/park-ubuntu/park/SOLUTION/Mobile-SLAM/src/common/camera_models/CostFunctionFactory.cc.o -c /home/park-ubuntu/park/SOLUTION/Mobile-SLAM/src/common/camera_models/CostFunctionFactory.cc",
       "file": "/home/park-ubuntu/park/SOLUTION/Mobile-SLAM/src/common/camera_models/CostFunctionFactory.cc"
     },
     {
-      "directory": "/home/park-ubuntu/park/SOLUTION/Mobile-SLAM/build/refresh-wasm-20261010",
+      "directory": "/home/park-ubuntu/park/SOLUTION/Mobile-SLAM/build/motion-wasm-20261010",
       "command": "/home/park-ubuntu/emsdk/upstream/emscripten/em++ -DEIGEN_DISABLE_UNALIGNED_ARRAY_ASSERT=1 -DEIGEN_FAST_MATH=0 -DNDEBUG -DSLAM_LOG_LEVEL=3 -D__EMSCRIPTEN__ -I/home/park-ubuntu/park/SOLUTION/Mobile-SLAM/wasm/../include -I/usr/include/eigen3 -I/home/park-ubuntu/park/SOLUTION/Mobile-SLAM/wasm/libs/opencv/include/opencv4 -I/home/park-ubuntu/park/SOLUTION/Mobile-SLAM/wasm/libs/ceres/include -O3 -DNDEBUG -O3 -msimd128 -fno-fast-math -std=gnu++17 -o CMakeFiles/vio_engine.dir/home/park-ubuntu/park/SOLUTION/Mobile-SLAM/src/frontend/feature_tracker.cpp.o -c /home/park-ubuntu/park/SOLUTION/Mobile-SLAM/src/frontend/feature_tracker.cpp",
       "file": "/home/park-ubuntu/park/SOLUTION/Mobile-SLAM/src/frontend/feature_tracker.cpp"
     },
     {
-      "directory": "/home/park-ubuntu/park/SOLUTION/Mobile-SLAM/build/refresh-wasm-20261010",
+      "directory": "/home/park-ubuntu/park/SOLUTION/Mobile-SLAM/build/motion-wasm-20261010",
       "command": "/home/park-ubuntu/emsdk/upstream/emscripten/em++ -DEIGEN_DISABLE_UNALIGNED_ARRAY_ASSERT=1 -DEIGEN_FAST_MATH=0 -DNDEBUG -DSLAM_LOG_LEVEL=3 -D__EMSCRIPTEN__ -I/home/park-ubuntu/park/SOLUTION/Mobile-SLAM/wasm/../include -I/usr/include/eigen3 -I/home/park-ubuntu/park/SOLUTION/Mobile-SLAM/wasm/libs/opencv/include/opencv4 -I/home/park-ubuntu/park/SOLUTION/Mobile-SLAM/wasm/libs/ceres/include -O3 -DNDEBUG -O3 -msimd128 -fno-fast-math -std=gnu++17 -o CMakeFiles/vio_engine.dir/home/park-ubuntu/park/SOLUTION/Mobile-SLAM/src/backend/estimator.cpp.o -c /home/park-ubuntu/park/SOLUTION/Mobile-SLAM/src/backend/estimator.cpp",
       "file": "/home/park-ubuntu/park/SOLUTION/Mobile-SLAM/src/backend/estimator.cpp"
     },
     {
-      "directory": "/home/park-ubuntu/park/SOLUTION/Mobile-SLAM/build/refresh-wasm-20261010",
+      "directory": "/home/park-ubuntu/park/SOLUTION/Mobile-SLAM/build/motion-wasm-20261010",
       "command": "/home/park-ubuntu/emsdk/upstream/emscripten/em++ -DEIGEN_DISABLE_UNALIGNED_ARRAY_ASSERT=1 -DEIGEN_FAST_MATH=0 -DNDEBUG -DSLAM_LOG_LEVEL=3 -D__EMSCRIPTEN__ -I/home/park-ubuntu/park/SOLUTION/Mobile-SLAM/wasm/../include -I/usr/include/eigen3 -I/home/park-ubuntu/park/SOLUTION/Mobile-SLAM/wasm/libs/opencv/include/opencv4 -I/home/park-ubuntu/park/SOLUTION/Mobile-SLAM/wasm/libs/ceres/include -O3 -DNDEBUG -O3 -msimd128 -fno-fast-math -std=gnu++17 -o CMakeFiles/vio_engine.dir/home/park-ubuntu/park/SOLUTION/Mobile-SLAM/src/common/frame.cpp.o -c /home/park-ubuntu/park/SOLUTION/Mobile-SLAM/src/common/frame.cpp",
       "file": "/home/park-ubuntu/park/SOLUTION/Mobile-SLAM/src/common/frame.cpp"
     },
     {
-      "directory": "/home/park-ubuntu/park/SOLUTION/Mobile-SLAM/build/refresh-wasm-20261010",
+      "directory": "/home/park-ubuntu/park/SOLUTION/Mobile-SLAM/build/motion-wasm-20261010",
       "command": "/home/park-ubuntu/emsdk/upstream/emscripten/em++ -DEIGEN_DISABLE_UNALIGNED_ARRAY_ASSERT=1 -DEIGEN_FAST_MATH=0 -DNDEBUG -DSLAM_LOG_LEVEL=3 -D__EMSCRIPTEN__ -I/home/park-ubuntu/park/SOLUTION/Mobile-SLAM/wasm/../include -I/usr/include/eigen3 -I/home/park-ubuntu/park/SOLUTION/Mobile-SLAM/wasm/libs/opencv/include/opencv4 -I/home/park-ubuntu/park/SOLUTION/Mobile-SLAM/wasm/libs/ceres/include -O3 -DNDEBUG -O3 -msimd128 -fno-fast-math -std=gnu++17 -o CMakeFiles/vio_engine.dir/home/park-ubuntu/park/SOLUTION/Mobile-SLAM/src/frontend/feature_manager.cpp.o -c /home/park-ubuntu/park/SOLUTION/Mobile-SLAM/src/frontend/feature_manager.cpp",
       "file": "/home/park-ubuntu/park/SOLUTION/Mobile-SLAM/src/frontend/feature_manager.cpp"
     },
     {
-      "directory": "/home/park-ubuntu/park/SOLUTION/Mobile-SLAM/build/refresh-wasm-20261010",
+      "directory": "/home/park-ubuntu/park/SOLUTION/Mobile-SLAM/build/motion-wasm-20261010",
       "command": "/home/park-ubuntu/emsdk/upstream/emscripten/em++ -DEIGEN_DISABLE_UNALIGNED_ARRAY_ASSERT=1 -DEIGEN_FAST_MATH=0 -DNDEBUG -DSLAM_LOG_LEVEL=3 -D__EMSCRIPTEN__ -I/home/park-ubuntu/park/SOLUTION/Mobile-SLAM/wasm/../include -I/usr/include/eigen3 -I/home/park-ubuntu/park/SOLUTION/Mobile-SLAM/wasm/libs/opencv/include/opencv4 -I/home/park-ubuntu/park/SOLUTION/Mobile-SLAM/wasm/libs/ceres/include -O3 -DNDEBUG -O3 -msimd128 -fno-fast-math -std=gnu++17 -o CMakeFiles/vio_engine.dir/home/park-ubuntu/park/SOLUTION/Mobile-SLAM/src/backend/sliding_window.cpp.o -c /home/park-ubuntu/park/SOLUTION/Mobile-SLAM/src/backend/sliding_window.cpp",
       "file": "/home/park-ubuntu/park/SOLUTION/Mobile-SLAM/src/backend/sliding_window.cpp"
     },
     {
-      "directory": "/home/park-ubuntu/park/SOLUTION/Mobile-SLAM/build/refresh-wasm-20261010",
+      "directory": "/home/park-ubuntu/park/SOLUTION/Mobile-SLAM/build/motion-wasm-20261010",
       "command": "/home/park-ubuntu/emsdk/upstream/emscripten/em++ -DEIGEN_DISABLE_UNALIGNED_ARRAY_ASSERT=1 -DEIGEN_FAST_MATH=0 -DNDEBUG -DSLAM_LOG_LEVEL=3 -D__EMSCRIPTEN__ -I/home/park-ubuntu/park/SOLUTION/Mobile-SLAM/wasm/../include -I/usr/include/eigen3 -I/home/park-ubuntu/park/SOLUTION/Mobile-SLAM/wasm/libs/opencv/include/opencv4 -I/home/park-ubuntu/park/SOLUTION/Mobile-SLAM/wasm/libs/ceres/include -O3 -DNDEBUG -O3 -msimd128 -fno-fast-math -std=gnu++17 -o CMakeFiles/vio_engine.dir/home/park-ubuntu/park/SOLUTION/Mobile-SLAM/src/vio_engine.cpp.o -c /home/park-ubuntu/park/SOLUTION/Mobile-SLAM/src/vio_engine.cpp",
       "file": "/home/park-ubuntu/park/SOLUTION/Mobile-SLAM/src/vio_engine.cpp"
     },
     {
-      "directory": "/home/park-ubuntu/park/SOLUTION/Mobile-SLAM/build/refresh-wasm-20261010",
+      "directory": "/home/park-ubuntu/park/SOLUTION/Mobile-SLAM/build/motion-wasm-20261010",
       "command": "/home/park-ubuntu/emsdk/upstream/emscripten/em++ -DEIGEN_DISABLE_UNALIGNED_ARRAY_ASSERT=1 -DEIGEN_FAST_MATH=0 -DNDEBUG -DSLAM_LOG_LEVEL=3 -D__EMSCRIPTEN__ -I/home/park-ubuntu/park/SOLUTION/Mobile-SLAM/wasm/../include -I/usr/include/eigen3 -I/home/park-ubuntu/park/SOLUTION/Mobile-SLAM/wasm/libs/opencv/include/opencv4 -I/home/park-ubuntu/park/SOLUTION/Mobile-SLAM/wasm/libs/ceres/include -O3 -DNDEBUG -O3 -msimd128 -fno-fast-math -std=gnu++17 -o CMakeFiles/vio_engine_worker.dir/home/park-ubuntu/park/SOLUTION/Mobile-SLAM/src/utility/utility.cpp.o -c /home/park-ubuntu/park/SOLUTION/Mobile-SLAM/src/utility/utility.cpp",
       "file": "/home/park-ubuntu/park/SOLUTION/Mobile-SLAM/src/utility/utility.cpp"
     },
     {
-      "directory": "/home/park-ubuntu/park/SOLUTION/Mobile-SLAM/build/refresh-wasm-20261010",
+      "directory": "/home/park-ubuntu/park/SOLUTION/Mobile-SLAM/build/motion-wasm-20261010",
       "command": "/home/park-ubuntu/emsdk/upstream/emscripten/em++ -DEIGEN_DISABLE_UNALIGNED_ARRAY_ASSERT=1 -DEIGEN_FAST_MATH=0 -DNDEBUG -DSLAM_LOG_LEVEL=3 -D__EMSCRIPTEN__ -I/home/park-ubuntu/park/SOLUTION/Mobile-SLAM/wasm/../include -I/usr/include/eigen3 -I/home/park-ubuntu/park/SOLUTION/Mobile-SLAM/wasm/libs/opencv/include/opencv4 -I/home/park-ubuntu/park/SOLUTION/Mobile-SLAM/wasm/libs/ceres/include -O3 -DNDEBUG -O3 -msimd128 -fno-fast-math -std=gnu++17 -o CMakeFiles/vio_engine_worker.dir/home/park-ubuntu/park/SOLUTION/Mobile-SLAM/src/utility/config.cpp.o -c /home/park-ubuntu/park/SOLUTION/Mobile-SLAM/src/utility/config.cpp",
       "file": "/home/park-ubuntu/park/SOLUTION/Mobile-SLAM/src/utility/config.cpp"
     },
     {
-      "directory": "/home/park-ubuntu/park/SOLUTION/Mobile-SLAM/build/refresh-wasm-20261010",
+      "directory": "/home/park-ubuntu/park/SOLUTION/Mobile-SLAM/build/motion-wasm-20261010",
       "command": "/home/park-ubuntu/emsdk/upstream/emscripten/em++ -DEIGEN_DISABLE_UNALIGNED_ARRAY_ASSERT=1 -DEIGEN_FAST_MATH=0 -DNDEBUG -DSLAM_LOG_LEVEL=3 -D__EMSCRIPTEN__ -I/home/park-ubuntu/park/SOLUTION/Mobile-SLAM/wasm/../include -I/usr/include/eigen3 -I/home/park-ubuntu/park/SOLUTION/Mobile-SLAM/wasm/libs/opencv/include/opencv4 -I/home/park-ubuntu/park/SOLUTION/Mobile-SLAM/wasm/libs/ceres/include -O3 -DNDEBUG -O3 -msimd128 -fno-fast-math -std=gnu++17 -o CMakeFiles/vio_engine_worker.dir/home/park-ubuntu/park/SOLUTION/Mobile-SLAM/src/backend/factor/pose_local_parameterization.cpp.o -c /home/park-ubuntu/park/SOLUTION/Mobile-SLAM/src/backend/factor/pose_local_parameterization.cpp",
       "file": "/home/park-ubuntu/park/SOLUTION/Mobile-SLAM/src/backend/factor/pose_local_parameterization.cpp"
     },
     {
-      "directory": "/home/park-ubuntu/park/SOLUTION/Mobile-SLAM/build/refresh-wasm-20261010",
+      "directory": "/home/park-ubuntu/park/SOLUTION/Mobile-SLAM/build/motion-wasm-20261010",
       "command": "/home/park-ubuntu/emsdk/upstream/emscripten/em++ -DEIGEN_DISABLE_UNALIGNED_ARRAY_ASSERT=1 -DEIGEN_FAST_MATH=0 -DNDEBUG -DSLAM_LOG_LEVEL=3 -D__EMSCRIPTEN__ -I/home/park-ubuntu/park/SOLUTION/Mobile-SLAM/wasm/../include -I/usr/include/eigen3 -I/home/park-ubuntu/park/SOLUTION/Mobile-SLAM/wasm/libs/opencv/include/opencv4 -I/home/park-ubuntu/park/SOLUTION/Mobile-SLAM/wasm/libs/ceres/include -O3 -DNDEBUG -O3 -msimd128 -fno-fast-math -std=gnu++17 -o CMakeFiles/vio_engine_worker.dir/home/park-ubuntu/park/SOLUTION/Mobile-SLAM/src/backend/factor/marginalization_factor.cpp.o -c /home/park-ubuntu/park/SOLUTION/Mobile-SLAM/src/backend/factor/marginalization_factor.cpp",
       "file": "/home/park-ubuntu/park/SOLUTION/Mobile-SLAM/src/backend/factor/marginalization_factor.cpp"
     },
     {
-      "directory": "/home/park-ubuntu/park/SOLUTION/Mobile-SLAM/build/refresh-wasm-20261010",
+      "directory": "/home/park-ubuntu/park/SOLUTION/Mobile-SLAM/build/motion-wasm-20261010",
       "command": "/home/park-ubuntu/emsdk/upstream/emscripten/em++ -DEIGEN_DISABLE_UNALIGNED_ARRAY_ASSERT=1 -DEIGEN_FAST_MATH=0 -DNDEBUG -DSLAM_LOG_LEVEL=3 -D__EMSCRIPTEN__ -I/home/park-ubuntu/park/SOLUTION/Mobile-SLAM/wasm/../include -I/usr/include/eigen3 -I/home/park-ubuntu/park/SOLUTION/Mobile-SLAM/wasm/libs/opencv/include/opencv4 -I/home/park-ubuntu/park/SOLUTION/Mobile-SLAM/wasm/libs/ceres/include -O3 -DNDEBUG -O3 -msimd128 -fno-fast-math -std=gnu++17 -o CMakeFiles/vio_engine_worker.dir/home/park-ubuntu/park/SOLUTION/Mobile-SLAM/src/backend/factor/projection_factor.cpp.o -c /home/park-ubuntu/park/SOLUTION/Mobile-SLAM/src/backend/factor/projection_factor.cpp",
       "file": "/home/park-ubuntu/park/SOLUTION/Mobile-SLAM/src/backend/factor/projection_factor.cpp"
     },
     {
-      "directory": "/home/park-ubuntu/park/SOLUTION/Mobile-SLAM/build/refresh-wasm-20261010",
+      "directory": "/home/park-ubuntu/park/SOLUTION/Mobile-SLAM/build/motion-wasm-20261010",
       "command": "/home/park-ubuntu/emsdk/upstream/emscripten/em++ -DEIGEN_DISABLE_UNALIGNED_ARRAY_ASSERT=1 -DEIGEN_FAST_MATH=0 -DNDEBUG -DSLAM_LOG_LEVEL=3 -D__EMSCRIPTEN__ -I/home/park-ubuntu/park/SOLUTION/Mobile-SLAM/wasm/../include -I/usr/include/eigen3 -I/home/park-ubuntu/park/SOLUTION/Mobile-SLAM/wasm/libs/opencv/include/opencv4 -I/home/park-ubuntu/park/SOLUTION/Mobile-SLAM/wasm/libs/ceres/include -O3 -DNDEBUG -O3 -msimd128 -fno-fast-math -std=gnu++17 -o CMakeFiles/vio_engine_worker.dir/home/park-ubuntu/park/SOLUTION/Mobile-SLAM/src/backend/factor/perspective_factor.cpp.o -c /home/park-ubuntu/park/SOLUTION/Mobile-SLAM/src/backend/factor/perspective_factor.cpp",
       "file": "/home/park-ubuntu/park/SOLUTION/Mobile-SLAM/src/backend/factor/perspective_factor.cpp"
     },
     {
-      "directory": "/home/park-ubuntu/park/SOLUTION/Mobile-SLAM/build/refresh-wasm-20261010",
+      "directory": "/home/park-ubuntu/park/SOLUTION/Mobile-SLAM/build/motion-wasm-20261010",
       "command": "/home/park-ubuntu/emsdk/upstream/emscripten/em++ -DEIGEN_DISABLE_UNALIGNED_ARRAY_ASSERT=1 -DEIGEN_FAST_MATH=0 -DNDEBUG -DSLAM_LOG_LEVEL=3 -D__EMSCRIPTEN__ -I/home/park-ubuntu/park/SOLUTION/Mobile-SLAM/wasm/../include -I/usr/include/eigen3 -I/home/park-ubuntu/park/SOLUTION/Mobile-SLAM/wasm/libs/opencv/include/opencv4 -I/home/park-ubuntu/park/SOLUTION/Mobile-SLAM/wasm/libs/ceres/include -O3 -DNDEBUG -O3 -msimd128 -fno-fast-math -std=gnu++17 -o CMakeFiles/vio_engine_worker.dir/home/park-ubuntu/park/SOLUTION/Mobile-SLAM/src/backend/optimizer.cpp.o -c /home/park-ubuntu/park/SOLUTION/Mobile-SLAM/src/backend/optimizer.cpp",
       "file": "/home/park-ubuntu/park/SOLUTION/Mobile-SLAM/src/backend/optimizer.cpp"
     },
     {
-      "directory": "/home/park-ubuntu/park/SOLUTION/Mobile-SLAM/build/refresh-wasm-20261010",
+      "directory": "/home/park-ubuntu/park/SOLUTION/Mobile-SLAM/build/motion-wasm-20261010",
       "command": "/home/park-ubuntu/emsdk/upstream/emscripten/em++ -DEIGEN_DISABLE_UNALIGNED_ARRAY_ASSERT=1 -DEIGEN_FAST_MATH=0 -DNDEBUG -DSLAM_LOG_LEVEL=3 -D__EMSCRIPTEN__ -I/home/park-ubuntu/park/SOLUTION/Mobile-SLAM/wasm/../include -I/usr/include/eigen3 -I/home/park-ubuntu/park/SOLUTION/Mobile-SLAM/wasm/libs/opencv/include/opencv4 -I/home/park-ubuntu/park/SOLUTION/Mobile-SLAM/wasm/libs/ceres/include -O3 -DNDEBUG -O3 -msimd128 -fno-fast-math -std=gnu++17 -o CMakeFiles/vio_engine_worker.dir/home/park-ubuntu/park/SOLUTION/Mobile-SLAM/src/frontend/pnp_frontend.cpp.o -c /home/park-ubuntu/park/SOLUTION/Mobile-SLAM/src/frontend/pnp_frontend.cpp",
       "file": "/home/park-ubuntu/park/SOLUTION/Mobile-SLAM/src/frontend/pnp_frontend.cpp"
     },
     {
-      "directory": "/home/park-ubuntu/park/SOLUTION/Mobile-SLAM/build/refresh-wasm-20261010",
+      "directory": "/home/park-ubuntu/park/SOLUTION/Mobile-SLAM/build/motion-wasm-20261010",
       "command": "/home/park-ubuntu/emsdk/upstream/emscripten/em++ -DEIGEN_DISABLE_UNALIGNED_ARRAY_ASSERT=1 -DEIGEN_FAST_MATH=0 -DNDEBUG -DSLAM_LOG_LEVEL=3 -D__EMSCRIPTEN__ -I/home/park-ubuntu/park/SOLUTION/Mobile-SLAM/wasm/../include -I/usr/include/eigen3 -I/home/park-ubuntu/park/SOLUTION/Mobile-SLAM/wasm/libs/opencv/include/opencv4 -I/home/park-ubuntu/park/SOLUTION/Mobile-SLAM/wasm/libs/ceres/include -O3 -DNDEBUG -O3 -msimd128 -fno-fast-math -std=gnu++17 -o CMakeFiles/vio_engine_worker.dir/home/park-ubuntu/park/SOLUTION/Mobile-SLAM/src/frontend/failure_detector.cpp.o -c /home/park-ubuntu/park/SOLUTION/Mobile-SLAM/src/frontend/failure_detector.cpp",
       "file": "/home/park-ubuntu/park/SOLUTION/Mobile-SLAM/src/frontend/failure_detector.cpp"
     },
     {
-      "directory": "/home/park-ubuntu/park/SOLUTION/Mobile-SLAM/build/refresh-wasm-20261010",
+      "directory": "/home/park-ubuntu/park/SOLUTION/Mobile-SLAM/build/motion-wasm-20261010",
       "command": "/home/park-ubuntu/emsdk/upstream/emscripten/em++ -DEIGEN_DISABLE_UNALIGNED_ARRAY_ASSERT=1 -DEIGEN_FAST_MATH=0 -DNDEBUG -DSLAM_LOG_LEVEL=3 -D__EMSCRIPTEN__ -I/home/park-ubuntu/park/SOLUTION/Mobile-SLAM/wasm/../include -I/usr/include/eigen3 -I/home/park-ubuntu/park/SOLUTION/Mobile-SLAM/wasm/libs/opencv/include/opencv4 -I/home/park-ubuntu/park/SOLUTION/Mobile-SLAM/wasm/libs/ceres/include -O3 -DNDEBUG -O3 -msimd128 -fno-fast-math -std=gnu++17 -o CMakeFiles/vio_engine_worker.dir/home/park-ubuntu/park/SOLUTION/Mobile-SLAM/src/frontend/initialization/initializer.cpp.o -c /home/park-ubuntu/park/SOLUTION/Mobile-SLAM/src/frontend/initialization/initializer.cpp",
       "file": "/home/park-ubuntu/park/SOLUTION/Mobile-SLAM/src/frontend/initialization/initializer.cpp"
     },
     {
-      "directory": "/home/park-ubuntu/park/SOLUTION/Mobile-SLAM/build/refresh-wasm-20261010",
+      "directory": "/home/park-ubuntu/park/SOLUTION/Mobile-SLAM/build/motion-wasm-20261010",
       "command": "/home/park-ubuntu/emsdk/upstream/emscripten/em++ -DEIGEN_DISABLE_UNALIGNED_ARRAY_ASSERT=1 -DEIGEN_FAST_MATH=0 -DNDEBUG -DSLAM_LOG_LEVEL=3 -D__EMSCRIPTEN__ -I/home/park-ubuntu/park/SOLUTION/Mobile-SLAM/wasm/../include -I/usr/include/eigen3 -I/home/park-ubuntu/park/SOLUTION/Mobile-SLAM/wasm/libs/opencv/include/opencv4 -I/home/park-ubuntu/park/SOLUTION/Mobile-SLAM/wasm/libs/ceres/include -O3 -DNDEBUG -O3 -msimd128 -fno-fast-math -std=gnu++17 -o CMakeFiles/vio_engine_worker.dir/home/park-ubuntu/park/SOLUTION/Mobile-SLAM/src/frontend/initialization/initial_alignment.cpp.o -c /home/park-ubuntu/park/SOLUTION/Mobile-SLAM/src/frontend/initialization/initial_alignment.cpp",
       "file": "/home/park-ubuntu/park/SOLUTION/Mobile-SLAM/src/frontend/initialization/initial_alignment.cpp"
     },
     {
-      "directory": "/home/park-ubuntu/park/SOLUTION/Mobile-SLAM/build/refresh-wasm-20261010",
+      "directory": "/home/park-ubuntu/park/SOLUTION/Mobile-SLAM/build/motion-wasm-20261010",
       "command": "/home/park-ubuntu/emsdk/upstream/emscripten/em++ -DEIGEN_DISABLE_UNALIGNED_ARRAY_ASSERT=1 -DEIGEN_FAST_MATH=0 -DNDEBUG -DSLAM_LOG_LEVEL=3 -D__EMSCRIPTEN__ -I/home/park-ubuntu/park/SOLUTION/Mobile-SLAM/wasm/../include -I/usr/include/eigen3 -I/home/park-ubuntu/park/SOLUTION/Mobile-SLAM/wasm/libs/opencv/include/opencv4 -I/home/park-ubuntu/park/SOLUTION/Mobile-SLAM/wasm/libs/ceres/include -O3 -DNDEBUG -O3 -msimd128 -fno-fast-math -std=gnu++17 -o CMakeFiles/vio_engine_worker.dir/home/park-ubuntu/park/SOLUTION/Mobile-SLAM/src/frontend/initialization/initial_sfm.cpp.o -c /home/park-ubuntu/park/SOLUTION/Mobile-SLAM/src/frontend/initialization/initial_sfm.cpp",
       "file": "/home/park-ubuntu/park/SOLUTION/Mobile-SLAM/src/frontend/initialization/initial_sfm.cpp"
     },
     {
-      "directory": "/home/park-ubuntu/park/SOLUTION/Mobile-SLAM/build/refresh-wasm-20261010",
+      "directory": "/home/park-ubuntu/park/SOLUTION/Mobile-SLAM/build/motion-wasm-20261010",
       "command": "/home/park-ubuntu/emsdk/upstream/emscripten/em++ -DEIGEN_DISABLE_UNALIGNED_ARRAY_ASSERT=1 -DEIGEN_FAST_MATH=0 -DNDEBUG -DSLAM_LOG_LEVEL=3 -D__EMSCRIPTEN__ -I/home/park-ubuntu/park/SOLUTION/Mobile-SLAM/wasm/../include -I/usr/include/eigen3 -I/home/park-ubuntu/park/SOLUTION/Mobile-SLAM/wasm/libs/opencv/include/opencv4 -I/home/park-ubuntu/park/SOLUTION/Mobile-SLAM/wasm/libs/ceres/include -O3 -DNDEBUG -O3 -msimd128 -fno-fast-math -std=gnu++17 -o CMakeFiles/vio_engine_worker.dir/home/park-ubuntu/park/SOLUTION/Mobile-SLAM/src/frontend/initialization/solve_5pts.cpp.o -c /home/park-ubuntu/park/SOLUTION/Mobile-SLAM/src/frontend/initialization/solve_5pts.cpp",
       "file": "/home/park-ubuntu/park/SOLUTION/Mobile-SLAM/src/frontend/initialization/solve_5pts.cpp"
     },
     {
-      "directory": "/home/park-ubuntu/park/SOLUTION/Mobile-SLAM/build/refresh-wasm-20261010",
+      "directory": "/home/park-ubuntu/park/SOLUTION/Mobile-SLAM/build/motion-wasm-20261010",
       "command": "/home/park-ubuntu/emsdk/upstream/emscripten/em++ -DEIGEN_DISABLE_UNALIGNED_ARRAY_ASSERT=1 -DEIGEN_FAST_MATH=0 -DNDEBUG -DSLAM_LOG_LEVEL=3 -D__EMSCRIPTEN__ -I/home/park-ubuntu/park/SOLUTION/Mobile-SLAM/wasm/../include -I/usr/include/eigen3 -I/home/park-ubuntu/park/SOLUTION/Mobile-SLAM/wasm/libs/opencv/include/opencv4 -I/home/park-ubuntu/park/SOLUTION/Mobile-SLAM/wasm/libs/ceres/include -O3 -DNDEBUG -O3 -msimd128 -fno-fast-math -std=gnu++17 -o CMakeFiles/vio_engine_worker.dir/home/park-ubuntu/park/SOLUTION/Mobile-SLAM/src/common/gpl/gpl.cc.o -c /home/park-ubuntu/park/SOLUTION/Mobile-SLAM/src/common/gpl/gpl.cc",
       "file": "/home/park-ubuntu/park/SOLUTION/Mobile-SLAM/src/common/gpl/gpl.cc"
     },
     {
-      "directory": "/home/park-ubuntu/park/SOLUTION/Mobile-SLAM/build/refresh-wasm-20261010",
+      "directory": "/home/park-ubuntu/park/SOLUTION/Mobile-SLAM/build/motion-wasm-20261010",
       "command": "/home/park-ubuntu/emsdk/upstream/emscripten/em++ -DEIGEN_DISABLE_UNALIGNED_ARRAY_ASSERT=1 -DEIGEN_FAST_MATH=0 -DNDEBUG -DSLAM_LOG_LEVEL=3 -D__EMSCRIPTEN__ -I/home/park-ubuntu/park/SOLUTION/Mobile-SLAM/wasm/../include -I/usr/include/eigen3 -I/home/park-ubuntu/park/SOLUTION/Mobile-SLAM/wasm/libs/opencv/include/opencv4 -I/home/park-ubuntu/park/SOLUTION/Mobile-SLAM/wasm/libs/ceres/include -O3 -DNDEBUG -O3 -msimd128 -fno-fast-math -std=gnu++17 -o CMakeFiles/vio_engine_worker.dir/home/park-ubuntu/park/SOLUTION/Mobile-SLAM/src/common/gpl/EigenQuaternionParameterization.cc.o -c /home/park-ubuntu/park/SOLUTION/Mobile-SLAM/src/common/gpl/EigenQuaternionParameterization.cc",
       "file": "/home/park-ubuntu/park/SOLUTION/Mobile-SLAM/src/common/gpl/EigenQuaternionParameterization.cc"
     },
     {
-      "directory": "/home/park-ubuntu/park/SOLUTION/Mobile-SLAM/build/refresh-wasm-20261010",
+      "directory": "/home/park-ubuntu/park/SOLUTION/Mobile-SLAM/build/motion-wasm-20261010",
       "command": "/home/park-ubuntu/emsdk/upstream/emscripten/em++ -DEIGEN_DISABLE_UNALIGNED_ARRAY_ASSERT=1 -DEIGEN_FAST_MATH=0 -DNDEBUG -DSLAM_LOG_LEVEL=3 -D__EMSCRIPTEN__ -I/home/park-ubuntu/park/SOLUTION/Mobile-SLAM/wasm/../include -I/usr/include/eigen3 -I/home/park-ubuntu/park/SOLUTION/Mobile-SLAM/wasm/libs/opencv/include/opencv4 -I/home/park-ubuntu/park/SOLUTION/Mobile-SLAM/wasm/libs/ceres/include -O3 -DNDEBUG -O3 -msimd128 -fno-fast-math -std=gnu++17 -o CMakeFiles/vio_engine_worker.dir/home/park-ubuntu/park/SOLUTION/Mobile-SLAM/src/common/camera_models/CameraFactory.cc.o -c /home/park-ubuntu/park/SOLUTION/Mobile-SLAM/src/common/camera_models/CameraFactory.cc",
       "file": "/home/park-ubuntu/park/SOLUTION/Mobile-SLAM/src/common/camera_models/CameraFactory.cc"
     },
     {
-      "directory": "/home/park-ubuntu/park/SOLUTION/Mobile-SLAM/build/refresh-wasm-20261010",
+      "directory": "/home/park-ubuntu/park/SOLUTION/Mobile-SLAM/build/motion-wasm-20261010",
       "command": "/home/park-ubuntu/emsdk/upstream/emscripten/em++ -DEIGEN_DISABLE_UNALIGNED_ARRAY_ASSERT=1 -DEIGEN_FAST_MATH=0 -DNDEBUG -DSLAM_LOG_LEVEL=3 -D__EMSCRIPTEN__ -I/home/park-ubuntu/park/SOLUTION/Mobile-SLAM/wasm/../include -I/usr/include/eigen3 -I/home/park-ubuntu/park/SOLUTION/Mobile-SLAM/wasm/libs/opencv/include/opencv4 -I/home/park-ubuntu/park/SOLUTION/Mobile-SLAM/wasm/libs/ceres/include -O3 -DNDEBUG -O3 -msimd128 -fno-fast-math -std=gnu++17 -o CMakeFiles/vio_engine_worker.dir/home/park-ubuntu/park/SOLUTION/Mobile-SLAM/src/common/camera_models/CataCamera.cc.o -c /home/park-ubuntu/park/SOLUTION/Mobile-SLAM/src/common/camera_models/CataCamera.cc",
       "file": "/home/park-ubuntu/park/SOLUTION/Mobile-SLAM/src/common/camera_models/CataCamera.cc"
     },
     {
-      "directory": "/home/park-ubuntu/park/SOLUTION/Mobile-SLAM/build/refresh-wasm-20261010",
+      "directory": "/home/park-ubuntu/park/SOLUTION/Mobile-SLAM/build/motion-wasm-20261010",
       "command": "/home/park-ubuntu/emsdk/upstream/emscripten/em++ -DEIGEN_DISABLE_UNALIGNED_ARRAY_ASSERT=1 -DEIGEN_FAST_MATH=0 -DNDEBUG -DSLAM_LOG_LEVEL=3 -D__EMSCRIPTEN__ -I/home/park-ubuntu/park/SOLUTION/Mobile-SLAM/wasm/../include -I/usr/include/eigen3 -I/home/park-ubuntu/park/SOLUTION/Mobile-SLAM/wasm/libs/opencv/include/opencv4 -I/home/park-ubuntu/park/SOLUTION/Mobile-SLAM/wasm/libs/ceres/include -O3 -DNDEBUG -O3 -msimd128 -fno-fast-math -std=gnu++17 -o CMakeFiles/vio_engine_worker.dir/home/park-ubuntu/park/SOLUTION/Mobile-SLAM/src/common/camera_models/PinholeCamera.cc.o -c /home/park-ubuntu/park/SOLUTION/Mobile-SLAM/src/common/camera_models/PinholeCamera.cc",
       "file": "/home/park-ubuntu/park/SOLUTION/Mobile-SLAM/src/common/camera_models/PinholeCamera.cc"
     },
     {
-      "directory": "/home/park-ubuntu/park/SOLUTION/Mobile-SLAM/build/refresh-wasm-20261010",
+      "directory": "/home/park-ubuntu/park/SOLUTION/Mobile-SLAM/build/motion-wasm-20261010",
       "command": "/home/park-ubuntu/emsdk/upstream/emscripten/em++ -DEIGEN_DISABLE_UNALIGNED_ARRAY_ASSERT=1 -DEIGEN_FAST_MATH=0 -DNDEBUG -DSLAM_LOG_LEVEL=3 -D__EMSCRIPTEN__ -I/home/park-ubuntu/park/SOLUTION/Mobile-SLAM/wasm/../include -I/usr/include/eigen3 -I/home/park-ubuntu/park/SOLUTION/Mobile-SLAM/wasm/libs/opencv/include/opencv4 -I/home/park-ubuntu/park/SOLUTION/Mobile-SLAM/wasm/libs/ceres/include -O3 -DNDEBUG -O3 -msimd128 -fno-fast-math -std=gnu++17 -o CMakeFiles/vio_engine_worker.dir/home/park-ubuntu/park/SOLUTION/Mobile-SLAM/src/common/camera_models/Camera.cc.o -c /home/park-ubuntu/park/SOLUTION/Mobile-SLAM/src/common/camera_models/Camera.cc",
       "file": "/home/park-ubuntu/park/SOLUTION/Mobile-SLAM/src/common/camera_models/Camera.cc"
     },
     {
-      "directory": "/home/park-ubuntu/park/SOLUTION/Mobile-SLAM/build/refresh-wasm-20261010",
+      "directory": "/home/park-ubuntu/park/SOLUTION/Mobile-SLAM/build/motion-wasm-20261010",
       "command": "/home/park-ubuntu/emsdk/upstream/emscripten/em++ -DEIGEN_DISABLE_UNALIGNED_ARRAY_ASSERT=1 -DEIGEN_FAST_MATH=0 -DNDEBUG -DSLAM_LOG_LEVEL=3 -D__EMSCRIPTEN__ -I/home/park-ubuntu/park/SOLUTION/Mobile-SLAM/wasm/../include -I/usr/include/eigen3 -I/home/park-ubuntu/park/SOLUTION/Mobile-SLAM/wasm/libs/opencv/include/opencv4 -I/home/park-ubuntu/park/SOLUTION/Mobile-SLAM/wasm/libs/ceres/include -O3 -DNDEBUG -O3 -msimd128 -fno-fast-math -std=gnu++17 -o CMakeFiles/vio_engine_worker.dir/home/park-ubuntu/park/SOLUTION/Mobile-SLAM/src/common/camera_models/EquidistantCamera.cc.o -c /home/park-ubuntu/park/SOLUTION/Mobile-SLAM/src/common/camera_models/EquidistantCamera.cc",
       "file": "/home/park-ubuntu/park/SOLUTION/Mobile-SLAM/src/common/camera_models/EquidistantCamera.cc"
     },
     {
-      "directory": "/home/park-ubuntu/park/SOLUTION/Mobile-SLAM/build/refresh-wasm-20261010",
+      "directory": "/home/park-ubuntu/park/SOLUTION/Mobile-SLAM/build/motion-wasm-20261010",
       "command": "/home/park-ubuntu/emsdk/upstream/emscripten/em++ -DEIGEN_DISABLE_UNALIGNED_ARRAY_ASSERT=1 -DEIGEN_FAST_MATH=0 -DNDEBUG -DSLAM_LOG_LEVEL=3 -D__EMSCRIPTEN__ -I/home/park-ubuntu/park/SOLUTION/Mobile-SLAM/wasm/../include -I/usr/include/eigen3 -I/home/park-ubuntu/park/SOLUTION/Mobile-SLAM/wasm/libs/opencv/include/opencv4 -I/home/park-ubuntu/park/SOLUTION/Mobile-SLAM/wasm/libs/ceres/include -O3 -DNDEBUG -O3 -msimd128 -fno-fast-math -std=gnu++17 -o CMakeFiles/vio_engine_worker.dir/home/park-ubuntu/park/SOLUTION/Mobile-SLAM/src/common/camera_models/ScaramuzzaCamera.cc.o -c /home/park-ubuntu/park/SOLUTION/Mobile-SLAM/src/common/camera_models/ScaramuzzaCamera.cc",
       "file": "/home/park-ubuntu/park/SOLUTION/Mobile-SLAM/src/common/camera_models/ScaramuzzaCamera.cc"
     },
     {
-      "directory": "/home/park-ubuntu/park/SOLUTION/Mobile-SLAM/build/refresh-wasm-20261010",
+      "directory": "/home/park-ubuntu/park/SOLUTION/Mobile-SLAM/build/motion-wasm-20261010",
       "command": "/home/park-ubuntu/emsdk/upstream/emscripten/em++ -DEIGEN_DISABLE_UNALIGNED_ARRAY_ASSERT=1 -DEIGEN_FAST_MATH=0 -DNDEBUG -DSLAM_LOG_LEVEL=3 -D__EMSCRIPTEN__ -I/home/park-ubuntu/park/SOLUTION/Mobile-SLAM/wasm/../include -I/usr/include/eigen3 -I/home/park-ubuntu/park/SOLUTION/Mobile-SLAM/wasm/libs/opencv/include/opencv4 -I/home/park-ubuntu/park/SOLUTION/Mobile-SLAM/wasm/libs/ceres/include -O3 -DNDEBUG -O3 -msimd128 -fno-fast-math -std=gnu++17 -o CMakeFiles/vio_engine_worker.dir/home/park-ubuntu/park/SOLUTION/Mobile-SLAM/src/common/camera_models/CostFunctionFactory.cc.o -c /home/park-ubuntu/park/SOLUTION/Mobile-SLAM/src/common/camera_models/CostFunctionFactory.cc",
       "file": "/home/park-ubuntu/park/SOLUTION/Mobile-SLAM/src/common/camera_models/CostFunctionFactory.cc"
     },
     {
-      "directory": "/home/park-ubuntu/park/SOLUTION/Mobile-SLAM/build/refresh-wasm-20261010",
+      "directory": "/home/park-ubuntu/park/SOLUTION/Mobile-SLAM/build/motion-wasm-20261010",
       "command": "/home/park-ubuntu/emsdk/upstream/emscripten/em++ -DEIGEN_DISABLE_UNALIGNED_ARRAY_ASSERT=1 -DEIGEN_FAST_MATH=0 -DNDEBUG -DSLAM_LOG_LEVEL=3 -D__EMSCRIPTEN__ -I/home/park-ubuntu/park/SOLUTION/Mobile-SLAM/wasm/../include -I/usr/include/eigen3 -I/home/park-ubuntu/park/SOLUTION/Mobile-SLAM/wasm/libs/opencv/include/opencv4 -I/home/park-ubuntu/park/SOLUTION/Mobile-SLAM/wasm/libs/ceres/include -O3 -DNDEBUG -O3 -msimd128 -fno-fast-math -std=gnu++17 -o CMakeFiles/vio_engine_worker.dir/home/park-ubuntu/park/SOLUTION/Mobile-SLAM/src/frontend/feature_tracker.cpp.o -c /home/park-ubuntu/park/SOLUTION/Mobile-SLAM/src/frontend/feature_tracker.cpp",
       "file": "/home/park-ubuntu/park/SOLUTION/Mobile-SLAM/src/frontend/feature_tracker.cpp"
     },
     {
-      "directory": "/home/park-ubuntu/park/SOLUTION/Mobile-SLAM/build/refresh-wasm-20261010",
+      "directory": "/home/park-ubuntu/park/SOLUTION/Mobile-SLAM/build/motion-wasm-20261010",
       "command": "/home/park-ubuntu/emsdk/upstream/emscripten/em++ -DEIGEN_DISABLE_UNALIGNED_ARRAY_ASSERT=1 -DEIGEN_FAST_MATH=0 -DNDEBUG -DSLAM_LOG_LEVEL=3 -D__EMSCRIPTEN__ -I/home/park-ubuntu/park/SOLUTION/Mobile-SLAM/wasm/../include -I/usr/include/eigen3 -I/home/park-ubuntu/park/SOLUTION/Mobile-SLAM/wasm/libs/opencv/include/opencv4 -I/home/park-ubuntu/park/SOLUTION/Mobile-SLAM/wasm/libs/ceres/include -O3 -DNDEBUG -O3 -msimd128 -fno-fast-math -std=gnu++17 -o CMakeFiles/vio_engine_worker.dir/home/park-ubuntu/park/SOLUTION/Mobile-SLAM/src/backend/estimator.cpp.o -c /home/park-ubuntu/park/SOLUTION/Mobile-SLAM/src/backend/estimator.cpp",
       "file": "/home/park-ubuntu/park/SOLUTION/Mobile-SLAM/src/backend/estimator.cpp"
     },
     {
-      "directory": "/home/park-ubuntu/park/SOLUTION/Mobile-SLAM/build/refresh-wasm-20261010",
+      "directory": "/home/park-ubuntu/park/SOLUTION/Mobile-SLAM/build/motion-wasm-20261010",
       "command": "/home/park-ubuntu/emsdk/upstream/emscripten/em++ -DEIGEN_DISABLE_UNALIGNED_ARRAY_ASSERT=1 -DEIGEN_FAST_MATH=0 -DNDEBUG -DSLAM_LOG_LEVEL=3 -D__EMSCRIPTEN__ -I/home/park-ubuntu/park/SOLUTION/Mobile-SLAM/wasm/../include -I/usr/include/eigen3 -I/home/park-ubuntu/park/SOLUTION/Mobile-SLAM/wasm/libs/opencv/include/opencv4 -I/home/park-ubuntu/park/SOLUTION/Mobile-SLAM/wasm/libs/ceres/include -O3 -DNDEBUG -O3 -msimd128 -fno-fast-math -std=gnu++17 -o CMakeFiles/vio_engine_worker.dir/home/park-ubuntu/park/SOLUTION/Mobile-SLAM/src/common/frame.cpp.o -c /home/park-ubuntu/park/SOLUTION/Mobile-SLAM/src/common/frame.cpp",
       "file": "/home/park-ubuntu/park/SOLUTION/Mobile-SLAM/src/common/frame.cpp"
     },
     {
-      "directory": "/home/park-ubuntu/park/SOLUTION/Mobile-SLAM/build/refresh-wasm-20261010",
+      "directory": "/home/park-ubuntu/park/SOLUTION/Mobile-SLAM/build/motion-wasm-20261010",
       "command": "/home/park-ubuntu/emsdk/upstream/emscripten/em++ -DEIGEN_DISABLE_UNALIGNED_ARRAY_ASSERT=1 -DEIGEN_FAST_MATH=0 -DNDEBUG -DSLAM_LOG_LEVEL=3 -D__EMSCRIPTEN__ -I/home/park-ubuntu/park/SOLUTION/Mobile-SLAM/wasm/../include -I/usr/include/eigen3 -I/home/park-ubuntu/park/SOLUTION/Mobile-SLAM/wasm/libs/opencv/include/opencv4 -I/home/park-ubuntu/park/SOLUTION/Mobile-SLAM/wasm/libs/ceres/include -O3 -DNDEBUG -O3 -msimd128 -fno-fast-math -std=gnu++17 -o CMakeFiles/vio_engine_worker.dir/home/park-ubuntu/park/SOLUTION/Mobile-SLAM/src/frontend/feature_manager.cpp.o -c /home/park-ubuntu/park/SOLUTION/Mobile-SLAM/src/frontend/feature_manager.cpp",
       "file": "/home/park-ubuntu/park/SOLUTION/Mobile-SLAM/src/frontend/feature_manager.cpp"
     },
     {
-      "directory": "/home/park-ubuntu/park/SOLUTION/Mobile-SLAM/build/refresh-wasm-20261010",
+      "directory": "/home/park-ubuntu/park/SOLUTION/Mobile-SLAM/build/motion-wasm-20261010",
       "command": "/home/park-ubuntu/emsdk/upstream/emscripten/em++ -DEIGEN_DISABLE_UNALIGNED_ARRAY_ASSERT=1 -DEIGEN_FAST_MATH=0 -DNDEBUG -DSLAM_LOG_LEVEL=3 -D__EMSCRIPTEN__ -I/home/park-ubuntu/park/SOLUTION/Mobile-SLAM/wasm/../include -I/usr/include/eigen3 -I/home/park-ubuntu/park/SOLUTION/Mobile-SLAM/wasm/libs/opencv/include/opencv4 -I/home/park-ubuntu/park/SOLUTION/Mobile-SLAM/wasm/libs/ceres/include -O3 -DNDEBUG -O3 -msimd128 -fno-fast-math -std=gnu++17 -o CMakeFiles/vio_engine_worker.dir/home/park-ubuntu/park/SOLUTION/Mobile-SLAM/src/backend/sliding_window.cpp.o -c /home/park-ubuntu/park/SOLUTION/Mobile-SLAM/src/backend/sliding_window.cpp",
       "file": "/home/park-ubuntu/park/SOLUTION/Mobile-SLAM/src/backend/sliding_window.cpp"
     },
     {
-      "directory": "/home/park-ubuntu/park/SOLUTION/Mobile-SLAM/build/refresh-wasm-20261010",
+      "directory": "/home/park-ubuntu/park/SOLUTION/Mobile-SLAM/build/motion-wasm-20261010",
       "command": "/home/park-ubuntu/emsdk/upstream/emscripten/em++ -DEIGEN_DISABLE_UNALIGNED_ARRAY_ASSERT=1 -DEIGEN_FAST_MATH=0 -DNDEBUG -DSLAM_LOG_LEVEL=3 -D__EMSCRIPTEN__ -I/home/park-ubuntu/park/SOLUTION/Mobile-SLAM/wasm/../include -I/usr/include/eigen3 -I/home/park-ubuntu/park/SOLUTION/Mobile-SLAM/wasm/libs/opencv/include/opencv4 -I/home/park-ubuntu/park/SOLUTION/Mobile-SLAM/wasm/libs/ceres/include -O3 -DNDEBUG -O3 -msimd128 -fno-fast-math -std=gnu++17 -o CMakeFiles/vio_engine_worker.dir/home/park-ubuntu/park/SOLUTION/Mobile-SLAM/src/vio_engine.cpp.o -c /home/park-ubuntu/park/SOLUTION/Mobile-SLAM/src/vio_engine.cpp",
       "file": "/home/park-ubuntu/park/SOLUTION/Mobile-SLAM/src/vio_engine.cpp"
     }
   ],
-  "cmake_cache_sha256": "67e5a9a52f952ab8ac4d5f5d964c2e966741be461baed45302efa55a08c530b5",
+  "cmake_cache_sha256": "5921e6f101d997213ae7e5d0d0ec1914c6d12820b90d8d97047b6347191edcd6",
   "dependency_versions": {
     "native_opencv_header": "4.5.4",
     "wasm_opencv_header": "4.5.5",
@@ -391,15 +391,23 @@
     "wasm/libs/opencv/lib/libopencv_calib3d.a": "ab5e756a0367f721e416e5bb4e4bf607255f584e818ee2650e03e0c9f4423508"
   },
   "artifact": {
-    "path": "/home/park-ubuntu/park/SOLUTION/Mobile-SLAM/build/refresh-wasm-20261010/vio_engine.js",
-    "sha256": "7b37399960ff4397344d27a0e0ebf2f4f47acb51448b4c9b49d586be3ae5b0d8",
-    "bytes": 6031244
+    "path": "/home/park-ubuntu/park/SOLUTION/Mobile-SLAM/build/motion-wasm-20261010/vio_engine.js",
+    "sha256": "1066a22d647fd4d170eb3dba5bd66ba0b49463143a6dc5ee8cccbad07b68e0fc",
+    "bytes": 6043098
   },
   "single_file_embedded_wasm": true,
   "deployment": {
-    "backup_directory": "/home/park-ubuntu/park/SOLUTION/Mobile-SLAM/build/refactor-deploy/1791624186504806242",
-    "served_js_sha256": "7b37399960ff4397344d27a0e0ebf2f4f47acb51448b4c9b49d586be3ae5b0d8",
-    "parent_authorization": "build/refresh-20261010/deploy-authorized.json",
+    "backup_directory": "/home/park-ubuntu/park/SOLUTION/Mobile-SLAM/build/refactor-deploy/1791630846740468081",
+    "served_js_sha256": "1066a22d647fd4d170eb3dba5bd66ba0b49463143a6dc5ee8cccbad07b68e0fc",
+    "parent_authorization": "build/motion-20261010/opt-in/local-promotion-authorized.json",
     "single_file_atomic_promotion": true
+  },
+  "git_delivery": {
+    "source_commit": "009006db49bdf627f2c40c1c795343de3693cdc5",
+    "branch": "codex/mobile-rotation-input-20261011",
+    "integration_target": "main",
+    "integration_method": "ff-only",
+    "verified_source_and_artifact_bytes_unchanged": true,
+    "verification": "build/motion-20261010/opt-in/verification.json"
   }
 }

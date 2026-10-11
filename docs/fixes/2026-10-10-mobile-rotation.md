@@ -124,3 +124,4 @@ python3 scripts/dev/evaluate-synthetic-vio.py --dataset build/rotation-recheck22
 - 작업 브랜치: `codex/mobile-rotation-input-20261011`; 소스·회귀·문서와 WASM·provenance를 분리 커밋
 - 컴파일된 source hash·artifact byte가 동일한 상태에서 manifest의 source commit을 갱신. 커밋 때문에 재빌드했다고 주장하지 않음
 - 원격 push·서버 시작은 반영 범위에서 제외. 실험 ON의 TUM 회귀·실기기 미검증 판정 유지
+- 소스·회귀 커밋: `009006db49bdf627f2c40c1c795343de3693cdc5`. 활성 WASM manifest의 source commit도 동일하며, 검증 source hash와 loader byte는 변경 없음
