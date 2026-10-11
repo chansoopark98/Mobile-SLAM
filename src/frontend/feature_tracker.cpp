@@ -4,6 +4,7 @@
 #include <limits>
 #include <sstream>
 #include <iomanip>
+#include "utility/so3.h"
 
 using namespace std;
 using namespace common;
@@ -62,6 +63,7 @@ int FeatureTracker::n_id = 0;
 
 bool inBorder(const cv::Point2f& pt) {
     const int BORDER_SIZE = 1;
+    if(!std::isfinite(pt.x) || !std::isfinite(pt.y)) return false;
     int img_x = cvRound(pt.x);
     int img_y = cvRound(pt.y);
     return BORDER_SIZE <= img_x && img_x < g_config.camera.col - BORDER_SIZE && BORDER_SIZE <= img_y &&
@@ -192,7 +194,8 @@ void FeatureTracker::addPoints() {
     }
 }
 
-void FeatureTracker::detectAndTrack(const cv::Mat& _img, double _cur_time, bool backend_frame) {
+void FeatureTracker::detectAndTrack(const cv::Mat& _img, double _cur_time, bool backend_frame,
+                                    const Eigen::Matrix3d* camera_rotation) {
     cv::Mat img;
     cur_time = _cur_time;
     if(diagnostic_capture_) {diagnostic_stages_.clear();diagnostic_json_.clear();}
@@ -232,50 +235,101 @@ void FeatureTracker::detectAndTrack(const cv::Mat& _img, double _cur_time, bool 
         n_pts.clear();
     }
 
-    if (cur_pts.size() > 0) {
+    const bool rotation_available=camera_rotation && m_camera && utility::so3::isRotation(*camera_rotation);
+    const size_t original_count=cur_pts.size();
+    size_t rotation_eligible=0,rotation_attempted=0,rotation_reverse_attempted=0,rotation_adopted=0;
+    bool ordinary_estimated=false,ordinary_trusted=false;
+    size_t ordinary_inliers=0;
+    if (!cur_pts.empty()) {
         vector<uchar> status;
         vector<float> err;
         cv::TermCriteria lk_criteria(cv::TermCriteria::COUNT | cv::TermCriteria::EPS,
                                      g_config.feature_tracker.lk_iterations,
                                      g_config.feature_tracker.lk_eps);
-        // Use cached pyramids: cur_pyramid_ from previous frame, next_pyramid_ just built.
-        // On the very first tracking frame, cur_pyramid_ was built from cur_img below.
-        cv::calcOpticalFlowPyrLK(cur_pyramid_, next_pyramid_, cur_pts, next_pts,
-                                 status, err, win_size, lk_pyr, lk_criteria);
-
-        if(diagnostic_capture_) recordDiagnostic("lk_raw",diagnosticPoints(next_pts,&ids,&track_cnt,&status));
-        for (int i = 0; i < int(next_pts.size()); i++)
-            if (status[i] && !inBorder(next_pts[i]))
-                status[i] = 0;
-
-        if(diagnostic_capture_) recordDiagnostic("lk_border_status",diagnosticMask(status));
-        pruneTrackedPoints(status);
-    }
-
-    for (auto& n : track_cnt)
-        n++;
-
-    // Skip F-matrix RANSAC when features barely moved (avg displacement < 2px).
-    // When the device is stationary, F-matrix provides no outlier rejection value
-    // and wastes 5-12ms. RMS displacement is used to detect meaningful motion.
-    {
-        bool should_reject = true;
-        if (next_pts.size() > 0 && cur_pts.size() == next_pts.size()) {
-            double total_disp_sq = 0;
-            for (size_t i = 0; i < next_pts.size(); i++) {
-                double dx = next_pts[i].x - cur_pts[i].x;
-                double dy = next_pts[i].y - cur_pts[i].y;
-                total_disp_sq += dx * dx + dy * dy;
+        // Both hypotheses reuse the same cached image/derivative pyramids.
+        cv::calcOpticalFlowPyrLK(cur_pyramid_,next_pyramid_,cur_pts,next_pts,
+                                status,err,win_size,lk_pyr,lk_criteria);
+        const std::vector<uchar> raw_status=diagnostic_capture_?status:std::vector<uchar>{};
+        for(size_t i=0;i<next_pts.size();++i) if(status[i] && !inBorder(next_pts[i])) status[i]=0;
+        FundamentalResult geometry=fundamentalMask(cur_pts,next_pts,status,true);
+        ordinary_estimated=geometry.estimated;ordinary_inliers=geometry.inliers;
+        // The denominator includes tracks lost before RANSAC. A strong fit among
+        // a small surviving subset must not masquerade as an overall consensus.
+        ordinary_trusted=ordinary_estimated && 2*ordinary_inliers>original_count;
+        if(rotation_available) {
+            std::vector<size_t> indices;
+            std::vector<cv::Point2f> seed_cur,seed_next;
+            const double patch_radius=.5*(lk_win-1);
+            for(size_t i=0;i<cur_pts.size();++i) {
+                Eigen::Vector3d ray;
+                m_camera->liftProjective(Eigen::Vector2d(cur_pts[i].x,cur_pts[i].y),ray);
+                if(!ray.allFinite() || ray.z()<=1e-12) continue;
+                ray=(*camera_rotation)*ray;
+                if(!ray.allFinite() || ray.z()<=1e-12) continue;
+                Eigen::Vector2d pixel;
+                m_camera->spaceToPlane(ray,pixel);
+                if(!pixel.allFinite() || pixel.x()<0 || pixel.x()>=img.cols || pixel.y()<0 || pixel.y()>=img.rows) continue;
+                const cv::Point2f prediction(pixel.x(),pixel.y());
+                if(!inBorder(prediction)) continue;
+                const double dx=prediction.x-cur_pts[i].x,dy=prediction.y-cur_pts[i].y;
+                if(dx*dx+dy*dy<=patch_radius*patch_radius) continue;
+                indices.push_back(i);seed_cur.push_back(cur_pts[i]);seed_next.push_back(prediction);
             }
-            double rms_disp = std::sqrt(total_disp_sq / next_pts.size());
-            if (rms_disp < 2.0) {
-                should_reject = false;
+            rotation_eligible=indices.size();
+            // Preserve a majority ordinary geometric consensus without a second
+            // optical-flow hypothesis or another RANSAC call.
+            if(!ordinary_trusted && !indices.empty()) {
+                rotation_attempted=indices.size();
+                std::vector<uchar> seed_status;std::vector<float> seed_error;
+                cv::calcOpticalFlowPyrLK(cur_pyramid_,next_pyramid_,seed_cur,seed_next,
+                    seed_status,seed_error,win_size,lk_pyr,lk_criteria,cv::OPTFLOW_USE_INITIAL_FLOW);
+                std::vector<size_t> candidates;
+                std::vector<cv::Point2f> reverse_cur,reverse_next;
+                for(size_t j=0;j<indices.size();++j) {
+                    const size_t i=indices[j];
+                    if(!seed_status[j] || !inBorder(seed_next[j]) || !std::isfinite(seed_error[j]) || seed_error[j]<0) continue;
+                    // A fixed twofold patch improvement is required to replace
+                    // an ordinary successful result; it is not an accuracy proof.
+                    if(status[i] && inBorder(next_pts[i]) &&
+                        (!std::isfinite(err[i]) || err[i]<0 || !(2.0*seed_error[j]<err[i]))) continue;
+                    candidates.push_back(j);reverse_cur.push_back(seed_next[j]);reverse_next.push_back(seed_cur[j]);
+                }
+                if(!candidates.empty()) {
+                    rotation_reverse_attempted=candidates.size();
+                    std::vector<uchar> reverse_status;std::vector<float> reverse_error;
+                    // Local verification starts at the known old observation.
+                    cv::calcOpticalFlowPyrLK(next_pyramid_,cur_pyramid_,reverse_cur,reverse_next,
+                        reverse_status,reverse_error,win_size,0,lk_criteria,cv::OPTFLOW_USE_INITIAL_FLOW);
+                    for(size_t k=0;k<candidates.size();++k) {
+                        if(!reverse_status[k] || !inBorder(reverse_next[k]) ||
+                            !std::isfinite(reverse_error[k]) || reverse_error[k]<0) continue;
+                        const size_t j=candidates[k],i=indices[j];
+                        const double dx=reverse_next[k].x-cur_pts[i].x,dy=reverse_next[k].y-cur_pts[i].y;
+                        const double cycle_squared=dx*dx+dy*dy;
+                        if(!std::isfinite(cycle_squared) || cycle_squared>.25) continue;
+                        next_pts[i]=seed_next[j];status[i]=1;err[i]=seed_error[j];++rotation_adopted;
+                    }
+                }
+                if(rotation_adopted) geometry=fundamentalMask(cur_pts,next_pts,status,true);
             }
         }
-        if (should_reject) {
-            rejectWithFundamentalMatrix();
+        if(diagnostic_capture_) {
+            recordDiagnostic("lk_raw",diagnosticPoints(next_pts,&ids,&track_cnt,rotation_adopted?&status:&raw_status));
+            recordDiagnostic("lk_border_status",diagnosticMask(status));
         }
+        // Increment retained tracks once, before feature replenishment. Combining
+        // the LK/ray/F masks preserves every parallel history's original index.
+        for(auto& count:track_cnt) ++count;
+        if(!geometry.valid_json.empty()) recordDiagnostic("f_valid",geometry.valid_json);
+        if(!geometry.inliers_json.empty()) recordDiagnostic("f_inliers",geometry.inliers_json);
+        pruneTrackedPoints(geometry.mask);
     }
+    if(diagnostic_capture_) recordDiagnostic("rotation_prediction",
+        std::string("{\"available\":")+(rotation_available?"true":"false")+",\"hintEligible\":"+std::to_string(rotation_eligible)+
+        ",\"attempted\":"+std::to_string(rotation_attempted)+",\"reverse_attempted\":"+std::to_string(rotation_reverse_attempted)+
+        ",\"adopted\":"+std::to_string(rotation_adopted)+",\"ordinaryEstimated\":"+(ordinary_estimated?"true":"false")+
+        ",\"ordinaryInliers\":"+std::to_string(ordinary_inliers)+",\"originalCount\":"+std::to_string(original_count)+
+        ",\"ordinaryTrusted\":"+(ordinary_trusted?"true":"false")+"}");
 
     // On backend frames: full pipeline (setMask + new feature detection + addPoints).
     // On PnP-only frames: skip — only existing feature tracks are needed.
@@ -316,115 +370,91 @@ void FeatureTracker::detectAndTrack(const cv::Mat& _img, double _cur_time, bool 
     }
 }
 
-void FeatureTracker::rejectWithFundamentalMatrix() {
-    vector<cv::Point2f> undistorted_cur_pts(cur_pts.size()), undistorted_next_pts(next_pts.size());
-    vector<uchar> valid(cur_pts.size(),0);
-    const double cx = g_config.camera.col / 2.0;
-    const double cy = g_config.camera.row / 2.0;
-    const double float_limit = std::numeric_limits<float>::max();
-    if (m_camera) for (size_t i=0;i<cur_pts.size() && i<next_pts.size();++i) {
-        Eigen::Vector3d current_ray,next_ray;
-        m_camera->liftProjective(Eigen::Vector2d(cur_pts[i].x,cur_pts[i].y),current_ray);
-        m_camera->liftProjective(Eigen::Vector2d(next_pts[i].x,next_pts[i].y),next_ray);
-        if (!current_ray.allFinite() || !next_ray.allFinite() ||
-            current_ray.z()<=1e-12 || next_ray.z()<=1e-12) continue;
-        const double coordinates[] = {
+FeatureTracker::FundamentalResult FeatureTracker::fundamentalMask(
+    const vector<cv::Point2f>& previous,const vector<cv::Point2f>& current,
+    const vector<uchar>& accepted,bool check_motion) const {
+    FundamentalResult result;
+    result.mask.assign(previous.size(),0);
+    vector<size_t> selected;
+    double displacement_squared=0;
+    for(size_t i=0;i<previous.size() && i<current.size() && i<accepted.size();++i) if(accepted[i]) {
+        selected.push_back(i);
+        const double dx=current[i].x-previous[i].x,dy=current[i].y-previous[i].y;
+        displacement_squared+=dx*dx+dy*dy;
+        result.mask[i]=1;
+    }
+    // Match the existing stationary bypass exactly; bypassed points are not a
+    // measured geometric consensus and therefore cannot authorize trust.
+    if(check_motion && !selected.empty() && std::sqrt(displacement_squared/selected.size())<2.0) return result;
+
+    vector<cv::Point2f> undistorted_previous,undistorted_current,valid_current;
+    vector<size_t> valid_indices;
+    vector<uchar> valid(selected.size(),0);
+    const double cx=g_config.camera.col/2.0,cy=g_config.camera.row/2.0;
+    const double float_limit=std::numeric_limits<float>::max();
+    std::fill(result.mask.begin(),result.mask.end(),0);
+    if(m_camera) for(size_t j=0;j<selected.size();++j) {
+        const size_t i=selected[j];
+        Eigen::Vector3d previous_ray,current_ray;
+        m_camera->liftProjective(Eigen::Vector2d(previous[i].x,previous[i].y),previous_ray);
+        m_camera->liftProjective(Eigen::Vector2d(current[i].x,current[i].y),current_ray);
+        if(!previous_ray.allFinite() || !current_ray.allFinite() || previous_ray.z()<=1e-12 || current_ray.z()<=1e-12) continue;
+        const double coordinates[]={g_config.camera.focal_length*previous_ray.x()/previous_ray.z()+cx,
+            g_config.camera.focal_length*previous_ray.y()/previous_ray.z()+cy,
             g_config.camera.focal_length*current_ray.x()/current_ray.z()+cx,
-            g_config.camera.focal_length*current_ray.y()/current_ray.z()+cy,
-            g_config.camera.focal_length*next_ray.x()/next_ray.z()+cx,
-            g_config.camera.focal_length*next_ray.y()/next_ray.z()+cy};
-        if (!std::all_of(std::begin(coordinates),std::end(coordinates),[&](double value){
+            g_config.camera.focal_length*current_ray.y()/current_ray.z()+cy};
+        if(!std::all_of(std::begin(coordinates),std::end(coordinates),[&](double value){
             return std::isfinite(value) && std::abs(value)<=float_limit;
         })) continue;
-        undistorted_cur_pts[i]=cv::Point2f(coordinates[0],coordinates[1]);
-        undistorted_next_pts[i]=cv::Point2f(coordinates[2],coordinates[3]);
-        valid[i]=1;
+        undistorted_previous.emplace_back(coordinates[0],coordinates[1]);
+        undistorted_current.emplace_back(coordinates[2],coordinates[3]);
+        valid_current.push_back(current[i]);valid_indices.push_back(i);valid[j]=1;result.mask[i]=1;
     }
-    if(diagnostic_capture_) recordDiagnostic("f_valid",diagnosticMask(valid));
-    // Invalid rays must not enter either division/scoring or retained parallel track history.
-    pruneTrackedPoints(valid);
-    filterByStatus(undistorted_cur_pts,valid);
-    filterByStatus(undistorted_next_pts,valid);
-    // Preserve the existing minimum for stable F-matrix estimation after invalid pairs are removed.
-    if (next_pts.size() >= 30) {
-        const int before_count = static_cast<int>(next_pts.size());
-
-        vector<uchar> status;
-        cv::Mat F = cv::findFundamentalMat(undistorted_cur_pts, undistorted_next_pts, cv::FM_RANSAC,
-                               g_config.feature_tracker.f_threshold, 0.99, status);
-
-        // Distance-aware edge feature recovery for unmodeled lens distortion.
-        // Mobile PINHOLE cameras with zero distortion coefficients have actual barrel
-        // distortion that causes edge features to have larger epipolar residuals.
-        // Without this, F-matrix RANSAC systematically rejects edge features,
-        // causing all surviving features to cluster toward image center.
-        const double edge_factor = g_config.feature_tracker.f_threshold_edge_factor;
-        if (edge_factor > 0.0 && !F.empty() && F.rows == 3 && F.cols == 3) {
-            const double r_max = std::sqrt(cx * cx + cy * cy);
-            const double r_max_inv = (r_max > 1e-6) ? 1.0 / r_max : 0.0;
-            int restored = 0;
-
-            for (unsigned int i = 0; i < status.size(); i++) {
-                if (status[i]) continue;  // Already inlier
-
-                // Compute normalized distance from image center (0=center, 1=corner)
-                const double dx = next_pts[i].x - cx;
-                const double dy = next_pts[i].y - cy;
-                const double r_ratio = std::sqrt(dx * dx + dy * dy) * r_max_inv;
-
-                // Only apply edge recovery to features in the outer region
-                if (r_ratio < 0.3) continue;
-
-                // Compute epipolar distance: d = |p2^T F p1| / ||l||
-                const double* f = F.ptr<double>();
-                const double u1 = undistorted_cur_pts[i].x;
-                const double v1 = undistorted_cur_pts[i].y;
-                const double u2 = undistorted_next_pts[i].x;
-                const double v2 = undistorted_next_pts[i].y;
-
-                // Epipolar line l = F * [u1, v1, 1]^T
-                const double la = f[0] * u1 + f[1] * v1 + f[2];
-                const double lb = f[3] * u1 + f[4] * v1 + f[5];
-                const double lc = f[6] * u1 + f[7] * v1 + f[8];
-                const double norm_ab = std::sqrt(la * la + lb * lb);
-                if (norm_ab < 1e-12) continue;
-
-                const double dist = std::abs(la * u2 + lb * v2 + lc) / norm_ab;
-
-                // Adaptive threshold: base * (1 + edge_factor * r_ratio^2)
-                // Center features (r=0): 1x threshold
-                // Edge features (r=r_max): (1 + edge_factor)x threshold
-                const double adaptive_thresh =
-                    g_config.feature_tracker.f_threshold * (1.0 + edge_factor * r_ratio * r_ratio);
-
-                if (dist < adaptive_thresh) {
-                    status[i] = 1;  // Restore this edge feature
-                    restored++;
-                }
-            }
-
-            if (restored > 0) {
-                std::cout << "[FeatureTracker] Edge recovery: restored " << restored
-                          << " features (edge_factor=" << edge_factor << ")" << std::endl;
-            }
+    if(diagnostic_capture_) result.valid_json=diagnosticMask(valid);
+    if(valid_indices.size()<30) return result;
+    const int before_count=static_cast<int>(valid_indices.size());
+    vector<uchar> status;
+    cv::Mat F=cv::findFundamentalMat(undistorted_previous,undistorted_current,cv::FM_RANSAC,
+                                   g_config.feature_tracker.f_threshold,0.99,status);
+    result.estimated=!F.empty() && F.rows==3 && F.cols==3 && cv::checkRange(F);
+    const double edge_factor=g_config.feature_tracker.f_threshold_edge_factor;
+    if(edge_factor>0.0 && result.estimated) {
+        const double r_max=std::sqrt(cx*cx+cy*cy),r_max_inv=r_max>1e-6?1.0/r_max:0.0;
+        int restored=0;
+        for(size_t i=0;i<status.size() && i<valid_current.size();++i) {
+            if(status[i]) continue;
+            const double dx=valid_current[i].x-cx,dy=valid_current[i].y-cy;
+            const double r_ratio=std::sqrt(dx*dx+dy*dy)*r_max_inv;
+            if(r_ratio<0.3) continue;
+            const double* f=F.ptr<double>();
+            const double u1=undistorted_previous[i].x,v1=undistorted_previous[i].y;
+            const double u2=undistorted_current[i].x,v2=undistorted_current[i].y;
+            const double la=f[0]*u1+f[1]*v1+f[2],lb=f[3]*u1+f[4]*v1+f[5],lc=f[6]*u1+f[7]*v1+f[8];
+            const double norm_ab=std::sqrt(la*la+lb*lb);
+            if(norm_ab<1e-12) continue;
+            const double distance=std::abs(la*u2+lb*v2+lc)/norm_ab;
+            const double threshold=g_config.feature_tracker.f_threshold*(1.0+edge_factor*r_ratio*r_ratio);
+            if(distance<threshold) {status[i]=1;++restored;}
         }
-
-        if(diagnostic_capture_) recordDiagnostic("f_inliers",diagnosticMask(status));
-        int inlier_count = 0;
-        for (const auto& s : status) { if (s) inlier_count++; }
-        const int rejected = before_count - inlier_count;
-
-        // Log when >30% features rejected (indicates tracking stress)
-        if (rejected > before_count * 3 / 10) {
-            std::cout << "[FeatureTracker] F-matrix: " << before_count
-                      << " → " << inlier_count
-                      << " (rejected " << rejected
-                      << ", threshold=" << g_config.feature_tracker.f_threshold << ")"
-                      << std::endl;
-        }
-
-        pruneTrackedPoints(status);
+        if(restored>0) std::cout<<"[FeatureTracker] Edge recovery: restored "<<restored
+            <<" features (edge_factor="<<edge_factor<<")"<<std::endl;
     }
+    if(diagnostic_capture_) result.inliers_json=diagnosticMask(status);
+    std::fill(result.mask.begin(),result.mask.end(),0);
+    for(size_t j=0;j<status.size() && j<valid_indices.size();++j) if(status[j]) {
+        result.mask[valid_indices[j]]=1;++result.inliers;
+    }
+    const int rejected=before_count-static_cast<int>(result.inliers);
+    if(rejected>before_count*3/10) std::cout<<"[FeatureTracker] F-matrix: "<<before_count<<" → "<<result.inliers
+        <<" (rejected "<<rejected<<", threshold="<<g_config.feature_tracker.f_threshold<<")"<<std::endl;
+    return result;
+}
+
+void FeatureTracker::rejectWithFundamentalMatrix() {
+    const auto result=fundamentalMask(cur_pts,next_pts,vector<uchar>(cur_pts.size(),1),false);
+    if(!result.valid_json.empty()) recordDiagnostic("f_valid",result.valid_json);
+    if(!result.inliers_json.empty()) recordDiagnostic("f_inliers",result.inliers_json);
+    pruneTrackedPoints(result.mask);
 }
 
 bool FeatureTracker::updateID(unsigned int i) {

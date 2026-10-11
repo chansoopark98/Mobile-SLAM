@@ -113,6 +113,9 @@ public:
     // Explicit numerical-validation control; persists reset/reconfigure until disabled.
     void setBenchmarkSolverProfile(bool enabled);
     bool getBenchmarkSolverProfile() const { return benchmark_solver_profile_; }
+    // Experimental rotation rescue: configure disables it; reset preserves it.
+    void setRotationRescue(bool enabled);
+    bool getRotationRescueEnabled() const { return rotation_rescue_enabled_; }
     std::string getFeatureDiagnostics() const;
 
     // Reset the VIO system to initial state.
@@ -160,6 +163,7 @@ private:
     int execution_threads_ = 1;
     bool diagnostic_capture_ = false;
     bool benchmark_solver_profile_ = false;
+    bool rotation_rescue_enabled_ = false;
     void recordSolver(const backend::SolverDiagnostics& diagnostics);
     static constexpr int kMaxIMUReadings = 4096;
     static constexpr double kMaxSensorGapSeconds = 0.5;

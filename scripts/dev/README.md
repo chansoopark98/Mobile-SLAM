@@ -92,6 +92,11 @@ python3 scripts/dev/evaluate-synthetic-vio.py --dataset build/synthetic-example 
 ```
 
 - browser modes: `raw`=직접 Worker, `live-deterministic`=가상 시계·직렬 처리, `live-paced`=제어된 callback cadence, `live-paced-native-raf`=실제 desktop rAF
+- 회전 회귀: `--scenario fast-rotation --portrait`는 첫5초 기존 mobile60 motion을 유지한 뒤 복합축 빠른 회전을 추가. analytic gyro·body GT·영상은 독립 생성하며, 실제 phone 회전 허용 속도 근거가 아님
+- 재현: `python3 scripts/dev/generate-synthetic-vio.py --output build/fast-rotation-example --seed 707 --scenario fast-rotation --portrait`. 출력 폴더는 새 경로만 허용
+- 회전 복구는 실험 기능, 기본 OFF. live App `?rotation-rescue=1`/`=0`, synthetic browser `--rotation-rescue on|off|default`, native replay 마지막 PROFILE 인자 뒤 `0|1`로 선택
+- 활성값은 configure ACK 대신 C++ `rotation_rescue_enabled` 또는 Worker `rotationRescueEnabled`로 확인. 기본값의 TUM 회귀와 활성화한 합성 회전 수락은 별도 결과로 기록
+- ON 후보는 빠른 회전 합성 입력에서 개선됐지만 full TUM-VI 정확도 유지 gate는 실패. 실기기 Lost/발산 해결은 미확인. 일반 사용의 기본값은 OFF 유지
 - 기본 harness는 명시 `fth=1`; `--f-threshold default`는 URL override 생략 후 실제 C++ readback 확인. 현재 engine 기본값도1
 - `live-deterministic`의 가상 clock 비용을 실제 latency로 보고하지 않음. 실제 rAF도 camera captureTime·sensor API는 mock이며 물리 phone 검증과 구분
 - 원본400frame·warmup 이후300frame 분모 유지. 누락·busy·실패·pose 없는 frame을 평가에서 숨기지 않음

@@ -22,6 +22,7 @@ import { OrientationHandler } from './orientation.js?v=11';
  *   ?config=NAME   — Config profile: mobile_default, mobile_highend, euroc, tum_vi
  *   ?fth=N.N       — Override fundamental matrix RANSAC threshold (engine default: 1.0)
  *   ?rotate=none|cw|ccw — Explicit pixel rotation; default preserves video orientation
+ *   ?rotation-rescue=1|0 — Experimental IMU rotation tracking rescue; default off
  */
 const URL_PARAMS = new URLSearchParams(window.location.search);
 
@@ -685,7 +686,7 @@ class App {
             const fxScaled = calibration.fx, fyScaled = calibration.fy;
             const params = { ...calibration, acc_n: config.acc_n, acc_w: config.acc_w,
                 gyr_n: config.gyr_n, gyr_w: config.gyr_w, g_norm: config.g_norm,
-                mobileMotionGuard: true };
+                mobileMotionGuard: true, rotationRescue: URL_PARAMS.get('rotation-rescue') === '1' };
             const configured = await this.vio.configure(params);
             if (!configured) throw new Error('VIO configuration failed');
             this._lastConfigParams = params;
@@ -1111,7 +1112,13 @@ class App {
             videoTime > 0 && videoTime !== this._lastVideoTime;
         const enoughTime = (now - this._lastVIOFrameTime) >= frameInterval;
 
-        if (isNewFrame && enoughTime) {
+        // Keep the latest owned snapshot while the Worker is busy. Consuming it
+        // or advancing pacing on a rejected submission adds another frame wait.
+        // IMU delivery must continue so the active frame can obtain its bracket.
+        const workerBusy = this.vio.workerBusy === true;
+        if (isNewFrame && enoughTime && workerBusy) this._flushAndSendIMU();
+
+        if (isNewFrame && enoughTime && !workerBusy && this.vio.configured !== false) {
             if (this._videoFrameCallbackActive) {
                 this._lastPresentedFrames = timing.presentedFrames;
                 this._pendingVideoFrame = null;

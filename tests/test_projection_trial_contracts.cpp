@@ -212,6 +212,68 @@ TEST(ProjectionTrialContracts, FinalCullPreservesFeatureSlotsPriorAndPhysicalMap
     EXPECT_EQ(backend::OptimizerTestAccess::priorRoles(optimizer),roles);
 }
 
+TEST(ProjectionTrialContracts, SolvedMapDepthsRemainVisibleAcrossFormerDefaultBoundary) {
+    RestoreConfig restore;
+    utility::g_config.camera.r_ic.setIdentity();utility::g_config.camera.t_ic.setZero();
+    const std::array<double,9> depths={1.98,1.99,1.995,2.,2.005,2.01,2.02,5.,10.};
+    for (double configured_default : {2.,5.}) {
+        SCOPED_TRACE(configured_default);
+        utility::g_config.estimator.init_depth=configured_default;
+        backend::Estimator estimator;estimator.setParameter();
+        estimator.solver_flag_=common::SolverFlag::NON_LINEAR;
+        auto& anchor=estimator.sliding_window_[0];
+        anchor.P={1,-2,3};
+        anchor.R << 0,-1,0,1,0,0,0,0,1; // Exact 90-degree Z rotation.
+        auto& manager=backend::EstimatorTestAccess::features(estimator);
+        Eigen::Matrix<double,7,1> observation;observation<<.25,-.125,1,0,0,0,0;
+        for (size_t i=0;i<depths.size();++i) {
+            manager.feature_bank_.emplace_back(static_cast<int>(i),0);
+            auto& feature=manager.feature_bank_.back();
+            feature.feature_per_frame.assign(2,frontend::FeaturePerFrame(observation));
+            feature.used_num=2;feature.estimated_depth=depths[i];feature.solve_flag=1;
+        }
+        const auto solved=estimator.getSolvedFeatures();
+        const auto points=estimator.getSlidingWindowMapPoints();
+        ASSERT_EQ(solved.size(),depths.size());
+        ASSERT_EQ(points.size(),depths.size());
+        for (size_t i=0;i<depths.size();++i) {
+            SCOPED_TRACE(depths[i]);
+            // Independent coordinates: Rz(90) maps (d/4,-d/8,d) to (d/8,d/4,d).
+            const Eigen::Vector3d expected(1+depths[i]/8,-2+depths[i]/4,3+depths[i]);
+            EXPECT_EQ(solved[i].id,static_cast<int>(i));
+            EXPECT_LT((solved[i].position-expected).norm(),1e-12);
+            EXPECT_LT((points[i]-expected).norm(),1e-12);
+        }
+    }
+}
+
+TEST(ProjectionTrialContracts, MapExportStillExcludesUnsolvedFailedAndInvalidDepths) {
+    RestoreConfig restore;
+    utility::g_config.camera.r_ic.setIdentity();utility::g_config.camera.t_ic.setZero();
+    backend::Estimator estimator;estimator.setParameter();
+    estimator.solver_flag_=common::SolverFlag::NON_LINEAR;
+    auto& manager=backend::EstimatorTestAccess::features(estimator);
+    struct Row { double depth; int solve_flag; };
+    const std::array<Row,7> rows={{{3,1},{2,0},{2,2},{0,1},{-1,1},
+        {std::numeric_limits<double>::quiet_NaN(),1},{std::numeric_limits<double>::infinity(),1}}};
+    Eigen::Matrix<double,7,1> observation;observation<<.25,-.125,1,0,0,0,0;
+    for (size_t i=0;i<rows.size();++i) {
+        manager.feature_bank_.emplace_back(static_cast<int>(i),0);
+        auto& feature=manager.feature_bank_.back();
+        feature.feature_per_frame.assign(2,frontend::FeaturePerFrame(observation));
+        feature.used_num=2;feature.estimated_depth=rows[i].depth;feature.solve_flag=rows[i].solve_flag;
+    }
+    const auto solved=estimator.getSolvedFeatures();
+    const auto points=estimator.getSlidingWindowMapPoints();
+    ASSERT_EQ(solved.size(),1u);ASSERT_EQ(points.size(),1u);
+    EXPECT_EQ(solved.front().id,0);
+    const Eigen::Vector3d expected(.75,-.375,3);
+    EXPECT_LT((solved.front().position-expected).norm(),1e-12);
+    EXPECT_LT((points.front()-expected).norm(),1e-12);
+    estimator.solver_flag_=common::SolverFlag::INITIAL;
+    EXPECT_TRUE(estimator.getSlidingWindowMapPoints().empty());
+}
+
 TEST(ProjectionTrialContracts, FinalCurrentSupportRequiresTwoActualRetainedImageFactors) {
     RestoreConfig restore;
     backend::SlidingWindow window;frontend::FeatureManager manager;prepareScene(window,manager);

@@ -31,7 +31,9 @@ public:
 
     // backend_frame=true: full pipeline (track + detect new features + setMask)
     // backend_frame=false: track-only (LK flow + F-matrix rejection, no new features)
-    void detectAndTrack(const cv::Mat& _img, double _cur_time, bool backend_frame = true);
+    // Optional rotation maps the preceding tracked camera rays into the current camera.
+    void detectAndTrack(const cv::Mat& _img, double _cur_time, bool backend_frame = true,
+                        const Eigen::Matrix3d* camera_rotation = nullptr);
 
     void setMask();
 
@@ -68,6 +70,14 @@ public:
     static int n_id;
 
 private:
+    struct FundamentalResult {
+        std::vector<uchar> mask;
+        bool estimated=false;
+        size_t inliers=0;
+        std::string valid_json,inliers_json;
+    };
+    FundamentalResult fundamentalMask(const std::vector<cv::Point2f>& previous,
+        const std::vector<cv::Point2f>& current,const std::vector<uchar>& accepted,bool check_motion) const;
     void pruneTrackedPoints(const std::vector<uchar>& status);
     void recordDiagnostic(const char* name, const std::string& json);
     bool diagnostic_capture_ = false;

@@ -228,6 +228,7 @@ function engineState() {
         solverTermination: engineValue('getLastSolverTermination', null),
         benchmarkSolverProfile,
         solverProfile: benchmarkSolverProfile === true ? 'max10_zero_positive_tolerances' : benchmarkSolverProfile === false ? 'default' : 'unavailable',
+        rotationRescueEnabled: engineValue('getRotationRescueEnabled', null),
         executionSeed: engineValue('getExecutionSeed', null),
         cvThreads: engineValue('getCVThreadCount', null),
         imuEndpointTimestamp: engineValue('getIMUEndpointTimestamp', null),
@@ -441,6 +442,14 @@ self.onmessage = async function(event) {
                 data.gyr_n ?? 0.01, data.gyr_w ?? 0.0001, data.g_norm ?? 9.81) === true;
             if (configured) {
                 mobileMotionGuard = data.mobileMotionGuard === true;
+                const rotationRescue = data.rotationRescue === true;
+                const rotationSetter = typeof engine.setRotationRescue === 'function';
+                const rotationGetter = typeof engine.getRotationRescueEnabled === 'function';
+                if (rotationRescue && (!rotationSetter || !rotationGetter)) throw new Error('Rotation rescue API unavailable');
+                if (rotationSetter) engine.setRotationRescue(rotationRescue);
+                if (rotationGetter && engine.getRotationRescueEnabled() !== rotationRescue) {
+                    throw new Error('Rotation rescue mode not applied');
+                }
                 const requested = data.benchmark_zero_positive_tolerances === true;
                 const profileAPI = typeof engine.setBenchmarkSolverProfile === 'function' && typeof engine.getBenchmarkSolverProfile === 'function';
                 if (requested && !profileAPI) throw new Error('Benchmark solver profile API unavailable');
@@ -449,7 +458,8 @@ self.onmessage = async function(event) {
             }
             if (configured && typeof engine.setExecutionParams === 'function') engine.setExecutionParams(data.execution_seed ?? 0, data.cv_threads ?? 1);
             engineEpoch = engineState().engineEpoch;
-            reply(request, type, { success: configured, benchmarkSolverProfile: engineState().benchmarkSolverProfile, imuDrops: { ...imuDrops } });
+            reply(request, type, { success: configured, benchmarkSolverProfile: engineState().benchmarkSolverProfile,
+                rotationRescueEnabled: engineState().rotationRescueEnabled, imuDrops: { ...imuDrops } });
         } else if (type === 'getEffectiveConfig') {
             reply(request, type, { success: true, data: effectiveConfig() });
         } else if (Object.hasOwn(parameterCalls, type)) {

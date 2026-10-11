@@ -10,9 +10,9 @@ import sys
 import numpy as np
 from scipy.spatial.transform import Rotation
 
-VERSION = 'synthetic-vio-2'
+VERSION = 'synthetic-vio-3'
 ROOT = pathlib.Path(__file__).resolve().parents[2]
-SCENARIOS = ('clean', 'mobile40', 'mobile60', 'stationary', 'pure-rotation', 'constant-velocity')
+SCENARIOS = ('clean', 'mobile40', 'mobile60', 'fast-rotation', 'stationary', 'pure-rotation', 'constant-velocity')
 
 def sha(data):
     return hashlib.sha256(data).hexdigest()
@@ -53,7 +53,7 @@ def make_spec(seed=101, scenario='clean', portrait=False):
         for center,u,v,extent in faces:
             surfaces.append(surface(center,u,v,extent,len(surfaces)))
     config = dict(camera, acc_n=.5, acc_w=.003, gyr_n=.2, gyr_w=.0002, g_norm=9.81)
-    mobile = scenario.startswith('mobile')
+    mobile = scenario.startswith('mobile') or scenario == 'fast-rotation'
     noise = {'acc_density': .005 if mobile else 0., 'gyro_density': .0002 if mobile else 0.,
              'acc_random_walk_density': .0002 if mobile else 0., 'gyro_random_walk_density': .00002 if mobile else 0.,
              'acc_bias': [.03,-.02,.01] if mobile else [0.,0.,0.],
@@ -61,10 +61,10 @@ def make_spec(seed=101, scenario='clean', portrait=False):
              'acc_quantization': .1 if mobile else 0., 'gyro_quantization_rad_s': math.radians(.1) if mobile else 0.,
              'measurement_density_units': 'SI per sqrt(Hz); sample std=density/sqrt(dt)',
              'random_walk_units': 'SI per sqrt(s); increment std=density*sqrt(dt)'}
-    return {'schema':'mobile-slam-synthetic-spec-v1','generator_version':VERSION,
+    spec = {'schema':'mobile-slam-synthetic-spec-v1','generator_version':VERSION,
             'generator_sha256':sha(pathlib.Path(__file__).read_bytes()),'seed':seed,'scenario':scenario,
             'fixture_kind':'frozen_acceptance','duration_s':20.,'image_hz':20,'frame_count':400,
-            'imu_hz':int(scenario[6:]) if mobile else 200, 'gravity_physical':[0,0,-9.81],
+            'imu_hz':60 if scenario == 'fast-rotation' else int(scenario[6:]) if mobile else 200, 'gravity_physical':[0,0,-9.81],
             'camera':camera, 'motion':{'position_origin':[0,0,1.2],'translation_amplitude':[.4,.3,.2],
                 'translation_frequency':[1.3,1.1,1.7],'translation_phase':phases,
                 'rotation_amplitude':[.08,.12,.18],'rotation_frequency':[.7,.9,.55],
@@ -87,6 +87,11 @@ def make_spec(seed=101, scenario='clean', portrait=False):
             'coordinate_contract':{'poses':'T_W_B and T_W_C','rotation':'row-major 3x3','quaternion':'xyzw',
                 'imu':'body specific force m/s^2, angular velocity rad/s','timestamps':'seconds; CSV integer ns',
                 'camera_extrinsic':'T_B_C','pixel_center':'integer centers; native OpenCV convention'}}
+    if scenario == 'fast-rotation':
+        # Preserve normal initialization; add smooth fast rotation after five seconds.
+        spec['motion']['fast_rotation'] = {'start_s':5., 'stop_s':19., 'ramp_s':1.,
+            'amplitude':[.2,.3,.5], 'frequency':[2.5,3.,3.5]}
+    return spec
 
 def time_warp(t, motion):
     start,stop,ramp = motion['start_s'],motion['stop_s'],motion['ramp_s']
@@ -113,6 +118,11 @@ def body_state(t, spec):
     p=np.array(motion['position_origin'])+amp*shape;v=amp*first*du;a=amp*(second*du*du+first*ddu)
     ra=np.array(motion['rotation_amplitude']);rf=np.array(motion['rotation_frequency']);rp=np.array(motion['rotation_phase'])
     phi,theta,psi=ra*(np.sin(rf*u+rp)-np.sin(rp));pd,td,yd=ra*rf*np.cos(rf*u+rp)*du
+    if 'fast_rotation' in motion:
+        fast=motion['fast_rotation'];ru,rdu,_=time_warp(float(t),fast)
+        fa,ff=np.array(fast['amplitude']),np.array(fast['frequency'])
+        phi,theta,psi=np.array([phi,theta,psi])+fa*np.sin(ff*ru)
+        pd,td,yd=np.array([pd,td,yd])+fa*ff*np.cos(ff*ru)*rdu
     if spec['scenario']=='stationary':
         p=np.array(motion['position_origin']);v=np.zeros(3);a=np.zeros(3);phi=theta=psi=pd=td=yd=0.
     elif spec['scenario']=='pure-rotation':p=np.array(motion['position_origin']);v=np.zeros(3);a=np.zeros(3)

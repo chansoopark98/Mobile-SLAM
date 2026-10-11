@@ -3,6 +3,8 @@
 #include <limits>
 #include <deque>
 #include <atomic>
+#include <algorithm>
+#include <cmath>
 #include <fstream>
 #include <filesystem>
 #include <opencv2/imgproc.hpp>
@@ -21,7 +23,18 @@ struct VIOEngineTestAccess {
         return engine.publishPose(position,rotation,time,output);
     }
     static void solver(VIOEngine& engine,const backend::SolverDiagnostics& diagnostics) { engine.recordSolver(diagnostics); }
+    static frontend::FeatureTracker& tracker(VIOEngine& engine) { return *engine.feature_tracker_; }
 };
+
+namespace backend {
+struct EstimatorTestAccess {
+    static void initialized(backend::Estimator& estimator) {
+        estimator.solver_flag_=common::SolverFlag::NON_LINEAR;
+        estimator.frame_count_=utility::WINDOW_SIZE;
+        estimator.g_=utility::g_config.estimator.g;
+    }
+};
+}
 
 namespace {
 class BoundaryRayCamera : public common::camera_models::PinholeCamera {
@@ -36,6 +49,26 @@ public:
         else ray=Eigen::Vector3d((pixel.x()-48)/100,(pixel.y()-48)/100,1);
     }
 };
+class InvalidPredictionCamera : public common::camera_models::PinholeCamera {
+public:
+    explicit InvalidPredictionCamera(bool nonfinite) :
+        PinholeCamera(Parameters("invalid_prediction",640,480,0,0,0,0,461,449,319,239)),nonfinite_(nonfinite) {}
+    void spaceToPlane(const Eigen::Vector3d&,Eigen::Vector2d& pixel) const override {
+        pixel={nonfinite_?std::numeric_limits<double>::quiet_NaN():1e30,240};
+    }
+private:
+    bool nonfinite_;
+};
+class OffsetPredictionCamera : public common::camera_models::PinholeCamera {
+public:
+    explicit OffsetPredictionCamera(double offset) :
+        PinholeCamera(Parameters("offset_prediction",640,480,0,0,0,0,461,449,319,239)),offset_(offset) {}
+    void spaceToPlane(const Eigen::Vector3d& ray,Eigen::Vector2d& pixel) const override {
+        PinholeCamera::spaceToPlane(ray,pixel);pixel.x()+=offset_;
+    }
+private:
+    double offset_;
+};
 bool configure(VIOEngine& engine, const double* rotation = nullptr,
                const double* translation = nullptr, int model = 2, double fx = 100.0) {
     const double identity[9] = {1,0,0,0,1,0,0,0,1};
@@ -44,6 +77,407 @@ bool configure(VIOEngine& engine, const double* rotation = nullptr,
                             rotation ? rotation : identity, translation ? translation : zero,
                             0.1,0.001,0.01,0.0001,9.81);
 }
+
+// Independent analytic projection and inverse mapping render a stationary textured
+// scene at infinity. No tracker/camera-model implementation supplies expected pixels.
+struct RotationFixture {
+    utility::Config saved=utility::g_config;
+    const int width=640,height=480;
+    const double fx=461,fy=449,cx=319,cy=239;
+    const int model;
+    const double k1,k2,p1,p2;
+    cv::Mat source;
+    explicit RotationFixture(int camera_model) : model(camera_model),
+        k1(model==2?-.08:.01),k2(model==2?.015:-.002),
+        p1(model==2?.002:.0002),p2(model==2?-.001:-.00001) {
+        utility::g_config.camera.col=width;utility::g_config.camera.row=height;
+        utility::g_config.camera.focal_length=(fx+fy)/2;
+        auto& cfg=utility::g_config.feature_tracker;
+        cfg.max_cnt=120;cfg.min_dist=30;cfg.equalize=1;cfg.fisheye=model==0;
+        cfg.lk_window_size=21;cfg.lk_pyramid_levels=3;cfg.lk_iterations=20;cfg.lk_eps=.03;
+        cfg.f_threshold=1;cfg.f_threshold_edge_factor=0;
+        source.create(height,width,CV_8UC1);cv::RNG random(20261010);random.fill(source,cv::RNG::UNIFORM,0,256);
+        cv::GaussianBlur(source,source,cv::Size(5,5),.8);
+    }
+    ~RotationFixture() {utility::g_config=saved;}
+    Eigen::Vector2d project(const Eigen::Vector3d& ray) const {
+        double x=ray.x()/ray.z(),y=ray.y()/ray.z();
+        if(model==2) {
+            const double r2=x*x+y*y,radial=1+k1*r2+k2*r2*r2;
+            return {fx*(x*radial+2*p1*x*y+p2*(r2+2*x*x))+cx,
+                    fy*(y*radial+p1*(r2+2*y*y)+2*p2*x*y)+cy};
+        }
+        const double radius=std::hypot(x,y),theta=std::atan(radius),t2=theta*theta;
+        const double distorted=theta*(1+t2*(k1+t2*(k2+t2*(p1+t2*p2))));
+        const double scale=radius>0?distorted/radius:1;
+        return {fx*x*scale+cx,fy*y*scale+cy};
+    }
+    Eigen::Vector3d lift(const Eigen::Vector2d& pixel) const {
+        const double xd=(pixel.x()-cx)/fx,yd=(pixel.y()-cy)/fy;
+        double x=xd,y=yd;
+        if(model==2) for(int iteration=0;iteration<12;++iteration) {
+            const double r2=x*x+y*y,radial=1+k1*r2+k2*r2*r2;
+            x=(xd-2*p1*x*y-p2*(r2+2*x*x))/radial;
+            y=(yd-p1*(r2+2*y*y)-2*p2*x*y)/radial;
+        } else {
+            const double radius=std::hypot(xd,yd);double theta=radius;
+            for(int iteration=0;iteration<12;++iteration) {
+                const double t2=theta*theta;
+                theta-=(theta*(1+t2*(k1+t2*(k2+t2*(p1+t2*p2))))-radius)/
+                    (1+t2*(3*k1+t2*(5*k2+t2*(7*p1+t2*9*p2))));
+            }
+            const double scale=radius>0?std::tan(theta)/radius:1;x=xd*scale;y=yd*scale;
+        }
+        return {x,y,1};
+    }
+    cv::Mat rotated(const Eigen::Matrix3d& old_to_new,const Eigen::Vector3d* translation=nullptr) const {
+        cv::Mat map_x(height,width,CV_32F),map_y(height,width,CV_32F),target;
+        for(int y=0;y<height;++y) for(int x=0;x<width;++x) {
+            Eigen::Vector3d old_ray=old_to_new.transpose()*lift({double(x),double(y)});
+            // Intersect the new viewing ray with the stationary old-camera Z=2m plane.
+            if(translation) old_ray=*translation+old_ray*((2-translation->z())/old_ray.z());
+            const Eigen::Vector2d old_pixel=project(old_ray);
+            map_x.at<float>(y,x)=old_pixel.x();map_y.at<float>(y,x)=old_pixel.y();
+        }
+        cv::remap(source,target,map_x,map_y,cv::INTER_LINEAR,cv::BORDER_CONSTANT);
+        return target;
+    }
+    bool configureTracker(frontend::FeatureTracker& tracker) const {
+        return tracker.setIntrinsicParameter(model,width,height,fx,fy,cx,cy,k1,k2,p1,p2);
+    }
+};
+struct RotationScore {int visible=0,correct=0,wrong=0;};
+RotationScore scoreRotation(const RotationFixture& fixture,const frontend::FeatureTracker& tracker,
+                           const std::map<int,cv::Point2f>& original,const Eigen::Matrix3d& rotation,
+                           const Eigen::Vector3d* translation=nullptr) {
+    RotationScore score;
+    for(const auto& [id,pixel]:original) {
+        Eigen::Vector3d ray=fixture.lift({pixel.x,pixel.y});
+        if(translation) ray=2*ray-*translation;
+        const Eigen::Vector2d expected=fixture.project(rotation*ray);
+        if(expected.x()<12 || expected.x()>=fixture.width-12 || expected.y()<12 || expected.y()>=fixture.height-12) continue;
+        ++score.visible;
+        const auto found=std::find(tracker.ids.begin(),tracker.ids.end(),id);
+        if(found==tracker.ids.end()) continue;
+        const auto& actual=tracker.cur_pts[found-tracker.ids.begin()];
+        const double error=(Eigen::Vector2d(actual.x,actual.y)-expected).norm();
+        if(error<1) ++score.correct;
+        if(error>3) ++score.wrong;
+    }
+    return score;
+}
+std::map<int,cv::Point2f> trackedPixels(frontend::FeatureTracker& tracker) {
+    for(unsigned int i=0;tracker.updateID(i);++i) {}
+    std::map<int,cv::Point2f> result;
+    for(size_t i=0;i<tracker.ids.size();++i) result[tracker.ids[i]]=tracker.cur_pts[i];
+    return result;
+}
+void expectSameTrackingState(const frontend::FeatureTracker& actual,int actual_first,
+                             const frontend::FeatureTracker& expected,int expected_first) {
+    EXPECT_EQ(actual.prev_pts,expected.prev_pts);EXPECT_EQ(actual.cur_pts,expected.cur_pts);
+    EXPECT_EQ(actual.next_pts,expected.next_pts);EXPECT_EQ(actual.prev_undistorted_pts,expected.prev_undistorted_pts);
+    EXPECT_EQ(actual.cur_undistorted_pts,expected.cur_undistorted_pts);EXPECT_EQ(actual.pts_velocity,expected.pts_velocity);
+    EXPECT_EQ(actual.track_cnt,expected.track_cnt);EXPECT_DOUBLE_EQ(actual.cur_time,expected.cur_time);
+    EXPECT_DOUBLE_EQ(actual.prev_time,expected.prev_time);
+    std::vector<int> actual_ids,expected_ids;
+    for(int id:actual.ids) actual_ids.push_back(id-actual_first);
+    for(int id:expected.ids) expected_ids.push_back(id-expected_first);
+    EXPECT_EQ(actual_ids,expected_ids);
+    const auto normalized=[](const std::map<int,cv::Point2f>& input,int first) {
+        std::map<int,cv::Point2f> output;
+        for(const auto& [id,point]:input) output[id<0?id:id-first]=point;
+        return output;
+    };
+    EXPECT_EQ(normalized(actual.cur_undistorted_pts_map,actual_first),normalized(expected.cur_undistorted_pts_map,expected_first));
+    EXPECT_EQ(normalized(actual.prev_undistorted_pts_map,actual_first),normalized(expected.prev_undistorted_pts_map,expected_first));
+    EXPECT_EQ(cv::norm(actual.cur_img,expected.cur_img,cv::NORM_INF),0);
+    EXPECT_EQ(cv::norm(actual.prev_img,expected.prev_img,cv::NORM_INF),0);
+}
+}
+
+TEST(EngineContracts, RotationPredictionRecoversCorrectIdsThroughDistortedCameraModels) {
+    for(int model:{2,0}) {
+        SCOPED_TRACE(model);RotationFixture fixture(model);
+        const Eigen::Matrix3d rotation=Eigen::AngleAxisd(-6*M_PI/180,Eigen::Vector3d::UnitY()).toRotationMatrix();
+        const cv::Mat target=fixture.rotated(rotation);
+        const Eigen::Matrix3d inexact_rotation=Eigen::AngleAxisd(-5*M_PI/180,Eigen::Vector3d::UnitY()).toRotationMatrix();
+        RotationScore baseline,seeded,inexact;
+        for(int prediction:{0,1,2}) {
+            frontend::FeatureTracker tracker;ASSERT_TRUE(fixture.configureTracker(tracker));
+            tracker.detectAndTrack(fixture.source,0);const auto original=trackedPixels(tracker);
+            cv::setRNGSeed(20261010);
+            tracker.detectAndTrack(target,.05,false,prediction==0?nullptr:prediction==1?&rotation:&inexact_rotation);
+            (prediction==0?baseline:prediction==1?seeded:inexact)=scoreRotation(fixture,tracker,original,rotation);
+        }
+        ASSERT_GT(seeded.visible,60);
+        EXPECT_GE(seeded.correct,seeded.visible*9/10);
+        EXPECT_LE(seeded.wrong,seeded.visible/20);
+        EXPECT_GT(seeded.correct,baseline.correct+seeded.visible/4);
+        // A valid but inaccurate 5-degree hint must be refined against the
+        // rendered six-degree image, rather than counted as a correspondence.
+        EXPECT_GE(inexact.correct,inexact.visible*9/10);
+        EXPECT_LE(inexact.wrong,inexact.visible/20);
+        std::cout<<"[Rotation fixture] model="<<model<<" visible="<<seeded.visible
+            <<" baseline_correct="<<baseline.correct<<" baseline_wrong="<<baseline.wrong
+            <<" seeded_correct="<<seeded.correct<<" seeded_wrong="<<seeded.wrong
+            <<" inexact_correct="<<inexact.correct<<" inexact_wrong="<<inexact.wrong<<std::endl;
+    }
+}
+
+TEST(EngineContracts, InvalidRotationPredictionFallsBackToUnseededTracking) {
+    RotationFixture fixture(2);
+    std::vector<cv::Point2f> baseline;
+    std::vector<Eigen::Matrix3d> rotations{Eigen::Matrix3d::Identity(),Eigen::Matrix3d::Identity(),Eigen::Matrix3d::Identity()};
+    rotations[0](0,0)=-1;rotations[1](0,1)=.1;rotations[2](0,0)=std::numeric_limits<double>::quiet_NaN();
+    for(int trial=-1;trial<int(rotations.size());++trial) {
+        frontend::FeatureTracker tracker;ASSERT_TRUE(fixture.configureTracker(tracker));
+        tracker.detectAndTrack(fixture.source,0);trackedPixels(tracker);cv::setRNGSeed(20261010);
+        ASSERT_NO_THROW(tracker.detectAndTrack(fixture.source,.05,false,trial<0?nullptr:&rotations[trial]));
+        if(trial<0) baseline=tracker.cur_pts;
+        else {ASSERT_EQ(tracker.cur_pts.size(),baseline.size());for(size_t i=0;i<baseline.size();++i)EXPECT_EQ(tracker.cur_pts[i],baseline[i]);}
+    }
+}
+
+TEST(EngineContracts, SmallRotationPredictionPreservesExactUnseededPipeline) {
+    for(int model:{2,0}) {
+        SCOPED_TRACE(model);RotationFixture fixture(model);
+        const Eigen::Matrix3d rotation=Eigen::AngleAxisd(-.5*M_PI/180,Eigen::Vector3d::UnitY()).toRotationMatrix();
+        const cv::Mat target=fixture.rotated(rotation);
+        std::vector<cv::Point2f> baseline_points;std::vector<int> baseline_ids;
+        for(bool predict:{false,true}) {
+            frontend::FeatureTracker tracker;ASSERT_TRUE(fixture.configureTracker(tracker));
+            tracker.setDiagnosticCapture(true);tracker.detectAndTrack(fixture.source,0);
+            const auto original=trackedPixels(tracker);ASSERT_FALSE(original.empty());
+            const int first_id=original.begin()->first;
+            double largest_shift=0;
+            for(const auto& [id,pixel]:original) {
+                const Eigen::Vector2d expected=fixture.project(rotation*fixture.lift({pixel.x,pixel.y}));
+                largest_shift=std::max(largest_shift,(expected-Eigen::Vector2d(pixel.x,pixel.y)).norm());
+            }
+            // The independently rendered motion fits within the full-resolution
+            // 21-pixel patch's ten-pixel radius for every original feature.
+            ASSERT_LT(largest_shift,10);
+            cv::setRNGSeed(20261010);tracker.detectAndTrack(target,.05,false,predict?&rotation:nullptr);
+            std::vector<int> relative_ids;
+            for(int id:tracker.ids) relative_ids.push_back(id-first_id);
+            if(!predict) {baseline_points=tracker.cur_pts;baseline_ids=relative_ids;}
+            else {
+                EXPECT_EQ(relative_ids,baseline_ids);ASSERT_EQ(tracker.cur_pts.size(),baseline_points.size());
+                for(size_t i=0;i<baseline_points.size();++i) EXPECT_EQ(tracker.cur_pts[i],baseline_points[i]);
+                EXPECT_NE(tracker.getFeatureDiagnostics().find("\"available\":true"),std::string::npos);
+                EXPECT_NE(tracker.getFeatureDiagnostics().find("\"attempted\":0"),std::string::npos);
+            }
+        }
+    }
+}
+
+TEST(EngineContracts, RotationSeedWindowRadiusBoundaryUsesConfiguredPatchGeometry) {
+    RotationFixture fixture(2);
+    for(int window:{17,21,31}) for(bool outside:{false,true}) {
+        SCOPED_TRACE(::testing::Message()<<"window="<<window<<" outside="<<outside);
+        utility::g_config.feature_tracker.lk_window_size=window;
+        const int radius=(window-1)/2;
+        frontend::FeatureTracker tracker;ASSERT_TRUE(fixture.configureTracker(tracker));
+        tracker.m_camera=std::make_shared<OffsetPredictionCamera>(radius+(outside?1:0));
+        tracker.setDiagnosticCapture(true);tracker.detectAndTrack(fixture.source,0);trackedPixels(tracker);
+        const Eigen::Matrix3d identity=Eigen::Matrix3d::Identity();
+        tracker.detectAndTrack(fixture.source,.05,false,&identity);
+        const auto diagnostics=tracker.getFeatureDiagnostics();
+        EXPECT_NE(diagnostics.find("\"available\":true"),std::string::npos);
+        if(outside) EXPECT_EQ(diagnostics.find("\"hintEligible\":0"),std::string::npos);
+        else EXPECT_NE(diagnostics.find("\"hintEligible\":0"),std::string::npos);
+    }
+}
+
+TEST(EngineContracts, RotationSeedPreservesCorrectTracksWhenTranslationOpposesRotation) {
+    for(int model:{2,0}) {
+        SCOPED_TRACE(model);RotationFixture fixture(model);
+        const double angle=6*M_PI/180;
+        const Eigen::Matrix3d rotation=Eigen::AngleAxisd(-angle,Eigen::Vector3d::UnitY()).toRotationMatrix();
+        const Eigen::Vector3d translation(-2*std::tan(angle),0,0);
+        const cv::Mat target=fixture.rotated(rotation,&translation);
+        RotationScore baseline,seeded;
+        frontend::FeatureTracker ordinary;
+        int ordinary_first=0;uint64_t ordinary_rng=0;
+        for(bool predict:{false,true}) {
+            frontend::FeatureTracker tracker;ASSERT_TRUE(fixture.configureTracker(tracker));
+            tracker.setDiagnosticCapture(true);
+            tracker.detectAndTrack(fixture.source,0);const auto original=trackedPixels(tracker);
+            cv::setRNGSeed(20261010);tracker.detectAndTrack(target,.05,false,predict?&rotation:nullptr);
+            (predict?seeded:baseline)=scoreRotation(fixture,tracker,original,rotation,&translation);
+            if(!predict) {ordinary=tracker;ordinary_first=original.begin()->first;ordinary_rng=cv::theRNG().state;}
+            else {
+                expectSameTrackingState(tracker,original.begin()->first,ordinary,ordinary_first);
+                EXPECT_EQ(cv::theRNG().state,ordinary_rng);
+                const auto diagnostic=tracker.getFeatureDiagnostics();
+                EXPECT_NE(diagnostic.find("\"ordinaryTrusted\":true"),std::string::npos);
+                EXPECT_EQ(diagnostic.find("\"hintEligible\":0"),std::string::npos);
+                EXPECT_NE(diagnostic.find("\"attempted\":0"),std::string::npos);
+            }
+        }
+        ASSERT_GT(baseline.visible,100);ASSERT_GE(baseline.correct,baseline.visible*9/10);
+        std::cout<<"[Opposing translation] model="<<model<<" visible="<<baseline.visible
+            <<" baseline_correct="<<baseline.correct<<" baseline_wrong="<<baseline.wrong
+            <<" seeded_correct="<<seeded.correct<<" seeded_wrong="<<seeded.wrong<<std::endl;
+        EXPECT_GE(seeded.correct,baseline.correct);
+        EXPECT_LE(seeded.wrong,baseline.wrong);
+    }
+}
+
+TEST(EngineContracts, WeakGeometryWithNoAdoptionPreservesEntireOrdinaryTrackingState) {
+    for(int model:{2,0}) {
+        SCOPED_TRACE(model);RotationFixture fixture(model);
+        const Eigen::Matrix3d wrong_rotation=Eigen::AngleAxisd(-6*M_PI/180,Eigen::Vector3d::UnitY()).toRotationMatrix();
+        frontend::FeatureTracker ordinary;
+        int ordinary_first=0;uint64_t ordinary_rng=0;
+        for(bool predict:{false,true}) {
+            frontend::FeatureTracker tracker;ASSERT_TRUE(fixture.configureTracker(tracker));
+            tracker.setDiagnosticCapture(true);tracker.detectAndTrack(fixture.source,0);
+            const auto original=trackedPixels(tracker);ASSERT_FALSE(original.empty());
+            cv::setRNGSeed(20261010);tracker.detectAndTrack(fixture.source,.05,false,predict?&wrong_rotation:nullptr);
+            if(!predict) {ordinary=tracker;ordinary_first=original.begin()->first;ordinary_rng=cv::theRNG().state;}
+            else {
+                expectSameTrackingState(tracker,original.begin()->first,ordinary,ordinary_first);
+                EXPECT_EQ(cv::theRNG().state,ordinary_rng);
+                const auto diagnostic=tracker.getFeatureDiagnostics();
+                EXPECT_NE(diagnostic.find("\"ordinaryEstimated\":false"),std::string::npos);
+                EXPECT_EQ(diagnostic.find("\"attempted\":0"),std::string::npos);
+                EXPECT_NE(diagnostic.find("\"adopted\":0"),std::string::npos);
+            }
+        }
+    }
+}
+
+TEST(EngineContracts, RotationSeedDoesNotTurnUnsupportedPixelsIntoCorrespondences) {
+    RotationFixture fixture(2);
+    for(int invalid_projection:{0,1,2}) for(bool blank:{false,true}) {
+        frontend::FeatureTracker tracker;ASSERT_TRUE(fixture.configureTracker(tracker));
+        if(invalid_projection) tracker.m_camera=std::make_shared<InvalidPredictionCamera>(invalid_projection==1);
+        tracker.setDiagnosticCapture(true);tracker.detectAndTrack(fixture.source,0);trackedPixels(tracker);
+        // Behind-camera, nonfinite and out-of-image hints all leave ordinary LK
+        // responsible for finding a correspondence; the hint is never published.
+        const Eigen::Matrix3d wrong_rotation=Eigen::AngleAxisd(invalid_projection?0:M_PI,Eigen::Vector3d::UnitY()).toRotationMatrix();
+        const cv::Mat target=blank?cv::Mat(fixture.height,fixture.width,CV_8UC1,cv::Scalar(127)):fixture.source;
+        tracker.detectAndTrack(target,.05,false,&wrong_rotation);
+        EXPECT_NE(tracker.getFeatureDiagnostics().find("\"attempted\":0"),std::string::npos);
+        if(blank) EXPECT_TRUE(tracker.cur_pts.empty());
+        else EXPECT_GT(tracker.cur_pts.size(),100u);
+    }
+}
+
+TEST(EngineContracts, IdentityRotationSeedRetainsPureTranslationCorrespondences) {
+    RotationFixture fixture(2);
+    cv::Mat target;cv::warpAffine(fixture.source,target,cv::Matx23d(1,0,3,0,1,-2),fixture.source.size());
+    frontend::FeatureTracker tracker;ASSERT_TRUE(fixture.configureTracker(tracker));
+    tracker.detectAndTrack(fixture.source,0);const auto original=trackedPixels(tracker);
+    const Eigen::Matrix3d identity=Eigen::Matrix3d::Identity();
+    tracker.detectAndTrack(target,.05,false,&identity);
+    int correct=0;
+    for(size_t i=0;i<tracker.ids.size();++i) {
+        const auto found=original.find(tracker.ids[i]);ASSERT_NE(found,original.end());
+        if(cv::norm(tracker.cur_pts[i]-(found->second+cv::Point2f(3,-2)))<1) ++correct;
+    }
+    EXPECT_GE(correct,int(original.size())*9/10);
+}
+
+TEST(EngineContracts, IMURotationSeedUsesNonidentityCameraBodyMappingAndOriginalIds) {
+    RotationFixture fixture(2);VIOEngine engine;
+    const Eigen::Matrix3d camera_to_body=Eigen::AngleAxisd(M_PI/2,Eigen::Vector3d::UnitZ()).toRotationMatrix();
+    const Eigen::Matrix<double,3,3,Eigen::RowMajor> row_major=camera_to_body;
+    const double zero[3]={0,0,0};
+    ASSERT_TRUE(engine.configure(fixture.width,fixture.height,fixture.fx,fixture.fy,fixture.cx,fixture.cy,2,
+        fixture.k1,fixture.k2,fixture.p1,fixture.p2,row_major.data(),zero,.1,.001,.01,.0001,9.81));
+    engine.setTrackingParams(21,3,30,0);engine.setPnPParams(false,3);engine.setDiagnosticCapture(true);
+    engine.setRotationRescue(true);
+    const double rate=6*M_PI/180/.05;
+    const Eigen::Vector3d omega=camera_to_body*Eigen::Vector3d(0,rate,0);
+    IMUReading first{0,0,0,9.81,omega.x(),omega.y(),omega.z()};double pose[16];
+    EXPECT_FALSE(engine.processFrame(fixture.source.data,fixture.width,fixture.height,&first,1,0,pose));
+    const auto original=trackedPixels(VIOEngineTestAccess::tracker(engine));
+    backend::EstimatorTestAccess::initialized(VIOEngineTestAccess::estimator(engine));
+    std::vector<IMUReading> readings;
+    for(int i=1;i<=6;++i)readings.push_back({i*.01,0,0,9.81,omega.x(),omega.y(),omega.z()});
+    const Eigen::Matrix3d rotation=Eigen::AngleAxisd(-6*M_PI/180,Eigen::Vector3d::UnitY()).toRotationMatrix();
+    const cv::Mat target=fixture.rotated(rotation);
+    engine.processFrame(target.data,fixture.width,fixture.height,readings.data(),int(readings.size()),.05,pose);
+    const auto score=scoreRotation(fixture,VIOEngineTestAccess::tracker(engine),original,rotation);
+    ASSERT_GT(score.visible,60);EXPECT_GE(score.correct,score.visible*9/10);EXPECT_LE(score.wrong,score.visible/20);
+    EXPECT_NE(engine.getFeatureDiagnostics().find("\"available\":true"),std::string::npos);
+}
+
+TEST(EngineContracts, IMURotationSeedRequiresInitializedCoveredConsecutiveImageEndpoints) {
+    VIOEngine engine;ASSERT_TRUE(configure(engine));engine.setPnPParams(false,3);engine.setDiagnosticCapture(true);
+    engine.setRotationRescue(true);
+    cv::Mat blank(96,96,CV_8UC1,cv::Scalar(127));double pose[16];
+    IMUReading first{0,0,0,9.81,0,1,0};
+    engine.processFrame(blank.data,96,96,&first,1,0,pose);
+    EXPECT_NE(engine.getFeatureDiagnostics().find("\"available\":false"),std::string::npos);
+    backend::EstimatorTestAccess::initialized(VIOEngineTestAccess::estimator(engine));
+    IMUReading covered[]={{.025,0,0,9.81,0,1,0},{.05,0,0,9.81,0,1,0},{.06,0,0,9.81,0,1,0}};
+    engine.processFrame(blank.data,96,96,covered,3,.05,pose);
+    EXPECT_NE(engine.getFeatureDiagnostics().find("\"available\":true"),std::string::npos);
+    engine.processFrame(blank.data,96,96,nullptr,0,.1,pose);
+    EXPECT_EQ(engine.getLastReason(),"imu_missing_future");
+    EXPECT_NE(engine.getFeatureDiagnostics().find("\"available\":false"),std::string::npos);
+    IMUReading resumed[]={{.07,0,0,9.81,0,1,0},{.08,0,0,9.81,0,1,0},{.09,0,0,9.81,0,1,0},
+        {.1,0,0,9.81,0,1,0},{.11,0,0,9.81,0,1,0},{.12,0,0,9.81,0,1,0}};
+    engine.processFrame(blank.data,96,96,resumed,6,.11,pose);
+    EXPECT_NE(engine.getFeatureDiagnostics().find("\"available\":false"),std::string::npos);
+    engine.processFrame(blank.data,96,96,nullptr,0,.12,pose);
+    EXPECT_NE(engine.getFeatureDiagnostics().find("\"available\":true"),std::string::npos);
+    const auto epoch=engine.getEpoch();engine.reset();
+    IMUReading restarted[]={{.2,0,0,9.81,0,1,0},{.25,0,0,9.81,0,1,0}};
+    engine.processFrame(blank.data,96,96,restarted,2,.2,pose);
+    EXPECT_EQ(engine.getEpoch(),epoch+1);
+    EXPECT_NE(engine.getFeatureDiagnostics().find("\"available\":false"),std::string::npos);
+}
+
+TEST(EngineContracts, RotationRescueDefaultsOffAndRequiresOptInAfterEachConfigure) {
+    VIOEngine engine;
+    EXPECT_FALSE(engine.getRotationRescueEnabled());
+    auto epoch=engine.getEpoch();
+    engine.setRotationRescue(true);
+    EXPECT_TRUE(engine.getRotationRescueEnabled());EXPECT_EQ(engine.getEpoch(),epoch);
+    ASSERT_TRUE(configure(engine));
+    EXPECT_FALSE(engine.getRotationRescueEnabled());
+    engine.setDiagnosticCapture(true);
+    EXPECT_NE(engine.getFeatureDiagnostics().find("\"rotation_rescue_enabled\":0"),std::string::npos);
+    epoch=engine.getEpoch();engine.setRotationRescue(true);engine.setRotationRescue(true);
+    EXPECT_EQ(engine.getEpoch(),epoch);
+    EXPECT_NE(engine.getFeatureDiagnostics().find("\"rotation_rescue_enabled\":1"),std::string::npos);
+    engine.reset();
+    EXPECT_TRUE(engine.getRotationRescueEnabled());EXPECT_EQ(engine.getEpoch(),epoch+1);
+    ASSERT_TRUE(configure(engine));
+    EXPECT_FALSE(engine.getRotationRescueEnabled());EXPECT_EQ(engine.getEpoch(),epoch+2);
+}
+
+TEST(EngineContracts, DisabledRotationRescueSkipsPredictionAndMidstreamToggleRetiresAllInputState) {
+    VIOEngine engine;ASSERT_TRUE(configure(engine));engine.setPnPParams(false,3);engine.setDiagnosticCapture(true);
+    cv::Mat image(96,96,CV_8UC1,cv::Scalar(0));
+    for(int y=8;y<90;y+=16) for(int x=8;x<90;x+=16)
+        cv::rectangle(image,cv::Rect(x,y,7,7),cv::Scalar(255),-1);
+    IMUReading initial[]={{0,0,0,9.81,0,1,0},{.1,0,0,9.81,0,1,0}};double pose[16];
+    engine.processFrame(image.data,96,96,initial,2,0,pose);
+    backend::EstimatorTestAccess::initialized(VIOEngineTestAccess::estimator(engine));
+    engine.processFrame(image.data,96,96,nullptr,0,.05,pose);
+    ASSERT_TRUE(engine.isInitialized());ASSERT_GT(engine.getFeaturePointCount(),0);
+    EXPECT_NE(engine.getFeatureDiagnostics().find("\"available\":false"),std::string::npos);
+    EXPECT_NE(engine.getFeatureDiagnostics().find("\"rotation_rescue_enabled\":0"),std::string::npos);
+    ASSERT_EQ(VIOEngineTestAccess::pending(engine),1u);
+    const auto epoch=engine.getEpoch();
+    engine.setRotationRescue(true);
+    EXPECT_TRUE(engine.getRotationRescueEnabled());EXPECT_EQ(engine.getEpoch(),epoch+1);
+    EXPECT_FALSE(engine.isInitialized());EXPECT_EQ(engine.getFeaturePointCount(),0);
+    EXPECT_TRUE(VIOEngineTestAccess::tracker(engine).cur_pts.empty());
+    EXPECT_EQ(VIOEngineTestAccess::pending(engine),0u);EXPECT_DOUBLE_EQ(engine.getIMUEndpointTimestamp(),-1);
+    EXPECT_DOUBLE_EQ(engine.getFrameTimestamp(),-1);EXPECT_FALSE(engine.getPoseValid());EXPECT_FALSE(engine.getPoseFresh());
+    EXPECT_EQ(engine.getLastReason(),"rotation_rescue_changed");
+    engine.setRotationRescue(true);EXPECT_EQ(engine.getEpoch(),epoch+1);
+    IMUReading restarted[]={{.2,0,0,9.81,0,1,0},{.3,0,0,9.81,0,1,0}};
+    engine.processFrame(image.data,96,96,restarted,2,.2,pose);
+    engine.setRotationRescue(false);
+    EXPECT_FALSE(engine.getRotationRescueEnabled());EXPECT_EQ(engine.getEpoch(),epoch+2);
+    EXPECT_TRUE(VIOEngineTestAccess::tracker(engine).cur_pts.empty());EXPECT_EQ(VIOEngineTestAccess::pending(engine),0u);
 }
 
 TEST(EngineContracts, RejectsInvalidCalibrationInsteadOfSilentFallback) {

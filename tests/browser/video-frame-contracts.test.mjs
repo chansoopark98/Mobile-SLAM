@@ -7,7 +7,7 @@ const source = await fs.readFile(new URL('../../web/js/app.js', import.meta.url)
 const cameraSource = await fs.readFile(new URL('../../web/js/camera.js', import.meta.url), 'utf8');
 const { processingDimensions } = await import('data:text/javascript;base64,' + Buffer.from(cameraSource).toString('base64'));
 
-function fixture({ callbacks = true, now = 1337516.710 } = {}) {
+function fixture({ callbacks = true, now = 1337516.710, search = '' } = {}) {
     let clock = now, pending = null, handle = 0, epoch = 1, captureNull = false, captureThrows = false, captures = 0;
     const scheduled = new Map(), pixels = new Uint8Array([10,20,30,40]), sentPixels = [];
     const sent = [], video = { currentTime: 1335.548207, videoWidth: 2, videoHeight: 2 };
@@ -16,9 +16,9 @@ function fixture({ callbacks = true, now = 1337516.710 } = {}) {
         video.requestVideoFrameCallback = callback => { pending = ++handle; scheduled.set(pending,callback); return pending; };
         video.cancelVideoFrameCallback = id => { scheduled.delete(id); };
     }
-    const context = vm.createContext({ processingDimensions, URL, URLSearchParams, Uint8Array, Float64Array, console: { log() {}, warn() {} },
+    const context = vm.createContext({ processingDimensions, URL, URLSearchParams, Uint8Array, Float64Array, console: { log() {}, warn() {}, error() {} },
         performance: { now: () => clock, timeOrigin: 1700000000000 },
-        window: { location: { search: '', href: 'https://fixture.invalid/' } },
+        window: { location: { search, href: `https://fixture.invalid/${search}` } },
         navigator: { userAgent: 'Android fixture' }, document: { hidden: false, addEventListener() {} },
         requestAnimationFrame() {}, VIOWrapper: class {}, Camera: class {}, IMU: class {}, OrientationHandler: class {},
     });
@@ -230,4 +230,89 @@ test('Existing initial frame interval applies to snapshot consumption', () => {
     const f=fixture({now:5000});f.start();f.deliver(metadata(1,{captureTime:4990}));f.app.processLoop();
     f.setNow(5020);f.deliver(metadata(2,{captureTime:5015}));f.app.processLoop();assert.equal(f.sent.length,1);
     f.setNow(5050);f.app.processLoop();assert.deepEqual(f.sent,[4.99,5.015]);
+});
+
+test('Busy Worker retains owned pixels and pacing until the first ready RAF', () => {
+    for (const initialized of [false, true]) {
+        const f = fixture({ now: 5000 }); f.app._vioInitialized = initialized;
+        f.app.vio.workerBusy = true;
+        let flushes = 0; f.app._flushAndSendIMU = () => { flushes++; return 1; };
+        f.start(); f.deliver(metadata(1, { captureTime: 4990 })); f.app.processLoop();
+        assert.equal(f.sent.length, 0);
+        assert.equal(f.app._lastVIOFrameTime, 0);
+        assert.equal(f.app._lastPresentedFrames, -1);
+        assert.equal(f.app.frameMetrics.snapshotConsumed, 0);
+        assert.equal(flushes, 1, 'IMU must remain deliverable while image submission is deferred');
+
+        f.setPixels([90, 90, 90, 90]); f.app.vio.workerBusy = false;
+        f.setNow(5016); f.app.processLoop();
+        assert.deepEqual(f.sent, [4.99]);
+        assert.deepEqual(f.sentPixels, [[10, 20, 30, 40]]);
+        assert.equal(f.captures(), 1, 'Ready RAF must submit the captured packet without another video read');
+        assert.equal(f.app.frameMetrics.snapshotConsumed, 1);
+        assert.equal(f.app._lastVIOFrameTime, 5016);
+    }
+});
+
+test('Busy Worker coalesces to the latest owned snapshot before becoming ready', () => {
+    const f = fixture({ now: 5000 }); f.app.vio.workerBusy = true;
+    f.start(); f.deliver(metadata(1, { captureTime: 4990 })); f.app.processLoop();
+    f.setNow(5010); f.setPixels([50, 60, 70, 80]);
+    f.deliver(metadata(2, { captureTime: 5005 })); f.app.processLoop();
+    assert.equal(f.sent.length, 0);
+    assert.equal(f.app.frameMetrics.snapshotCoalesced, 1);
+    assert.equal(f.app._pendingVideoFrame.timing.presentedFrames, 2);
+
+    f.setNow(5016); f.setPixels([90, 90, 90, 90]); f.app.vio.workerBusy = false;
+    f.app.processLoop(); f.app.processLoop();
+    assert.deepEqual(f.sent, [5.005]);
+    assert.deepEqual(f.sentPixels, [[50, 60, 70, 80]]);
+    assert.equal(f.app.frameMetrics.snapshotConsumed, 1);
+});
+
+test('API-unsupported busy path defers video read and pacing until ready', () => {
+    const f = fixture({ callbacks: false, now: 5000 }); f.app.vio.workerBusy = true;
+    f.start(); f.app.processLoop();
+    assert.equal(f.sent.length, 0);
+    assert.equal(f.captures(), 0);
+    assert.equal(f.app._lastVideoTime, -1);
+    assert.equal(f.app._lastVIOFrameTime, 0);
+
+    f.setNow(5016); f.app.vio.workerBusy = false; f.app.processLoop();
+    assert.deepEqual(f.sent, [5.016]);
+    assert.equal(f.captures(), 1);
+    assert.equal(f.app.lastFrameTiming.source, 'canvas_read_arrival');
+});
+
+test('Initial configuration enables rotation rescue only for an explicit URL value of 1', async () => {
+    for (const [search, expected] of [['', false], ['?rotation-rescue=0', false], ['?rotation-rescue=1', true]]) {
+        const f = fixture({ search }); let configured;
+        f.app.startBtn = { disabled: false }; f.app.updateStatus = () => {};
+        f.context.document.getElementById = () => null;
+        f.app.imu.requestPermission = async () => false;
+        f.app.orientation.tryLockPortrait = async () => {};
+        f.app.orientation.getType = () => 'portrait-primary';
+        f.app.orientation.getRIC = () => [1,0,0,0,1,0,0,0,1];
+        f.app.camera.initialize = async () => {};
+        f.app.camera.getPortraitDimensions = () => ({ width: 2, height: 2 });
+        f.app._cameraCalibration = () => ({ calibration: { width: 2, height: 2, fx: 1, fy: 1 }, fx: 1, method: 'fixture' });
+        // Reject after observing the actual configure arguments; no live lifecycle starts.
+        f.app.vio.configure = async params => { configured = params; return false; };
+        await f.app.start();
+        assert.equal(configured.rotationRescue, expected, search || 'default');
+    }
+});
+
+test('Camera geometry reconfiguration preserves the selected rotation rescue mode', async () => {
+    for (const enabled of [false, true]) {
+        const f = fixture(); let configured;
+        f.app._lastConfigParams.rotationRescue = enabled;
+        f.app.camera.redetectOrientation = async () => {};
+        f.app._cameraCalibration = () => ({ calibration: { width: 2, height: 2, r_ic: [1,0,0,0,1,0,0,0,1] } });
+        f.app._applyRuntimeParameters = async () => {};
+        f.app.vio.configure = async params => { configured = params; f.nextEpoch(); return true; };
+        await f.app._onOrientationChange({ type: 'portrait-primary' });
+        assert.equal(configured.rotationRescue, enabled);
+        assert.equal(f.app._lastConfigParams.rotationRescue, enabled);
+    }
 });

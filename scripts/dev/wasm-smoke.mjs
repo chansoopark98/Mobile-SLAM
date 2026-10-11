@@ -28,12 +28,15 @@ try {
         const factory=(await import('/candidate.js')).default;
         const module=await factory();
         const engine=new module.VIOEngine();
-        for(const method of ['configure','processFrame','getEpoch','getPoseTimestamp','getFrameTimestamp','getPoseFresh','getPoseValid','getLastReason','getLastSolverIterations','getLastSolverTermination','setExecutionParams','getExecutionSeed','getCVThreadCount','getIMUEndpointTimestamp','setDiagnosticCapture','getFeatureDiagnostics','setBenchmarkSolverProfile','getBenchmarkSolverProfile','reset'])
+        for(const method of ['configure','processFrame','getEpoch','getPoseTimestamp','getFrameTimestamp','getPoseFresh','getPoseValid','getLastReason','getLastSolverIterations','getLastSolverTermination','setExecutionParams','getExecutionSeed','getCVThreadCount','getIMUEndpointTimestamp','setDiagnosticCapture','getFeatureDiagnostics','setBenchmarkSolverProfile','getBenchmarkSolverProfile','setRotationRescue','getRotationRescueEnabled','reset'])
             if(typeof engine[method]!=='function')throw new Error('Missing mandatory binding '+method);
         const rotation=module._malloc(72),translation=module._malloc(24);
         module.HEAPF64.set([1,0,0,0,1,0,0,0,1],rotation/8);module.HEAPF64.set([0,0,0],translation/8);
         if(!engine.configure(96,96,100,100,48,48,2,0,0,0,0,rotation,translation,.1,.001,.01,.0001,9.81))throw new Error('Calibrated configure rejected');
         if(engine.getBenchmarkSolverProfile()!==false)throw new Error('Benchmark solver profile must default OFF');
+        if(engine.getRotationRescueEnabled()!==false)throw new Error('Experimental rotation rescue must default OFF');
+        engine.setRotationRescue(true);
+        if(engine.getRotationRescueEnabled()!==true)throw new Error('Rotation rescue enable did not apply');
         engine.setBenchmarkSolverProfile(true);
         if(engine.getBenchmarkSolverProfile()!==true)throw new Error('Benchmark profile enable did not apply');
         if(JSON.parse(engine.getFeatureDiagnostics()).enabled!==false)throw new Error('Diagnostic capture must default OFF');
@@ -52,10 +55,12 @@ try {
         const warmupDiagnostic=JSON.parse(engine.getFeatureDiagnostics());
         if(warmupDiagnostic.enabled!==true)throw new Error('Warmup diagnostic must be valid JSON');
         engine.reset();
+        if(engine.getRotationRescueEnabled()!==true)throw new Error('Reset must preserve rotation rescue selection');
         if(engine.getBenchmarkSolverProfile()!==true)throw new Error('Reset must preserve explicitly enabled benchmark profile');
         const resetDiagnostic=JSON.parse(engine.getFeatureDiagnostics());
         if(resetDiagnostic.enabled!==true)throw new Error('Reset must preserve explicit capture flag and valid JSON');
         if(!engine.configure(96,96,100,100,48,48,2,0,0,0,0,rotation,translation,.1,.001,.01,.0001,9.81))throw new Error('Reconfigure rejected');
+        if(engine.getRotationRescueEnabled()!==false)throw new Error('Configure must reset rotation rescue to conservative default');
         if(engine.getBenchmarkSolverProfile()!==true)throw new Error('Reconfigure must preserve explicitly enabled benchmark profile');
         engine.setBenchmarkSolverProfile(false);
         engine.reset();
@@ -66,7 +71,7 @@ try {
         const resetEpoch=Number(engine.getEpoch());
         if(resetEpoch<=configuredEpoch || engine.getExecutionSeed()!==0 || engine.getCVThreadCount()!==1)throw new Error('Reset profile/epoch mismatch');
         engine.delete();module._free(rotation);module._free(translation);
-        return {configuredEpoch,resetEpoch,executionSeed:0,cvThreads:1,mandatoryBindings:true,diagnosticCaptureDefault:false,diagnosticArmWarmupResetJson:true,benchmarkSolverProfileDefault:false,benchmarkEnableResetReconfigureDisable:true,initialPose:'invalid',acceptanceScope:'loader_and_public_contracts_only_not_tracking_or_accuracy'};
+        return {configuredEpoch,resetEpoch,executionSeed:0,cvThreads:1,mandatoryBindings:true,diagnosticCaptureDefault:false,diagnosticArmWarmupResetJson:true,benchmarkSolverProfileDefault:false,benchmarkEnableResetReconfigureDisable:true,rotationRescueDefault:false,rotationRescueEnableResetConfigure:true,initialPose:'invalid',acceptanceScope:'loader_and_public_contracts_only_not_tracking_or_accuracy'};
     });
     assert.deepEqual(failures,[]);
     await fs.mkdir(path.dirname(output),{recursive:true});

@@ -111,9 +111,9 @@ void timingJson(std::ostream& output, const std::vector<double>& values) {
 }  // namespace
 
 int main(int argc, char** argv) {
-    if (argc < 4 || argc > 15) {
+    if (argc < 4 || argc > 16) {
         std::cerr << "Usage: native-replay DATASET CONFIG OUTPUT [MAX_FRAMES=600] "
-                     "[IMU_POLICY=bracket|until-image] [PNP=0|1] [CV_THREADS=1] [ITERATIONS=YAML] [SOLVER_TIME=YAML] [DUMP_INPUTS=0|1] [DIAGNOSTICS=0|1] [CAPTURE_START=0] [CAPTURE_END=PROCESSED_FRAMES] [PROFILE=legacy|yaml]\n";
+                     "[IMU_POLICY=bracket|until-image] [PNP=0|1] [CV_THREADS=1] [ITERATIONS=YAML] [SOLVER_TIME=YAML] [DUMP_INPUTS=0|1] [DIAGNOSTICS=0|1] [CAPTURE_START=0] [CAPTURE_END=PROCESSED_FRAMES] [PROFILE=legacy|yaml] [ROTATION_RESCUE=0|1]\n";
         return 2;
     }
     try {
@@ -126,6 +126,10 @@ int main(int argc, char** argv) {
         const int cv_threads = argc > 7 ? std::stoi(argv[7]) : 1;
         const std::string profile = argc > 14 ? argv[14] : "legacy";
         if (profile != "legacy" && profile != "yaml") throw std::runtime_error("Invalid replay profile");
+        const std::string rotation_rescue_option=argc>15?argv[15]:"0";
+        if(rotation_rescue_option!="0" && rotation_rescue_option!="1")
+            throw std::runtime_error("ROTATION_RESCUE must be 0 or 1");
+        const bool rotation_rescue_requested=rotation_rescue_option=="1";
         const char* benchmark_environment = std::getenv("MOBILE_SLAM_BENCHMARK_ZERO_TOLERANCES");
         const std::string benchmark_option = benchmark_environment ? benchmark_environment : "0";
         if (benchmark_option != "0" && benchmark_option != "1")
@@ -205,6 +209,9 @@ int main(int argc, char** argv) {
             engine.setTrackingParams(21, 3, 20, 0.0);
         }
         engine.setPnPParams(pnp != 0, 3);
+        engine.setRotationRescue(rotation_rescue_requested);
+        if(engine.getRotationRescueEnabled()!=rotation_rescue_requested)
+            throw std::runtime_error("Rotation rescue readback mismatch");
         std::ofstream effective(output_dir / "effective-config.json");
         engine.setDiagnosticCapture(true);
         effective << engine.getFeatureDiagnostics() << '\n';
@@ -327,6 +334,8 @@ int main(int argc, char** argv) {
                 << "{\n\"profile\":\"" << profile << "\",\n\"frames_available\":" << images.size() << ",\n\"frames_processed\":" << count
                 << ",\n\"imu_available\":" << imu.size() << ",\n\"diagnostic_capture_range\":{\"enabled\":" << (diagnostic_capture?"true":"false") << ",\"start_inclusive\":" << capture_start << ",\"end_exclusive\":" << capture_end << "}" << ",\n\"input_oracle_enabled\":" << (dump_inputs ? "true" : "false") << ",\n\"imu_delivered\":" << imu_delivered << ",\n\"imu_policy\":\"" << imu_policy << "\""
                 << ",\n\"camera_model_enum\":" << camera_model << ",\n\"pnp_enabled\":" << pnp
+                << ",\n\"rotation_rescue_requested\":" << (rotation_rescue_requested?1:0)
+                << ",\n\"rotation_rescue_enabled\":" << (engine.getRotationRescueEnabled()?1:0)
                 << ",\n\"cv_threads\":" << cv::getNumThreads() << ",\n\"rng_seed\":" << engine.getExecutionSeed()
                 << ",\n\"executionSeed\":" << engine.getExecutionSeed()
                 << ",\n\"cvThreads\":" << engine.getCVThreadCount()

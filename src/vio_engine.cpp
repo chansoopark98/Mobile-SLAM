@@ -80,6 +80,7 @@ bool VIOEngine::configure(int width, int height,
     feature_tracker_ = std::move(tracker);
     feature_tracker_->setDiagnosticCapture(diagnostic_capture_);
     configured_ = true;
+    rotation_rescue_enabled_ = false;
     resetState("configured");
     return true;
 }
@@ -259,6 +260,11 @@ bool VIOEngine::processFrame(const uint8_t* gray_image,int width,int height,
     if(prev_image_timestamp_>=0 && image_timestamp-prev_image_timestamp_>kMaxSensorGapSeconds) {
         resetState("frame_gap"); frame_timestamp_=image_timestamp; return false;
     }
+    // Compare propagation over precisely the preceding tracked image interval.
+    // Taking both states around this integration excludes optimizer/gauge updates.
+    const bool rotation_interval=rotation_rescue_enabled_ && isInitialized() &&
+        prev_image_timestamp_>=0 && current_time_==prev_image_timestamp_;
+    const Eigen::Matrix3d rotation_before=estimator_->sliding_window_[utility::WINDOW_SIZE].R;
     const bool imu_covered=processIMUData(imu_readings,imu_count,image_timestamp);
     frame_timestamp_=image_timestamp;
     if(!imu_covered && last_reason_!="imu_missing_past" && last_reason_!="imu_missing_future") return false;
@@ -271,9 +277,15 @@ bool VIOEngine::processFrame(const uint8_t* gray_image,int width,int height,
     } else init_start_time_=-1.0;
     const bool pnp_active=pnp_initialized_ && utility::g_config.pnp.enable_pnp;
     const bool backend_frame=!pnp_active || img_cnt_==0;
+    Eigen::Matrix3d camera_rotation;
+    const Eigen::Matrix3d& rotation_after=estimator_->sliding_window_[utility::WINDOW_SIZE].R;
+    const bool rotation_covered=rotation_interval && imu_covered &&
+        estimator_->getResetGeneration()==estimator_generation_ && isRotation(rotation_before) &&
+        isRotation(rotation_after) && isRotation(estimator_->r_ic_);
+    if(rotation_covered) camera_rotation=estimator_->r_ic_.transpose()*rotation_after.transpose()*rotation_before*estimator_->r_ic_;
     try {
         const cv::Mat image(height,width,CV_8UC1,const_cast<uint8_t*>(gray_image));
-        feature_tracker_->detectAndTrack(image,image_timestamp,backend_frame);
+        feature_tracker_->detectAndTrack(image,image_timestamp,backend_frame,rotation_covered?&camera_rotation:nullptr);
         prev_image_timestamp_=image_timestamp;
         if(!imu_covered) { last_reason_=imu_reason; return false; }
         if(pnp_active && !backend_frame) {
@@ -394,6 +406,11 @@ void VIOEngine::setBenchmarkSolverProfile(bool enabled) {
     benchmark_solver_profile_ = enabled;
     if (estimator_) estimator_->setBenchmarkSolverProfile(enabled);
 }
+void VIOEngine::setRotationRescue(bool enabled) {
+    if(enabled==rotation_rescue_enabled_) return;
+    rotation_rescue_enabled_=enabled;
+    if(prev_image_timestamp_>=0) resetState("rotation_rescue_changed");
+}
 std::string VIOEngine::getFeatureDiagnostics() const {
     if(!diagnostic_capture_ || !feature_tracker_) return "{\"enabled\":false}";
     std::ostringstream output;
@@ -423,6 +440,7 @@ std::string VIOEngine::getFeatureDiagnostics() const {
     property("f_threshold",ft.f_threshold);property("show_track",ft.show_track);property("equalize",ft.equalize);
     property("fisheye",ft.fisheye);property("lk_window_size",ft.lk_window_size);property("lk_pyramid_levels",ft.lk_pyramid_levels);
     property("lk_iterations",ft.lk_iterations);property("lk_eps",ft.lk_eps);property("f_threshold_edge_factor",ft.f_threshold_edge_factor);
+    property("rotation_rescue_enabled",rotation_rescue_enabled_?1:0);
     const auto& estimator=config.estimator;
     property("window_size_backend",estimator.window_size);property("num_iterations",estimator.num_iterations);
     property("marginalization_assembly_threads",backend::factor::kMarginalizationAssemblyThreads);

@@ -94,7 +94,8 @@ export class IMU {
         this._latestAccel = null;
         // Strict ordering of emitted source samples
         this._lastSampleTime = -Infinity;
-        this._pendingGyro = null;
+        this._pendingGyros = [];
+        this._accelSamples = [];
 
         // DeviceMotionEvent handler
         this._motionHandler = null;
@@ -138,7 +139,8 @@ export class IMU {
 
     _newDiagnostics() {
         return { receivedAccel: 0, receivedGyro: 0, receivedMotion: 0, emitted: 0, flushed: 0,
-            drops: { overflow: 0, stale: 0, nonfinite: 0, timestamp: 0, outOfOrder: 0, pairing: 0, discarded: 0 },
+            drops: { overflow: 0, stale: 0, nonfinite: 0, timestamp: 0, outOfOrder: 0,
+                pairing: 0, pairingOverflow: 0, pairingAccelOverflow: 0, discarded: 0 },
             status: 'stopped', error: null, lastSample: null, calibration: 'not_calibrated',
             clockFailure: null, sourceSwitches: 0, lastSourceSwitch: null };
     }
@@ -150,7 +152,10 @@ export class IMU {
             gyroBiasCandidate: this._gyroBiasCandidate ? { ...this._gyroBiasCandidate } : null,
             gyroBiasApplied: false,
             buffered: this._writeIdx - this._readIdx, requestedHz: this._frequency,
-            emissionPolicy: 'gyro timestamp; latest accel held within 1.5 requested periods; one emission per gyro',
+            emissionPolicy: 'gyro timestamp; exact or interpolated bracketing accel within 1.5 requested periods; one emission per gyro',
+            pairingPending: this._pendingGyros.length, pairingAccelBuffered: this._accelSamples.length,
+            pairingCapacity: RING_CAPACITY,
+            pairingDropPolicy: 'impossible monotonic accel bracket, source capacity or lifecycle discard; newer gyro alone does not expire pending samples',
             maxPairSkewS: 1.5 / this._frequency, sourceClockToleranceMs: SOURCE_CLOCK_TOLERANCE_MS,
             timeOriginMs: performance.timeOrigin };
     }
@@ -170,8 +175,8 @@ export class IMU {
     discard(reason = 'pause') {
         this._diagnostics.drops.discarded += this._writeIdx - this._readIdx;
         this._readIdx = this._writeIdx;
-        if (this._pendingGyro) this._diagnostics.drops.pairing++;
-        this._pendingGyro = null;
+        this._diagnostics.drops.pairing += this._pendingGyros.length;
+        this._pendingGyros.length = this._accelSamples.length = 0;
         this._latestAccel = null;
         this._latestGyro = null;
         this._diagnostics.status = reason;
@@ -329,12 +334,14 @@ export class IMU {
      *   higher IMU rate → better VIO pre-integration). DeviceMotionEvent on
      *   Android is capped at ~60Hz and cannot be configured.
      * - iOS: Prefer DeviceMotionEvent (Generic Sensor API is unavailable on
-     *   Safari; DeviceMotionEvent provides synchronized accel+gyro at ~60Hz).
+     *   Safari; DeviceMotionEvent bundles accel+gyro at ~60Hz, without exposing
+     *   each sensor's hardware timestamp or guaranteeing synchronization).
      *
      * Generic sources are asynchronous. Emit once at each gyro source timestamp
-     * using a finite latest acceleration within 1.5 requested periods; if gyro
-     * arrives first it waits for accel. This hold policy is observable and does
-     * not establish hardware synchronization or physical sampling accuracy.
+     * using exact or interpolated bracketing acceleration within 1.5 requested
+     * periods. Gyro-first callbacks wait for the right accel bracket. Histories
+     * are capacity-bounded; only an impossible accel bracket, capacity loss or
+     * lifecycle discard drops a pending gyro. This does not verify physical timing.
      *
      * @param {number} [frequency=60] Requested sensor frequency in Hz.
      *   Chrome Android will cap delivery at 60Hz regardless of this value.
@@ -351,7 +358,7 @@ export class IMU {
         this._diagnostics.status = 'starting';
         this._latestAccel = null;
         this._latestGyro = null;
-        this._pendingGyro = null;
+        this._pendingGyros.length = this._accelSamples.length = 0;
         this._lastGenericTimestamp = -Infinity;
         this._lastSampleTime = -Infinity;
         this._writeIdx = 0;
@@ -366,7 +373,7 @@ export class IMU {
             if (this._tryDeviceMotion()) {
                 this._sensorType = SensorType.DEVICE_MOTION;
                 this._diagnostics.status = 'listening';
-                console.log('[IMU] Using DeviceMotionEvent (iOS, synchronized accel+gyro)');
+                console.log('[IMU] Using DeviceMotionEvent (iOS, bundled accel+gyro; hardware timing unverified)');
                 return;
             }
         } else {
@@ -430,13 +437,27 @@ export class IMU {
                 }
                 if (!finiteVector(sensor)) { this._diagnostics.drops.nonfinite++; return; }
                 const previous = axis === 'accel' ? this._latestAccel : this._latestGyro;
-                if (previous && timestampS <= previous.timestampS) { this._diagnostics.drops.outOfOrder++; return; }
+                if ((previous && timestampS <= previous.timestampS) || (axis === 'gyro' && timestampS <= this._lastSampleTime)) {
+                    this._diagnostics.drops.outOfOrder++; return;
+                }
                 const sample = { x: sensor.x, y: sensor.y, z: sensor.z, timestampS, arrivalMs };
-                if (axis === 'accel') this._latestAccel = sample;
+                if (axis === 'accel') {
+                    this._latestAccel = sample;
+                    this._accelSamples.push(sample);
+                    // Delayed gyro callbacks may still need any retained source timestamp.
+                    if (this._accelSamples.length > RING_CAPACITY) {
+                        this._accelSamples.shift();
+                        this._diagnostics.drops.pairingAccelOverflow++;
+                    }
+                }
                 else {
-                    if (this._pendingGyro && this._pendingGyro.timestampS > this._lastGenericTimestamp) this._diagnostics.drops.pairing++;
                     this._latestGyro = sample;
-                    this._pendingGyro = sample;
+                    this._pendingGyros.push(sample);
+                    if (this._pendingGyros.length > RING_CAPACITY) {
+                        this._pendingGyros.shift();
+                        this._diagnostics.drops.pairing++;
+                        this._diagnostics.drops.pairingOverflow++;
+                    }
                 }
                 this._emitGeneric();
             };
@@ -459,7 +480,9 @@ export class IMU {
         this._sourceGeneration++;
         this._diagnostics.error = reason;
         this._stopGenericSensor();
-        this._latestAccel = this._latestGyro = this._pendingGyro = null;
+        this._diagnostics.drops.pairing += this._pendingGyros.length;
+        this._pendingGyros.length = this._accelSamples.length = 0;
+        this._latestAccel = this._latestGyro = null;
         if (this.running && this._tryDeviceMotion()) {
             this._sensorType = SensorType.DEVICE_MOTION;
             this._diagnostics.status = 'fallback_motion';
@@ -474,16 +497,34 @@ export class IMU {
     }
 
     _emitGeneric() {
-        const acc = this._latestAccel;
-        const gyro = this._pendingGyro;
-        if (!acc || !gyro || gyro.timestampS <= this._lastGenericTimestamp) return;
-        const skewS = acc.timestampS - gyro.timestampS;
-        if (Math.abs(skewS) > 1.5 / this._frequency) { this._diagnostics.status = 'waiting_pair'; return; }
-        this._lastGenericTimestamp = gyro.timestampS;
-        this._pendingGyro = null;
-        this._diagnostics.lastSample = { source: 'GenericSensor.timestamp', timestampS: gyro.timestampS,
-            accelTimestampS: acc.timestampS, gyroTimestampS: gyro.timestampS, skewS, arrivalMs: performance.now() };
-        this._pushSample(gyro.timestampS, acc.x, acc.y, acc.z, gyro.x, gyro.y, gyro.z);
+        const maxSkewS = 1.5 / this._frequency;
+        while (this._pendingGyros.length) {
+            const gyro = this._pendingGyros[0];
+            while (this._accelSamples.length > 1 && this._accelSamples[1].timestampS <= gyro.timestampS) this._accelSamples.shift();
+            const left = this._accelSamples[0];
+            if (!left || this._latestAccel.timestampS < gyro.timestampS) {
+                this._diagnostics.status = 'waiting_pair';
+                return;
+            }
+            const right = left.timestampS === gyro.timestampS ? left : this._accelSamples[1];
+            this._pendingGyros.shift();
+            if (left.timestampS > gyro.timestampS || !right ||
+                gyro.timestampS - left.timestampS > maxSkewS || right.timestampS - gyro.timestampS > maxSkewS) {
+                this._diagnostics.drops.pairing++;
+                continue;
+            }
+            const weight = right === left ? 0 : (gyro.timestampS - left.timestampS) / (right.timestampS - left.timestampS);
+            const ax = left.x + weight * (right.x - left.x);
+            const ay = left.y + weight * (right.y - left.y);
+            const az = left.z + weight * (right.z - left.z);
+            this._lastGenericTimestamp = gyro.timestampS;
+            this._diagnostics.lastSample = { source: 'GenericSensor.timestamp', timestampS: gyro.timestampS,
+                accelTimestampS: right === left ? left.timestampS : null,
+                accelEvaluationTimestampS: gyro.timestampS, gyroTimestampS: gyro.timestampS, skewS: right === left ? 0 : null,
+                accelBeforeTimestampS: left.timestampS, accelAfterTimestampS: right.timestampS,
+                accelInterpolated: right !== left, arrivalMs: performance.now() };
+            this._pushSample(gyro.timestampS, ax, ay, az, gyro.x, gyro.y, gyro.z);
+        }
     }
 
     /**
@@ -709,7 +750,7 @@ export class IMU {
         this._lastMotionTimestamp = -Infinity;
         this._lastGenericTimestamp = -Infinity;
         this._lastSampleTime = -Infinity;
-        this._pendingGyro = null;
+        this._pendingGyros.length = this._accelSamples.length = 0;
         this._latestAccel = null;
         this._latestGyro = null;
         this._sensorType = SensorType.NONE;

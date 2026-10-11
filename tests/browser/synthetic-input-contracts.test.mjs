@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { validateSyntheticInput, bodyToDevice, sourceCoverage, validateResultIdentity, distribution, assertSourceFrameHash, replayIMUBatches,
-    profileFromEffectiveConfig,assertEffectiveProfile,assertSourceFramePixels,schedulerContract,resolvePublishedFrame,parseFThresholdOverride } from '../../scripts/dev/synthetic-browser.mjs';
+    profileFromEffectiveConfig,assertEffectiveProfile,assertSourceFramePixels,schedulerContract,resolvePublishedFrame,parseFThresholdOverride,parseRotationRescueOverride } from '../../scripts/dev/synthetic-browser.mjs';
 
 function fixture() {
     return { schema: 'mobile-slam-synthetic-vio-v1', config: { width: 2, height: 2 },
@@ -20,6 +20,7 @@ test('Synthetic schema rejects phone recordings and incomplete profile/physical 
         input => { input.frames[1].index = 0; },
         input => { input.frames[1].file = '../escape.pgm'; },
         input => { input.frames[1].sha256 = 'unknown'; },
+        input => { input.config.rotationRescue = 1; },
         input => { input.imu[1][0] = 0; },
         input => { input.imu[0][0] = .01; },
         input => { input.imu = input.imu.slice(0,2); },
@@ -119,6 +120,21 @@ test('Successful parameter acknowledgement cannot hide wrong effective solver or
     assert.throws(()=>assertEffectiveProfile(effective,requested.config,requested.parameters),/parameters.mobile/);
     effective.params.solver_time=.06;effective.params.fx=466;
     assert.throws(()=>assertEffectiveProfile(effective,requested.config,requested.parameters),/config.fx/);
+});
+
+test('Experimental rotation selection requires actual engine readback', () => {
+    assert.equal(parseRotationRescueOverride(),null);
+    assert.equal(parseRotationRescueOverride('on'),true);
+    assert.equal(parseRotationRescueOverride('off'),false);
+    for(const value of ['true','1','',false])assert.throws(()=>parseRotationRescueOverride(value),/rotation-rescue/);
+    const effective=effectiveConfig();
+    assert.throws(()=>profileFromEffectiveConfig(effective,{rotationRescue:true}),/readback unavailable/);
+    effective.params.rotation_rescue_enabled=0;
+    const off=profileFromEffectiveConfig(effective,{rotationRescue:true});
+    assert.equal(off.config.rotationRescue,false);
+    assert.throws(()=>assertEffectiveProfile(effective,{...off.config,rotationRescue:true},off.parameters),/rotationRescue/);
+    effective.params.rotation_rescue_enabled=1;
+    assert.doesNotThrow(()=>assertEffectiveProfile(effective,{...off.config,rotationRescue:true},off.parameters));
 });
 
 test('Synchronous pixel guard rejects stale/wrong bytes before source identity can publish', () => {

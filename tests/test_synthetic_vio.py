@@ -50,6 +50,22 @@ class SyntheticOracleTests(unittest.TestCase):
             np.testing.assert_allclose(a['rotation'] @ a['accel_measurement'],[0,0,9.81],atol=1e-12)
         np.testing.assert_allclose(G.body_state(3,G.make_spec(101,'pure-rotation'))['position'],[0,0,1.2])
 
+    def test_fast_rotation_preserves_warmup_and_analytic_body_rate(self):
+        fast=G.make_spec(707,'fast-rotation',True)
+        normal=G.make_spec(707,'mobile60',True)
+        self.assertEqual(fast['imu_hz'],60)
+        for time in [0.,2.5,5.]:
+            for key in ['position','rotation','gyro','accel_measurement']:
+                np.testing.assert_array_equal(G.body_state(time,fast)[key],G.body_state(time,normal)[key])
+        rates=[]
+        for time in [5.25,5.7,6.2,8.,10.6,18.4,19.1]:
+            state=G.body_state(time,fast);h=1e-5
+            derivative=state['rotation'].T@((G.body_state(time+h,fast)['rotation']-G.body_state(time-h,fast)['rotation'])/(2*h))
+            expected=np.array([derivative[2,1]-derivative[1,2],derivative[0,2]-derivative[2,0],derivative[1,0]-derivative[0,1]])/2
+            np.testing.assert_allclose(state['gyro'],expected,atol=1e-7)
+            rates.append(np.linalg.norm(state['gyro']))
+        self.assertGreater(max(rates),np.deg2rad(90))
+
     def test_nearest_surface_occlusion_and_behind_camera(self):
         surfaces = [G.surface([0,0,4],[1,0,0],[0,1,0],[2,2],0),
                     G.surface([0,0,2],[1,0,0],[0,1,0],[.5,.5],1),

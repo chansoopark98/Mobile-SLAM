@@ -27,11 +27,19 @@ export function parseFThresholdOverride(value='1') {
     return threshold;
 }
 
+export function parseRotationRescueOverride(value='default') {
+    if(value==='default')return null;
+    if(value==='on')return true;
+    if(value==='off')return false;
+    throw new Error('rotation-rescue must be default, on or off');
+}
+
 export function validateSyntheticInput(input, count = 400) {
     if (input?.schema !== 'mobile-slam-synthetic-vio-v1') throw new Error('Synthetic input schema required; Android records are not synthetic fixtures');
     if (!Number.isInteger(count) || count < 1 || count > 2000) throw new Error('frames must be 1..2000');
     const c = input.config;
     if (!c || ![c.width,c.height].every(n => Number.isInteger(n) && n > 0) || c.width*c.height > 16777216) throw new Error('Invalid image dimensions');
+    if(c.rotationRescue!==undefined&&typeof c.rotationRescue!=='boolean')throw new Error('Input rotationRescue must be boolean');
     if (!Array.isArray(input.frames) || !input.frames.length || !Array.isArray(input.imu) || !input.imu.length) throw new Error('Image and IMU inputs required');
     let previous = -Infinity, previousPhysical = -Infinity, previousIndex = -1;
     for (const frame of input.frames) {
@@ -129,6 +137,10 @@ export function profileFromEffectiveConfig(effective, requestedConfig) {
     if(effective?.schema!=='mobile-slam-effective-config-v1'||!p||effective.frameTimestamp!==-1)throw new Error('Effective configuration must be read before the first input');
     if(![0,1].includes(p.pnp_enable))throw new Error('Incomplete effective PnP configuration');
     const config={...requestedConfig,modelType:p.camera_model};
+    if(requestedConfig.rotationRescue!==undefined) {
+        if(![0,1].includes(p.rotation_rescue_enabled))throw new Error('Rotation rescue configuration readback unavailable');
+        config.rotationRescue=p.rotation_rescue_enabled===1;
+    }
     for(const key of ['width','height','fx','fy','cx','cy','acc_n','acc_w','gyr_n','gyr_w'])config[key]=p[key];
     config.g_norm=Math.hypot(p.g_0,p.g_1,p.g_2);
     config.r_ic=Array.from({length:9},(_,i)=>p[`r_ic_${Math.floor(i/3)}${i%3}`]);
@@ -485,16 +497,20 @@ export async function main(argv = process.argv.slice(2)) {
     const { values } = parseArgs({ args: argv, options: { input: { type: 'string' }, loader: { type: 'string' }, output: { type: 'string' },
         mode: { type: 'string', default: 'raw' }, sensor: { type: 'string', default: 'generic' }, frames: { type: 'string', default: '400' },
         'f-threshold':{type:'string',default:'1'},
+        'rotation-rescue':{type:'string',default:'default'},
         'timeout-ms': { type: 'string', default: '600000' } } });
     if (!values.input || !values.loader || !values.output || !modes.includes(values.mode) || !['generic','device-motion'].includes(values.sensor)) {
         throw new Error('Required: --input synthetic/input.json --loader isolated/vio_engine.js --output NEW_DIRECTORY --mode raw|live-deterministic|live-paced|live-paced-native-raf [--sensor generic|device-motion --frames 400 --f-threshold 1|default]');
     }
     const fThresholdOverride=parseFThresholdOverride(values['f-threshold']);
+    const rotationRescueOverride=parseRotationRescueOverride(values['rotation-rescue']);
     if(values.mode==='raw'&&fThresholdOverride!==1)throw new Error('f-threshold applies only to live App modes; raw replay uses its input profile');
     const timeoutMs = Number(values['timeout-ms']);
     if (!Number.isInteger(timeoutMs) || timeoutMs < 1000 || timeoutMs > 1800000) throw new Error('timeout-ms must be 1000..1800000');
     const inputFile = await fs.realpath(values.input), loaderFile = await fs.realpath(values.loader), inputRoot = path.dirname(inputFile);
     const inputBytes = await fs.readFile(inputFile), input = JSON.parse(inputBytes), frames = validateSyntheticInput(input, Number(values.frames));
+    const requestedRotationRescue=rotationRescueOverride??input.config.rotationRescue??(values.mode==='raw'?false:null);
+    if(requestedRotationRescue!==null)input.config.rotationRescue=requestedRotationRescue;
     // Captured live replay files live beside their accepted-frames directory.
     const imageRoot = await fs.realpath(path.join(inputRoot, input.capture ? 'accepted-frames' : 'mav0/cam0/data'));
     const requested = path.resolve(values.output);
@@ -505,6 +521,8 @@ export async function main(argv = process.argv.slice(2)) {
     const report = { schema: 'mobile-slam-synthetic-browser-v1', createdAt: new Date().toISOString(), completed: false,
         completionMeaning: 'Input transport and browser execution checks only; accuracy acceptance is independently evaluated and never inferred from completion.',
         mode: values.mode, scheduler:schedulerContract(values.mode),sensor: values.mode === 'raw' ? null : values.sensor,
+        requestedRotationRescueOverride:rotationRescueOverride,
+        requestedRotationRescue,
         requestedAppProfile:values.mode==='raw'?null:{config:'mobile_default',calibration:'supplied_synthetic_camera_profile',
             fThresholdOverride,fThresholdSource:fThresholdOverride===null?'unchanged_App_default':'URL_override'},
         source: { path: inputFile, sha256: sha(inputBytes), specSha256: input.spec_sha256,
@@ -571,6 +589,7 @@ export async function main(argv = process.argv.slice(2)) {
         } else routes.set('/',{bytes:Buffer.from('<!doctype html><title>Synthetic Worker replay</title>'),mime:'text/html'});
         const query=new URLSearchParams({wasm:'candidate/vio_engine.js',cameraProfile:'/camera-profile.json'});
         if(values.mode!=='raw'&&fThresholdOverride!==null)query.set('fth',String(fThresholdOverride));
+        if(values.mode!=='raw'&&requestedRotationRescue!==null)query.set('rotation-rescue',requestedRotationRescue?'1':'0');
         await page.goto(`http://127.0.0.1:${server.address().port}/${values.mode==='raw'?'':`?${query}`}`);
         report.replay=await Promise.race([values.mode==='raw'?rawReplay(page,input,frames):liveReplay(page,input,frames,values.mode),
             new Promise((_,reject)=>{timer=setTimeout(()=>reject(new Error('Bounded synthetic browser timeout')),timeoutMs);})]);
