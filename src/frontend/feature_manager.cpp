@@ -10,6 +10,107 @@ void invalidateAnchor(FeaturePerId& feature) {
     feature.geometry_admitted = false;
     feature.geometry_reason = "invalid_anchor";
 }
+
+#if MOBILE_SLAM_EXPERIMENTAL_ANCHOR_DEPTH
+struct DepthInterval {
+    double lower, upper;
+};
+
+bool intersectDepthIntervals(std::vector<DepthInterval>& intervals, double lower, double upper,
+                             bool outside = false) {
+    std::vector<DepthInterval> kept;
+    const double infinity = std::numeric_limits<double>::infinity();
+    const auto keep = [&](const DepthInterval& interval, double lo, double hi) {
+        const DepthInterval intersection{std::max(interval.lower, lo), std::min(interval.upper, hi)};
+        // Only strict interiors can supply a numerically checked candidate.
+        if (intersection.lower < intersection.upper) kept.push_back(intersection);
+    };
+    for (const auto& interval : intervals) {
+        if (outside) {
+            keep(interval, -infinity, lower);
+            keep(interval, upper, infinity);
+        } else keep(interval, lower, upper);
+    }
+    intervals.swap(kept);
+    return !intervals.empty();
+}
+
+bool constrainDepthQuadratic(std::vector<DepthInterval>& intervals, double a, double b, double c) {
+    if (!std::isfinite(a) || !std::isfinite(b) || !std::isfinite(c)) return false;
+    const double scale = std::max({std::abs(a), std::abs(b), std::abs(c)});
+    if (scale == 0) return true;
+    const double scaled_a = a / scale, scaled_b = b / scale, scaled_c = c / scale;
+    if ((a != 0 && scaled_a == 0) || (b != 0 && scaled_b == 0) || (c != 0 && scaled_c == 0)) return false;
+    a = scaled_a; b = scaled_b; c = scaled_c;
+    const double infinity = std::numeric_limits<double>::infinity();
+    if (a == 0) {
+        if (b == 0) return c <= 0;
+        const double root = -c / b;
+        if (!std::isfinite(root)) return false;
+        return b > 0 ? intersectDepthIntervals(intervals, -infinity, root)
+                     : intersectDepthIntervals(intervals, root, infinity);
+    }
+    const double discriminant = std::fma(-4 * a, c, b * b);
+    if (!std::isfinite(discriminant)) return false;
+    // A convex double root has no strict interior; a concave quadratic is
+    // nonpositive everywhere when it has no distinct real roots.
+    if (discriminant <= 0) return a < 0;
+    const double numerator = -.5 * (b + std::copysign(std::sqrt(discriminant), b));
+    if (!std::isfinite(numerator) || numerator == 0) return false;
+    double lower = numerator / a, upper = c / numerator;
+    if (!std::isfinite(lower) || !std::isfinite(upper)) return false;
+    if (lower > upper) std::swap(lower, upper);
+    return intersectDepthIntervals(intervals, lower, upper, a < 0);
+}
+
+bool findConsistentAnchorDepth(const FeaturePerId& feature,
+        const std::array<Matrix3d, WINDOW_SIZE + 1>& rotations,
+        const std::array<Vector3d, WINDOW_SIZE + 1>& centers, double& depth) {
+    const double fx = g_config.camera.fx, fy = g_config.camera.fy;
+    if (!std::isfinite(fx) || !std::isfinite(fy) || fx <= 0 || fy <= 0) return false;
+    const int anchor = feature.start_frame;
+    const Vector3d direction = rotations[anchor] * feature.feature_per_frame.front().ray_vector;
+    const double infinity = std::numeric_limits<double>::infinity();
+    std::vector<DepthInterval> intervals{{1e-10, infinity}};
+    int frame = anchor;
+    for (const auto& observation : feature.feature_per_frame) {
+        const int index = frame++;
+        if (observation.projection_outlier) continue;
+        // Current-camera point is a*d+b for the actual anchor-ray depth d.
+        const Vector3d a = rotations[index].transpose() * direction;
+        const Vector3d b = rotations[index].transpose() * (centers[anchor] - centers[index]);
+        if (!a.allFinite() || !b.allFinite()) return false;
+        if (a.z() == 0) {
+            if (b.z() <= 1e-10) return false;
+        } else {
+            const double boundary = (1e-10 - b.z()) / a.z();
+            if (!std::isfinite(boundary) ||
+                !(a.z() > 0 ? intersectDepthIntervals(intervals, boundary, infinity)
+                            : intersectDepthIntervals(intervals, -infinity, boundary))) return false;
+        }
+        const Vector2d slope(fx * (a.x() - observation.ray_vector.x() * a.z()),
+                             fy * (a.y() - observation.ray_vector.y() * a.z()));
+        const Vector2d offset(fx * (b.x() - observation.ray_vector.x() * b.z()),
+                              fy * (b.y() - observation.ray_vector.y() * b.z()));
+        // ||slope*d+offset|| <= 1.5*(a.z*d+b.z), with positive z above.
+        if (!constrainDepthQuadratic(intervals, slope.squaredNorm() - 2.25 * a.z() * a.z(),
+                2 * (slope.dot(offset) - 2.25 * a.z() * b.z()),
+                offset.squaredNorm() - 2.25 * b.z() * b.z())) return false;
+    }
+    for (const auto& interval : intervals) {
+        if (!std::isfinite(interval.lower) || !std::isfinite(interval.upper)) continue;
+        const double candidate = interval.lower + (interval.upper - interval.lower) * .5;
+        if (!std::isfinite(candidate) || !(candidate > interval.lower && candidate < interval.upper)) continue;
+        // Root arithmetic supplies only a proposal; the existing pixel/cheirality
+        // checker remains the admission authority, including rounding at bounds.
+        if (FeatureManager::hasConsistentReprojection(feature, candidate, rotations, centers)) {
+            depth = candidate;
+            return true;
+        }
+    }
+    return false;
+}
+#endif
 }
 
 int FeaturePerId::endFrame() {
@@ -323,7 +424,11 @@ void FeatureManager::triangulateAcrossAllViews(const backend::SlidingWindow& sli
             it_per_id.solve_flag = it_per_id.geometry_pending ? 0 : 2;
             it_per_id.geometry_reason = "invalid_anchor_depth";
         } else if (it_per_id.geometry_pending) {
-            if (hasConsistentReprojection(it_per_id, it_per_id.estimated_depth, camera_rotations, camera_centers)) {
+            if (hasConsistentReprojection(it_per_id, it_per_id.estimated_depth, camera_rotations, camera_centers)
+#if MOBILE_SLAM_EXPERIMENTAL_ANCHOR_DEPTH
+                || findConsistentAnchorDepth(it_per_id, camera_rotations, camera_centers, it_per_id.estimated_depth)
+#endif
+            ) {
                 it_per_id.geometry_admitted = true;
                 it_per_id.geometry_reason = "accepted";
             } else {

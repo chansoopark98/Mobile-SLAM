@@ -276,6 +276,8 @@ add_test(NAME PipelineContractsTest COMMAND test_pipeline_contracts)
 
 add_executable(test_projection_trial_contracts tests/test_projection_trial_contracts.cpp)
 target_link_libraries(test_projection_trial_contracts PRIVATE estimator gtest_main)
+target_compile_definitions(test_projection_trial_contracts PRIVATE
+    MOBILE_SLAM_EXPERIMENTAL_ANCHOR_DEPTH=$<BOOL:${MOBILE_SLAM_EXPERIMENTAL_ANCHOR_DEPTH}>)
 add_test(NAME ProjectionTrialContractsTest COMMAND test_projection_trial_contracts)
 
 add_executable(test_math_geometry_contracts tests/test_math_geometry_contracts.cpp)

@@ -3,6 +3,7 @@
 - 날짜: **2026-10-13**, Asia/Seoul.
 - 범위: 중단된 Oct12–13 작업 복원, Flip6 원본 재계산, REA/WABT 기반 상용 자산 재검사, 최신 엔진 온라인 비교, 확인된 출력 시간 계약 수정, 회귀·Git 기록.
 - 현재 결론: **기록 분석과 출력 계약 개선은 가능하나, Flip6 추적 소실·발산 해결은 미입증**. A2/D0/D2/D3의 기존 GT 실패를 보존한다.
+- 후속 추적 로직 작업: [239→53 인과 분리·C3 깊이 초기값 A/B](../fixes/2026-10-13-flip6-tracking-recovery-results.md). C3 보정 입력179→250fresh지만 원본 reset2→3으로 기본 채택 실패; 명시적 빌드 옵션 기본 OFF로 보존.
 - 인수 상태: `main` / `98b396c`; 미커밋 파일114개·7,545,024bytes를 `build/flip6-analysis-20261013/intake/changed-files.tar.gz`, `files.json`, `diff.patch`에 보존. 기존 코드 변경은 이번에 처음 작성한 것으로 집계하지 않는다.
 - 상위 증거: [이전 검증 감사](../../build/flip6-analysis-20261013/prior-validation-audit.md), [현재 로직 역공학](../../build/flip6-analysis-20261013/logic-review.md).
 

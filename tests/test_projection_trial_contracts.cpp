@@ -1216,3 +1216,176 @@ TEST(ExperimentalObservationPolicy, OldRestoreAndGoodHistoryRetentionRemainExpli
         EXPECT_TRUE(feature.feature_per_frame.back().projection_outlier);
     }
 }
+
+namespace {
+void addDepthConeTrack(backend::SlidingWindow& window,frontend::FeatureManager& manager,
+                      const std::vector<Eigen::Vector3d>& centers,const std::vector<Eigen::Vector3d>& rays,
+                      int start=8,int id=42,const std::vector<int>& rejected={}) {
+    manager.feature_bank_.emplace_back(id,start);
+    auto& feature=manager.feature_bank_.back();feature.geometry_pending=true;
+    for(size_t i=0;i<rays.size();++i) {
+        const int frame=start+static_cast<int>(i);
+        window[frame].P=centers[i];window[frame].R.setIdentity();
+        Eigen::Matrix<double,7,1> value;value<<rays[i],37,53,.07,-.09;
+        feature.feature_per_frame.emplace_back(value);
+        feature.feature_per_frame.back().projection_outlier=std::find(rejected.begin(),rejected.end(),frame)!=rejected.end();
+    }
+}
+std::vector<Eigen::Vector3d> depthConeCenters() {return {{0,0,0},{.4,0,0},{.8,0,0}};}
+std::vector<Eigen::Vector3d> depthConeRays() {return {{0,0,1},{-47.4/460,0,1},{-91./460,0,1}};}
+#if MOBILE_SLAM_EXPERIMENTAL_ANCHOR_DEPTH
+double depthConeExpected(double scale=1) {
+    // Independent pixel inequalities: |184/d-47.4|<=1.5 and |368/d-91|<=1.5.
+    return scale*.5*(368./92.5+184./45.9);
+}
+bool depthConeConsistent(const frontend::FeaturePerId& feature,const backend::SlidingWindow& window,
+                         const Eigen::Matrix3d& ric=Eigen::Matrix3d::Identity(),
+                         const Eigen::Vector3d& tic=Eigen::Vector3d::Zero()) {
+    std::array<Eigen::Matrix3d,11> rotations;std::array<Eigen::Vector3d,11> centers;
+    for(int frame=0;frame<=10;++frame) {rotations[frame]=window[frame].R*ric;centers[frame]=window[frame].P+window[frame].R*tic;}
+    return frontend::FeatureManager::hasConsistentReprojection(feature,feature.estimated_depth,rotations,centers);
+}
+#endif
+}
+
+#if MOBILE_SLAM_EXPERIMENTAL_ANCHOR_DEPTH
+TEST(DepthConeFallback, PreservesAlreadyPassingDltAndSolvedLegacyDepth) {
+    RestoreConfig restore;utility::g_config.camera.fx=utility::g_config.camera.fy=460;
+    for(bool two_views:{false,true}) {
+        backend::SlidingWindow window;frontend::FeatureManager manager;
+        if(two_views)addDepthConeTrack(window,manager,{{0,0,0},{.4,0,0}},{{0,0,1},{-.1,1.4/460,1}},9);
+        else addDepthConeTrack(window,manager,depthConeCenters(),{{0,0,1},{-.1+.5/460,0,1},{-.2-.5/460,0,1}});
+        manager.triangulateAcrossAllViews(window,Eigen::Vector3d::Zero(),Eigen::Matrix3d::Identity());
+        const auto& feature=manager.feature_bank_.front();
+        ASSERT_TRUE(feature.geometry_admitted);EXPECT_TRUE(feature.geometry_pending);EXPECT_EQ(feature.solve_flag,0);
+        // Frozen independent all-view DLT values, not the feasible-interval midpoint.
+        EXPECT_NEAR(feature.estimated_depth,two_views ? 3.9997820534062396 : 3.978786633534431,1e-11);
+        EXPECT_TRUE(depthConeConsistent(feature,window));
+    }
+    backend::SlidingWindow window;frontend::FeatureManager manager;
+    addDepthConeTrack(window,manager,depthConeCenters(),depthConeRays());
+    auto& legacy=manager.feature_bank_.front();legacy.geometry_pending=false;legacy.solve_flag=1;legacy.estimated_depth=7;
+    manager.triangulateAcrossAllViews(window,Eigen::Vector3d::Zero(),Eigen::Matrix3d::Identity());
+    EXPECT_DOUBLE_EQ(legacy.estimated_depth,7);EXPECT_EQ(legacy.solve_flag,1);EXPECT_FALSE(legacy.geometry_pending);
+}
+
+TEST(DepthConeFallback, RecoversOnlyFeasibleAnchorDepthWithoutPrematureMaturity) {
+    RestoreConfig restore;utility::g_config.camera.fx=utility::g_config.camera.fy=460;
+    for(double scale:{1.,2.3}) {
+        backend::SlidingWindow window;frontend::FeatureManager manager;
+        addDepthConeTrack(window,manager,depthConeCenters(),depthConeRays());
+        const Eigen::Matrix3d ric=Eigen::AngleAxisd(.2,Eigen::Vector3d(1,2,3).normalized()).toRotationMatrix();
+        const Eigen::Matrix3d gauge=Eigen::AngleAxisd(-.3,Eigen::Vector3d(2,-1,3).normalized()).toRotationMatrix();
+        const Eigen::Vector3d tic(.03,-.02,.07),translation(1,-2,3);
+        for(int frame=8;frame<=10;++frame) {
+            const Eigen::Vector3d camera=gauge*(scale*window[frame].P)+translation;
+            window[frame].R=gauge*ric.transpose();window[frame].P=camera-window[frame].R*tic;
+        }
+        manager.triangulateAcrossAllViews(window,tic,ric);
+        const auto& feature=manager.feature_bank_.front();
+        ASSERT_TRUE(feature.geometry_admitted);EXPECT_TRUE(feature.geometry_pending);EXPECT_EQ(feature.solve_flag,0);
+        EXPECT_NEAR(feature.estimated_depth,depthConeExpected(scale),1e-10);
+        EXPECT_STREQ(feature.geometry_reason,"accepted");EXPECT_EQ(feature.feature_id,42);EXPECT_EQ(feature.start_frame,8);
+        EXPECT_TRUE(depthConeConsistent(feature,window,ric,tic));
+    }
+}
+
+TEST(DepthConeFallback, IntersectsLinearAndNegativeLeadingCoefficientViews) {
+    RestoreConfig restore;utility::g_config.camera.fx=utility::g_config.camera.fy=460;
+    backend::SlidingWindow window;frontend::FeatureManager manager;
+    // At frame7 q has negative d^2 coefficient; frame8 has exactly zero d^2
+    // coefficient. Their lower bounds are below the same bounded 3-view interval.
+    addDepthConeTrack(window,manager,{{0,0,0},{.004,0,0},{.01,0,0},{.4,0,0},{.8,0,0}},
+        {{0,0,1},{0,0,1},{-1.5/460,0,1},{-47.4/460,0,1},{-91./460,0,1}},6);
+    manager.triangulateAcrossAllViews(window,Eigen::Vector3d::Zero(),Eigen::Matrix3d::Identity());
+    const auto& feature=manager.feature_bank_.front();
+    ASSERT_TRUE(feature.geometry_admitted);EXPECT_NEAR(feature.estimated_depth,depthConeExpected(),1e-10);
+    EXPECT_TRUE(depthConeConsistent(feature,window));EXPECT_TRUE(feature.geometry_pending);EXPECT_EQ(feature.solve_flag,0);
+}
+
+TEST(DepthConeFallback, FlaggedRowsKeepTheirActualCameraFrameIndices) {
+    RestoreConfig restore;utility::g_config.camera.fx=utility::g_config.camera.fy=460;
+    backend::SlidingWindow window;frontend::FeatureManager manager;
+    addDepthConeTrack(window,manager,{{0,0,0},{20,-9,8},{.4,0,0},{-8,40,-2},{.8,0,0}},
+        {{0,0,1},{10,-4,1},{-47.4/460,0,1},{-5,8,1},{-91./460,0,1}},6,42,{7,9});
+    manager.triangulateAcrossAllViews(window,Eigen::Vector3d::Zero(),Eigen::Matrix3d::Identity());
+    const auto& feature=manager.feature_bank_.front();
+    ASSERT_TRUE(feature.geometry_admitted);EXPECT_NEAR(feature.estimated_depth,depthConeExpected(),1e-10);
+    ASSERT_EQ(feature.feature_per_frame.size(),5u);EXPECT_EQ(feature.start_frame,6);
+    EXPECT_TRUE(feature.feature_per_frame[1].projection_outlier);EXPECT_TRUE(feature.feature_per_frame[3].projection_outlier);
+    EXPECT_DOUBLE_EQ(feature.feature_per_frame[1].ray_vector.x(),10);EXPECT_TRUE(depthConeConsistent(feature,window));
+}
+
+TEST(DepthConeFallback, ContradictoryViewsAndBehindCameraDoNotInventDepth) {
+    RestoreConfig restore;utility::g_config.camera.fx=utility::g_config.camera.fy=460;
+    for(bool behind:{false,true}) {
+        backend::SlidingWindow window;frontend::FeatureManager manager;
+        if(behind)addDepthConeTrack(window,manager,{{0,0,0},{.4,0,0},{0,0,5}},{{0,0,1},{-.1,0,1},{0,0,1}});
+        else addDepthConeTrack(window,manager,{{0,0,0},{.4,0,0},{.4,0,0}},{{0,0,1},{-.1,0,1},{-.2,0,1}});
+        manager.triangulateAcrossAllViews(window,Eigen::Vector3d::Zero(),Eigen::Matrix3d::Identity());
+        const auto& feature=manager.feature_bank_.front();
+        EXPECT_FALSE(feature.geometry_admitted);EXPECT_TRUE(feature.geometry_pending);
+        EXPECT_DOUBLE_EQ(feature.estimated_depth,-1);EXPECT_EQ(feature.solve_flag,0);
+    }
+}
+
+TEST(DepthConeFallback, PureRotationStillRejectsPositivePendingDepth) {
+    RestoreConfig restore;utility::g_config.camera.fx=utility::g_config.camera.fy=460;
+    backend::SlidingWindow window;frontend::FeatureManager manager;
+    addDepthConeTrack(window,manager,{{0,0,0},{0,0,0}},{{0,0,1},{-std::tan(.3),0,1}},9);
+    window[10].R=Eigen::AngleAxisd(.3,Eigen::Vector3d::UnitY()).toRotationMatrix();
+    auto& feature=manager.feature_bank_.front();feature.estimated_depth=4;feature.geometry_admitted=true;
+    manager.triangulateAcrossAllViews(window,Eigen::Vector3d::Zero(),Eigen::Matrix3d::Identity());
+    EXPECT_FALSE(feature.geometry_admitted);EXPECT_DOUBLE_EQ(feature.estimated_depth,-1);EXPECT_EQ(feature.solve_flag,0);
+    EXPECT_TRUE(feature.geometry_pending);EXPECT_STREQ(feature.geometry_reason,"rank_or_condition");
+}
+
+TEST(DepthConeFallback, PreservesTheStructuralThousandSlotPrefix) {
+    RestoreConfig restore;utility::g_config.camera.fx=utility::g_config.camera.fy=460;
+    backend::SlidingWindow window;frontend::FeatureManager manager;
+    for(int id=0;id<=utility::NUM_OF_FEATURES;++id)addDepthConeTrack(window,manager,depthConeCenters(),depthConeRays(),8,id);
+    manager.triangulateAcrossAllViews(window,Eigen::Vector3d::Zero(),Eigen::Matrix3d::Identity());
+    ASSERT_EQ(manager.feature_bank_.size(),static_cast<size_t>(utility::NUM_OF_FEATURES+1));
+    int expected_id=0;
+    for(const auto& feature:manager.feature_bank_) {
+        ASSERT_EQ(feature.feature_id,expected_id++);EXPECT_TRUE(feature.geometry_pending);EXPECT_EQ(feature.solve_flag,0);
+        if(feature.feature_id<utility::NUM_OF_FEATURES) {
+            ASSERT_TRUE(feature.geometry_admitted);EXPECT_NEAR(feature.estimated_depth,depthConeExpected(),1e-10);
+        } else {EXPECT_FALSE(feature.geometry_admitted);EXPECT_DOUBLE_EQ(feature.estimated_depth,-1);}
+    }
+    EXPECT_EQ(manager.getFeatureCount(),utility::NUM_OF_FEATURES);
+}
+
+TEST(DepthConeFallback, OptimizerFinalGeometryStillRejectsAnInconsistentCandidate) {
+    RestoreConfig restore;utility::g_config.camera.fx=utility::g_config.camera.fy=460;
+    utility::g_config.camera.r_ic.setIdentity();utility::g_config.camera.t_ic.setZero();
+    backend::SlidingWindow window;frontend::FeatureManager manager;
+    addDepthConeTrack(window,manager,depthConeCenters(),depthConeRays());
+    manager.triangulateAcrossAllViews(window,Eigen::Vector3d::Zero(),Eigen::Matrix3d::Identity());
+    auto& feature=manager.feature_bank_.front();ASSERT_TRUE(feature.geometry_admitted);
+    backend::Optimizer optimizer(&window,&manager);
+    ceres::Problem problem;backend::OptimizerTestAccess::problem(optimizer,problem);
+    EXPECT_EQ(backend::OptimizerTestAccess::filter(optimizer),1);
+    backend::OptimizerTestAccess::pose(optimizer,10)[0]+=.02;
+    EXPECT_EQ(backend::OptimizerTestAccess::filter(optimizer),0);
+    EXPECT_DOUBLE_EQ(backend::OptimizerTestAccess::depth(optimizer,0)[0],-1);
+    EXPECT_TRUE(feature.geometry_pending);EXPECT_EQ(feature.solve_flag,0);
+    EXPECT_NEAR(feature.estimated_depth,depthConeExpected(),1e-10);
+}
+#else
+TEST(DepthConeFallbackDefault, FeasibleDepthDoesNotEnableExperimentalRecovery) {
+    RestoreConfig restore;utility::g_config.camera.fx=utility::g_config.camera.fy=460;
+    // A 4m anchor depth is feasible, but the unchanged DLT depth has 1.886px
+    // maximum reprojection error. Default builds must preserve its rejection.
+    EXPECT_NEAR(std::abs(184./4-47.4),1.4,1e-12);
+    EXPECT_DOUBLE_EQ(std::abs(368./4-91),1);
+    EXPECT_NEAR(std::abs(184./4.04273377156683-47.4),1.8862436171037622,1e-12);
+    backend::SlidingWindow window;frontend::FeatureManager manager;
+    addDepthConeTrack(window,manager,depthConeCenters(),depthConeRays());
+    manager.triangulateAcrossAllViews(window,Eigen::Vector3d::Zero(),Eigen::Matrix3d::Identity());
+    const auto& feature=manager.feature_bank_.front();
+    EXPECT_FALSE(feature.geometry_admitted);EXPECT_TRUE(feature.geometry_pending);
+    EXPECT_DOUBLE_EQ(feature.estimated_depth,-1);EXPECT_EQ(feature.solve_flag,0);
+    EXPECT_STREQ(feature.geometry_reason,"cheirality_or_reprojection");
+}
+#endif

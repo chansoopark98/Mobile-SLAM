@@ -1,5 +1,8 @@
 # Shared core source groups: consumed by native and WASM.
 get_filename_component(MOBILE_SLAM_SOURCE_ROOT "${CMAKE_CURRENT_LIST_DIR}/.." ABSOLUTE)
+option(MOBILE_SLAM_EXPERIMENTAL_ANCHOR_DEPTH "Enable experimental anchor-depth interval fallback" OFF)
+set_property(SOURCE "${MOBILE_SLAM_SOURCE_ROOT}/src/frontend/feature_manager.cpp" APPEND PROPERTY
+    COMPILE_DEFINITIONS "MOBILE_SLAM_EXPERIMENTAL_ANCHOR_DEPTH=$<BOOL:${MOBILE_SLAM_EXPERIMENTAL_ANCHOR_DEPTH}>")
 set(MOBILE_SLAM_UTILITY_SOURCES
     "${MOBILE_SLAM_SOURCE_ROOT}/src/utility/utility.cpp"
     "${MOBILE_SLAM_SOURCE_ROOT}/src/utility/config.cpp"

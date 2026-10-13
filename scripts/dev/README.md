@@ -107,6 +107,8 @@ python3 scripts/dev/evaluate-synthetic-vio.py --dataset build/synthetic-example 
 - native 마지막 실험 인자는 정확한 문자열 `0|1|2`만 허용하며 입력 처리·출력 생성 전에 검증. raw/summary에 `experimental_observation_policy_selected`·`experimental_observation_policy_effective` 기록. 이 격리는 추적·정확도 수락을 의미하지 않으며 원래 목표는 NOT_ACCEPTED
 - 초기 covariance 파라미터는 기존 `V noise Vᵀ` 구현의 수치 profile. 주입한 sensor noise density와 같은 단위라고 가정하거나 dt 보정 없이 서로 복사하지 않음
 
+- anchor-depth C3는 별도 CMake 옵션 `-DMOBILE_SLAM_EXPERIMENTAL_ANCHOR_DEPTH=ON`으로만 빌드(native/WASM 공통, 기본 OFF). runtime observation policy0/1/2와 별개. 원본 Flip6 안정성 gate 실패로 기본·active 승격 금지; [원인·A/B·재현](../../docs/fixes/2026-10-13-flip6-tracking-recovery-results.md) 참조. 비교 시 source SHA뿐 아니라 feature_manager.cpp의 실제 compile definition0/1와 artifact SHA를 함께 기록.
+
 ## 실기기 pose 흔들림 기록
 
 - 보존 기록 재분석: `python3 scripts/dev/analyze-flip6-recordings.py /absolute/record.json --output build/new-flip6-analysis.json`. numeric/input schema, 결과 시간창·pose/초기화 coverage·지연 quantile·epoch·부분 영상·PGM hash를 검증하며 원본과 기존 출력을 덮어쓰지 않음.
