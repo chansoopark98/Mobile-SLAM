@@ -49,17 +49,20 @@ try{
                 sendFrame(gray,timestamp){sent.push({timestamp,pixels:Array.from(gray)});return true;}}});
         try{
             app._startVideoFrameCallbacks(video);
+            app.processLoop(); // Arm submission after the startup gate without reading video.
             const frameA=await nativeFrame();pendingCallback(frameA.now,frameA.metadata);
+            const sentImmediately=sent.length;
             const timingA={...app._videoFrameTiming};
             color=180;paint();let observedB;
             for(let attempt=0;attempt<5;attempt++){await nativeFrame();observedB=Array.from(camera.captureGrayscale());if(observedB.every(value=>value===180))break;}
             const readsBeforeRAF=camera._captureCount;
             app.processLoop();const readsAfterRAF=camera._captureCount;
-            return{frameA,timingA,observedB,sent,readsBeforeRAF,readsAfterRAF,metrics:{...app.frameMetrics},generation:app.captureGeneration};
+            return{frameA,timingA,observedB,sent,sentImmediately,readsBeforeRAF,readsAfterRAF,metrics:{...app.frameMetrics},generation:app.captureGeneration};
         }finally{app.stop();clearInterval(timer);stream.getTracks().forEach(track=>track.stop());}
     });
     const r=report.result;
     assert.ok(r.observedB.every(value=>value===180),'Video must genuinely advance to B before RAF');
+    assert.equal(r.sentImmediately,1,'Owned A must submit from its callback before another RAF');
     assert.equal(r.sent.length,1);assert.ok(r.sent[0].pixels.every(value=>value===40),'Submitted pixels must remain A');
     const sourceTime=r.frameA.metadata.captureTime ?? r.frameA.metadata.presentationTime;
     assert.equal(r.sent[0].timestamp,sourceTime/1000);

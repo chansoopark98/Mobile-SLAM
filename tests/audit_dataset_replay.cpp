@@ -23,6 +23,12 @@
 
 namespace {
 using Clock = std::chrono::steady_clock;
+static_assert(Clock::is_steady, "Replay timings require a monotonic clock");
+// Code 5 is reserved for TRACKING_LIMITED. Keep this adapter compilable with
+// frozen A0, whose public enum ends at COOLDOWN (4).
+constexpr int kTrackingLimitedStatus = 5;
+constexpr std::array<const char*, 6> kStatusLabels = {
+    "not_configured", "initializing", "tracking", "lost", "cooldown", "tracking_limited"};
 struct ImageEntry {
     double timestamp;
     std::filesystem::path path;
@@ -111,12 +117,16 @@ void timingJson(std::ostream& output, const std::vector<double>& values) {
 }  // namespace
 
 int main(int argc, char** argv) {
-    if (argc < 4 || argc > 16) {
+    if (argc < 4 || argc > 17) {
         std::cerr << "Usage: native-replay DATASET CONFIG OUTPUT [MAX_FRAMES=600] "
-                     "[IMU_POLICY=bracket|until-image] [PNP=0|1] [CV_THREADS=1] [ITERATIONS=YAML] [SOLVER_TIME=YAML] [DUMP_INPUTS=0|1] [DIAGNOSTICS=0|1] [CAPTURE_START=0] [CAPTURE_END=PROCESSED_FRAMES] [PROFILE=legacy|yaml] [ROTATION_RESCUE=0|1]\n";
+                     "[IMU_POLICY=bracket|until-image] [PNP=0|1] [CV_THREADS=1] [ITERATIONS=YAML] [SOLVER_TIME=YAML] [DUMP_INPUTS=0|1] [DIAGNOSTICS=0|1] [CAPTURE_START=0] [CAPTURE_END=PROCESSED_FRAMES] [PROFILE=legacy|yaml] [ROTATION_RESCUE=0|1] [EXPERIMENTAL_OBSERVATION_POLICY=0|1|2]\n";
         return 2;
     }
     try {
+        const std::string experimental_policy_option=argc>16?argv[16]:"0";
+        if(experimental_policy_option!="0" && experimental_policy_option!="1" && experimental_policy_option!="2")
+            throw std::runtime_error("EXPERIMENTAL_OBSERVATION_POLICY must be 0, 1, or 2");
+        const int experimental_policy_requested=experimental_policy_option[0]-'0';
         const auto dataset = std::filesystem::absolute(argv[1]);
         const auto config_path = std::filesystem::absolute(argv[2]);
         const auto output_dir = std::filesystem::absolute(argv[3]);
@@ -212,6 +222,10 @@ int main(int argc, char** argv) {
         engine.setRotationRescue(rotation_rescue_requested);
         if(engine.getRotationRescueEnabled()!=rotation_rescue_requested)
             throw std::runtime_error("Rotation rescue readback mismatch");
+        engine.setExperimentalObservationPolicy(experimental_policy_requested);
+        if(engine.getExperimentalObservationPolicy()!=experimental_policy_requested ||
+           engine.getEffectiveExperimentalObservationPolicy()!=experimental_policy_requested)
+            throw std::runtime_error("Experimental observation policy readback mismatch");
         std::ofstream effective(output_dir / "effective-config.json");
         engine.setDiagnosticCapture(true);
         effective << engine.getFeatureDiagnostics() << '\n';
@@ -234,9 +248,11 @@ int main(int argc, char** argv) {
         trajectory << "# timestamp tx ty tz qx qy qz qw; camera-to-world pose\n";
         frames << std::setprecision(15);
         trajectory << std::fixed << std::setprecision(12);
-        std::vector<double> process_times, tracking_times, image_times;
-        std::array<size_t, 5> status_counts{};
+        std::vector<double> process_times, tracking_times, limited_times, published_pose_times, image_times;
+        std::array<size_t, kStatusLabels.size()> status_counts{};
         size_t imu_cursor = 0, imu_delivered = 0, pose_count = 0, invalid_count = 0, init_loss = 0;
+        size_t normal_pose_count = 0, limited_pose_count = 0;
+        size_t normal_to_limited = 0, limited_to_normal = 0;
         int first_pose_frame = -1, previous_status = static_cast<int>(VIOStatus::INITIALIZING);
         double max_position = 0, max_rotation_error = 0;
         const auto replay_start = Clock::now();
@@ -277,11 +293,19 @@ int main(int argc, char** argv) {
             const bool has_pose = engine.processFrame(image.data, image.cols, image.rows,
                 imu.data() + begin, static_cast<int>(end - begin), images[i].timestamp, pose.data());
             const double process_ms = elapsedMs(process_start);
+            // Serialize measured stages after the engine stopwatch; full numeric
+            // diagnostics remain independently controlled by DIAGNOSTICS.
+            const std::string pipeline = engine.getPipelineDiagnostics();
             const int status = engine.getStatusCode();
             if (status < 0 || status >= static_cast<int>(status_counts.size()))
                 throw std::runtime_error("Unexpected status code");
             ++status_counts[status];
-            if (previous_status == static_cast<int>(VIOStatus::TRACKING) && status != previous_status) ++init_loss;
+            const int normal_status = static_cast<int>(VIOStatus::TRACKING);
+            const bool previously_tracking = previous_status == normal_status || previous_status == kTrackingLimitedStatus;
+            const bool currently_tracking = status == normal_status || status == kTrackingLimitedStatus;
+            if (previously_tracking && !currently_tracking) ++init_loss;
+            if (previous_status == normal_status && status == kTrackingLimitedStatus) ++normal_to_limited;
+            if (previous_status == kTrackingLimitedStatus && status == normal_status) ++limited_to_normal;
             previous_status = status;
             bool valid = false;
             if (has_pose && engine.getPoseFresh() && engine.getPoseValid() && std::abs(engine.getPoseTimestamp()-images[i].timestamp) < 1e-6) {
@@ -298,6 +322,9 @@ int main(int argc, char** argv) {
                     trajectory << engine.getPoseTimestamp() << ' ' << t.x() << ' ' << t.y() << ' ' << t.z()
                                << ' ' << q.x() << ' ' << q.y() << ' ' << q.z() << ' ' << q.w() << '\n';
                     ++pose_count;
+                    if (status == normal_status) ++normal_pose_count;
+                    if (status == kTrackingLimitedStatus) ++limited_pose_count;
+                    published_pose_times.push_back(process_ms);
                     if (first_pose_frame < 0) first_pose_frame = static_cast<int>(i);
                     max_position = std::max(max_position, t.norm());
                     max_rotation_error = std::max(max_rotation_error, rotation_error);
@@ -306,17 +333,26 @@ int main(int argc, char** argv) {
             process_times.push_back(process_ms);
             image_times.push_back(image_ms);
             if (status == static_cast<int>(VIOStatus::TRACKING)) tracking_times.push_back(process_ms);
+            if (status == kTrackingLimitedStatus) limited_times.push_back(process_ms);
             frames << i << ',' << images[i].timestamp << ',' << image_ms << ',' << process_ms << ','
                    << (end - begin) << ',' << engine.getFeaturePointCount() << ',' << status << ','
                    << has_pose << ',' << valid << ',' << engine.getEpoch() << ',' << engine.getPoseTimestamp() << ','
                    << engine.getLastReason() << ',' << engine.getLastSolverIterations() << ',' << engine.getLastSolverTermination() << '\n';
             results << (i ? "," : "") << "{\"frame\":" << i << ",\"inputTimestamp\":" << images[i].timestamp
+                    << ",\"engineFrameTimestamp\":" << engine.getFrameTimestamp()
+                    << ",\"imuEndpointTimestamp\":" << engine.getIMUEndpointTimestamp()
                     << ",\"poseTimestamp\":" << engine.getPoseTimestamp() << ",\"engineEpoch\":" << engine.getEpoch()
-                    << ",\"statusCode\":" << status << ",\"poseValid\":" << (valid ? "true" : "false")
+                    << ",\"experimental_observation_policy_selected\":" << engine.getExperimentalObservationPolicy()
+                    << ",\"experimental_observation_policy_effective\":" << engine.getEffectiveExperimentalObservationPolicy()
+                    << ",\"statusCode\":" << status << ",\"statusLabel\":\"" << kStatusLabels[status] << "\""
+                    << ",\"initialized\":" << (engine.isInitialized() ? "true" : "false")
+                    << ",\"poseFresh\":" << (engine.getPoseFresh() ? "true" : "false")
+                    << ",\"poseValid\":" << (valid ? "true" : "false")
                     << ",\"reason\":\"" << engine.getLastReason() << "\",\"solverIterations\":" << engine.getLastSolverIterations()
                     << ",\"solverTermination\":\"" << engine.getLastSolverTermination() << "\",\"imuCount\":" << end-begin << ",\"pose\":";
             if (valid) {results << '['; for(size_t k=0;k<pose.size();++k) results << (k ? "," : "") << pose[k];results << ']';}
             else results << "null";
+            results << ",\"pipeline\":" << pipeline;
             if (diagnostic_capture) results << ",\"featureDiagnostics\":" << engine.getFeatureDiagnostics();
             results << '}';
             if ((i + 1) % 100 == 0) std::cerr << "[Replay] " << (i + 1) << '/' << count
@@ -336,6 +372,8 @@ int main(int argc, char** argv) {
                 << ",\n\"camera_model_enum\":" << camera_model << ",\n\"pnp_enabled\":" << pnp
                 << ",\n\"rotation_rescue_requested\":" << (rotation_rescue_requested?1:0)
                 << ",\n\"rotation_rescue_enabled\":" << (engine.getRotationRescueEnabled()?1:0)
+                << ",\n\"experimental_observation_policy_selected\":" << engine.getExperimentalObservationPolicy()
+                << ",\n\"experimental_observation_policy_effective\":" << engine.getEffectiveExperimentalObservationPolicy()
                 << ",\n\"cv_threads\":" << cv::getNumThreads() << ",\n\"rng_seed\":" << engine.getExecutionSeed()
                 << ",\n\"executionSeed\":" << engine.getExecutionSeed()
                 << ",\n\"cvThreads\":" << engine.getCVThreadCount()
@@ -369,16 +407,21 @@ int main(int argc, char** argv) {
                 << ",\n\"lk_iterations\":" << utility::g_config.feature_tracker.lk_iterations
                 << ",\n\"lk_epsilon\":" << utility::g_config.feature_tracker.lk_eps
                 << ",\n\"pose_count\":" << pose_count << ",\n\"invalid_pose_count\":" << invalid_count
+                << ",\n\"normal_pose_count\":" << normal_pose_count << ",\n\"limited_pose_count\":" << limited_pose_count
                 << ",\n\"pose_coverage\":" << static_cast<double>(pose_count) / count
                 << ",\n\"first_pose_frame\":" << first_pose_frame
                 << ",\n\"first_pose_elapsed_dataset_s\":" << (first_pose_frame < 0 ? -1 : images[first_pose_frame].timestamp - images.front().timestamp)
                 << ",\n\"initialization_loss_transitions\":" << init_loss
+                << ",\n\"normal_to_limited_transitions\":" << normal_to_limited
+                << ",\n\"limited_to_normal_transitions\":" << limited_to_normal
                 << ",\n\"max_position_norm_m\":" << max_position
                 << ",\n\"max_rotation_orthogonality_error\":" << max_rotation_error
                 << ",\n\"dataset_span_s\":" << images[count - 1].timestamp - images.front().timestamp
                 << ",\n\"wall_ms\":" << replay_ms << ",\n\"status_counts\":[";
         for (size_t i = 0; i < status_counts.size(); ++i) summary << (i ? "," : "") << status_counts[i];
-        summary << "],\n\"camera_intrinsics_fx_fy_cx_cy\":["
+        summary << "],\n\"status_schema\":\"mobile-slam-status-v2\",\n\"status_count_labels\":[";
+        for (size_t i = 0; i < kStatusLabels.size(); ++i) summary << (i ? "," : "") << '"' << kStatusLabels[i] << '"';
+        summary << "],\n\"normal_status_code\":2,\n\"limited_status_code\":5,\n\"camera_intrinsics_fx_fy_cx_cy\":["
                 << desired.camera.fx << ',' << desired.camera.fy << ',' << desired.camera.cx << ',' << desired.camera.cy
                 << "],\n\"image_width_height\":[" << desired.camera.col << ',' << desired.camera.row
                 << "],\n\"camera_distortion_k2k3k4k5\":[" << k[0] << "," << k[1] << "," << k[2] << "," << k[3] << "],\n\"camera_to_imu_rotation_rowmajor\":[";
@@ -387,6 +430,8 @@ int main(int argc, char** argv) {
         for (size_t i = 0; i < translation.size(); ++i) summary << (i ? "," : "") << translation[i];
         summary << "],\n\"engine_ms\":"; timingJson(summary, process_times);
         summary << ",\n\"tracking_engine_ms\":"; timingJson(summary, tracking_times);
+        summary << ",\n\"limited_engine_ms\":"; timingJson(summary, limited_times);
+        summary << ",\n\"published_pose_engine_ms\":"; timingJson(summary, published_pose_times);
         summary << ",\n\"image_io_ms\":"; timingJson(summary, image_times);
         summary << "\n}\n";
         summary.flush();

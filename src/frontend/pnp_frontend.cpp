@@ -115,14 +115,14 @@ void PnPFrontend::processIMU(double dt, const Eigen::Vector3d& acc, const Eigen:
         acc_buf_[frame_count_].push_back(acc);
         gyr_buf_[frame_count_].push_back(gyro);
 
-        // Midpoint integration for state propagation
+        // Match preintegration's position/velocity time moments.
         int j = frame_count_;
         Eigen::Vector3d un_acc_0 = Rs_[j] * (acc_0_ - Bas_[j]) - g_;
         Eigen::Vector3d un_gyr = 0.5 * (gyr_0_ + gyro) - Bgs_[j];
         Rs_[j] *= Utility::deltaQ(un_gyr * dt).normalized().toRotationMatrix();
         Eigen::Vector3d un_acc_1 = Rs_[j] * (acc - Bas_[j]) - g_;
         Eigen::Vector3d un_acc = 0.5 * (un_acc_0 + un_acc_1);
-        Ps_[j] += dt * Vs_[j] + 0.5 * dt * dt * un_acc;
+        Ps_[j] += dt * Vs_[j] + dt * dt * (un_acc_0 / 3.0 + un_acc_1 / 6.0);
         Vs_[j] += dt * un_acc;
     }
     acc_0_ = acc;

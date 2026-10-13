@@ -80,7 +80,8 @@ export function begin(seconds, maxFrames, token, showTimer) {
             arrivalMs: performance.now(), requestId: event.data.requestId, clientEpoch: event.data.clientEpoch, sequence: event.data.sequence,
             ...Object.fromEntries(['engineEpoch', 'initialized', 'statusCode', 'reason', 'featureCount', 'imuCount', 'inputTimestamp',
                 'poseTimestamp', 'poseFresh', 'poseValid', 'imuEndpointTimestamp', 'engineProcessingMs', 'workerProcessingMs',
-                'imuWaitMs', 'imuDrops', 'motionDiscontinuity', 'solverIterations', 'solverTermination'].map(key => [key, data[key]])),
+                'imuWaitMs', 'imuWaitBudgetMs', 'workerQueueMs', 'imuDrops', 'motionDiscontinuity', 'solverIterations', 'solverTermination',
+                'pipeline', 'candidatePipeline'].map(key => [key, data[key]])),
             pose: data.pose ? Array.from(data.pose) : null });
     };
     app.vio.sendFrame = sendFrame; app.vio.sendIMU = sendIMU; worker.addEventListener('message', receive);

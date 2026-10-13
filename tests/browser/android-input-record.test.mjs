@@ -69,6 +69,15 @@ test('grayscale snapshot precedes a transferring frame submission', () => {
     assert.deepEqual(Buffer.from(capture.readBatch().frames[0].base64, 'base64'), Buffer.from([7, 6, 5, 4]));
 });
 
+test('accepted image result retains optional pipeline timings', () => {
+    const { app, capture, listeners } = fixture();
+    app.vio.sendFrame(new Uint8Array([1, 2, 3, 4]), 1);
+    listeners.get('message')({ data: { type: 'result', requestId: 1, clientEpoch: 7, sequence: 1,
+        data: { inputTimestamp: 1, pipeline: { frontendMs: 4, backendMs: 12 } } } });
+    assert.deepEqual(capture.record.results[0].pipeline, { frontendMs: 4, backendMs: 12 });
+    capture.stop();
+});
+
 test('recording resets its estimator once and cleanup restores only owned hooks', () => {
     const f = fixture();
     assert.equal(f.resets, 1);

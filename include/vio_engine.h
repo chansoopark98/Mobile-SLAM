@@ -2,6 +2,7 @@
 #define VIO_ENGINE_H
 
 #include <memory>
+#include <limits>
 #include <cstdint>
 #include <deque>
 #include <string>
@@ -113,10 +114,19 @@ public:
     // Explicit numerical-validation control; persists reset/reconfigure until disabled.
     void setBenchmarkSolverProfile(bool enabled);
     bool getBenchmarkSolverProfile() const { return benchmark_solver_profile_; }
+    // Failed research policies require instance opt-in; configure selects legacy policy0.
+    void setExperimentalObservationPolicy(int policy);
+    int getExperimentalObservationPolicy() const { return experimental_observation_policy_; }
+    int getEffectiveExperimentalObservationPolicy() const {
+        return estimator_ ? estimator_->getExperimentalObservationPolicy() : -1;
+    }
     // Experimental rotation rescue: configure disables it; reset preserves it.
     void setRotationRescue(bool enabled);
     bool getRotationRescueEnabled() const { return rotation_rescue_enabled_; }
     std::string getFeatureDiagnostics() const;
+    // Lightweight timings/counts for the latest attempted frame, regardless of
+    // detailed capture. Durations are milliseconds; an unrun stage is null.
+    std::string getPipelineDiagnostics() const;
 
     // Reset the VIO system to initial state.
     void reset();
@@ -163,7 +173,24 @@ private:
     int execution_threads_ = 1;
     bool diagnostic_capture_ = false;
     bool benchmark_solver_profile_ = false;
+    int experimental_observation_policy_ = 0;
     bool rotation_rescue_enabled_ = false;
+    struct PipelineDiagnostics {
+        bool available = false;
+        uint64_t epochBefore = 0;
+        uint64_t sequence = 0;
+        double timestamp = -1;
+        int imuCount = 0;
+        const char* backendRoute = "not_run";
+        double totalMs = std::numeric_limits<double>::quiet_NaN();
+        double imuMs = std::numeric_limits<double>::quiet_NaN();
+        double frontendMs = std::numeric_limits<double>::quiet_NaN();
+        double backendMs = std::numeric_limits<double>::quiet_NaN();
+        bool solverRecorded = false;
+        backend::SolverDiagnostics solver;
+    } pipeline_;
+    bool pipeline_recording_ = false;
+    uint64_t pipeline_sequence_ = 0;
     void recordSolver(const backend::SolverDiagnostics& diagnostics);
     static constexpr int kMaxIMUReadings = 4096;
     static constexpr double kMaxSensorGapSeconds = 0.5;

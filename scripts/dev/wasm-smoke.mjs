@@ -28,8 +28,9 @@ try {
         const factory=(await import('/candidate.js')).default;
         const module=await factory();
         const engine=new module.VIOEngine();
-        for(const method of ['configure','processFrame','getEpoch','getPoseTimestamp','getFrameTimestamp','getPoseFresh','getPoseValid','getLastReason','getLastSolverIterations','getLastSolverTermination','setExecutionParams','getExecutionSeed','getCVThreadCount','getIMUEndpointTimestamp','setDiagnosticCapture','getFeatureDiagnostics','setBenchmarkSolverProfile','getBenchmarkSolverProfile','setRotationRescue','getRotationRescueEnabled','reset'])
+        for(const method of ['configure','processFrame','getEpoch','getPoseTimestamp','getFrameTimestamp','getPoseFresh','getPoseValid','getLastReason','getLastSolverIterations','getLastSolverTermination','setExecutionParams','getExecutionSeed','getCVThreadCount','getIMUEndpointTimestamp','setDiagnosticCapture','getFeatureDiagnostics','getPipelineDiagnostics','setBenchmarkSolverProfile','getBenchmarkSolverProfile','setExperimentalObservationPolicy','getExperimentalObservationPolicy','setRotationRescue','getRotationRescueEnabled','reset'])
             if(typeof engine[method]!=='function')throw new Error('Missing mandatory binding '+method);
+        if(engine.getExperimentalObservationPolicy()!==0)throw new Error('Experimental observation policy must default to legacy0');
         const rotation=module._malloc(72),translation=module._malloc(24);
         module.HEAPF64.set([1,0,0,0,1,0,0,0,1],rotation/8);module.HEAPF64.set([0,0,0],translation/8);
         if(!engine.configure(96,96,100,100,48,48,2,0,0,0,0,rotation,translation,.1,.001,.01,.0001,9.81))throw new Error('Calibrated configure rejected');
@@ -45,21 +46,47 @@ try {
         const configuredEpoch=Number(engine.getEpoch());
         if(engine.getExecutionSeed()!==0 || engine.getCVThreadCount()!==1)throw new Error('Execution profile did not apply');
         if(engine.getPoseFresh() || engine.getPoseValid() || engine.getPoseTimestamp()!==-1)throw new Error('Initial state is not invalid/unmeasured');
+        if(engine.getPipelineDiagnostics()!=='null')throw new Error('Unrun pipeline must be null');
         engine.setDiagnosticCapture(true);
         const armedDiagnostic=JSON.parse(engine.getFeatureDiagnostics());
         if(armedDiagnostic.enabled!==true)throw new Error('Selected diagnostic arm must be valid JSON');
+        const checkPolicy=(expected)=>{
+            const params=JSON.parse(engine.getFeatureDiagnostics()).params;
+            if(engine.getExperimentalObservationPolicy()!==expected || params.experimental_observation_policy_selected!==expected || params.experimental_observation_policy_effective!==expected)
+                throw new Error('Experimental observation policy selected/effective mismatch');
+        };
+        checkPolicy(0);
+        let policyEpoch=Number(engine.getEpoch());engine.setExperimentalObservationPolicy(0);
+        if(Number(engine.getEpoch())!==policyEpoch)throw new Error('Same experimental policy must not reset epoch');
+        engine.setExperimentalObservationPolicy(1);checkPolicy(1);
+        if(Number(engine.getEpoch())!==policyEpoch+1)throw new Error('Policy change must create a fresh epoch');
+        policyEpoch=Number(engine.getEpoch());engine.setExperimentalObservationPolicy(1);
+        if(Number(engine.getEpoch())!==policyEpoch)throw new Error('Repeated experimental policy must be a no-op');
+        for(const invalid of [-1,3,2147483647]) {
+            let rejected=false;try{engine.setExperimentalObservationPolicy(invalid);}catch{rejected=true;}
+            if(!rejected || Number(engine.getEpoch())!==policyEpoch)throw new Error('Invalid experimental policy mutated epoch or was accepted');
+            checkPolicy(1);
+        }
+        engine.setExperimentalObservationPolicy(2);checkPolicy(2);
+        if(Number(engine.getEpoch())!==policyEpoch+1 || engine.getExecutionSeed()!==0 || engine.getCVThreadCount()!==1)
+            throw new Error('Experimental policy change lost execution profile or epoch');
         const image=module._malloc(96*96),imu=module._malloc(112),pose=module._malloc(128);
         module.HEAPU8.fill(0,image,image+96*96);
         module.HEAPF64.set([0,0,0,9.81,0,0,0,.01,0,0,9.81,0,0,0],imu/8);
         engine.processFrame(image,96,96,imu,2,.005,pose);
+        const pipeline=JSON.parse(engine.getPipelineDiagnostics());
+        if(pipeline.frameTimestamp!==.005 || !Number.isFinite(pipeline.imuMs) || !Number.isFinite(pipeline.frontendMs))throw new Error('Pipeline frame identity/timing missing');
         const warmupDiagnostic=JSON.parse(engine.getFeatureDiagnostics());
         if(warmupDiagnostic.enabled!==true)throw new Error('Warmup diagnostic must be valid JSON');
         engine.reset();
+        checkPolicy(2);
+        if(engine.getPipelineDiagnostics()!=='null')throw new Error('External reset must clear pipeline');
         if(engine.getRotationRescueEnabled()!==true)throw new Error('Reset must preserve rotation rescue selection');
         if(engine.getBenchmarkSolverProfile()!==true)throw new Error('Reset must preserve explicitly enabled benchmark profile');
         const resetDiagnostic=JSON.parse(engine.getFeatureDiagnostics());
         if(resetDiagnostic.enabled!==true)throw new Error('Reset must preserve explicit capture flag and valid JSON');
         if(!engine.configure(96,96,100,100,48,48,2,0,0,0,0,rotation,translation,.1,.001,.01,.0001,9.81))throw new Error('Reconfigure rejected');
+        checkPolicy(0);
         if(engine.getRotationRescueEnabled()!==false)throw new Error('Configure must reset rotation rescue to conservative default');
         if(engine.getBenchmarkSolverProfile()!==true)throw new Error('Reconfigure must preserve explicitly enabled benchmark profile');
         engine.setBenchmarkSolverProfile(false);
@@ -71,7 +98,7 @@ try {
         const resetEpoch=Number(engine.getEpoch());
         if(resetEpoch<=configuredEpoch || engine.getExecutionSeed()!==0 || engine.getCVThreadCount()!==1)throw new Error('Reset profile/epoch mismatch');
         engine.delete();module._free(rotation);module._free(translation);
-        return {configuredEpoch,resetEpoch,executionSeed:0,cvThreads:1,mandatoryBindings:true,diagnosticCaptureDefault:false,diagnosticArmWarmupResetJson:true,benchmarkSolverProfileDefault:false,benchmarkEnableResetReconfigureDisable:true,rotationRescueDefault:false,rotationRescueEnableResetConfigure:true,initialPose:'invalid',acceptanceScope:'loader_and_public_contracts_only_not_tracking_or_accuracy'};
+        return {configuredEpoch,resetEpoch,executionSeed:0,cvThreads:1,mandatoryBindings:true,diagnosticCaptureDefault:false,diagnosticArmWarmupResetJson:true,benchmarkSolverProfileDefault:false,benchmarkEnableResetReconfigureDisable:true,experimentalObservationPolicyDefault:0,experimentalPolicyReadbackResetConfigureRangeEpoch:true,rotationRescueDefault:false,rotationRescueEnableResetConfigure:true,initialPose:'invalid',acceptanceScope:'loader_and_public_contracts_only_not_tracking_or_accuracy'};
     });
     assert.deepEqual(failures,[]);
     await fs.mkdir(path.dirname(output),{recursive:true});

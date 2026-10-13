@@ -2,6 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import fs from 'node:fs/promises';
 import { Worker } from 'node:worker_threads';
+import { limitedPipeline } from './limited-fixture.mjs';
 
 const workerSource = await fs.readFile(new URL('../../web/js/vio-worker.js', import.meta.url), 'utf8');
 const moduleURL = source => 'data:text/javascript;base64,' + Buffer.from(source).toString('base64');
@@ -15,10 +16,10 @@ async function fixture(t, scenarios, mobileMotionGuard) {
         let cursor = 8;
         return { HEAPU8, HEAPF64, _malloc(n) { const p=cursor; cursor+=Math.ceil(n/8)*8; return p; }, _free() {},
             VIOEngine: class {
-                constructor() { this.epoch=0; this.index=0; this.timestamp=-1; this.fresh=false; this.reason='initializing'; }
+                constructor() { this.epoch=0; this.index=0; this.timestamp=-1; this.fresh=false; this.reason='initializing'; this.row={}; }
                 configure() { this.reset(); return true; }
                 processFrame(image,w,h,imu,count,timestamp,pose) {
-                    const row=scenarios[this.index++] || {}; this.timestamp=timestamp;
+                    const row=scenarios[this.index++] || {}; this.row=row; this.timestamp=timestamp;
                     if(row.epochChange) this.epoch++;
                     this.fresh=row.valid!==false; this.reason=row.reason || (this.fresh?'tracking':'insufficient_current_features');
                     const p=row.position || [0,0,0];
@@ -26,13 +27,14 @@ async function fixture(t, scenarios, mobileMotionGuard) {
                     return this.fresh;
                 }
                 getEpoch() { return this.epoch; } getFrameTimestamp() { return this.timestamp; }
-                getIMUEndpointTimestamp() { return this.timestamp; } getPoseTimestamp() { return this.fresh?this.timestamp:-1; }
+                getIMUEndpointTimestamp() { return this.timestamp; } getPoseTimestamp() { return this.fresh?(this.row.poseTimestamp??this.timestamp):-1; }
                 getPoseFresh() { return this.fresh; } getPoseValid() { return this.fresh; }
-                isInitialized() { return this.fresh; } getStatusCode() { return this.fresh?2:1; }
+                isInitialized() { return this.row.initialized??this.fresh; } getStatusCode() { return this.row.statusCode??(this.fresh?2:1); }
                 getFeaturePointCount() { return 20; } getLastReason() { return this.reason; }
+                getPipelineDiagnostics() { return JSON.stringify(this.row.pipeline??{schema:'mobile-slam-pipeline-v1',frameTimestamp:this.timestamp,engineEpoch:this.epoch,frontendMs:1,backendMs:2,solver:null}); }
                 getLastSolverIterations() { return 3; } getLastSolverTermination() { return 'NO_CONVERGENCE'; }
                 getMapPoints(pointer) { HEAPF64.set([1,2,3],pointer/8); return 1; }
-                reset() { this.epoch++; this.timestamp=-1; this.fresh=false; this.reason='external_reset'; }
+                reset() { this.epoch++; this.timestamp=-1; this.fresh=false; this.reason='external_reset'; this.row={}; }
                 delete() {}
             }
         };
@@ -107,6 +109,16 @@ test('Mobile guard defaults off: measured warning and large movement remain nume
         assert.equal(result.engineEpoch, 1);
         assert.equal(result.mapPointCount, 1);
     }
+});
+
+test('Guard reset preserves the rejected engine attempt with its pre-reset pipeline identity', async t => {
+    const f = await fixture(t, [{ reason: 'tracking:relative_translation_threshold' }], true);
+    const result = rejected(await f.frame());
+    assert.equal(result.pipeline, null);
+    assert.equal(result.candidatePipeline.engineEpoch, result.motionDiscontinuity.engineEpochBeforeReset);
+    assert.equal(result.candidatePipeline.frameTimestamp, result.inputTimestamp);
+    assert.equal(result.candidatePipeline.frontendMs, 1);
+    assert.equal(result.candidatePipeline.backendMs, 2);
 });
 
 test('First exact translation warning synchronously resets and exposes no pose or map', async t => {
@@ -218,4 +230,48 @@ test('Dispose and replacement engine cannot reuse the old same-numbered epoch po
     assert.equal(result.engineEpoch, 1);
     assert.equal(result.poseValid, true);
     assert.equal(result.pose[3], 0);
+});
+
+test('Actual Worker preserves Limited full poses and cumulative quality across ordinary Lost', async t => {
+    const first=limitedPipeline(1),lost=limitedPipeline(1.1),last=limitedPipeline(1.2);
+    Object.assign(lost.quality,{mode:'none',rotationVisualSupported:false,translationSupport:'none',visualRotationRank:null,
+        currentProjectiveFactors:0,uncertaintyAnchorTimestamp:.75,limitedDurationS:.35});
+    lost.solver.currentProjectiveFactors=0;
+    Object.assign(last.quality,{uncertaintyAnchorTimestamp:.75,limitedDurationS:.45});
+    const f=await fixture(t,[
+        {statusCode:5,reason:'tracking_limited',position:[.1,.2,.3],pipeline:first},
+        {statusCode:3,initialized:true,valid:false,reason:'insufficient_current_features',pipeline:lost},
+        {statusCode:5,reason:'tracking_limited',position:[.2,.3,.4],pipeline:last},
+    ],true);
+    const a=(await f.frame()).data,b=(await f.frame()).data,c=(await f.frame()).data;
+    assert.equal(a.trackingState,'tracking_limited');assert.equal(a.poseFresh,true);assert.equal(a.poseTimestamp,1);
+    assert.deepEqual([a.pose[3],a.pose[7],a.pose[11]],[.1,.2,.3]);
+    assert.equal(b.trackingState,'lost');assert.equal(b.poseFresh,false);assert.equal(b.pose,null);
+    assert.equal(c.trackingState,'tracking_limited');assert.equal(c.poseFresh,true);assert.equal(c.poseTimestamp,1.2);
+    assert.equal(c.engineEpoch,a.engineEpoch);assert.equal(c.quality.uncertaintyAnchorTimestamp,.75);
+    assert.equal(c.quality.limitedDurationS,.45);assert.equal(c.quality.metricTranslationSupported,false);
+});
+
+test('Actual Worker applies the same jump and engine-warning guard to Limited', async t => {
+    for(const [position,reason] of [[[6,0,0],'tracking_limited'],[[.1,0,0],'tracking_limited:relative_translation_threshold']]) {
+        const f=await fixture(t,[{position:[0,0,0]},
+            {statusCode:5,reason,position,pipeline:limitedPipeline(1.1)}],true);
+        await f.frame();const row=(await f.frame()).data;
+        assert.equal(row.reason,'pose_translation_discontinuity');assert.equal(row.poseFresh,false);
+        assert.equal(row.trackingState,'initializing');assert.equal(row.pipeline,null);
+        assert.equal(row.candidatePipeline.schema,'mobile-slam-pipeline-v2');
+        assert.equal(row.candidatePipeline.quality.mode,'projective_limited');
+    }
+});
+
+test('Actual Worker refuses a stale finite Limited pose and a v1-only Limited claim', async t => {
+    const f=await fixture(t,[
+        {statusCode:5,reason:'tracking_limited',poseTimestamp:.9,pipeline:limitedPipeline(1)},
+        {statusCode:5,reason:'tracking_limited'},
+    ],false);
+    for(let i=0;i<2;i++) {
+        const row=(await f.frame()).data;
+        assert.equal(row.poseValid,false);assert.equal(row.poseFresh,false);assert.equal(row.pose,null);
+        assert.equal(row.reason,'limited_quality_unavailable');assert.equal(row.engineReason,'tracking_limited');
+    }
 });

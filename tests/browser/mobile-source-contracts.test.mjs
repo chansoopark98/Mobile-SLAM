@@ -2,6 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import fs from 'node:fs/promises';
 import vm from 'node:vm';
+import { limitedPipeline } from './limited-fixture.mjs';
 
 const sources = Object.fromEntries(await Promise.all(['imu', 'camera', 'orientation', 'app', 'renderer', 'test-tumvi-app'].map(async name => [name, await fs.readFile(new URL(`../../web/js/${name}.js`, import.meta.url), 'utf8')])));
 const quiet = { log() {}, warn() {}, error() {} };
@@ -197,6 +198,55 @@ test('Live result consumes a pose only once and clears state on loss/engine epoc
     assert.equal(events.at(-1), 'clear');
     app._consumeResult({ ...result, sequence: 3, engineEpoch: 2 });
     assert.equal(events.filter(e => e === 'clear').length, 2);
+});
+
+test('App never renders Lost or unknown status as a normal finite fresh pose', () => {
+    for(const statusCode of [3,99]) {
+        const {app}=appRealm(),events=[];
+        app.statusEl={};
+        app.renderer={clear:()=>events.push('clear'),updateCameraPose:()=>events.push('pose'),updateMapPoints:()=>events.push('map')};
+        app.vio.getMapPoints=()=>({points:null,count:0});
+        app._consumeResult({clientEpoch:1,engineEpoch:1,sequence:1,statusCode,initialized:true,inputTimestamp:1,
+            poseFresh:true,poseValid:true,poseTimestamp:1,pose:new Float64Array([1,0,0,0,0,1,0,0,0,0,1,0,0,0,0,1])});
+        assert.equal(events.includes('pose'),false);
+        assert.equal(events.at(-1),'clear');
+        assert.doesNotMatch(app.statusEl.textContent,/· Tracking(?:\s|\/|·)/);
+        assert.match(app.statusEl.textContent,statusCode===3?/Lost/:/Unknown/);
+    }
+});
+
+test('App renders current Limited once with a concise position-quality label and preserves loss/epoch clearing', () => {
+    const {app}=appRealm(),events=[];app.statusEl={};
+    app.renderer={clear:()=>events.push('clear'),updateCameraPose:()=>events.push('pose'),updateMapPoints:()=>events.push('map')};
+    app.vio.getMapPoints=()=>({points:null,count:0});
+    const row={clientEpoch:1,engineEpoch:1,sequence:1,statusCode:5,trackingState:'tracking_limited',initialized:true,
+        inputTimestamp:1,poseTimestamp:1,poseFresh:true,poseValid:true,quality:limitedPipeline().quality,
+        reason:'tracking_limited',pose:new Float64Array([1,0,0,0,0,1,0,0,0,0,1,0,0,0,0,1])};
+    app._consumeResult(row);app._consumeResult(row);
+    assert.equal(events.filter(event=>event==='pose').length,1);
+    assert.match(app.statusEl.textContent,/Limited/);
+    assert.match(app.statusEl.textContent,/position uncertain/i);
+    assert.doesNotMatch(app.statusEl.textContent,/Ceres|covariance|confidence|\d+%/i);
+    app._consumeResult({...row,sequence:2,poseFresh:false,poseValid:false});assert.equal(events.at(-1),'clear');
+    app._consumeResult({...row,sequence:3,engineEpoch:2});assert.equal(events.filter(event=>event==='clear').length,2);
+});
+
+test('Pose age uses only its result source timing even after a newer frame was submitted', () => {
+    const { app } = appRealm();
+    app.statusEl = {};
+    app.lastFrameTiming = { source: 'video_presentation', timestampS: 4.9 };
+    const row = { clientEpoch: 1, engineEpoch: 1, sequence: 1, statusCode: 2, initialized: true,
+        inputTimestamp: 4.8, poseTimestamp: 4.8, poseFresh: true, poseValid: true,
+        pose: new Float64Array([1,0,0,0,0,1,0,0,0,0,1,0,0,0,0,1]),
+        sourceTiming: { source: 'video_capture_time', timestampS: 4.8 } };
+    app._consumeResult(row);
+    assert.match(app.statusEl.textContent, /pose age 200ms \(video_capture_time\)/);
+    assert.doesNotMatch(app.statusEl.textContent, /video_presentation/);
+    for (const sourceTiming of [null, undefined]) {
+        app._consumeResult({ ...row, sequence: ++row.sequence, sourceTiming });
+        assert.match(app.statusEl.textContent, /pose age 200ms \(camera time proxy\)/);
+        assert.doesNotMatch(app.statusEl.textContent, /video_presentation|video_capture_time/);
+    }
 });
 
 test('Future IMU time cannot be labeled active while the engine waits for past samples', () => {

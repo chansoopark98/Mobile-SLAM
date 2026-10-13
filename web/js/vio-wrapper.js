@@ -1,9 +1,53 @@
 /** Async API for the single VIO Worker. Frames may be dropped while IMU remains deliverable. */
+function validPipelineQuality(pipeline) {
+    const q = pipeline?.quality, s = pipeline?.solver;
+    const count = value => Number.isSafeInteger(value) && value >= 0;
+    const nullable = value => value === null || Number.isFinite(value) && value >= 0;
+    if (pipeline?.schema !== 'mobile-slam-pipeline-v2' || !q ||
+        !['metric', 'projective_limited', 'none'].includes(q.mode) ||
+        !['visual_inertial_metric', 'imu_model_only', 'none'].includes(q.translationSupport) ||
+        !['rotationVisualSupported', 'metricTranslationSupported', 'fallbackUsed', 'recoveryMode', 'uncertaintyAvailable'].every(key => typeof q[key] === 'boolean') ||
+        !['currentMetricFactors', 'currentProjectiveFactors', 'provisionalObservationsRetired'].every(key => count(q[key])) ||
+        !['limitedDurationS', 'uncertaintyAnchorTimestamp', 'position3SigmaM', 'rotation3SigmaRad', 'rotationConsistencyScore'].every(key => nullable(q[key])) ||
+        !(q.visualRotationRank === null || count(q.visualRotationRank) && q.visualRotationRank <= 3) ||
+        q.rotationConsistencyScoreThreshold !== 16.2663 || q.consistencyScoreIsProbabilistic !== false ||
+        q.relativeCovarianceOrdering !== 'anchor_body_position_xyz_m,right_relative_rotation_xyz_rad' ||
+        !['imu_propagation_joint_15d', 'unavailable'].includes(q.uncertaintyModel) ||
+        !['last_metric_raw_graph', 'unavailable'].includes(q.uncertaintySource) || typeof q.reason !== 'string') return false;
+    if (s === null) {
+        if (q.mode === 'projective_limited' || q.currentMetricFactors !== 0 || q.currentProjectiveFactors !== 0) return false;
+    } else if (!s || !['eligibleFeatures', 'structuralSlots', 'currentMetricFactors', 'currentProjectiveFactors', 'provisionalSlots', 'excludedSlots'].every(key => count(s[key])) ||
+        s.structuralSlots !== s.eligibleFeatures || s.structuralSlots > 1000 ||
+        q.currentMetricFactors !== s.currentMetricFactors || q.currentProjectiveFactors !== s.currentProjectiveFactors) return false;
+    const covariance = q.relativeCovariance6x6;
+    return covariance === null || Array.isArray(covariance) && covariance.length === 36 && covariance.every(Number.isFinite) &&
+        [0, 7, 14, 21, 28, 35].every(index => covariance[index] >= 0);
+}
+
+function validLimitedQuality(quality, timestamp) {
+    return quality?.mode === 'projective_limited' && quality.rotationVisualSupported === true &&
+        quality.metricTranslationSupported === false && quality.translationSupport === 'imu_model_only' &&
+        quality.fallbackUsed === true && quality.recoveryMode === true && quality.currentProjectiveFactors >= 2 &&
+        quality.visualRotationRank === 3 && quality.uncertaintyAvailable === true &&
+        quality.uncertaintyModel === 'imu_propagation_joint_15d' && quality.uncertaintySource === 'last_metric_raw_graph' &&
+        Array.isArray(quality.relativeCovariance6x6) && Number.isFinite(quality.uncertaintyAnchorTimestamp) &&
+        quality.uncertaintyAnchorTimestamp <= timestamp &&
+        Number.isFinite(quality.limitedDurationS) && quality.limitedDurationS <= 2 &&
+        Number.isFinite(quality.position3SigmaM) && quality.position3SigmaM <= .25 + 1e-12 &&
+        Number.isFinite(quality.rotation3SigmaRad) && quality.rotation3SigmaRad <= 5 * Math.PI / 180 + 1e-12 &&
+        Number.isFinite(quality.rotationConsistencyScore) && quality.rotationConsistencyScore <= quality.rotationConsistencyScoreThreshold;
+}
+
+function trackingState(statusCode) {
+    if (!Number.isInteger(statusCode)) return 'unknown';
+    return ({ 0: 'not_configured', 1: 'initializing', 2: 'tracking', 3: 'lost', 4: 'cooldown', 5: 'tracking_limited' })[statusCode] || 'unknown';
+}
 export class VIOWrapper {
     constructor({ requestTimeoutMs = 15000, frameTimeoutMs = 30000 } = {}) {
         this.worker = null;
         this.configured = false;
         this.workerBusy = false;
+        this.onFrameComplete = null;
         this.onWasmLog = null;
         this._latestResult = null;
         this._latestMapPoints = null;
@@ -155,8 +199,8 @@ export class VIOWrapper {
         }
     }
 
-    /** Submit exact grayscale view bytes; retain the camera's reusable source buffer. */
-    sendFrame(grayImage, timestamp = 0) {
+    /** Submit exact grayscale bytes. Explicitly owned full views may transfer their storage. */
+    sendFrame(grayImage, timestamp = 0, { transferOwnership = false, sourceTiming = null } = {}) {
         if (!this.configured || !this.worker || this.workerBusy ||
             !(grayImage instanceof Uint8Array) || !Number.isFinite(timestamp)) {
             this._metrics.framesDropped++;
@@ -165,8 +209,11 @@ export class VIOWrapper {
             return false;
         }
         const copyStarted = performance.now();
-        const gray = grayImage.buffer.slice(grayImage.byteOffset, grayImage.byteOffset + grayImage.byteLength);
-        const frameCopyMs = performance.now() - copyStarted;
+        const canTransfer = transferOwnership === true && grayImage.buffer instanceof ArrayBuffer &&
+            grayImage.byteOffset === 0 && grayImage.byteLength === grayImage.buffer.byteLength;
+        const gray = canTransfer ? grayImage.buffer :
+            grayImage.buffer.slice(grayImage.byteOffset, grayImage.byteOffset + grayImage.byteLength);
+        const frameCopyMs = canTransfer ? 0 : performance.now() - copyStarted;
         const message = this._message('frame', { gray, timestamp });
         this.workerBusy = true;
         const timer = setTimeout(() => {
@@ -176,7 +223,7 @@ export class VIOWrapper {
             this._metrics.lastError = 'frame_timeout';
             this._workerFailure(new Error('Worker frame timeout'));
         }, this._frameTimeoutMs);
-        this._activeFrame = { ...message, timer, frameCopyMs };
+        this._activeFrame = { ...message, timer, frameCopyMs, sourceTiming: sourceTiming ? { ...sourceTiming } : null };
         try {
             this.worker.postMessage(message, [gray]);
             this._metrics.framesSubmitted++;
@@ -286,6 +333,7 @@ export class VIOWrapper {
             }
             const roundtripMs = this._nowMs() - this._activeFrame.sentAtMs;
             const frameCopyMs = this._activeFrame.frameCopyMs;
+            const sourceTiming = this._activeFrame.sourceTiming;
             const data = message.data || { inputTimestamp: this._activeFrame.data.timestamp,
                 pose: null, poseValid: false, poseFresh: false, poseTimestamp: null,
                 mapPoints: null, mapPointCount: 0, reason: message.error || 'empty_result' };
@@ -299,16 +347,27 @@ export class VIOWrapper {
             if (data.engineEpoch !== this._engineEpoch) this._latestMapPoints = null;
             if (!wrongEpoch) this._engineEpoch = data.engineEpoch ?? null;
             const poseTimestamp = Number.isFinite(data.poseTimestamp) && data.poseTimestamp >= 0 ? data.poseTimestamp : null;
-            const poseValid = !error && data.poseValid === true && data.poseFresh === true && poseTimestamp !== null &&
+            const futurePose = !error && data.poseFresh === true && data.poseValid === true && poseTimestamp !== null && poseTimestamp > inputTimestamp;
+            const observedPipeline = data.pipeline;
+            const pipeline = !error && observedPipeline?.frameTimestamp === inputTimestamp && observedPipeline.engineEpoch === data.engineEpoch &&
+                (observedPipeline.schema === 'mobile-slam-pipeline-v1' || validPipelineQuality(observedPipeline)) ? observedPipeline : null;
+            const quality = pipeline?.schema === 'mobile-slam-pipeline-v2' && data.quality &&
+                JSON.stringify(data.quality) === JSON.stringify(pipeline.quality) ? data.quality : null;
+            const limitedCurrent = data.statusCode === 5 && data.initialized === true && poseTimestamp === inputTimestamp &&
+                data.engineFrameTimestamp === inputTimestamp && validLimitedQuality(quality, inputTimestamp);
+            const poseValid = !error && !futurePose && (data.statusCode === 2 || limitedCurrent) && data.poseValid === true && data.poseFresh === true && poseTimestamp !== null &&
                 data.pose instanceof Float64Array && data.pose.length === 16 && data.pose.every(Number.isFinite);
             const count = data.mapPointCount;
             const mapValid = poseValid && data.mapPoints instanceof Float64Array && Number.isInteger(count) &&
                 count > 0 && count <= 2000 && data.mapPoints.length === count * 3 && data.mapPoints.every(Number.isFinite);
             this._latestResult = {
                 ...data, pose: poseValid ? data.pose : null, poseValid, poseFresh: poseValid,
+                trackingState: error ? 'unknown' : trackingState(data.statusCode), pipeline, quality,
                 poseTimestamp: poseValid ? poseTimestamp : null,
                 inputTimestamp, timestamp: inputTimestamp, requestId: message.requestId,
                 clientEpoch: message.clientEpoch, sequence: message.sequence, roundtripMs, frameCopyMs,
+                sourceTiming: error ? null : sourceTiming,
+                ...(futurePose ? { reason: 'future_pose_timestamp', engineReason: data.engineReason ?? data.reason } : {}),
                 poseAgeSeconds: poseValid ? inputTimestamp - poseTimestamp : null,
                 mapPoints: mapValid ? data.mapPoints : null, mapPointCount: mapValid ? count : 0,
             };
@@ -316,6 +375,7 @@ export class VIOWrapper {
                 ? { points: data.mapPoints, count } : null;
             if (data.imuDrops) this._metrics.imuDrops = data.imuDrops;
             this._finishFrame(error);
+            if (!error) this.onFrameComplete?.(this._latestResult);
             return;
         }
         const pending = this._pending.get(message.requestId);

@@ -270,6 +270,10 @@ add_executable(test_numerical_contracts tests/test_numerical_contracts.cpp)
 target_link_libraries(test_numerical_contracts PRIVATE estimator pnp_frontend gtest_main)
 add_test(NAME NumericalContractsTest COMMAND test_numerical_contracts)
 
+add_executable(test_pipeline_contracts tests/test_pipeline_contracts.cpp)
+target_link_libraries(test_pipeline_contracts PRIVATE vio_engine gtest_main)
+add_test(NAME PipelineContractsTest COMMAND test_pipeline_contracts)
+
 add_executable(test_projection_trial_contracts tests/test_projection_trial_contracts.cpp)
 target_link_libraries(test_projection_trial_contracts PRIVATE estimator gtest_main)
 add_test(NAME ProjectionTrialContractsTest COMMAND test_projection_trial_contracts)
@@ -277,6 +281,14 @@ add_test(NAME ProjectionTrialContractsTest COMMAND test_projection_trial_contrac
 add_executable(test_math_geometry_contracts tests/test_math_geometry_contracts.cpp)
 target_link_libraries(test_math_geometry_contracts PRIVATE estimator pnp_frontend gtest_main)
 add_test(NAME MathGeometryContractsTest COMMAND test_math_geometry_contracts)
+
+add_executable(test_imu_reuse tests/test_imu_reuse.cpp)
+target_link_libraries(test_imu_reuse PRIVATE estimator gtest_main)
+add_test(NAME IMUReuseTest COMMAND test_imu_reuse)
+
+add_executable(test_geometry_reuse tests/test_geometry_reuse.cpp)
+target_link_libraries(test_geometry_reuse PRIVATE estimator gtest_main)
+add_test(NAME GeometryReuseTest COMMAND test_geometry_reuse)
 
 add_executable(test_synthetic_estimator tests/test_synthetic_estimator.cpp)
 target_link_libraries(test_synthetic_estimator PRIVATE estimator gtest_main ${YAML_CPP_LIBRARIES})

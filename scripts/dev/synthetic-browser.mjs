@@ -89,6 +89,26 @@ export function sourceCoverage(frames, accepted, rows) {
         fixed400SourceScope: frames.length === 400 && frames[0].physicalTimestamp === 0 && frames.at(-1).physicalTimestamp === 19.95 };
 }
 
+/** Count all terminal rows; Limited full-body poses stay in the same accuracy population. */
+export function poseStateSummary(rows) {
+    const names={0:'not_configured',1:'initializing',2:'tracking',3:'lost',4:'cooldown',5:'tracking_limited'};
+    const states=Object.fromEntries([...Object.values(names),'unknown'].map(name=>[name,0]));
+    const pipelineSchemas={'mobile-slam-pipeline-v1':0,'mobile-slam-pipeline-v2':0,unavailable:0};
+    let normalFresh=0,limitedFresh=0,unsupportedFresh=0,limitedQualityUnavailable=0;
+    for(const row of rows) {
+        const state=Number.isInteger(row.statusCode)?names[row.statusCode]??'unknown':'unknown';
+        states[state]++;
+        const schema=row.pipeline?.schema;
+        pipelineSchemas[schema==='mobile-slam-pipeline-v1'||schema==='mobile-slam-pipeline-v2'?schema:'unavailable']++;
+        const fresh=row.poseFresh===true&&row.poseValid===true&&Number.isFinite(row.poseTimestamp)&&
+            row.pose?.length===16&&typeof row.pose.every==='function'&&row.pose.every(Number.isFinite);
+        if(fresh) { if(state==='tracking')normalFresh++;else if(state==='tracking_limited')limitedFresh++;else unsupportedFresh++; }
+        if(state==='tracking_limited'&&(!row.quality||schema!=='mobile-slam-pipeline-v2'))limitedQualityUnavailable++;
+    }
+    return {terminalRows:rows.length,states,normalFresh,limitedFresh,unsupportedFresh,limitedQualityUnavailable,pipelineSchemas,
+        fullBodyFresh:normalFresh+limitedFresh+unsupportedFresh,limitedExcludedFromAccuracy:false};
+}
+
 export function distribution(values) {
     const ordered=values.filter(Number.isFinite).sort((a,b)=>a-b);
     const at=p=>ordered[Math.max(0,Math.ceil(p*ordered.length)-1)]??null;
@@ -229,7 +249,7 @@ function installDeviceBoundary({ width, height, sensor, deterministic, orientati
     const state = window.__synthetic = { realNow, nativeRVFC, nativeCancelRVFC, virtualMs: 100000,
         raf: new Map(), rvfc: new Map(), nextId: 1, sensors: [], current: null, deterministic,
         drawReadback: [], captures: [], accepted: [], frameAttempts: [], submittedIMU: [], rows: [], calls: [], timings: [], sourceDelivery: [],
-        nativeRAF,observerTimings:[],rafTicks:0,rafIntervals:[],lastRAFTime:null,publications:new Map(),acceptedTimestamps:new Set() };
+        nativeRAF,observerTimings:[],callbackTimings:[],captureCompletions:[],rafTicks:0,rafIntervals:[],lastRAFTime:null,publications:new Map(),acceptedTimestamps:new Set() };
     if (deterministic) Object.defineProperty(performance, 'now', { configurable: true, value: () => state.virtualMs });
     if(!nativeRAF) {
         window.requestAnimationFrame = callback => { const id = state.nextId++; state.raf.set(id, callback); return id; };
@@ -279,10 +299,10 @@ function installDeviceBoundary({ width, height, sensor, deterministic, orientati
     };
 }
 
-async function liveReplay(page, input, frames, mode) {
+async function liveReplay(page, input, frames, mode, capture = 'sync') {
     await page.waitForFunction(() => window.__mobileSLAM?.app?.startBtn?.disabled === false, null, { timeout: 60000, polling: 100 });
     await page.addScriptTag({content:`window.__assertSyntheticSourcePixels = (${assertSourceFramePixels.toString()}); window.__resolveSyntheticPublication = (${resolvePublishedFrame.toString()});`});
-    return page.evaluate(async ({ input, frames, deterministic, nativeRAF }) => {
+    return page.evaluate(async ({ input, frames, deterministic, nativeRAF, capture }) => {
         const state = window.__synthetic, app = window.__mobileSLAM.app;
         const delay = ms => new Promise(resolve => setTimeout(resolve, ms));
         const digest = async bytes => Array.from(new Uint8Array(await crypto.subtle.digest('SHA-256', bytes))).map(v => v.toString(16).padStart(2, '0')).join('');
@@ -315,6 +335,13 @@ async function liveReplay(page, input, frames, mode) {
             if (gray && state.current) state.captures.push({ sourceIndex: state.current.index, initialized: app._vioInitialized, ms: state.realNow() - started });
             return gray;
         });
+        if(app._captureWorker)wrap(app._captureWorker,'onFrame',(fn,args)=>{
+            const packet=args[0],source=state.publications.get(packet.timing.timestampS),started=state.realNow();
+            let accepted=false;
+            try { accepted=fn(...args); return accepted; }
+            finally { state.captureCompletions.push({sourceIndex:source?.frame.index??null,physicalTimestamp:source?.frame.physicalTimestamp??null,
+                snapshotAccepted:accepted!==false,ms:state.realNow()-started}); }
+        });
         wrap(app.vio, 'sendFrame', (fn, args) => {
             const [gray, timestamp] = args, copy = gray.slice(), started = state.realNow();
             let source;
@@ -338,9 +365,10 @@ async function liveReplay(page, input, frames, mode) {
                 const source = state.accepted.find(row => row.timestamp === latest.inputTimestamp);
                 if (!source) throw new Error('Worker result lacks accepted physical frame');
                 const { mapPoints, ...fields } = latest;
+                const receivedWallMs=state.realNow();
                 state.rows.push({ ...fields, frame: state.rows.length, sourceIndex: source.sourceIndex, sourceFrameIndex: source.sourceIndex, physicalTimestamp: source.physicalTimestamp,
-                    pose: latest.pose ? Array.from(latest.pose) : null, roundTripMs: state.realNow() - source.submittedWallMs,
-                    poseAgeWallMs: !deterministic&&latest.poseFresh&&latest.poseValid&&Number.isFinite(latest.poseTimestamp) ? state.realNow() - latest.poseTimestamp*1000 : null });
+                    pose: latest.pose ? Array.from(latest.pose) : null, receivedWallMs,roundTripMs:receivedWallMs-source.submittedWallMs,
+                    poseAgeWallMs: !deterministic&&latest.poseFresh&&latest.poseValid&&Number.isFinite(latest.poseTimestamp) ? receivedWallMs-latest.poseTimestamp*1000 : null });
             }
             return result;
         });
@@ -349,6 +377,17 @@ async function liveReplay(page, input, frames, mode) {
         });
         await app.start();
         if (!app.running) throw new Error(`App failed to start: ${app.statusEl.textContent}`);
+        const drainCapture = async () => {
+            if (capture !== 'worker') return;
+            const deadline = state.realNow() + 5000;
+            while (app._captureWorker && (['starting','probing'].includes(app._captureWorker.state) ||
+                app._captureWorker.getMetrics().inFlight || app._captureWorker.getMetrics().pending)) {
+                if (state.realNow() > deadline) throw new Error('Capture Worker drain timeout');
+                await delay(2);
+            }
+            if (!app._captureWorker || !['ready','active'].includes(app._captureWorker.state)) throw new Error('Requested capture Worker experiment failed');
+        };
+        if (capture === 'worker') await drainCapture();
         const effectiveConfig=await app.vio.getEffectiveConfig();
         clearInterval(state.startupCapture);
         const video = app.camera.getVideoElement();
@@ -407,8 +446,11 @@ async function liveReplay(page, input, frames, mode) {
                     delivery={sourceIndex:frame.index,status:'presented',latenessMs:deterministic?null:state.realNow()-scheduledMs};
                     state.sourceDelivery.push(delivery);
                     for(const [id,item]of [...state.rvfc]) {
-                        state.rvfc.delete(id);item.callback(performance.now(),{presentedFrames:ordinal+1,mediaTime:frame.timestamp,
+                        state.rvfc.delete(id);
+                        const started=state.realNow();
+                        item.callback(performance.now(),{presentedFrames:ordinal+1,mediaTime:frame.timestamp,
                             captureTime:scheduledMs,presentationTime:scheduledMs,width:input.config.width,height:input.config.height});
+                        state.callbackTimings.push({sourceIndex:frame.index,physicalTimestamp:frame.physicalTimestamp,ms:state.realNow()-started});
                     }
                     publication.packetTiming=app._videoFrameTiming?.timestampS===state.currentSourceTimeS?{...app._videoFrameTiming}:null;
                 };
@@ -447,12 +489,18 @@ async function liveReplay(page, input, frames, mode) {
                     delivery.appDisposition=app.frameMetrics.accepted>before.accepted?'accepted':app.frameMetrics.attempted>before.attempted?'worker_rejected':
                         app.frameMetrics.captured>before.captured?'captured_not_submitted':'not_captured_rate_or_lifecycle';
                 }
-                if (deterministic) await app.vio.waitForFree(60000);
+                if (deterministic) {
+                    await drainCapture(); await app.vio.waitForFree(60000);
+                    if(capture==='worker')delivery.appDisposition=state.accepted.some(row=>row.sourceIndex===frame.index)?'accepted':
+                        state.frameAttempts.some(row=>row.sourceIndex===frame.index)?'worker_rejected':
+                        state.captureCompletions.some(row=>row.sourceIndex===frame.index&&row.snapshotAccepted)?'captured_not_submitted':'not_captured_rate_or_lifecycle';
+                }
             }
             const finalIMUTime=input.imu.find(row=>row[0]>frames.at(-1).timestamp)?.[0]??frames.at(-1).timestamp;
             if (deterministic) { state.virtualMs = epochMs + finalIMUTime*1000; emitUntil(finalIMUTime); }
             else await delay(Math.max(0, epochMs + frames.at(-1).timestamp*1000 + (nativeRAF?100:20) - state.realNow()));
             clearInterval(sensorTimer);
+            await drainCapture();
             await app.vio.waitForFree(60000);
             if(nativeRAF){await delay(34);app.running=false;if(state.associationError)throw new Error(state.associationError);}
             // Poll completion through the actual App consume path once after the last frame.
@@ -478,7 +526,9 @@ async function liveReplay(page, input, frames, mode) {
                     tracking: state.calls.find(c=>c.method==='setTrackingParams')?.args, pnp: state.calls.find(c=>c.method==='setPnPParams')?.args,
                     fThreshold: state.calls.find(c=>c.method==='setFThreshold')?.args[0] ?? effectiveConfig.params.f_threshold, execution: [0,1] },
                 startup, imu: app.imu.getDiagnostics(), transport: app.vio.getMetrics(), appFrames: { ...app.frameMetrics },
+                captureWorker: app._captureWorker?.getMetrics() ?? null,
                 captures: state.captures, timings: state.timings, sourceDelivery: state.sourceDelivery, drawReadback: state.drawReadback,
+                callbackTimings:state.callbackTimings,captureCompletions:state.captureCompletions,
                 frameAttempts:state.frameAttempts,observerTimings:state.observerTimings,
                 sourcePublications:Array.from(state.publications,([timestamp,source])=>({timestamp,sourceFrameIndex:source.frame.index,
                     physicalTimestamp:source.frame.physicalTimestamp,presentedFrames:source.presentedFrames,captureGeneration:source.captureGeneration,clientEpoch:source.clientEpoch,geometry:source.geometry,
@@ -490,7 +540,7 @@ async function liveReplay(page, input, frames, mode) {
                 secureContext: isSecureContext, crossOriginIsolated, calibration: app.calibrationProvenance,
                 actualRoute: { htmlVideoElement: true, canvasCaptureStream: true, drawImage: true, app: true, camera: true, imu: true, worker: true, renderer: Boolean(app.renderer) } };
         } finally { clearInterval(sensorTimer); app.stop(); }
-    }, { input, frames, deterministic: mode === 'live-deterministic', nativeRAF:mode==='live-paced-native-raf' });
+    }, { input, frames, deterministic: mode === 'live-deterministic', nativeRAF:mode==='live-paced-native-raf', capture });
 }
 
 export async function main(argv = process.argv.slice(2)) {
@@ -498,12 +548,14 @@ export async function main(argv = process.argv.slice(2)) {
         mode: { type: 'string', default: 'raw' }, sensor: { type: 'string', default: 'generic' }, frames: { type: 'string', default: '400' },
         'f-threshold':{type:'string',default:'1'},
         'rotation-rescue':{type:'string',default:'default'},
+        capture:{type:'string',default:'sync'},
         'timeout-ms': { type: 'string', default: '600000' } } });
     if (!values.input || !values.loader || !values.output || !modes.includes(values.mode) || !['generic','device-motion'].includes(values.sensor)) {
         throw new Error('Required: --input synthetic/input.json --loader isolated/vio_engine.js --output NEW_DIRECTORY --mode raw|live-deterministic|live-paced|live-paced-native-raf [--sensor generic|device-motion --frames 400 --f-threshold 1|default]');
     }
     const fThresholdOverride=parseFThresholdOverride(values['f-threshold']);
     const rotationRescueOverride=parseRotationRescueOverride(values['rotation-rescue']);
+    if (!['sync','worker'].includes(values.capture) || values.mode==='raw' && values.capture!=='sync') throw new Error('capture must be sync or worker; worker requires a live App mode');
     if(values.mode==='raw'&&fThresholdOverride!==1)throw new Error('f-threshold applies only to live App modes; raw replay uses its input profile');
     const timeoutMs = Number(values['timeout-ms']);
     if (!Number.isInteger(timeoutMs) || timeoutMs < 1000 || timeoutMs > 1800000) throw new Error('timeout-ms must be 1000..1800000');
@@ -523,6 +575,7 @@ export async function main(argv = process.argv.slice(2)) {
         mode: values.mode, scheduler:schedulerContract(values.mode),sensor: values.mode === 'raw' ? null : values.sensor,
         requestedRotationRescueOverride:rotationRescueOverride,
         requestedRotationRescue,
+        capture:values.capture,physicalCaptureTargetVerified:false,
         requestedAppProfile:values.mode==='raw'?null:{config:'mobile_default',calibration:'supplied_synthetic_camera_profile',
             fThresholdOverride,fThresholdSource:fThresholdOverride===null?'unchanged_App_default':'URL_override'},
         source: { path: inputFile, sha256: sha(inputBytes), specSha256: input.spec_sha256,
@@ -541,7 +594,7 @@ export async function main(argv = process.argv.slice(2)) {
     await addFile('/candidate/vio_engine.js', loaderFile, 'application/javascript');
     report.fingerprints['scripts/dev/synthetic-browser.mjs']={sha256:sha(await fs.readFile(fileURLToPath(import.meta.url)))};
     await addFile('/', path.join(root, 'web/index.html'), 'text/html');
-    for (const name of ['app.js','vio-wrapper.js','vio-worker.js','camera.js','imu.js','orientation.js','renderer.js']) await addFile(`/js/${name}`, path.join(root,'web/js',name), 'application/javascript');
+    for (const name of ['app.js','vio-wrapper.js','vio-worker.js','capture-worker.js','camera.js','imu.js','orientation.js','renderer.js']) await addFile(`/js/${name}`, path.join(root,'web/js',name), 'application/javascript');
     for (const [index, frame] of frames.entries()) {
         const file = await fs.realpath(path.join(imageRoot, frame.file)); if (!inside(imageRoot,file)) throw new Error('Frame link escapes input directory');
         const bytes = await fs.readFile(file), gray = parsePGM(bytes, input.config.width, input.config.height);
@@ -590,12 +643,14 @@ export async function main(argv = process.argv.slice(2)) {
         const query=new URLSearchParams({wasm:'candidate/vio_engine.js',cameraProfile:'/camera-profile.json'});
         if(values.mode!=='raw'&&fThresholdOverride!==null)query.set('fth',String(fThresholdOverride));
         if(values.mode!=='raw'&&requestedRotationRescue!==null)query.set('rotation-rescue',requestedRotationRescue?'1':'0');
+        if(values.mode!=='raw'&&values.capture==='worker')query.set('capture','worker');
         await page.goto(`http://127.0.0.1:${server.address().port}/${values.mode==='raw'?'':`?${query}`}`);
-        report.replay=await Promise.race([values.mode==='raw'?rawReplay(page,input,frames):liveReplay(page,input,frames,values.mode),
+        report.replay=await Promise.race([values.mode==='raw'?rawReplay(page,input,frames):liveReplay(page,input,frames,values.mode,values.capture),
             new Promise((_,reject)=>{timer=setTimeout(()=>reject(new Error('Bounded synthetic browser timeout')),timeoutMs);})]);
         validateResultIdentity(report.replay.rows,report.replay.accepted);
         report.effectiveProfile=assertEffectiveProfile(report.replay.effectiveConfig,report.replay.config,report.replay.parameters);
         report.summary=summarizeResults(report.replay.rows);
+        report.tracking=poseStateSummary(report.replay.rows);
         const planned=input.capture?.plannedFrames&&frames.length===input.frames.length?input.capture.plannedFrames:frames;
         report.coverage=sourceCoverage(planned,report.replay.accepted,report.replay.rows);
         report.frameLedger=planned.map(frame=>{
@@ -604,10 +659,12 @@ export async function main(argv = process.argv.slice(2)) {
             const source=report.replay.sourceDelivery?.find(delivery=>delivery.sourceIndex===frame.index);
             const nativeDisposition=values.mode==='live-paced-native-raf'?(accepted?'accepted':
                 report.replay.frameAttempts.some(attempt=>attempt.sourceIndex===frame.index)?'worker_rejected':
-                report.replay.captures.some(capture=>capture.sourceIndex===frame.index)?'captured_not_submitted':
+                (report.replay.captures.some(capture=>capture.sourceIndex===frame.index)||
+                    report.replay.captureCompletions?.some(capture=>capture.sourceIndex===frame.index&&capture.snapshotAccepted))?'captured_not_submitted':
                 source?.status==='schedule_overrun'?'schedule_overrun':'not_captured_rate_or_lifecycle'):null;
             return {sourceFrameIndex:frame.index,physicalTimestamp:frame.physicalTimestamp,planned:true,accepted:Boolean(accepted),completed:Boolean(row),
                 fresh:Boolean(row?.poseFresh&&row?.poseValid),inputTimestamp:accepted?.timestamp??null,poseTimestamp:row?.poseTimestamp??null,
+                statusCode:row?.statusCode??null,trackingState:row?.trackingState??null,
                 disposition:nativeDisposition??source?.appDisposition??source?.status??(accepted?'raw_submitted':'not_in_captured_replay'),reason:row?.reason??null};
         });
         report.poseEvidence={nonzeroFreshPoses:report.summary.freshPoseFrames>0,accuracyStatus:'not_evaluated_here',

@@ -91,14 +91,13 @@ void Estimator::propagateIMUState(int frame_index, double dt, const Eigen::Vecto
     // update rotation: R = R * exp(gyro*dt)
     sliding_window_[frame_index].R *= Utility::deltaQ(bias_corrected_gyro * dt).normalized().toRotationMatrix();
 
-    // Propagate position and velocity using trapezoidal integration
+    // Match preintegration's exact time moments of affine world acceleration.
     Eigen::Vector3d bias_corrected_curr_acc =
         sliding_window_[frame_index].R * (linear_acceleration - sliding_window_[frame_index].Ba) - g_;
     Eigen::Vector3d bias_corrected_acc = 0.5 * (bias_corrected_prev_acc + bias_corrected_curr_acc);
 
-    // Update position: P = P + V*dt + 0.5*a*dt^2
-    // Update velocity: V = V + a*dt
-    sliding_window_[frame_index].P += dt * sliding_window_[frame_index].V + 0.5 * dt * dt * bias_corrected_acc;
+    sliding_window_[frame_index].P += dt * sliding_window_[frame_index].V + dt * dt *
+        (bias_corrected_prev_acc / 3.0 + bias_corrected_curr_acc / 6.0);
     sliding_window_[frame_index].V += dt * bias_corrected_acc;
 
     // NaN guard: restore previous state if propagation produced NaN
@@ -196,6 +195,11 @@ void Estimator::processImage(const common::ImageData& image, double timestamp) {
     sliding_window_[frame_count_].timestamp = timestamp;
 
     common::ImageFrame imageframe(image, timestamp);
+    for (auto it = imageframe.points.begin(); it != imageframe.points.end();) {
+        const frontend::FeaturePerFrame observation(it->second);
+        if (!it->second.allFinite() || !observation.ray_vector.allFinite()) it = imageframe.points.erase(it);
+        else { it->second.head<3>() = observation.ray_vector; ++it; }
+    }
     imageframe.pre_integration = std::move(tmp_pre_integration_);
     all_image_frame_.insert(std::make_pair(timestamp, std::move(imageframe)));
     if (all_image_frame_.size() > 4096) {
@@ -334,6 +338,10 @@ void Estimator::slideWindow() {
 }
 
 void Estimator::slideWindowNewGeneralFrame() {
+    const Matrix3d old_R = sliding_window_[WINDOW_SIZE - 1].R * r_ic_;
+    const Vector3d old_P = sliding_window_[WINDOW_SIZE - 1].P + sliding_window_[WINDOW_SIZE - 1].R * t_ic_;
+    const Matrix3d new_R = sliding_window_[WINDOW_SIZE].R * r_ic_;
+    const Vector3d new_P = sliding_window_[WINDOW_SIZE].P + sliding_window_[WINDOW_SIZE].R * t_ic_;
     // preintegrate new general frame onto the last keyframe
     for (unsigned int i = 0; i < sliding_window_[WINDOW_SIZE].dt_buf.size(); i++) {
         double tmp_dt = sliding_window_[WINDOW_SIZE].dt_buf[i];
@@ -346,7 +354,7 @@ void Estimator::slideWindowNewGeneralFrame() {
     sliding_window_.copyFrame(WINDOW_SIZE - 1, WINDOW_SIZE);
     sliding_window_.createNewPreintegration(WINDOW_SIZE, prev_acc_, prev_gyro_);
     sliding_window_.clearBuffer(WINDOW_SIZE);
-    feature_manager_.removeFront(frame_count_);
+    feature_manager_.removeFront(frame_count_, old_R, old_P, new_R, new_P);
 }
 
 void Estimator::slideWindowOldKeyframe() {
@@ -405,9 +413,11 @@ std::vector<Eigen::Vector3d> Estimator::getSlidingWindowMapPoints() const {
 #endif
     std::vector<Eigen::Vector3d> new_points;
     if (solver_flag_ == common::SolverFlag::NON_LINEAR) {
+        int slot = 0;
         for (const auto& it_per_id : feature_manager_.feature_bank_) {
-            if (!(it_per_id.used_num >= 2 && it_per_id.start_frame < WINDOW_SIZE - 2))
-                continue;
+            if (!it_per_id.isParameterCandidate()) continue;
+            if (slot++ >= NUM_OF_FEATURES) break;
+            if (!it_per_id.isDepthAdmitted() || it_per_id.geometry_pending) continue;
             if (it_per_id.estimated_depth > 0 && it_per_id.solve_flag == 1) {
                 Eigen::Vector3d point_normalized = it_per_id.feature_per_frame[0].ray_vector;
                 Eigen::Vector3d point_3d = point_normalized * it_per_id.estimated_depth;
@@ -430,9 +440,10 @@ void Estimator::logTriangulationDiag(int frame_num) const {
     int n_unsolved = 0, n_solved = 0, n_failed = 0, n_init_depth = 0;
     double depth_sum = 0, depth_min = 1e9, depth_max = 0;
     double init_d = utility::g_config.estimator.init_depth;
+    int slot = 0;
     for (const auto& feat : feature_manager_.feature_bank_) {
-        if (!(feat.used_num >= 2 && feat.start_frame < WINDOW_SIZE - 2))
-            continue;
+        if (!feat.isParameterCandidate()) continue;
+        if (slot++ >= NUM_OF_FEATURES) break;
         if (feat.solve_flag == 0) { n_unsolved++; }
         else if (feat.solve_flag == 1) {
             n_solved++;
@@ -465,10 +476,12 @@ void Estimator::logTriangulationDiag(int frame_num) const {
 
 std::vector<common::SolvedFeature> Estimator::getSolvedFeatures() const {
     std::vector<common::SolvedFeature> result;
+    int slot = 0;
     for (const auto& it_per_id : feature_manager_.feature_bank_) {
-        int used_num = static_cast<int>(it_per_id.feature_per_frame.size());
-        if (!(used_num >= 2 && it_per_id.start_frame < WINDOW_SIZE - 2))
-            continue;
+        if (!it_per_id.isParameterCandidate()) continue;
+        if (slot++ >= NUM_OF_FEATURES) break;
+        if (!it_per_id.isDepthAdmitted() || it_per_id.geometry_pending) continue;
+        if (it_per_id.feature_per_frame.back().projection_outlier) continue;
         if (it_per_id.solve_flag != 1 || !std::isfinite(it_per_id.estimated_depth) ||
             it_per_id.estimated_depth <= 1e-10)
             continue;

@@ -9,6 +9,7 @@ const { values } = parseArgs({ options: {
     origin: { type: 'string', default: 'https://dev.serdic.com:7002' },
     samples: { type: 'string', default: '8' },
     'record-seconds': { type: 'string', default: '0' },
+    timer: { type: 'boolean', default: false },
     output: { type: 'string' },
 } });
 const endpoint = new URL(values.cdp);
@@ -20,6 +21,7 @@ const count = Number(values.samples);
 if (!Number.isInteger(count) || count < 1 || count > 120) throw new Error('samples must be 1..120');
 const seconds = Number(values['record-seconds']);
 if (!Number.isInteger(seconds) || seconds < 0 || seconds > 60) throw new Error('record-seconds must be 0..60');
+if (values.timer && seconds !== 30) throw new Error('--timer requires --record-seconds 30');
 const output = values.output || `build/dev-android/snapshot-${new Date().toISOString().replace(/[:.]/g, '-')}.json`;
 const token = randomUUID();
 const report = { schema: 'mobile-slam-android-cdp-v1', startedAt: new Date().toISOString(), origin,
@@ -60,7 +62,7 @@ function snapshot() {
         sensor: app.imu.getSensorType(), diagnostics: window.__mobileSLAM.diagnostics(),
         result: result && Object.fromEntries(['clientEpoch', 'engineEpoch', 'sequence', 'statusCode', 'reason', 'initialized',
             'featureCount', 'imuCount', 'inputTimestamp', 'engineFrameTimestamp', 'imuEndpointTimestamp',
-            'poseTimestamp', 'poseFresh', 'poseValid', 'engineProcessingMs', 'imuWaitMs', 'workerProcessingMs',
+            'poseTimestamp', 'poseFresh', 'poseValid', 'engineProcessingMs', 'imuWaitMs', 'imuWaitBudgetMs', 'workerProcessingMs',
             'roundtripMs', 'imuIntervalLoss'].map(key => [key, result[key]])),
         pose: result?.pose ? Array.from(result.pose) : null,
         camera: settings && Object.fromEntries(['width', 'height', 'frameRate', 'facingMode', 'aspectRatio'].map(key => [key, settings[key]])),
@@ -68,10 +70,10 @@ function snapshot() {
             css: box && { width: box.width, height: box.height, bottom: box.bottom },
             buffer: canvas && { width: canvas.width, height: canvas.height }, viewportHeight: innerHeight, devicePixelRatio } };
 }
-function startRecording(seconds, token) {
+function startRecording(seconds, token, showTimer = false) {
     const app = window.__mobileSLAM?.app, worker = app?.vio.worker;
     if (!app || !worker || !app.running) throw new Error('Start Mobile-SLAM before recording');
-    if (window.__mobileSLAMAndroidRecording) throw new Error('A recording is already active');
+    if (window.__mobileSLAMAndroidRecording || window.__mobileSLAMInputCapture) throw new Error('A recording is already active');
     const settings = app.camera.getVideoTrack?.()?.getSettings();
     const capabilities = app.camera.getVideoTrack?.()?.getCapabilities();
     const record = { startedAtMs: performance.now(), timeOriginMs: performance.timeOrigin,
@@ -80,46 +82,106 @@ function startRecording(seconds, token) {
         camera: { settings: settings && Object.fromEntries(['width', 'height', 'frameRate', 'facingMode', 'aspectRatio', 'zoom', 'focusDistance'].map(key => [key, settings[key]])),
             capabilities: capabilities && Object.fromEntries(['width', 'height', 'frameRate', 'zoom', 'focusDistance', 'focusMode'].map(key => [key, capabilities[key]])),
             rotation: app.camera.getRotateMode(), processing: [app._processWidth, app._processHeight] },
-        results: [], imu: [], dropped: { results: 0, imu: 0 }, stoppedAtMs: null };
+        results: [], imu: [], dropped: { results: 0, imu: 0 }, stoppedAtMs: null,
+        observationLoad: 'Copies numeric IMU rows and result metadata; optional timer and submission/UI hooks add main-thread work.' };
+    const frameKey = (clientEpoch, requestId, sequence) => `${clientEpoch}:${requestId}:${sequence}`;
+    const submitted = new Map(), received = new Map();
     const receive = event => {
         if (event.data.type !== 'result') return;
         const data = event.data.data;
         if (!data) return;
+        const key = frameKey(event.data.clientEpoch, event.data.requestId, event.data.sequence);
+        const frame = submitted.get(key);
+        submitted.delete(key);
         if (record.results.length >= 1500) { record.dropped.results++; return; }
-        record.results.push({ arrivalMs: performance.now(), requestId: event.data.requestId,
+        const arrivalMs = performance.now();
+        const row = { arrivalMs, requestId: event.data.requestId,
             clientEpoch: event.data.clientEpoch, sequence: event.data.sequence,
+            sentAtMs: frame?.sentAtMs ?? null, sourceTiming: frame?.sourceTiming ?? null,
+            frameCopyMs: frame?.frameCopyMs ?? null,
+            roundtripMs: frame ? arrivalMs - frame.sentAtMs : null, uiStateUpdatedAtMs: null,
             ...Object.fromEntries(['engineEpoch', 'initialized', 'statusCode', 'reason', 'featureCount', 'imuCount',
                 'inputTimestamp', 'engineFrameTimestamp', 'imuEndpointTimestamp', 'poseTimestamp', 'poseFresh', 'poseValid',
-                'engineProcessingMs', 'imuWaitMs', 'workerProcessingMs', 'workerQueueMs', 'solverIterations',
-                'solverTermination', 'imuDrops', 'imuIntervalLoss', 'motionDiscontinuity'].map(key => [key, data[key]])),
-            pose: data.pose ? Array.from(data.pose) : null });
+                'engineProcessingMs', 'imuWaitMs', 'imuWaitBudgetMs', 'workerProcessingMs', 'workerQueueMs', 'solverIterations',
+                'solverTermination', 'imuDrops', 'imuIntervalLoss', 'motionDiscontinuity', 'pipeline', 'candidatePipeline'].map(key => [key, data[key]])),
+            pose: data.pose ? Array.from(data.pose) : null };
+        record.results.push(row);
+        received.set(key, row);
     };
-    const original = app.vio.sendIMU;
+    const originalIMU = app.vio.sendIMU, originalFrame = app.vio.sendFrame, originalConsume = app._consumeResult;
     function sendIMU(data, count) {
         for (let index = 0; index < count; index++) {
             if (record.imu.length >= 12000) { record.dropped.imu += count - index; break; }
             record.imu.push(Array.from(data.subarray(index * 7, index * 7 + 7)));
         }
-        return original.apply(this, arguments);
+        return originalIMU.apply(this, arguments);
+    }
+    function sendFrame(image, timestamp) {
+        const accepted = originalFrame.apply(this, arguments);
+        if (accepted && this._activeFrame) {
+            const frame = this._activeFrame;
+            const timing = app.lastFrameTiming;
+            submitted.set(frameKey(frame.clientEpoch, frame.requestId, frame.sequence), {
+                sentAtMs: frame.sentAtMs - performance.timeOrigin,
+                frameCopyMs: frame.frameCopyMs,
+                sourceTiming: timing?.timestampS === timestamp &&
+                    (timing.clientEpoch == null || timing.clientEpoch === frame.clientEpoch) ? structuredClone(timing) : null,
+            });
+        }
+        return accepted;
+    }
+    function consumeResult(result) {
+        const value = originalConsume.apply(this, arguments);
+        if (result) {
+            const key = frameKey(result.clientEpoch, result.requestId, result.sequence);
+            const row = received.get(key);
+            if (row) { row.uiStateUpdatedAtMs = performance.now(); received.delete(key); }
+        }
+        return value;
     }
     worker.addEventListener('message', receive);
     app.vio.sendIMU = sendIMU;
-    const stop = () => {
+    app.vio.sendFrame = sendFrame;
+    app._consumeResult = consumeResult;
+    let timer, countdown = null, countdownTimer = null;
+    const stop = (reason = 'host_complete') => {
         if (record.stoppedAtMs !== null) return;
         worker.removeEventListener('message', receive);
-        if (app.vio.sendIMU === sendIMU) app.vio.sendIMU = original;
+        if (app.vio.sendIMU === sendIMU) app.vio.sendIMU = originalIMU;
+        if (app.vio.sendFrame === sendFrame) app.vio.sendFrame = originalFrame;
+        if (app._consumeResult === consumeResult) app._consumeResult = originalConsume;
+        submitted.clear(); received.clear();
         record.stoppedAtMs = performance.now();
-        clearTimeout(timer);
+        record.stopReason = reason;
+        clearTimeout(timer); clearInterval(countdownTimer);
+        countdown?.remove();
     };
-    const timer = setTimeout(stop, seconds * 1000);
+    timer = setTimeout(() => stop('duration'), seconds * 1000);
     window.__mobileSLAMAndroidRecording = { record, stop, token };
+    if (showTimer) {
+        try {
+            countdown = document.createElement('div');
+            countdown.style.cssText = 'position:fixed;top:48px;left:12px;z-index:10001;padding:8px 12px;background:#111;color:#00ff88;font:16px sans-serif;pointer-events:none;border:1px solid #00ff88;border-radius:4px';
+            document.body.appendChild(countdown);
+            const update = () => {
+                const elapsed = (performance.now() - record.startedAtMs) / 1000;
+                const instruction = elapsed < 10 ? '정지' : elapsed < 20 ? '평소 Lost가 발생하는 정도로 이동·회전' : '다시 정지';
+                countdown.textContent = `${Math.max(0, Math.ceil(seconds - elapsed))}초 · ${instruction}`;
+            };
+            update(); countdownTimer = setInterval(update, 250);
+        } catch (error) {
+            stop('setup_error');
+            delete window.__mobileSLAMAndroidRecording;
+            throw error;
+        }
+    }
     return { startedAtMs: record.startedAtMs, seconds };
 }
-async function finishRecording() {
+async function finishRecording(reason = 'host_complete') {
     const expression = `(() => {
         const capture = window.__mobileSLAMAndroidRecording;
         if (!capture || capture.token !== ${JSON.stringify(token)}) return null;
-        capture.stop(); delete window.__mobileSLAMAndroidRecording; return capture.record;
+        capture.stop(${JSON.stringify(reason)}); delete window.__mobileSLAMAndroidRecording; return capture.record;
     })()`;
     const result = await call('Runtime.evaluate', { expression, returnByValue: true, userGesture: false });
     if (result.exceptionDetails) throw new Error(JSON.stringify(result.exceptionDetails));
@@ -132,7 +194,7 @@ try {
         socket.addEventListener('error', () => { clearTimeout(timer); reject(new Error('CDP connection failed')); }, { once: true });
     });
     if (seconds) {
-        const started = await call('Runtime.evaluate', { expression: `(${startRecording.toString()})(${seconds}, ${JSON.stringify(token)})`, returnByValue: true, userGesture: false });
+        const started = await call('Runtime.evaluate', { expression: `(${startRecording.toString()})(${seconds}, ${JSON.stringify(token)}, ${values.timer})`, returnByValue: true, userGesture: false });
         if (started.exceptionDetails) throw new Error(JSON.stringify(started.exceptionDetails));
     }
     for (let index = 0; index < count; index++) {
@@ -153,7 +215,7 @@ try {
     report.completed = false; report.error = error.message; process.exitCode = 1;
 } finally {
     if (seconds && !report.recording && socket.readyState === WebSocket.OPEN) {
-        try { report.recording = await finishRecording(); }
+        try { report.recording = await finishRecording('host_error'); }
         catch (error) { report.cleanupError = error.message; }
     }
     socket.close();

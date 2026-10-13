@@ -1,6 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { validateSyntheticInput, bodyToDevice, sourceCoverage, validateResultIdentity, distribution, assertSourceFrameHash, replayIMUBatches,
+import { limitedPipeline } from './limited-fixture.mjs';
+import { validateSyntheticInput, bodyToDevice, sourceCoverage, poseStateSummary, validateResultIdentity, distribution, assertSourceFrameHash, replayIMUBatches,
     profileFromEffectiveConfig,assertEffectiveProfile,assertSourceFramePixels,schedulerContract,resolvePublishedFrame,parseFThresholdOverride,parseRotationRescueOverride } from '../../scripts/dev/synthetic-browser.mjs';
 
 function fixture() {
@@ -9,6 +10,23 @@ function fixture() {
         frames: [0,1].map(index => ({ index, timestamp: index/20, physicalTimestamp: index/20, file: `${index}.pgm`, sha256: 'a'.repeat(64) })),
         imu: [0,.025,.05,.075].map(t => [t,0,0,9.81,0,0,0]) };
 }
+
+test('State summary retains normal, Limited, Lost and unknown rows without removing Limited full-body accuracy coverage', () => {
+    const frames=[0,1,2,3,4].map(index=>({index,timestamp:index,physicalTimestamp:index}));
+    const rows=frames.map(frame=>({sourceIndex:frame.index,inputTimestamp:frame.timestamp,physicalTimestamp:frame.timestamp,
+        poseTimestamp:frame.timestamp,poseFresh:true,poseValid:true,pose:new Array(16).fill(0)}));
+    Object.assign(rows[0],{statusCode:2,pipeline:{schema:'mobile-slam-pipeline-v1'}});
+    Object.assign(rows[1],{statusCode:5,pipeline:limitedPipeline(1),quality:limitedPipeline(1).quality});
+    Object.assign(rows[2],{statusCode:3,poseFresh:false,poseValid:false,pose:null});
+    Object.assign(rows[3],{statusCode:99,poseFresh:false,poseValid:false,pose:null});
+    Object.assign(rows[4],{statusCode:5,quality:null});
+    const state=poseStateSummary(rows),coverage=sourceCoverage(frames,frames.map(frame=>({sourceIndex:frame.index})),rows);
+    assert.equal(state.terminalRows,5);assert.equal(state.states.tracking,1);assert.equal(state.states.tracking_limited,2);
+    assert.equal(state.states.lost,1);assert.equal(state.states.unknown,1);
+    assert.equal(state.normalFresh,1);assert.equal(state.limitedFresh,2);assert.equal(state.fullBodyFresh,3);
+    assert.equal(state.limitedQualityUnavailable,1,'Missing quality is reported for assessment failure, never filtered to improve the score');
+    assert.equal(coverage.planned,5);assert.equal(coverage.fresh,3);assert.equal(state.limitedExcludedFromAccuracy,false);
+});
 
 test('Synthetic schema rejects phone recordings and incomplete profile/physical identity', () => {
     assert.equal(validateSyntheticInput(fixture()).length, 2);

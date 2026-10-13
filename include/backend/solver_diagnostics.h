@@ -15,6 +15,14 @@ struct SolverDiagnostics {
     int rejectedImuFactors = 0;
     int visualFactors = 0;
     int currentVisualFactors = 0;
+    // Cheap per-solve counters; detailed diagnostic capture is independent.
+    int eligibleFeatures = 0;
+    int immatureFeatures = 0;
+    int invalidDepthFeatures = 0;
+    int projectionRejects = 0;
+    // NaN means the stage did not run, rather than a measured zero duration.
+    double ceresMs = std::numeric_limits<double>::quiet_NaN();
+    double marginalizationMs = std::numeric_limits<double>::quiet_NaN();
     std::string reason = "not_solved";
     std::string qualityReason;
     // Opt-in Ceres iteration/message snapshot; absent when diagnostic capture is off.

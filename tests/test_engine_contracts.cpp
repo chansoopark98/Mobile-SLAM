@@ -7,6 +7,7 @@
 #include <cmath>
 #include <fstream>
 #include <filesystem>
+#include <stdexcept>
 #include <opencv2/imgproc.hpp>
 #include "vio_engine.h"
 
@@ -28,6 +29,9 @@ struct VIOEngineTestAccess {
 
 namespace backend {
 struct EstimatorTestAccess {
+    static frontend::FeatureManager& features(backend::Estimator& estimator) { return estimator.feature_manager_; }
+    static backend::Optimizer& optimizer(backend::Estimator& estimator) { return estimator.optimizer_; }
+    static size_t imageCount(const backend::Estimator& estimator) { return estimator.all_image_frame_.size(); }
     static void initialized(backend::Estimator& estimator) {
         estimator.solver_flag_=common::SolverFlag::NON_LINEAR;
         estimator.frame_count_=utility::WINDOW_SIZE;
@@ -37,6 +41,10 @@ struct EstimatorTestAccess {
 }
 
 namespace {
+struct RestorePolicyConfig {
+    utility::Config config=utility::g_config;
+    ~RestorePolicyConfig() {utility::g_config=config;}
+};
 class BoundaryRayCamera : public common::camera_models::PinholeCamera {
 public:
     BoundaryRayCamera() : PinholeCamera(Parameters("boundary",96,96,0,0,0,0,100,100,48,48)) {}
@@ -76,6 +84,33 @@ bool configure(VIOEngine& engine, const double* rotation = nullptr,
     return engine.configure(96,96,fx,100,48,48,model,0,0,0,0,
                             rotation ? rotation : identity, translation ? translation : zero,
                             0.1,0.001,0.01,0.0001,9.81);
+}
+
+bool populatePolicyBackend(VIOEngine& engine) {
+    auto& estimator=VIOEngineTestAccess::estimator(engine);
+    auto& manager=backend::EstimatorTestAccess::features(estimator);manager.clearState();
+    backend::EstimatorTestAccess::initialized(estimator);
+    for(int frame=0;frame<=utility::WINDOW_SIZE;++frame) {
+        auto& state=estimator.sliding_window_[frame];state.timestamp=.06*frame;
+        state.P={state.timestamp,0,0};state.V=Eigen::Vector3d::UnitX();
+        state.pre_integration=std::make_unique<backend::factor::IntegrationBase>(
+            utility::g_config.estimator.g,Eigen::Vector3d::Zero(),Eigen::Vector3d::Zero(),Eigen::Vector3d::Zero());
+        for(int sample=0;sample<6;++sample)
+            state.pre_integration->push_back(.01,utility::g_config.estimator.g,Eigen::Vector3d::Zero());
+        common::ImageData image;
+        for(int id=0;id<8;++id) {
+            Eigen::Matrix<double,7,1> observation;
+            observation<<(.2*(id%4)-state.P.x())/5,.2*(id/4)/5,1,0,0,0,0;
+            image.emplace(id,observation);
+        }
+        manager.addFeatureAndCheckParallax(frame,image);
+    }
+    manager.setDepth(Eigen::VectorXd::Constant(8,.2));
+    manager.feature_bank_.back().feature_per_frame.back().ray_vector.x()+=100/utility::g_config.camera.fx;
+    const int iterations=utility::g_config.estimator.num_iterations;utility::g_config.estimator.num_iterations=0;
+    const bool usable=backend::EstimatorTestAccess::optimizer(estimator).optimize(common::MarginalizationFlag::MARGIN_OLD_KEYFRAME);
+    utility::g_config.estimator.num_iterations=iterations;
+    return usable;
 }
 
 // Independent analytic projection and inverse mapping render a stationary textured
@@ -205,9 +240,19 @@ TEST(EngineContracts, RotationPredictionRecoversCorrectIdsThroughDistortedCamera
         for(int prediction:{0,1,2}) {
             frontend::FeatureTracker tracker;ASSERT_TRUE(fixture.configureTracker(tracker));
             tracker.detectAndTrack(fixture.source,0);const auto original=trackedPixels(tracker);
+            if(prediction==1) tracker.setDiagnosticCapture(true);
             cv::setRNGSeed(20261010);
             tracker.detectAndTrack(target,.05,false,prediction==0?nullptr:prediction==1?&rotation:&inexact_rotation);
             (prediction==0?baseline:prediction==1?seeded:inexact)=scoreRotation(fixture,tracker,original,rotation);
+            if(prediction==1) {
+                const auto& diagnostics=tracker.getFeatureDiagnostics();
+                const std::string ordinary_field="\"ordinaryInliers\":";
+                const std::string adopted_field="\"adopted\":";
+                const size_t ordinary_at=diagnostics.find(ordinary_field),adopted_at=diagnostics.find(adopted_field);
+                ASSERT_NE(ordinary_at,std::string::npos);ASSERT_NE(adopted_at,std::string::npos);
+                EXPECT_GT(std::stoi(diagnostics.substr(adopted_at+adopted_field.size())),
+                          std::stoi(diagnostics.substr(ordinary_at+ordinary_field.size())));
+            }
         }
         ASSERT_GT(seeded.visible,60);
         EXPECT_GE(seeded.correct,seeded.visible*9/10);
@@ -986,4 +1031,108 @@ TEST(EngineContracts, DiagnosticCaptureIsOptInAndEmitsJsonFixtureWithoutChanging
     std::ofstream(directory/"diagnostic-fixture.json")<<snapshot;
     engine.setDiagnosticCapture(false);
     EXPECT_EQ(engine.getFeatureDiagnostics(),"{\"enabled\":false}");
+}
+
+TEST(EngineContracts, ExperimentalObservationPolicyChangesRetireHistoryAndPreserveProfileCalibration) {
+    RestorePolicyConfig restore;VIOEngine engine;
+    EXPECT_EQ(engine.getExperimentalObservationPolicy(),0);
+    EXPECT_EQ(engine.getEffectiveExperimentalObservationPolicy(),-1);
+    EXPECT_EQ(engine.getFeatureDiagnostics(),"{\"enabled\":false}");
+    const double translation[3]={.03,-.02,.01};ASSERT_TRUE(configure(engine,nullptr,translation,2,113));
+    engine.setExecutionParams(17,1);engine.setMobileParams(.04,7,48);engine.setTrackingParams(15,2,7,.5);
+    engine.setPnPParams(false,3);engine.setBenchmarkSolverProfile(true);engine.setRotationRescue(true);engine.setDiagnosticCapture(true);
+    for(int next_policy:{1,2,0}) {
+        const int current_policy=engine.getExperimentalObservationPolicy();
+        cv::Mat image(96,96,CV_8UC1,cv::Scalar(0));
+        for(int y=8;y<90;y+=16)for(int x=8;x<90;x+=16)cv::rectangle(image,cv::Rect(x,y,7,7),cv::Scalar(255),-1);
+        IMUReading imu[]={{0,0,0,9.81,0,0,0},{.1,0,0,9.81,0,0,0}};double pose[16];
+        engine.processFrame(image.data,96,96,imu,2,0,pose);
+        // Public count requires retained tracks (age>1), so perform real LK on a second image.
+        engine.processFrame(image.data,96,96,nullptr,0,.05,pose);
+        ASSERT_GT(engine.getFeaturePointCount(),0);ASSERT_EQ(VIOEngineTestAccess::pending(engine),1u);
+        ASSERT_GT(backend::EstimatorTestAccess::imageCount(VIOEngineTestAccess::estimator(engine)),0u);
+        ASSERT_TRUE(populatePolicyBackend(engine));
+        auto& old_estimator=VIOEngineTestAccess::estimator(engine);
+        ASSERT_TRUE(backend::EstimatorTestAccess::optimizer(old_estimator).hasMarginalizationPrior());
+        EXPECT_EQ(backend::EstimatorTestAccess::optimizer(old_estimator).getLastSolverDiagnostics().currentVisualFactors,current_policy==0 ? 8 : 7);
+        const auto epoch=engine.getEpoch();
+        const auto calibration=utility::g_config.camera;
+        const auto* camera=VIOEngineTestAccess::tracker(engine).m_camera.get();
+        for(int invalid:{-1,3,std::numeric_limits<int>::max()}) {
+            EXPECT_THROW(engine.setExperimentalObservationPolicy(invalid),std::invalid_argument);
+            EXPECT_THROW(old_estimator.setExperimentalObservationPolicy(invalid),std::invalid_argument);
+            EXPECT_EQ(engine.getEpoch(),epoch);EXPECT_EQ(engine.getExperimentalObservationPolicy(),current_policy);
+            EXPECT_EQ(engine.getEffectiveExperimentalObservationPolicy(),current_policy);
+            EXPECT_EQ(backend::EstimatorTestAccess::features(old_estimator).feature_bank_.size(),8u);
+            EXPECT_TRUE(backend::EstimatorTestAccess::optimizer(old_estimator).hasMarginalizationPrior());
+            EXPECT_EQ(VIOEngineTestAccess::pending(engine),1u);EXPECT_EQ(VIOEngineTestAccess::tracker(engine).m_camera.get(),camera);
+        }
+        engine.setExperimentalObservationPolicy(current_policy);
+        EXPECT_EQ(engine.getEpoch(),epoch);EXPECT_TRUE(backend::EstimatorTestAccess::optimizer(old_estimator).hasMarginalizationPrior());
+        engine.setExperimentalObservationPolicy(next_policy);
+        EXPECT_EQ(engine.getEpoch(),epoch+1);EXPECT_EQ(engine.getExperimentalObservationPolicy(),next_policy);
+        EXPECT_EQ(engine.getEffectiveExperimentalObservationPolicy(),next_policy);
+        auto& fresh=VIOEngineTestAccess::estimator(engine);
+        EXPECT_TRUE(backend::EstimatorTestAccess::features(fresh).feature_bank_.empty());
+        EXPECT_FALSE(backend::EstimatorTestAccess::optimizer(fresh).hasMarginalizationPrior());
+        EXPECT_EQ(backend::EstimatorTestAccess::imageCount(fresh),0u);
+        EXPECT_EQ(engine.getFeaturePointCount(),0);EXPECT_EQ(VIOEngineTestAccess::pending(engine),0u);
+        EXPECT_DOUBLE_EQ(engine.getFrameTimestamp(),-1);EXPECT_DOUBLE_EQ(engine.getIMUEndpointTimestamp(),-1);
+        EXPECT_FALSE(engine.getPoseFresh());EXPECT_FALSE(engine.getPoseValid());
+        EXPECT_EQ(engine.getExecutionSeed(),17);EXPECT_EQ(engine.getCVThreadCount(),1);
+        EXPECT_TRUE(engine.getBenchmarkSolverProfile());EXPECT_TRUE(engine.getRotationRescueEnabled());
+        EXPECT_EQ(VIOEngineTestAccess::tracker(engine).m_camera.get(),camera);
+        EXPECT_DOUBLE_EQ(utility::g_config.camera.fx,calibration.fx);
+        EXPECT_EQ(utility::g_config.camera.r_ic,calibration.r_ic);EXPECT_EQ(utility::g_config.camera.t_ic,calibration.t_ic);
+        EXPECT_DOUBLE_EQ(utility::g_config.estimator.solver_time,.04);EXPECT_EQ(utility::g_config.estimator.num_iterations,7);
+        EXPECT_EQ(utility::g_config.feature_tracker.lk_window_size,15);EXPECT_EQ(utility::g_config.feature_tracker.min_dist,7);
+        const auto diagnostics=engine.getFeatureDiagnostics();
+        EXPECT_NE(diagnostics.find("\"experimental_observation_policy_selected\":"+std::to_string(next_policy)),std::string::npos);
+        EXPECT_NE(diagnostics.find("\"experimental_observation_policy_effective\":"+std::to_string(next_policy)),std::string::npos);
+        engine.reset();EXPECT_EQ(engine.getEpoch(),epoch+2);
+        EXPECT_EQ(engine.getExperimentalObservationPolicy(),next_policy);EXPECT_EQ(engine.getEffectiveExperimentalObservationPolicy(),next_policy);
+    }
+}
+
+TEST(EngineContracts, ExperimentalObservationPolicyInterleaveUsesIndependentActualBackends) {
+    RestorePolicyConfig restore;VIOEngine a,b;ASSERT_TRUE(configure(a));ASSERT_TRUE(configure(b));
+    a.setPnPParams(false,3);b.setExperimentalObservationPolicy(1);
+    EXPECT_EQ(a.getExperimentalObservationPolicy(),0);EXPECT_EQ(a.getEffectiveExperimentalObservationPolicy(),0);
+    EXPECT_EQ(b.getExperimentalObservationPolicy(),1);EXPECT_EQ(b.getEffectiveExperimentalObservationPolicy(),1);
+    ASSERT_TRUE(populatePolicyBackend(a));ASSERT_TRUE(populatePolicyBackend(b));
+    EXPECT_EQ(backend::EstimatorTestAccess::optimizer(VIOEngineTestAccess::estimator(a)).getLastSolverDiagnostics().currentVisualFactors,8);
+    EXPECT_EQ(backend::EstimatorTestAccess::optimizer(VIOEngineTestAccess::estimator(b)).getLastSolverDiagnostics().currentVisualFactors,7);
+    const auto a_epoch=a.getEpoch(),b_epoch=b.getEpoch();
+    a.setExperimentalObservationPolicy(2);EXPECT_EQ(a.getEpoch(),a_epoch+1);
+    EXPECT_EQ(b.getEpoch(),b_epoch);EXPECT_EQ(b.getEffectiveExperimentalObservationPolicy(),1);
+    EXPECT_TRUE(backend::EstimatorTestAccess::optimizer(VIOEngineTestAccess::estimator(b)).hasMarginalizationPrior());
+    ASSERT_TRUE(configure(a));EXPECT_EQ(a.getExperimentalObservationPolicy(),0);EXPECT_EQ(a.getEffectiveExperimentalObservationPolicy(),0);
+    EXPECT_EQ(b.getExperimentalObservationPolicy(),1);EXPECT_EQ(b.getEffectiveExperimentalObservationPolicy(),1);EXPECT_EQ(b.getEpoch(),b_epoch);
+    const auto a_reconfigured_epoch=a.getEpoch();b.reset();
+    EXPECT_EQ(b.getEpoch(),b_epoch+1);EXPECT_EQ(b.getEffectiveExperimentalObservationPolicy(),1);EXPECT_EQ(a.getEpoch(),a_reconfigured_epoch);
+    ASSERT_TRUE(populatePolicyBackend(a));ASSERT_TRUE(populatePolicyBackend(b));
+    EXPECT_EQ(backend::EstimatorTestAccess::optimizer(VIOEngineTestAccess::estimator(a)).getLastSolverDiagnostics().currentVisualFactors,8);
+    EXPECT_EQ(backend::EstimatorTestAccess::optimizer(VIOEngineTestAccess::estimator(b)).getLastSolverDiagnostics().currentVisualFactors,7);
+    VIOEngineTestAccess::estimator(a).setExperimentalObservationPolicy(2);
+    EXPECT_EQ(a.getExperimentalObservationPolicy(),0);EXPECT_EQ(a.getEffectiveExperimentalObservationPolicy(),2);
+    a.reset();EXPECT_EQ(a.getExperimentalObservationPolicy(),0);EXPECT_EQ(a.getEffectiveExperimentalObservationPolicy(),0);
+    EXPECT_EQ(b.getExperimentalObservationPolicy(),1);EXPECT_EQ(b.getEffectiveExperimentalObservationPolicy(),1);
+}
+
+TEST(EngineContracts, ConfigureFromOrdinaryConfigDisablesExperimentalObservationPolicy) {
+    RestorePolicyConfig restore;VIOEngine engine;ASSERT_TRUE(configure(engine));engine.setExperimentalObservationPolicy(2);
+    const auto config=utility::g_config;const auto epoch=engine.getEpoch();
+    struct TemporaryCamera {
+        std::filesystem::path path=std::filesystem::temp_directory_path()/"mobile-slam-experimental-policy-camera.yaml";
+        ~TemporaryCamera() {std::error_code error;std::filesystem::remove(path,error);}
+    } file;
+    std::ofstream yaml(file.path);
+    yaml<<"%YAML:1.0\nmodel_type: PINHOLE\ncamera_name: policy-control\nimage_width: 96\nimage_height: 96\n"
+        <<"distortion_parameters: {k1: 0., k2: 0., p1: 0., p2: 0.}\n"
+        <<"projection_parameters: {fx: 100., fy: 100., cx: 48., cy: 48.}\n";yaml.close();
+    ASSERT_TRUE(engine.configureFromConfig(config,file.path.string()));
+    EXPECT_EQ(engine.getEpoch(),epoch+1);EXPECT_EQ(engine.getExperimentalObservationPolicy(),0);
+    EXPECT_EQ(engine.getEffectiveExperimentalObservationPolicy(),0);
+    ASSERT_TRUE(populatePolicyBackend(engine));
+    EXPECT_EQ(backend::EstimatorTestAccess::optimizer(VIOEngineTestAccess::estimator(engine)).getLastSolverDiagnostics().currentVisualFactors,8);
 }

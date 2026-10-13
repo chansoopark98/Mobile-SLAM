@@ -2,6 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import fs from 'node:fs/promises';
 import vm from 'node:vm';
+import { limitedPipeline } from './limited-fixture.mjs';
 import { Worker as NodeWorker } from 'node:worker_threads';
 
 const wrapperSource = await fs.readFile(new URL('../../web/js/vio-wrapper.js', import.meta.url), 'utf8');
@@ -71,6 +72,241 @@ test('Wrong request ID, sequence and epoch cannot release current frame or updat
     wrapper.dispose();
 });
 
+test('Only a matched result notifies after Worker becomes free, including ordinary Lost', async () => {
+    const { wrapper, worker } = await loaded();
+    const completed = [];
+    wrapper.onFrameComplete = row => completed.push({ busy: wrapper.workerBusy, reason: row.reason });
+    wrapper.sendFrame(new Uint8Array(4), 1);
+    const request = worker.last('frame');
+    result(worker, { ...request, requestId: request.requestId + 1 });
+    assert.deepEqual(completed, []);
+    result(worker, request, { poseFresh: false, poseValid: false, reason: 'insufficient_current_features' });
+    assert.deepEqual(completed, [{ busy: false, reason: 'insufficient_current_features' }]);
+    wrapper.dispose();
+});
+
+test('Lost and unknown statuses cannot publish a finite pose by claiming freshness', async () => {
+    for (const statusCode of [0,1,3,4,99,'2','5',null]) {
+        const { wrapper, worker } = await loaded();
+        wrapper.sendFrame(new Uint8Array(4), 1);
+        result(worker,worker.last('frame'),{statusCode,reason:'finite_but_not_tracking'});
+        const latest=wrapper.getLatestResult();
+        assert.equal(latest.statusCode,statusCode);
+        assert.equal(latest.poseValid,false,`status ${statusCode}`);
+        assert.equal(latest.poseFresh,false);
+        assert.equal(latest.pose,null);
+        assert.equal(latest.mapPointCount,0);
+        wrapper.dispose();
+    }
+});
+
+test('Limited keeps its current full pose, epoch/sequence and conditional quality without becoming normal Tracking', async () => {
+    const {wrapper,worker}=await loaded();
+    wrapper.sendFrame(new Uint8Array(4),1);
+    const request=worker.last('frame'),pipeline=limitedPipeline();
+    result(worker,request,{statusCode:5,reason:'tracking_limited',engineFrameTimestamp:1,pipeline,quality:pipeline.quality});
+    const latest=wrapper.getLatestResult();
+    assert.equal(latest.trackingState,'tracking_limited');
+    assert.equal(latest.statusCode,5);
+    assert.equal(latest.poseValid,true);
+    assert.equal(latest.poseTimestamp,1);
+    assert.equal(latest.sequence,request.sequence);
+    assert.equal(latest.engineEpoch,1);
+    assert.deepEqual(latest.quality,pipeline.quality);
+    assert.equal(latest.quality.metricTranslationSupported,false);
+    wrapper.dispose();
+});
+
+test('Limited rejects stale timestamps and incomplete or conflicting provenance instead of relabeling old finite poses', async () => {
+    for(const mutate of [
+        data=>{data.poseTimestamp=.9}, data=>{data.engineFrameTimestamp=.9},
+        data=>{data.poseFresh=false}, data=>{data.quality=null},
+        data=>{data.pipeline.schema='mobile-slam-pipeline-v1'},
+        data=>{data.quality={...data.quality,translationSupport:'visual_inertial_metric'}},
+        data=>{data.pipeline.quality.relativeCovariance6x6=null;data.quality=data.pipeline.quality},
+    ]) {
+        const {wrapper,worker}=await loaded();wrapper.sendFrame(new Uint8Array(4),1);
+        const pipeline=limitedPipeline(),data={statusCode:5,reason:'tracking_limited',engineFrameTimestamp:1,pipeline,quality:pipeline.quality};
+        mutate(data);result(worker,worker.last('frame'),data);
+        const latest=wrapper.getLatestResult();
+        assert.equal(latest.statusCode,5);
+        assert.equal(latest.poseFresh,false);
+        assert.equal(latest.poseValid,false);
+        assert.equal(latest.pose,null);
+        assert.equal(latest.mapPointCount,0);
+        wrapper.dispose();
+    }
+});
+
+test('Completion callback sees settled old frame and can keep a newly submitted frame active', async () => {
+    const { wrapper, worker } = await loaded();
+    wrapper.sendFrame(new Uint8Array(4), 1);
+    const first = worker.last('frame');
+    const waiter = wrapper.waitForFree(100);
+    let next;
+    wrapper.onFrameComplete = row => {
+        assert.strictEqual(row, wrapper.getLatestResult());
+        assert.equal(wrapper.workerBusy, false);
+        assert.equal(wrapper._freeWaiters.size, 0);
+        wrapper.onFrameComplete = null;
+        assert.equal(wrapper.sendFrame(new Uint8Array(4), 2), true);
+        next = worker.last('frame');
+    };
+    result(worker, first);
+    await waiter;
+    assert.ok(next.requestId > first.requestId);
+    assert.equal(wrapper.workerBusy, true);
+    assert.equal(wrapper._activeFrame.requestId, next.requestId);
+    result(worker, next);
+    wrapper.dispose();
+});
+
+test('Frame source timing is an owned request snapshot across caller mutation and reentrant dispatch', async t => {
+    const { wrapper, worker } = await loaded();
+    t.after(() => wrapper.dispose());
+    const sourceTiming = { source: 'video_capture_time', timestampS: 1, presentedFrames: 10,
+        association: 'video_frame_callback_snapshot', physicalExposureVerified: false };
+    assert.equal(wrapper.sendFrame(new Uint8Array(4), 1, { sourceTiming }), true);
+    const first = worker.last('frame');
+    sourceTiming.source = 'caller_mutated';
+    sourceTiming.timestampS = 99;
+    let completed;
+    wrapper.onFrameComplete = row => {
+        completed = row;
+        wrapper.onFrameComplete = null;
+        assert.equal(wrapper.sendFrame(new Uint8Array(4), 2, {
+            sourceTiming: { source: 'video_presentation', timestampS: 2 } }), true);
+    };
+    result(worker, first, { sourceTiming: { source: 'worker_payload_override' } });
+    assert.deepEqual(completed.sourceTiming, { source: 'video_capture_time', timestampS: 1, presentedFrames: 10,
+        association: 'video_frame_callback_snapshot', physicalExposureVerified: false });
+    assert.notStrictEqual(completed.sourceTiming, sourceTiming);
+    assert.strictEqual(wrapper.getLatestResult(), completed);
+    assert.equal(wrapper._activeFrame.sourceTiming.source, 'video_presentation');
+    result(worker, worker.last('frame'));
+    assert.equal(wrapper.getLatestResult().sourceTiming.source, 'video_presentation');
+    assert.equal(completed.sourceTiming.source, 'video_capture_time');
+});
+
+test('Rejected, reset and stale submissions cannot lend source timing to another result', async t => {
+    const { wrapper, worker } = await loaded();
+    t.after(() => wrapper.dispose());
+    wrapper.sendFrame(new Uint8Array(4), 1, { sourceTiming: { source: 'cancelled' } });
+    const oldFrame = worker.last('frame');
+    assert.equal(wrapper.sendFrame(new Uint8Array(4), 2, { sourceTiming: { source: 'busy_rejected' } }), false);
+    wrapper.reset();
+    assert.equal(wrapper._activeFrame, null);
+    assert.equal(wrapper.sendFrame(new Uint8Array(4), 2, { sourceTiming: { source: 'reset_rejected' } }), false);
+    worker.reply(worker.last('reset'));
+    await Promise.resolve();
+    assert.equal(wrapper.sendFrame(null, 2, { sourceTiming: { source: 'invalid_rejected' } }), false);
+    wrapper.sendFrame(new Uint8Array(4), 2, { sourceTiming: { source: 'current' } });
+    const current = worker.last('frame');
+    result(worker, oldFrame);
+    result(worker, { ...current, sequence: current.sequence + 1 });
+    assert.equal(wrapper.getLatestResult(), null);
+    result(worker, current, { engineEpoch: 4 });
+    assert.equal(wrapper.getLatestResult().sourceTiming.source, 'current');
+    wrapper.sendFrame(new Uint8Array(4), 3, { sourceTiming: { source: 'stale_engine' } });
+    result(worker, worker.last('frame'), { engineEpoch: 3 });
+    assert.equal(wrapper.getLatestResult().sourceTiming, null);
+    for (const options of [undefined, { sourceTiming: null }]) {
+        wrapper.sendFrame(new Uint8Array(4), 4, options);
+        result(worker, worker.last('frame'), { engineEpoch: 4, sourceTiming: { source: 'worker_cannot_supply_it' } });
+        assert.equal(wrapper.getLatestResult().sourceTiming, null);
+    }
+});
+
+test('Input recorder forwards timing and transfer options to the actual wrapper', async t => {
+    const { wrapper, worker } = await loaded();
+    t.after(() => wrapper.dispose());
+    worker.addEventListener = () => {};
+    worker.removeEventListener = () => {};
+    const timing = { source: 'video_capture_time', timestampS: 1, physicalExposureVerified: false };
+    const app = { running: true, _processWidth: 2, _processHeight: 2, _lastConfigParams: {},
+        activeConfig: 'mobile_default', calibrationProvenance: {}, lastFrameTiming: timing,
+        imu: { getDiagnostics: () => ({}) }, vio: wrapper, resetVIO() {} };
+    const recorder = await fs.readFile(new URL('../../scripts/dev/android-input-record.mjs', import.meta.url), 'utf8');
+    const begin = recorder.slice(recorder.indexOf('function begin('), recorder.indexOf('\nexport async function drainCapture'));
+    const context = vm.createContext({ Uint8Array, structuredClone, performance,
+        btoa: value => Buffer.from(value, 'binary').toString('base64'),
+        setTimeout: () => 1, clearTimeout() {}, setInterval: () => 1, clearInterval() {},
+        window: { __mobileSLAM: { app, diagnostics: () => ({}) } } });
+    vm.runInContext(begin, context);
+    context.begin(60, 2, 'timing-options-fixture', false);
+    const pixels = new Uint8Array([10, 20, 30, 40]);
+    assert.equal(app.vio.sendFrame(pixels, 1, { transferOwnership: true, sourceTiming: timing }), true);
+    assert.equal(pixels.byteLength, 0, 'Recorder preserves the explicit ownership option');
+    timing.source = 'caller_mutated';
+    result(worker, worker.last('frame'));
+    assert.equal(wrapper.getLatestResult().sourceTiming.source, 'video_capture_time');
+    assert.equal(context.window.__mobileSLAMInputCapture.record.acceptedFrameMetadata[0].sourceTiming.source, 'video_capture_time');
+});
+
+test('A postMessage rejection drops its timing snapshot before the next accepted request', async t => {
+    const { wrapper, worker } = await loaded();
+    t.after(() => wrapper.dispose());
+    worker.postMessage = () => { throw new Error('fixture transfer rejected'); };
+    assert.equal(wrapper.sendFrame(new Uint8Array(4), 1, { sourceTiming: { source: 'post_rejected' } }), false);
+    assert.equal(wrapper._activeFrame, null);
+    worker.postMessage = FakeWorker.prototype.postMessage;
+    wrapper.sendFrame(new Uint8Array(4), 2);
+    result(worker, worker.last('frame'));
+    assert.equal(wrapper.getLatestResult().sourceTiming, null);
+});
+
+test('Wrapper rejects future pose timestamps and clears maps without rejecting separate past pose time', async t => {
+    const { wrapper, worker } = await loaded();
+    t.after(() => wrapper.dispose());
+    wrapper.sendFrame(new Uint8Array(4), 1);
+    result(worker, worker.last('frame'), { poseTimestamp: 0.99 });
+    assert.equal(wrapper.getLatestResult().poseTimestamp, 0.99);
+    assert.equal(wrapper.getLatestResult().poseValid, true);
+    assert.equal(wrapper.getMapPoints().count, 1);
+    wrapper.sendFrame(new Uint8Array(4), 2);
+    const pending = worker.last('frame');
+    result(worker, pending, { poseTimestamp: 2.1, reason: 'tracking', engineReason: 'original_engine_reason' });
+    const row = wrapper.getLatestResult();
+    assert.equal(row.inputTimestamp, 2);
+    assert.equal(row.requestId, pending.requestId);
+    assert.equal(row.clientEpoch, pending.clientEpoch);
+    assert.equal(row.sequence, pending.sequence);
+    assert.equal(row.engineEpoch, 1);
+    assert.equal(row.pose, null);
+    assert.equal(row.poseTimestamp, null);
+    assert.equal(row.poseValid, false);
+    assert.equal(row.poseFresh, false);
+    assert.equal(row.poseAgeSeconds, null);
+    assert.equal(row.reason, 'future_pose_timestamp');
+    assert.equal(row.engineReason, 'original_engine_reason');
+    assert.equal(row.mapPoints, null);
+    assert.equal(row.mapPointCount, 0);
+    assert.equal(wrapper.getMapPoints().count, 0);
+});
+
+test('Transport errors suppress immediate dispatch while successful pose-less loss still notifies', async () => {
+    const { wrapper, worker } = await loaded();
+    const rows = [];
+    wrapper.onFrameComplete = row => rows.push(row);
+    wrapper.sendFrame(new Uint8Array(4), 1);
+    result(worker, worker.last('frame'), { poseFresh: false, poseValid: false, reason: 'missing_bracket' });
+    assert.equal(rows.length, 1);
+
+    wrapper.sendFrame(new Uint8Array(4), 2);
+    result(worker, worker.last('frame'), { inputTimestamp: 99 });
+    assert.equal(rows.length, 1, 'Timestamp mismatch is a transport error');
+
+    wrapper.sendFrame(new Uint8Array(4), 3);
+    worker.reply(worker.last('frame'), { type: 'result', success: false, error: 'failed',
+        data: { inputTimestamp: 3, engineEpoch: 1, reason: 'worker_exception' } });
+    assert.equal(rows.length, 1, 'Unsuccessful Worker result cannot immediately dispatch');
+
+    wrapper.sendFrame(new Uint8Array(4), 4);
+    result(worker, worker.last('frame'), { engineEpoch: 0 });
+    assert.equal(rows.length, 1, 'Regressing engine epoch cannot immediately dispatch');
+    wrapper.dispose();
+});
+
 test('Reset rejects every RPC and waiter; late old frame cannot complete new frame', async () => {
     const { wrapper, worker } = await loaded();
     const rpc = wrapper.setMobileParams(0.1, 3, 20);
@@ -95,6 +331,28 @@ test('Reset rejects every RPC and waiter; late old frame cannot complete new fra
     const metrics = wrapper.getMetrics();
     assert.equal(metrics.framesSubmitted, metrics.framesCompleted + metrics.framesCancelled + metrics.framesTimedOut);
     assert.ok(wrapper.getLatestResult().frameCopyMs >= 0);
+    wrapper.dispose();
+});
+
+test('Only an explicitly owned full grayscale view transfers without another copy', async () => {
+    const { wrapper, worker } = await loaded();
+    const owned = new Uint8Array([10, 20, 30, 40]);
+    assert.equal(wrapper.sendFrame(owned, 1, { transferOwnership: true }), true);
+    assert.equal(owned.byteLength, 0, 'The owned image must transfer directly');
+    assert.deepEqual(Array.from(new Uint8Array(worker.last('frame').data.gray)), [10, 20, 30, 40]);
+    result(worker, worker.last('frame'));
+
+    const reusable = new Uint8Array([1, 2, 3, 4]);
+    assert.equal(wrapper.sendFrame(reusable, 2), true);
+    reusable[0] = 99;
+    assert.equal(reusable.byteLength, 4, 'The default path retains reusable camera storage');
+    assert.deepEqual(Array.from(new Uint8Array(worker.last('frame').data.gray)), [1, 2, 3, 4]);
+    result(worker, worker.last('frame'));
+
+    const backing = new Uint8Array([9, 5, 6, 7, 8, 9]);
+    assert.equal(wrapper.sendFrame(backing.subarray(1, 5), 3, { transferOwnership: true }), true);
+    assert.equal(backing.byteLength, 6, 'A partial view cannot transfer unrelated bytes');
+    assert.deepEqual(Array.from(new Uint8Array(worker.last('frame').data.gray)), [5, 6, 7, 8]);
     wrapper.dispose();
 });
 
@@ -331,10 +589,10 @@ test('Exact IMU declared-count view transfer preserves prefix/suffix and input s
     wrapper.dispose();
 });
 
-function workerFixture() {
+function workerFixture(clock = {}) {
     const replies = [];
     const context = vm.createContext({ self: { postMessage: message => replies.push(message) },
-        Float64Array, Uint8Array, ArrayBuffer, console, performance, setTimeout, clearTimeout });
+        Float64Array, Uint8Array, ArrayBuffer, console, performance, setTimeout, clearTimeout, ...clock });
     vm.runInContext(workerSource + `\nglobalThis.audit = {
         appendIMU, drainIMUToWasm,
         memory(value, heap, count) { return new WorkerSharedMemory(value, heap, count); },
@@ -362,6 +620,266 @@ function mockEngine(overrides = {}) {
 
 const request = (type, data, sequence = 1, epoch = 0) => ({ type, data, requestId: sequence,
     sequence, clientEpoch: epoch, sentAtMs: performance.timeOrigin + performance.now() });
+
+function deterministicClock() {
+    let now = 0, nextId = 0;
+    const timers = new Map();
+    return {
+        performance: { timeOrigin: 0, now: () => now },
+        setTimeout(callback, delay) { const id = ++nextId; timers.set(id, { callback, at: now + delay }); return id; },
+        clearTimeout(id) { timers.delete(id); },
+        advance(ms) {
+            const target = now + ms;
+            for (;;) {
+                const due = [...timers].filter(([, timer]) => timer.at <= target).sort((a, b) => a[1].at - b[1].at)[0];
+                if (!due) break;
+                now = due[1].at; timers.delete(due[0]); due[1].callback();
+            }
+            now = target;
+        },
+        get timers() { return timers.size; },
+    };
+}
+
+function imuSamples(timestamps) {
+    return new Float64Array(timestamps.flatMap(timestamp => [timestamp, 0, 0, 9.81, 0, 0, 0]));
+}
+
+test('Worker observed slow or jittering cadence admits a real bracket at 52ms and fixes the wait budget at entry', async () => {
+    for (const [times, budget] of [[ [.90, .93, .96, .99], 60 ], [ [.906, .922, .938, .99], 80 ]]) {
+        const clock = deterministicClock();
+        const { context, audit, heap, replies } = workerFixture(clock);
+        let calls = 0;
+        audit.setEngine(mockEngine({ processFrame() { calls++; return false; } }), heap);
+        audit.appendIMU(imuSamples(times), 4);
+        const frame = context.self.onmessage({ data: request('frame', { gray: new ArrayBuffer(4), timestamp: 1 }) });
+        clock.advance(52);
+        audit.appendIMU(imuSamples([1.02]), 1);
+        await frame;
+        const result = replies.at(-1).data;
+        assert.equal(calls, 1);
+        assert.equal(result.imuWaitMs, 52);
+        assert.ok(Math.abs(result.imuWaitBudgetMs - budget) < 1e-9);
+        assert.equal(result.imuCount, 5);
+        assert.equal(clock.timers, 0);
+    }
+});
+
+test('Worker default, short history and steady 60Hz waits keep 40ms and never extrapolate after their deadline', async () => {
+    for (const times of [[], [.7, .8, .9], [.90, .916, .932, .948]]) {
+        const clock = deterministicClock();
+        const { context, audit, heap, replies } = workerFixture(clock);
+        let calls = 0;
+        audit.setEngine(mockEngine({ processFrame() { calls++; return false; } }), heap);
+        if (times.length) audit.appendIMU(imuSamples(times), times.length);
+        const frame = context.self.onmessage({ data: request('frame', { gray: new ArrayBuffer(4), timestamp: 1 }) });
+        clock.advance(41);
+        audit.appendIMU(imuSamples([1.01]), 1);
+        await frame;
+        const result = replies.at(-1).data;
+        assert.equal(calls, 0);
+        assert.equal(result.reason, 'missing_bracket');
+        assert.equal(result.imuWaitBudgetMs, 40);
+        assert.equal(result.poseFresh, false);
+        assert.equal(result.pipeline, null);
+        assert.equal(clock.timers, 0);
+    }
+});
+
+test('Worker adaptive deadline is capped at 80ms and cannot be extended by later samples', async () => {
+    const clock = deterministicClock();
+    const { context, audit, heap, replies } = workerFixture(clock);
+    let calls = 0;
+    audit.setEngine(mockEngine({ processFrame() { calls++; return false; } }), heap);
+    audit.appendIMU(imuSamples([.6, .7, .8, .9]), 4);
+    const frame = context.self.onmessage({ data: request('frame', { gray: new ArrayBuffer(4), timestamp: 1 }) });
+    clock.advance(79);
+    audit.appendIMU(imuSamples([.95]), 1);
+    clock.advance(1);
+    await frame;
+    const result = replies.at(-1).data;
+    assert.equal(calls, 0);
+    assert.equal(result.reason, 'missing_bracket');
+    assert.equal(result.imuWaitBudgetMs, 80);
+    assert.equal(result.imuWaitMs, 80);
+});
+
+test('Worker reset cancels adaptive wait, clears cadence, and preserves new frame ownership', async () => {
+    const clock = deterministicClock();
+    const { context, audit, heap, replies } = workerFixture(clock);
+    let calls = 0, resets = 0;
+    audit.setEngine(mockEngine({ processFrame() { calls++; return false; }, reset() { resets++; } }), heap);
+    audit.appendIMU(imuSamples([.6, .7, .8, .9]), 4);
+    const oldFrame = context.self.onmessage({ data: request('frame', { gray: new ArrayBuffer(4), timestamp: 1 }) });
+    clock.advance(20);
+    await context.self.onmessage({ data: request('reset', undefined, 1, 1) });
+    await oldFrame;
+    const cancelled = replies.find(reply => reply.type === 'result');
+    assert.equal(cancelled.data.reason, 'stale_epoch');
+    assert.equal(cancelled.data.imuWaitBudgetMs, 80);
+    assert.equal(cancelled.data.pipeline, null);
+    assert.equal(resets, 1);
+    assert.equal(clock.timers, 0);
+    const newFrame = context.self.onmessage({ data: request('frame', { gray: new ArrayBuffer(4), timestamp: 2 }, 2, 1) });
+    await context.self.onmessage({ data: request('imu', { imuData: imuSamples([2.01]).buffer, count: 1 }, 3, 0) });
+    assert.equal(replies.at(-1).error, 'stale_epoch');
+    clock.advance(41);
+    await newFrame;
+    assert.equal(replies.at(-1).data.imuWaitBudgetMs, 40);
+    assert.equal(replies.at(-1).data.reason, 'missing_bracket');
+    assert.equal(calls, 0);
+});
+
+test('Worker rejected IMU timestamps do not influence adaptive cadence or create brackets', async () => {
+    const clock = deterministicClock();
+    const { context, audit, heap, replies } = workerFixture(clock);
+    let calls = 0;
+    audit.setEngine(mockEngine({ processFrame() { calls++; return false; } }), heap);
+    assert.equal(audit.appendIMU(imuSamples([-1]), 1), false);
+    audit.appendIMU(imuSamples([.90, .916, .932, .948]), 4);
+    assert.equal(audit.appendIMU(imuSamples([.948, .7, NaN, Infinity]), 4), false);
+    assert.equal(audit.appendIMU(new Float64Array([1.02,NaN,0,9.81,0,0,0]), 1), false);
+    const frame = context.self.onmessage({ data: request('frame', { gray: new ArrayBuffer(4), timestamp: 1 }) });
+    clock.advance(40);
+    await frame;
+    assert.equal(replies.at(-1).data.reason, 'missing_bracket');
+    assert.equal(replies.at(-1).data.imuWaitBudgetMs, 40);
+    assert.equal(calls, 0);
+});
+
+test('Worker bounded cadence history forgets old slowdown and resets across sensor gaps', async () => {
+    for (const discontinuity of [false, true]) {
+        const clock = deterministicClock();
+        const { context, audit, heap, replies } = workerFixture(clock);
+        audit.setEngine(mockEngine(), heap);
+        audit.appendIMU(imuSamples([.6, .7, .8, .9]), 4);
+        const samples = discontinuity ? [2] : Array.from({ length: 16 }, (_, i) => .9 + (i + 1) * .016);
+        audit.appendIMU(imuSamples(samples), samples.length);
+        const timestamp = samples.at(-1) + .01;
+        const frame = context.self.onmessage({ data: request('frame', { gray: new ArrayBuffer(4), timestamp }) });
+        clock.advance(40);
+        await frame;
+        assert.equal(replies.at(-1).data.imuWaitBudgetMs, 40);
+        assert.equal(replies.at(-1).data.reason, 'missing_bracket');
+    }
+});
+
+test('Worker pipeline is frame-correlated, optional, and read exactly once per actual engine result', async () => {
+    const { context, audit, heap, replies } = workerFixture();
+    let reads = 0;
+    let pipeline = { schema: 'mobile-slam-pipeline-v1', frameTimestamp: 1, engineEpoch: 1, solver: null };
+    audit.setEngine(mockEngine({ getPipelineDiagnostics() { reads++; return typeof pipeline === 'string' ? pipeline : JSON.stringify(pipeline); } }), heap);
+    audit.appendIMU(imuSamples([1, 1.01]), 2);
+    await context.self.onmessage({ data: request('frame', { gray: new ArrayBuffer(4), timestamp: 1 }, 1) });
+    assert.deepEqual(JSON.parse(JSON.stringify(replies.at(-1).data.pipeline)), pipeline);
+    assert.equal(reads, 1);
+    for (const invalid of [
+        { ...pipeline, frameTimestamp: 0 }, { ...pipeline, engineEpoch: 2 }, '{bad', null,
+    ]) {
+        pipeline = invalid;
+        await context.self.onmessage({ data: request('frame', { gray: new ArrayBuffer(4), timestamp: 1 }, reads + 1) });
+        assert.equal(replies.at(-1).data.pipeline, null);
+    }
+    assert.equal(reads, 5);
+});
+
+test('Worker non-tracking statuses retain their raw reason and cannot publish finite fresh candidates', async () => {
+    for(const statusCode of [3,99]) {
+        const {context,audit,heap,replies}=workerFixture();
+        audit.setEngine(mockEngine({processFrame(){return true},isInitialized(){return true},getStatusCode(){return statusCode},
+            getLastReason(){return 'finite_but_not_tracking'},getPoseTimestamp(){return 1},getPoseFresh(){return true},getPoseValid(){return true}}),heap);
+        audit.appendIMU(imuSamples([1,1.01]),2);
+        await context.self.onmessage({data:request('frame',{gray:new ArrayBuffer(4),timestamp:1},1)});
+        const latest=replies.at(-1).data;
+        assert.equal(latest.statusCode,statusCode);
+        assert.equal(latest.reason,'finite_but_not_tracking');
+        assert.equal(latest.poseValid,false);
+        assert.equal(latest.poseFresh,false);
+        assert.equal(latest.pose,null);
+    }
+});
+
+test('Worker publishes correlated pipeline-v2 and Limited quality, preserving explicit factor meanings', async () => {
+    const {context,audit,heap,replies}=workerFixture(),pipeline=limitedPipeline();
+    audit.setEngine(mockEngine({processFrame(){return true},isInitialized(){return true},getStatusCode(){return 5},
+        getFrameTimestamp(){return 1},getLastReason(){return 'tracking_limited'},getPoseTimestamp(){return 1},
+        getPoseFresh(){return true},getPoseValid(){return true},getPipelineDiagnostics(){return JSON.stringify(pipeline)}}),heap);
+    audit.appendIMU(imuSamples([1,1.01]),2);
+    await context.self.onmessage({data:request('frame',{gray:new ArrayBuffer(4),timestamp:1},1)});
+    const latest=replies.at(-1).data;
+    assert.equal(latest.trackingState,'tracking_limited');
+    assert.equal(latest.poseFresh,true);
+    assert.deepEqual(JSON.parse(JSON.stringify(latest.quality)),pipeline.quality);
+    assert.equal(latest.pipeline.solver.eligibleFeatures,12,'Historical structural slots retain their old meaning');
+    assert.equal(latest.pipeline.solver.structuralSlots,12);
+    assert.equal(latest.pipeline.solver.currentMetricFactors,1);
+    assert.equal(latest.pipeline.solver.currentProjectiveFactors,3);
+});
+
+test('Worker cannot certify Limited with missing/rank-deficient/unavailable or probabilistic quality', async () => {
+    const cases=[
+        p=>{delete p.quality},p=>{p.quality.rotationVisualSupported=false},p=>{p.quality.metricTranslationSupported=true},
+        p=>{p.quality.visualRotationRank=2},p=>{p.quality.uncertaintyAvailable=false},p=>{p.quality.relativeCovariance6x6=null},
+        p=>{p.quality.relativeCovariance6x6[0]=NaN},p=>{p.quality.limitedDurationS=null},
+        p=>{p.quality.consistencyScoreIsProbabilistic=true},p=>{p.quality.uncertaintySource='unavailable'},
+        p=>{p.quality.rotationConsistencyScore=100},p=>{p.solver.currentProjectiveFactors=2},
+        p=>{p.quality.relativeCovarianceOrdering='unknown_units'},
+    ];
+    for(const mutate of cases) {
+        const {context,audit,heap,replies}=workerFixture(),pipeline=limitedPipeline();mutate(pipeline);
+        audit.setEngine(mockEngine({processFrame(){return true},isInitialized(){return true},getStatusCode(){return 5},
+            getFrameTimestamp(){return 1},getLastReason(){return 'tracking_limited'},getPoseTimestamp(){return 1},
+            getPoseFresh(){return true},getPoseValid(){return true},getPipelineDiagnostics(){return JSON.stringify(pipeline)}}),heap);
+        audit.appendIMU(imuSamples([1,1.01]),2);
+        await context.self.onmessage({data:request('frame',{gray:new ArrayBuffer(4),timestamp:1},1)});
+        assert.equal(replies.at(-1).data.poseValid,false);
+        assert.equal(replies.at(-1).data.poseFresh,false);
+        assert.equal(replies.at(-1).data.pose,null);
+    }
+});
+
+test('Pipeline-v2 keeps unrun solver null and unavailable uncertainty null without borrowing stale counts', async () => {
+    const {context,audit,heap,replies}=workerFixture(),pipeline=limitedPipeline();
+    pipeline.solver=null;
+    Object.assign(pipeline.quality,{mode:'none',rotationVisualSupported:false,translationSupport:'none',fallbackUsed:false,recoveryMode:false,
+        currentMetricFactors:0,currentProjectiveFactors:0,limitedDurationS:null,uncertaintyAvailable:false,uncertaintyAnchorTimestamp:null,
+        relativeCovariance6x6:null,position3SigmaM:null,rotation3SigmaRad:null,rotationConsistencyScore:null,
+        uncertaintyModel:'unavailable',uncertaintySource:'unavailable',visualRotationRank:null,reason:'not_run'});
+    audit.setEngine(mockEngine({getPipelineDiagnostics(){return JSON.stringify(pipeline)}}),heap);
+    audit.appendIMU(imuSamples([1,1.01]),2);
+    await context.self.onmessage({data:request('frame',{gray:new ArrayBuffer(4),timestamp:1},1)});
+    assert.equal(replies.at(-1).data.pipeline.schema,'mobile-slam-pipeline-v2');
+    assert.equal(replies.at(-1).data.pipeline.solver,null);assert.equal(replies.at(-1).data.quality.relativeCovariance6x6,null);
+    pipeline.quality.currentMetricFactors=1;
+    await context.self.onmessage({data:request('frame',{gray:new ArrayBuffer(4),timestamp:1},2)});
+    assert.equal(replies.at(-1).data.pipeline,null);assert.equal(replies.at(-1).data.quality,null);
+});
+
+test('Missing bracket after a Limited engine state publishes ordinary Lost with no stale quality alias', async () => {
+    const clock=deterministicClock(),{context,audit,heap,replies}=workerFixture(clock);
+    audit.setEngine(mockEngine({isInitialized(){return true},getStatusCode(){return 5},getLastReason(){return 'tracking_limited'}}),heap);
+    audit.appendIMU(imuSamples([1.99]),1);
+    const pending=context.self.onmessage({data:request('frame',{gray:new ArrayBuffer(4),timestamp:2},1)});
+    clock.advance(40);await pending;
+    const row=replies.at(-1).data;
+    assert.equal(row.statusCode,3);assert.equal(row.trackingState,'lost');assert.equal(row.reason,'missing_bracket');
+    assert.equal(row.poseFresh,false);assert.equal(row.pipeline,null);assert.equal(row.quality,null);
+});
+
+test('Worker invalid frame timestamp never enters bracket wait or the engine', async () => {
+    for (const timestamp of [NaN, Infinity, -1]) {
+        const clock = deterministicClock();
+        const { context, audit, heap, replies } = workerFixture(clock);
+        let calls = 0;
+        audit.setEngine(mockEngine({ processFrame() { calls++; return false; } }), heap);
+        await context.self.onmessage({ data: request('frame', { gray: new ArrayBuffer(4), timestamp }) });
+        assert.equal(calls, 0);
+        assert.equal(replies.at(-1).data.reason, 'invalid_frame');
+        assert.equal(replies.at(-1).data.imuWaitMs, 0);
+        assert.equal(replies.at(-1).data.imuWaitBudgetMs, null);
+        assert.equal(clock.timers, 0);
+    }
+});
 
 for (const [name, data] of [['empty IMU', { gray: new ArrayBuffer(4), timestamp: 1 }],
     ['invalid image', { gray: new ArrayBuffer(3), timestamp: 2 }], ['invalid timestamp', { gray: new ArrayBuffer(4), timestamp: NaN }]]) {
@@ -571,7 +1089,8 @@ test('Numeric engine epoch normalization avoids spurious BigInt reset and clears
 
 // This executes the actual transport Worker script in an isolated Worker thread;
 // the controlled engine is a protocol fixture, not estimator/accuracy evidence.
-const fakeWasm = asModule(`export default function () {
+function fakeWasmModule(poseOffset = -0.01, mapPointCount = 0) {
+    return asModule(`export default function () {
     const memory = new ArrayBuffer(1024 * 1024);
     const HEAPU8 = new Uint8Array(memory), HEAPF64 = new Float64Array(memory);
     let next = 8;
@@ -583,20 +1102,23 @@ const fakeWasm = asModule(`export default function () {
                 this.fresh=false;
                 if (ts===99) throw new Error('injected worker engine fault');
                 if (!count) return false;
-                this.timestamp=ts-0.01; this.fresh=true;
+                this.frameTimestamp=ts; this.timestamp=ts+${poseOffset}; this.fresh=true;
                 HEAPF64.set([1,0,0,1,0,1,0,2,0,0,1,3,0,0,0,1],pose/8); return true;
             }
-            getEpoch() { return this.epoch; } getFrameTimestamp() { return this.timestamp+0.01; }
-            getIMUEndpointTimestamp() { return this.fresh ? this.timestamp+0.01 : -1; }
+            getEpoch() { return this.epoch; } getFrameTimestamp() { return this.frameTimestamp ?? -1; }
+            getIMUEndpointTimestamp() { return this.fresh ? this.frameTimestamp : -1; }
             getPoseTimestamp() { return this.timestamp; } getPoseFresh() { return this.fresh; }
             getPoseValid() { return this.fresh; } isInitialized() { return this.fresh; }
             getFeaturePointCount() { return 20; } getStatusCode() { return this.fresh?2:1; }
             getLastReason() { return this.fresh?'tracking':'imu_interval_uncovered'; }
             getLastSolverIterations() { return 3; } getLastSolverTermination() { return 'CONVERGENCE'; }
-            getMapPoints() { return 0; } reset() { this.epoch++; this.fresh=false; } delete() {}
+            getMapPoints(ptr) { if (${mapPointCount}) HEAPF64.set([1,2,3],ptr/8); return ${mapPointCount}; }
+            reset() { this.epoch++; this.fresh=false; } delete() {}
         }
     };
 }`);
+}
+const fakeWasm = fakeWasmModule();
 
 function realWorker() {
     const bootstrap = `import { parentPort } from 'node:worker_threads';
@@ -620,6 +1142,32 @@ function realWorker() {
         },
     };
 }
+
+test('Actual Worker rejects a future engine pose before publishing its map and retains engine reason', async () => {
+    const { worker, call } = realWorker();
+    try {
+        assert.equal((await call(request('init', { wasmPath: fakeWasmModule(0.1, 1) }, 1, 1))).success, true);
+        assert.equal((await call(request('configure', { width: 2, height: 2, fx: 1, fy: 1, cx: 1, cy: 1 }, 2, 2))).success, true);
+        const imu = imuSamples([1, 1.01]);
+        await call(request('imu', { imuData: imu.buffer, count: 2 }, 3, 2));
+        const frame = await call(request('frame', { gray: new ArrayBuffer(4), timestamp: 1 }, 4, 2));
+        assert.equal(frame.success, true, 'Publication rejection is still a completed frame');
+        assert.equal(frame.requestId, 4);
+        assert.equal(frame.sequence, 4);
+        assert.equal(frame.clientEpoch, 2);
+        assert.equal(frame.data.inputTimestamp, 1);
+        assert.equal(frame.data.engineFrameTimestamp, 1);
+        assert.equal(frame.data.engineEpoch, 1);
+        assert.equal(frame.data.pose, null);
+        assert.equal(frame.data.poseTimestamp, null);
+        assert.equal(frame.data.poseFresh, false);
+        assert.equal(frame.data.poseValid, false);
+        assert.equal(frame.data.mapPoints, null);
+        assert.equal(frame.data.mapPointCount, 0);
+        assert.equal(frame.data.reason, 'future_pose_timestamp');
+        assert.equal(frame.data.engineReason, 'tracking');
+    } finally { await worker.terminate(); }
+});
 
 test('Actual Worker dispatch echoes lifecycle/frame/error IDs and reports separate pose timing', async () => {
     const { worker, call } = realWorker();

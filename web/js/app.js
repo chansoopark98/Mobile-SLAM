@@ -10,6 +10,7 @@
  */
 import { VIOWrapper } from './vio-wrapper.js?v=11';
 import { Camera, validateCameraProfile, transformCameraProfile, processingDimensions } from './camera.js?v=11';
+import { CaptureWorker } from './capture-worker.js?v=1';
 import { IMU } from './imu.js?v=11';
 import { Renderer } from './renderer.js?v=11';
 import { OrientationHandler } from './orientation.js?v=11';
@@ -22,7 +23,8 @@ import { OrientationHandler } from './orientation.js?v=11';
  *   ?config=NAME   — Config profile: mobile_default, mobile_highend, euroc, tum_vi
  *   ?fth=N.N       — Override fundamental matrix RANSAC threshold (engine default: 1.0)
  *   ?rotate=none|cw|ccw — Explicit pixel rotation; default preserves video orientation
- *   ?rotation-rescue=1|0 — Experimental IMU rotation tracking rescue; default off
+ *   ?rotation-rescue=1|0 — IMU rotation tracking rescue; mobile App default on
+ *   ?capture=worker — UNVERIFIED VideoFrame capture experiment; default stays synchronous
  */
 const URL_PARAMS = new URLSearchParams(window.location.search);
 
@@ -423,6 +425,9 @@ class App {
             }
         };
         this.camera = new Camera();
+        this._captureWorker = URL_PARAMS.get('capture') === 'worker' && URL_PARAMS.get('grayscale') !== 'webgl' ?
+            new CaptureWorker({ onFrame: packet => this._acceptVideoFrameSnapshot(packet),
+                onError: error => { this._lastFrameCaptureError = error.message; } }) : null;
         this.imu = new IMU();
         this.orientation = new OrientationHandler();
         this.renderer = null;
@@ -487,6 +492,11 @@ class App {
         // Frame rate limiting: ensure enough IMU between VIO frames
         this._lastVIOFrameTime = 0;
         this._lastFrameTimestamp = 0;
+        this._frameLoopStarted = false;
+        this._frameLoopGeneration = 0;
+        this._frameLoopHandle = null;
+        this._frameDispatchTimer = null;
+        this._frameDispatchDeadline = null;
 
         // VIO initialization state (for adaptive frame rate)
         this._vioInitialized = false;
@@ -686,7 +696,7 @@ class App {
             const fxScaled = calibration.fx, fyScaled = calibration.fy;
             const params = { ...calibration, acc_n: config.acc_n, acc_w: config.acc_w,
                 gyr_n: config.gyr_n, gyr_w: config.gyr_w, g_norm: config.g_norm,
-                mobileMotionGuard: true, rotationRescue: URL_PARAMS.get('rotation-rescue') === '1' };
+                mobileMotionGuard: true, rotationRescue: !URL_PARAMS.has('rotation-rescue') || URL_PARAMS.get('rotation-rescue') === '1' };
             const configured = await this.vio.configure(params);
             if (!configured) throw new Error('VIO configuration failed');
             this._lastConfigParams = params;
@@ -780,6 +790,10 @@ class App {
             this.processLoop();
 
         } catch (e) {
+            this.running = false;
+            this._cancelFrameLoop();
+            this._clearVideoFrameCapture();
+            this._stopIMUFlush();
             this.updateStatus(`Error: ${e.message}`);
             console.error(e);
             this.camera.stop();
@@ -980,13 +994,51 @@ class App {
 
     get captureGeneration() { return this._videoCaptureGeneration ?? 0; }
 
+    _cancelFrameDispatch() {
+        if (this._frameDispatchTimer !== null) clearTimeout(this._frameDispatchTimer);
+        this._frameDispatchTimer = null;
+        this._frameDispatchDeadline = null;
+    }
+
+    _cancelFrameLoop() {
+        this._frameLoopGeneration++;
+        if (this._frameLoopHandle !== null && typeof cancelAnimationFrame === 'function') {
+            cancelAnimationFrame(this._frameLoopHandle);
+        }
+        this._frameLoopHandle = null;
+        this._frameLoopStarted = false;
+    }
+
+    _queueFrameLoop(generation) {
+        if (!this.running || generation !== this._frameLoopGeneration || this._frameLoopHandle !== null) return;
+        this._frameLoopHandle = requestAnimationFrame(() => {
+            if (generation !== this._frameLoopGeneration) return;
+            this._frameLoopHandle = null;
+            this.processLoop(generation);
+        });
+    }
+
+    _scheduleFrameDispatch(deadline) {
+        if (this._frameDispatchDeadline !== null && this._frameDispatchDeadline <= deadline) return;
+        this._cancelFrameDispatch();
+        const generation = this.captureGeneration;
+        this._frameDispatchDeadline = deadline;
+        this._frameDispatchTimer = setTimeout(() => {
+            this._frameDispatchTimer = null;
+            this._frameDispatchDeadline = null;
+            if (generation === this.captureGeneration) this._trySubmitFrame(performance.now());
+        }, Math.max(1, Math.ceil(deadline - performance.now())));
+    }
+
     _discardVideoFrameSnapshot() {
+        this._cancelFrameDispatch();
         if (this._pendingVideoFrame) this.frameMetrics.snapshotDiscarded++;
         this._pendingVideoFrame = null;
         this._videoFrameTiming = null;
     }
 
     _clearVideoFrameCapture() {
+        this._captureWorker?.cancel();
         this._videoFrameCallbackVideo?.cancelVideoFrameCallback?.(this._videoFrameCallbackHandle);
         this._videoFrameCallbackHandle = null;
         this._videoFrameCallbackVideo = null;
@@ -1014,11 +1066,32 @@ class App {
         return current && Object.entries(packet.geometry).every(([key,value]) => current[key] === value);
     }
 
+    _acceptVideoFrameSnapshot(packet) {
+        if (!this.running || document.hidden || this._blurPaused || this._reconfiguring ||
+            !this._videoSnapshotCurrent(packet, this.camera.getVideoElement()) ||
+            packet.timing.presentedFrames <= this._lastPresentedFrames ||
+            packet.timing.presentedFrames <= (this._lastSnapshotFrames ?? -1)) {
+            this.frameMetrics.snapshotGeometryRejected++;
+            return false;
+        }
+        this._lastSnapshotFrames = packet.timing.presentedFrames;
+        if (this._pendingVideoFrame) this.frameMetrics.snapshotCoalesced++;
+        this._pendingVideoFrame = packet;
+        this._videoFrameTiming = packet.timing;
+        this.frameMetrics.captured++;
+        this.frameMetrics.snapshotCaptured++;
+        this._trySubmitFrame(performance.now());
+        return true;
+    }
+
     _startVideoFrameCallbacks(video) {
         this._clearVideoFrameCapture();
         this._videoFrameCallbackVideo = video;
         this._videoFrameCallbackActive = typeof video?.requestVideoFrameCallback === 'function';
+        this.vio.onFrameComplete = () => this._trySubmitFrame(performance.now());
         if (!this._videoFrameCallbackActive || !this.running || document.hidden || this._blurPaused || this._reconfiguring) return;
+        this._lastSnapshotFrames = -1;
+        this._captureWorker?.start();
         const generation = this.captureGeneration;
         const currentSession = () => this.running && generation === this.captureGeneration && this.camera.getVideoElement() === video;
         const trackTimestamp = (now, metadata) => {
@@ -1032,6 +1105,22 @@ class App {
                 const geometry = this._videoCaptureGeometry(video);
                 if (!geometry) { this.frameMetrics.snapshotGeometryRejected++; this._discardVideoFrameSnapshot(); return; }
                 const packet = { video, geometry, captureGeneration: generation, configuration: this._lastConfigParams };
+                const validDOMTime = value => Number.isFinite(value) && value >= 0 && value <= arrival + 1;
+                const captureValid = validDOMTime(metadata.captureTime);
+                const presentationValid = validDOMTime(metadata.presentationTime);
+                const timestamp = captureValid ? metadata.captureTime : presentationValid ? metadata.presentationTime : arrival;
+                packet.timing = { timestampS: timestamp / 1000,
+                    source: captureValid ? 'video_capture_time' : presentationValid ? 'video_presentation' : 'video_callback_arrival',
+                    association: 'video_frame_callback_snapshot', presentedFrames: frameId, captureGeneration: generation,
+                    clientEpoch: geometry.clientEpoch, sourceWidth: geometry.sourceWidth, sourceHeight: geometry.sourceHeight,
+                    captureWidth: geometry.captureWidth, captureHeight: geometry.captureHeight,
+                    processWidth: geometry.width, processHeight: geometry.height,
+                    callbackArrivalMs: arrival, callbackTimestampMs: Number.isFinite(now) ? now : null,
+                    mediaTimeS: Number.isFinite(metadata.mediaTime) ? metadata.mediaTime : null,
+                    captureTimeMs: Number.isFinite(metadata.captureTime) ? metadata.captureTime : null,
+                    presentationTimeMs: Number.isFinite(metadata.presentationTime) ? metadata.presentationTime : null,
+                    timeOriginMs: performance.timeOrigin, physicalExposureVerified: false };
+                if (this._captureWorker?.capture(video, packet)) return;
                 const pixelReadStartMs = performance.now();
                 const gray = this.camera.captureGrayscale();
                 const pixelReadEndMs = performance.now();
@@ -1045,26 +1134,8 @@ class App {
                 const copyStartedMs = performance.now();
                 packet.gray = gray.slice();
                 const snapshotCopyMs = performance.now() - copyStartedMs;
-                const validDOMTime = value => Number.isFinite(value) && value >= 0 && value <= arrival + 1;
-                const captureValid = validDOMTime(metadata.captureTime);
-                const presentationValid = validDOMTime(metadata.presentationTime);
-                const timestamp = captureValid ? metadata.captureTime : presentationValid ? metadata.presentationTime : arrival;
-                packet.timing = { timestampS: timestamp / 1000,
-                    source: captureValid ? 'video_capture_time' : presentationValid ? 'video_presentation' : 'video_callback_arrival',
-                    association: 'video_frame_callback_snapshot', presentedFrames: frameId, captureGeneration: generation,
-                    clientEpoch: geometry.clientEpoch, sourceWidth: geometry.sourceWidth, sourceHeight: geometry.sourceHeight,
-                    captureWidth: geometry.captureWidth, captureHeight: geometry.captureHeight,
-                    processWidth: geometry.width, processHeight: geometry.height, pixelReadStartMs, pixelReadEndMs, snapshotCopyMs,
-                    callbackArrivalMs: arrival, callbackTimestampMs: Number.isFinite(now) ? now : null,
-                    mediaTimeS: Number.isFinite(metadata.mediaTime) ? metadata.mediaTime : null,
-                    captureTimeMs: Number.isFinite(metadata.captureTime) ? metadata.captureTime : null,
-                    presentationTimeMs: Number.isFinite(metadata.presentationTime) ? metadata.presentationTime : null,
-                    timeOriginMs: performance.timeOrigin, physicalExposureVerified: false };
-                if (this._pendingVideoFrame) this.frameMetrics.snapshotCoalesced++;
-                this._pendingVideoFrame = packet;
-                this._videoFrameTiming = packet.timing;
-                this.frameMetrics.captured++;
-                this.frameMetrics.snapshotCaptured++;
+                Object.assign(packet.timing, { pixelReadStartMs, pixelReadEndMs, snapshotCopyMs });
+                this._acceptVideoFrameSnapshot(packet);
             } catch (error) {
                 if (currentSession()) {
                     this.frameMetrics.snapshotCaptureFailed++;
@@ -1078,15 +1149,8 @@ class App {
         this._videoFrameCallbackHandle = video.requestVideoFrameCallback(trackTimestamp);
     }
 
-    processLoop() {
-        if (!this.running) return;
-        if (document.hidden || this._blurPaused || this._reconfiguring) {
-            this._discardVideoFrameSnapshot();
-            requestAnimationFrame(() => this.processLoop());
-            return;
-        }
-
-        const now = performance.now();
+    _trySubmitFrame(now, allowFallback = false) {
+        if (!this.running || !this._frameLoopStarted || document.hidden || this._blurPaused || this._reconfiguring) return;
 
         // ── Frame deduplication + rate limiting ──
         // Problem: rAF fires at ~60Hz but camera runs at ~30fps.
@@ -1109,7 +1173,7 @@ class App {
         const timing = packet?.timing;
         const isNewFrame = this._videoFrameCallbackActive ?
             Boolean(packet && timing.presentedFrames > this._lastPresentedFrames) :
-            videoTime > 0 && videoTime !== this._lastVideoTime;
+            allowFallback && videoTime > 0 && videoTime !== this._lastVideoTime;
         const enoughTime = (now - this._lastVIOFrameTime) >= frameInterval;
 
         // Keep the latest owned snapshot while the Worker is busy. Consuming it
@@ -1117,8 +1181,12 @@ class App {
         // IMU delivery must continue so the active frame can obtain its bracket.
         const workerBusy = this.vio.workerBusy === true;
         if (isNewFrame && enoughTime && workerBusy) this._flushAndSendIMU();
+        if (isNewFrame && !enoughTime && !workerBusy && this._videoFrameCallbackActive && this.vio.configured !== false) {
+            this._scheduleFrameDispatch(this._lastVIOFrameTime + frameInterval);
+        }
 
         if (isNewFrame && enoughTime && !workerBusy && this.vio.configured !== false) {
+            this._cancelFrameDispatch();
             if (this._videoFrameCallbackActive) {
                 this._lastPresentedFrames = timing.presentedFrames;
                 this._pendingVideoFrame = null;
@@ -1176,7 +1244,6 @@ class App {
                     this._frameWarmupCount++;
                     this.frameMetrics.warmupSkipped++;
                     console.log(`[VIO] Camera warmup frame ${this._frameWarmupCount}/${CAMERA_WARMUP_FRAMES}, skipping`);
-                    requestAnimationFrame(() => this.processLoop());
                     return;
                 }
 
@@ -1200,7 +1267,8 @@ class App {
 
                     // Send frame only — worker drains its internal IMU buffer
                     this.frameMetrics.attempted++;
-                    const accepted = this.vio.sendFrame(vioGray, frameTimestamp);
+                    const accepted = this.vio.sendFrame(vioGray, frameTimestamp,
+                        { transferOwnership: this._videoFrameCallbackActive, sourceTiming: this.lastFrameTiming });
                     if (accepted) {
                         this._lastFrameTimestamp = frameTimestamp;
                         this.totalFrameCount++;
@@ -1220,6 +1288,18 @@ class App {
                 }
             }
         }
+
+    }
+
+    processLoop(generation = this._frameLoopGeneration) {
+        if (!this.running || generation !== this._frameLoopGeneration) return;
+        this._frameLoopStarted = true;
+        if (document.hidden || this._blurPaused || this._reconfiguring) {
+            this._discardVideoFrameSnapshot();
+            this._queueFrameLoop(generation);
+            return;
+        }
+        this._trySubmitFrame(performance.now(), true);
 
         // Read latest result from worker (non-blocking)
         const result = this.vio.getLatestResult();
@@ -1247,7 +1327,7 @@ class App {
             this.lastImuUpdateTime = nowFps;
         }
 
-        requestAnimationFrame(() => this.processLoop());
+        this._queueFrameLoop(generation);
     }
 
     _consumeResult(result) {
@@ -1263,7 +1343,12 @@ class App {
         if (this.featureEl) this.featureEl.textContent = result.featureCount;
         if (this.frameEl) this.frameEl.textContent = `${metrics?.framesSubmitted ?? this.frameMetrics.accepted}/${metrics?.framesCompleted ?? this.frameMetrics.completed}/${metrics?.framesDropped ?? this.frameMetrics.dropped}`;
         this._vioInitialized = !!result.initialized;
-        const fresh = result.poseFresh && result.poseValid && Number.isFinite(result.poseTimestamp) && result.poseTimestamp >= 0 &&
+        const limited = result.statusCode === 5;
+        const supportedState = result.trackingState !== 'unknown' && (result.statusCode === 2 || limited &&
+            result.trackingState === 'tracking_limited' && result.quality?.mode === 'projective_limited' &&
+            result.quality.rotationVisualSupported === true && result.quality.metricTranslationSupported === false &&
+            result.poseTimestamp === result.inputTimestamp);
+        const fresh = supportedState && result.poseFresh && result.poseValid && Number.isFinite(result.poseTimestamp) && result.poseTimestamp >= 0 &&
             result.pose?.length === 16 && Array.from(result.pose).every(Number.isFinite);
         const names = { 0: 'Not configured', 1: 'Initializing', 2: 'Tracking', 3: 'Lost', 4: 'Cooldown' };
         const imu = this.imu.getDiagnostics();
@@ -1274,9 +1359,11 @@ class App {
             else this._inputStatus = this.imu.running && sourceFresh ?
                 (this.imu.isCalibrated() ? 'IMU active' : 'IMU active / bias unverified') : `IMU ${this.imu.running ? 'waiting for data' : imu.status}`;
         }
-        const source = this.lastFrameTiming?.source || 'camera time proxy';
+        const source = result.sourceTiming?.source || 'camera time proxy';
         const ageMs = fresh ? performance.now() - result.poseTimestamp * 1000 : null;
-        this.updateStatus(`${this._inputStatus || 'IMU'} · ${names[result.statusCode] || 'Unknown'}${result.reason ? ` / ${result.reason}` : ''} · ${this.calibrationProvenance.status}${ageMs !== null ? ` · pose age ${Math.round(ageMs)}ms (${source})` : ''}`);
+        const qualityLabel = limited ? `Limited / ${fresh ? 'position uncertain' : 'pose unavailable'}` :
+            result.trackingState === 'unknown' || !Number.isInteger(result.statusCode) ? 'Unknown' : names[result.statusCode] || 'Unknown';
+        this.updateStatus(`${this._inputStatus || 'IMU'} · ${qualityLabel}${!limited && result.reason ? ` / ${result.reason}` : ''} · ${this.calibrationProvenance.status}${ageMs !== null ? ` · pose age ${Math.round(ageMs)}ms (${source})` : ''}`);
         if (this.renderer) {
             if (fresh) {
                 this.renderer.updateCameraPose(result.pose);
@@ -1432,12 +1519,14 @@ class App {
 
     stop() {
         this.running = false;
+        this._cancelFrameLoop();
         this._pendingOrientation = null;
         this.camera.getVideoElement()?.removeEventListener?.('resize', this._videoResizeHandler);
         this._videoResizeHandler = null;
         this._renderResizeObserver?.disconnect();
         this._clearVideoFrameCapture();
         this._videoFrameCallbackActive = false;
+        this._captureWorker?.stop();
         this.renderer?.clear();
         this._stopIMUFlush();
         this._stopDeviceOrientationListener();
@@ -1462,5 +1551,6 @@ const app = new App();
 window.__mobileSLAM = { app, diagnostics: () => ({ frames: { ...app.frameMetrics }, transport: app.vio.getMetrics(),
     imu: app.imu.getDiagnostics(), calibration: app.calibrationProvenance, cameraTiming: app.lastFrameTiming ?? null,
     cameraCapture: { generation: app.captureGeneration, pendingSnapshots: app._pendingVideoFrame ? 1 : 0,
-        lastError: app._lastFrameCaptureError ?? null } }) };
+        lastError: app._lastFrameCaptureError ?? null,
+        workerExperiment: app._captureWorker?.getMetrics() ?? null } }) };
 document.addEventListener('DOMContentLoaded', () => app.initialize());

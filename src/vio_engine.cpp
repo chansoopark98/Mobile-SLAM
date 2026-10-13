@@ -3,10 +3,12 @@
 #include "backend/factor/projection_factor.h"
 #include <opencv2/opencv.hpp>
 #include <algorithm>
+#include <chrono>
 #include <cmath>
 #include <limits>
 #include <sstream>
 #include <iomanip>
+#include <stdexcept>
 
 namespace {
 bool isRotation(const Eigen::Matrix3d& rotation) {
@@ -24,6 +26,25 @@ void jsonNumber(std::ostream& output,double value) {
     if(std::isfinite(value)) output<<std::setprecision(17)<<value;
     else output<<"null";
 }
+class ScopedMilliseconds {
+public:
+    explicit ScopedMilliseconds(double& target) : target_(target), start_(std::chrono::steady_clock::now()) {
+        if (!std::isfinite(target_)) target_ = 0;
+    }
+    ~ScopedMilliseconds() {
+        target_ += std::chrono::duration<double, std::milli>(std::chrono::steady_clock::now() - start_).count();
+    }
+private:
+    double& target_;
+    std::chrono::steady_clock::time_point start_;
+};
+class FrameRecordingScope {
+public:
+    explicit FrameRecordingScope(bool& recording) : recording_(recording) { recording_ = true; }
+    ~FrameRecordingScope() { recording_ = false; }
+private:
+    bool& recording_;
+};
 }
 
 VIOEngine::VIOEngine()
@@ -81,6 +102,7 @@ bool VIOEngine::configure(int width, int height,
     feature_tracker_->setDiagnosticCapture(diagnostic_capture_);
     configured_ = true;
     rotation_rescue_enabled_ = false;
+    experimental_observation_policy_ = 0;
     resetState("configured");
     return true;
 }
@@ -122,6 +144,9 @@ void VIOEngine::invalidatePose(const std::string& reason) {
 
 void VIOEngine::resetState(const std::string& reason) {
     ++epoch_;
+    // A reset inside processFrame belongs to that attempted frame; an external
+    // reset clears the previous frame's measurements.
+    if (!pipeline_recording_) pipeline_ = PipelineDiagnostics{};
     if(execution_configured_) {
         cv::setRNGSeed(execution_seed_);
         cv::setNumThreads(execution_threads_);
@@ -131,6 +156,7 @@ void VIOEngine::resetState(const std::string& reason) {
         estimator_->setParameter();
         estimator_->setDiagnosticCapture(diagnostic_capture_);
         estimator_->setBenchmarkSolverProfile(benchmark_solver_profile_);
+        estimator_->setExperimentalObservationPolicy(experimental_observation_policy_);
         estimator_generation_ = estimator_->getResetGeneration();
     }
     if (feature_tracker_) feature_tracker_->reset();
@@ -242,6 +268,14 @@ std::vector<common::SolvedFeature> VIOEngine::matchFeaturesForPnP() const {
 bool VIOEngine::processFrame(const uint8_t* gray_image,int width,int height,
                              const IMUReading* imu_readings,int imu_count,
                              double image_timestamp,double* output) {
+    pipeline_ = PipelineDiagnostics{};
+    pipeline_.available = true;
+    pipeline_.epochBefore = epoch_;
+    pipeline_.sequence = ++pipeline_sequence_;
+    pipeline_.timestamp = image_timestamp;
+    pipeline_.imuCount = imu_count;
+    FrameRecordingScope frame_recording(pipeline_recording_);
+    ScopedMilliseconds total_timer(pipeline_.totalMs);
     if(output) std::fill(output,output+16,std::numeric_limits<double>::quiet_NaN());
     invalidatePose("not_configured");
     last_solver_iterations_ = 0; last_solver_termination_ = "not_run";
@@ -265,7 +299,11 @@ bool VIOEngine::processFrame(const uint8_t* gray_image,int width,int height,
     const bool rotation_interval=rotation_rescue_enabled_ && isInitialized() &&
         prev_image_timestamp_>=0 && current_time_==prev_image_timestamp_;
     const Eigen::Matrix3d rotation_before=estimator_->sliding_window_[utility::WINDOW_SIZE].R;
-    const bool imu_covered=processIMUData(imu_readings,imu_count,image_timestamp);
+    bool imu_covered;
+    {
+        ScopedMilliseconds imu_timer(pipeline_.imuMs);
+        imu_covered=processIMUData(imu_readings,imu_count,image_timestamp);
+    }
     frame_timestamp_=image_timestamp;
     if(!imu_covered && last_reason_!="imu_missing_past" && last_reason_!="imu_missing_future") return false;
     const std::string imu_reason=last_reason_;
@@ -285,13 +323,21 @@ bool VIOEngine::processFrame(const uint8_t* gray_image,int width,int height,
     if(rotation_covered) camera_rotation=estimator_->r_ic_.transpose()*rotation_after.transpose()*rotation_before*estimator_->r_ic_;
     try {
         const cv::Mat image(height,width,CV_8UC1,const_cast<uint8_t*>(gray_image));
-        feature_tracker_->detectAndTrack(image,image_timestamp,backend_frame,rotation_covered?&camera_rotation:nullptr);
+        {
+            ScopedMilliseconds frontend_timer(pipeline_.frontendMs);
+            feature_tracker_->detectAndTrack(image,image_timestamp,backend_frame,rotation_covered?&camera_rotation:nullptr);
+        }
         prev_image_timestamp_=image_timestamp;
         if(!imu_covered) { last_reason_=imu_reason; return false; }
         if(pnp_active && !backend_frame) {
             const auto matched=matchFeaturesForPnP();
             img_cnt_=(img_cnt_+1)%utility::g_config.pnp.freq;
-            const bool usable=pnp_frontend_->processImage(matched,image_timestamp);
+            pipeline_.backendRoute = "pnp";
+            bool usable;
+            {
+                ScopedMilliseconds backend_timer(pipeline_.backendMs);
+                usable=pnp_frontend_->processImage(matched,image_timestamp);
+            }
             recordSolver(pnp_frontend_->getLastSolverDiagnostics());
             if(!usable || !pnp_frontend_->hasUsableLatestImageUpdate()) {
                 last_reason_=pnp_frontend_->getLastSolverDiagnostics().reason; return false;
@@ -310,7 +356,11 @@ bool VIOEngine::processFrame(const uint8_t* gray_image,int width,int height,
             if(value.allFinite()) image_data[feature_tracker_->ids[j]]=value;
         }
         if(image_data.empty()) { last_reason_="empty_features"; return false; }
-        estimator_->processImage(image_data,image_timestamp);
+        pipeline_.backendRoute = "estimator";
+        {
+            ScopedMilliseconds backend_timer(pipeline_.backendMs);
+            estimator_->processImage(image_data,image_timestamp);
+        }
         imu_samples_since_image_=0;
         recordSolver(estimator_->getLastSolverDiagnostics());
         if(estimator_->getResetGeneration()!=estimator_generation_) {
@@ -338,7 +388,10 @@ bool VIOEngine::processFrame(const uint8_t* gray_image,int width,int height,
             cached_solved_features_=estimator_->getSolvedFeatures();
             solved_feature_map_.clear();
             for(size_t i=0;i<cached_solved_features_.size();++i) solved_feature_map_[cached_solved_features_[i].id]=i;
-            pnp_frontend_->processImage(matchFeaturesForPnP(),image_timestamp);
+            {
+                ScopedMilliseconds backend_timer(pipeline_.backendMs);
+                pnp_frontend_->processImage(matchFeaturesForPnP(),image_timestamp);
+            }
             pnp_frontend_->setBackendSolution(estimator_->getLatestVINSResult());
             img_cnt_=(img_cnt_+1)%utility::g_config.pnp.freq;
         }
@@ -379,6 +432,20 @@ std::string VIOEngine::getLastSolverTermination() const {
     return last_solver_termination_;
 }
 void VIOEngine::recordSolver(const backend::SolverDiagnostics& diagnostics) {
+    pipeline_.solverRecorded = true;
+    // Do not copy optional detailed Ceres JSON into the lightweight record.
+    auto& solver = pipeline_.solver;
+    solver.usable = diagnostics.usable;
+    solver.imuFactors = diagnostics.imuFactors;
+    solver.rejectedImuFactors = diagnostics.rejectedImuFactors;
+    solver.visualFactors = diagnostics.visualFactors;
+    solver.currentVisualFactors = diagnostics.currentVisualFactors;
+    solver.eligibleFeatures = diagnostics.eligibleFeatures;
+    solver.immatureFeatures = diagnostics.immatureFeatures;
+    solver.invalidDepthFeatures = diagnostics.invalidDepthFeatures;
+    solver.projectionRejects = diagnostics.projectionRejects;
+    solver.ceresMs = diagnostics.ceresMs;
+    solver.marginalizationMs = diagnostics.marginalizationMs;
     last_solver_iterations_=diagnostics.iterations;
     last_solver_quality_reason_=diagnostics.qualityReason;
     switch(diagnostics.terminationType) {
@@ -406,10 +473,46 @@ void VIOEngine::setBenchmarkSolverProfile(bool enabled) {
     benchmark_solver_profile_ = enabled;
     if (estimator_) estimator_->setBenchmarkSolverProfile(enabled);
 }
+void VIOEngine::setExperimentalObservationPolicy(int policy) {
+    if (policy < 0 || policy > 2) throw std::invalid_argument("Experimental observation policy must be 0, 1, or 2");
+    if (policy == experimental_observation_policy_) return;
+    experimental_observation_policy_ = policy;
+    resetState("experimental_observation_policy_changed");
+}
 void VIOEngine::setRotationRescue(bool enabled) {
     if(enabled==rotation_rescue_enabled_) return;
     rotation_rescue_enabled_=enabled;
     if(prev_image_timestamp_>=0) resetState("rotation_rescue_changed");
+}
+std::string VIOEngine::getPipelineDiagnostics() const {
+    if (!pipeline_.available) return "null";
+    std::ostringstream output;
+    output << "{\"schema\":\"mobile-slam-pipeline-v1\",\"sequence\":" << pipeline_.sequence
+           << ",\"engineEpochBefore\":" << pipeline_.epochBefore << ",\"engineEpoch\":" << epoch_
+           << ",\"frameTimestamp\":";
+    jsonNumber(output, pipeline_.timestamp);
+    output << ",\"imuCount\":" << pipeline_.imuCount << ",\"backendRoute\":\"" << pipeline_.backendRoute
+           << "\",\"totalMs\":";
+    jsonNumber(output, pipeline_.totalMs);
+    output << ",\"imuMs\":"; jsonNumber(output, pipeline_.imuMs);
+    output << ",\"frontendMs\":"; jsonNumber(output, pipeline_.frontendMs);
+    output << ",\"backendMs\":"; jsonNumber(output, pipeline_.backendMs);
+    output << ",\"solver\":";
+    if (!pipeline_.solverRecorded) output << "null";
+    else {
+        const auto& solver = pipeline_.solver;
+        output << "{\"usable\":" << (solver.usable ? "true" : "false")
+               << ",\"imuFactors\":" << solver.imuFactors << ",\"rejectedImuFactors\":" << solver.rejectedImuFactors
+               << ",\"visualFactors\":" << solver.visualFactors << ",\"currentVisualFactors\":" << solver.currentVisualFactors
+               << ",\"eligibleFeatures\":" << solver.eligibleFeatures << ",\"immatureFeatures\":" << solver.immatureFeatures
+               << ",\"invalidDepthFeatures\":" << solver.invalidDepthFeatures << ",\"projectionRejects\":" << solver.projectionRejects
+               << ",\"ceresMs\":";
+        jsonNumber(output, solver.ceresMs);
+        output << ",\"marginalizationMs\":"; jsonNumber(output, solver.marginalizationMs);
+        output << '}';
+    }
+    output << '}';
+    return output.str();
 }
 std::string VIOEngine::getFeatureDiagnostics() const {
     if(!diagnostic_capture_ || !feature_tracker_) return "{\"enabled\":false}";
@@ -441,6 +544,8 @@ std::string VIOEngine::getFeatureDiagnostics() const {
     property("fisheye",ft.fisheye);property("lk_window_size",ft.lk_window_size);property("lk_pyramid_levels",ft.lk_pyramid_levels);
     property("lk_iterations",ft.lk_iterations);property("lk_eps",ft.lk_eps);property("f_threshold_edge_factor",ft.f_threshold_edge_factor);
     property("rotation_rescue_enabled",rotation_rescue_enabled_?1:0);
+    property("experimental_observation_policy_selected",experimental_observation_policy_);
+    property("experimental_observation_policy_effective",getEffectiveExperimentalObservationPolicy());
     const auto& estimator=config.estimator;
     property("window_size_backend",estimator.window_size);property("num_iterations",estimator.num_iterations);
     property("marginalization_assembly_threads",backend::factor::kMarginalizationAssemblyThreads);

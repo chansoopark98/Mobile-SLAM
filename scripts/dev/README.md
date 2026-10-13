@@ -42,7 +42,7 @@ python3 scripts/dev/doctor.py --strict --output build/dev-tools/doctor.json
 | `bash scripts/dev/check.sh quick` | syntax + evaluator regression | native/WASM/browser는 별도 |
 | `bash scripts/dev/check.sh browser-contracts` | strict browser contracts + transport + exporter analytic | mandatory TODO/skip는 gate 실패; 실기기와 구분 |
 | `bash scripts/dev/check.sh mobile-contracts` | dev mobile recorder bounded/copy/pose-delta 계약 | 실제 전화 camera/IMU/추정 정확도와 구분 |
-| `bash scripts/dev/check.sh native` | headless configure → 현재13개 suite target build → discovered CTest | empty/missing suite·mandatory skip·실패는 gate 실패 |
+| `bash scripts/dev/check.sh native` | headless configure → 현재16개 suite target build → discovered CTest | empty/missing suite·mandatory skip·실패는 gate 실패 |
 | `bash scripts/dev/check.sh wasm-build` | Emsdk subprocess 활성화 → 별도 WASM configure/build | `web/`로 미배포, 실기기 성능 미확인 |
 | `bash scripts/dev/check.sh clangd` | C++ LSP initialize/symbol/diagnostics | 컴파일 DB 필수, 단일 source 검사 |
 | `bash scripts/dev/check.sh mcp` | MCP initialize/tools/list + 브라우저 fixture + 문서 조회 | Codex 현재 세션 도구 reload와 구분 |
@@ -94,17 +94,23 @@ python3 scripts/dev/evaluate-synthetic-vio.py --dataset build/synthetic-example 
 - browser modes: `raw`=직접 Worker, `live-deterministic`=가상 시계·직렬 처리, `live-paced`=제어된 callback cadence, `live-paced-native-raf`=실제 desktop rAF
 - 회전 회귀: `--scenario fast-rotation --portrait`는 첫5초 기존 mobile60 motion을 유지한 뒤 복합축 빠른 회전을 추가. analytic gyro·body GT·영상은 독립 생성하며, 실제 phone 회전 허용 속도 근거가 아님
 - 재현: `python3 scripts/dev/generate-synthetic-vio.py --output build/fast-rotation-example --seed 707 --scenario fast-rotation --portrait`. 출력 폴더는 새 경로만 허용
-- 회전 복구는 실험 기능, 기본 OFF. live App `?rotation-rescue=1`/`=0`, synthetic browser `--rotation-rescue on|off|default`, native replay 마지막 PROFILE 인자 뒤 `0|1`로 선택
+- 2026-10-12 회전 복구: live App 기본 ON, `?rotation-rescue=0`은 control OFF, `=1`은 ON. C++/Worker의 명시하지 않은 configure 기본값은 OFF 유지. synthetic browser `--rotation-rescue on|off|default`, native replay PROFILE 다음 ROTATION_RESCUE 인자 `0|1`로 선택
 - 활성값은 configure ACK 대신 C++ `rotation_rescue_enabled` 또는 Worker `rotationRescueEnabled`로 확인. 기본값의 TUM 회귀와 활성화한 합성 회전 수락은 별도 결과로 기록
-- ON 후보는 빠른 회전 합성 입력에서 개선됐지만 full TUM-VI 정확도 유지 gate는 실패. 실기기 Lost/발산 해결은 미확인. 일반 사용의 기본값은 OFF 유지
+- 2026-10-10 ON 후보의 full TUM-VI gate 실패는 역사 기록으로 유지. 2026-10-12 경쟁 F 지지 후보와 IMU 적분 수정의 full TUM/독립 회전 결과는 [최적화 보고서](../../docs/fixes/2026-10-12-optimization-results.md) 참조. 실기기 Lost/발산 해결·속도 향상은 후속 재시험으로 확인
 - 기본 harness는 명시 `fth=1`; `--f-threshold default`는 URL override 생략 후 실제 C++ readback 확인. 현재 engine 기본값도1
 - `live-deterministic`의 가상 clock 비용을 실제 latency로 보고하지 않음. 실제 rAF도 camera captureTime·sensor API는 mock이며 물리 phone 검증과 구분
 - 원본400frame·warmup 이후300frame 분모 유지. 누락·busy·실패·pose 없는 frame을 평가에서 숨기지 않음
 - 캡처한 App 입력 재생: 생성된 `captured-input.json`을 `--mode raw`에 전달하고 `--frames`를 실제 accepted 수로 지정. 실제 C++ readback 설정·accepted pixels·IMU batch 경계 보존
-- native replay의 마지막 `legacy|yaml` 인자로 profile 명시. 기본 `legacy`는 기존 고정 tracker 유지, `yaml`은 supplied tracker 설정 사용
+- native replay trailing 인자: `[PROFILE=legacy|yaml] [ROTATION_RESCUE=0|1] [EXPERIMENTAL_OBSERVATION_POLICY=0|1|2]`. 기본 `legacy`는 기존 고정 tracker 유지, `yaml`은 supplied tracker 설정 사용
+- 실패한 current-observation 실험은 instance API `setExperimentalObservationPolicy(0|1|2)`로만 선택. 기본0=시작 A2 legacy,1=D2 old-depth 복구,2=D3 good-history candidate 선택. Config/g_config·App/Worker의 자동 활성화·UI 추가 없음
+- `getExperimentalObservationPolicy()`는 해당 Engine selected 값, native `getEffectiveExperimentalObservationPolicy()`와 `getFeatureDiagnostics().params.experimental_observation_policy_effective`는 실제 backend 값. backend 미생성 시 effective−1; configure/configureFromConfig는0, reset은 선택 보존, 값 변경은 새 epoch와 빈 history, 같은 값은 무동작
+- native 마지막 실험 인자는 정확한 문자열 `0|1|2`만 허용하며 입력 처리·출력 생성 전에 검증. raw/summary에 `experimental_observation_policy_selected`·`experimental_observation_policy_effective` 기록. 이 격리는 추적·정확도 수락을 의미하지 않으며 원래 목표는 NOT_ACCEPTED
 - 초기 covariance 파라미터는 기존 `V noise Vᵀ` 구현의 수치 profile. 주입한 sensor noise density와 같은 단위라고 가정하거나 dt 보정 없이 서로 복사하지 않음
 
 ## 실기기 pose 흔들림 기록
+
+- 보존 기록 재분석: `python3 scripts/dev/analyze-flip6-recordings.py /absolute/record.json --output build/new-flip6-analysis.json`. numeric/input schema, 결과 시간창·pose/초기화 coverage·지연 quantile·epoch·부분 영상·PGM hash를 검증하며 원본과 기존 출력을 덮어쓰지 않음.
+- [2026-10-13 Flip6 종합 분석·적용](../../docs/research/2026-10-13-flip6-analysis-and-application.md): 재계산된 원본4개·상용 엔진 도구 검사·현재 로직·검증 한계.
 
 - 장면 구분: 정지 구간, 제어된 천천한 이동/회전, 시작 위치 복귀; 장면/장치/browser/카메라 해상도/calibration/화면 방향과 기록시간 함께 보존
 - 관측 필드: IMU event/sensor/callback 시각과 clock origin, video presentation/callback/capture-call 메타데이터, frame accept/drop, submitted-result roundtrip, pose 수신시각, translation/rotation jump, initialization/lost/reset, 오류
@@ -151,6 +157,7 @@ adb -s "$phone_address" forward --no-rebind tcp:9222 localabstract:chrome_devtoo
 
 node scripts/dev/android-snapshot.mjs --samples 8
 node scripts/dev/android-snapshot.mjs --samples 5 --record-seconds 30
+node scripts/dev/android-snapshot.mjs --samples 5 --record-seconds 30 --timer
 
 # 이 작업에서 만든 9222 포워딩만 종료
 adb -s "$phone_address" forward --remove tcp:9222
@@ -160,6 +167,11 @@ adb -s "$phone_address" forward --remove tcp:9222
 - helper: 해당 origin의 기존 `/` 또는 `/index.html` 탭 1개만 page WebSocket으로 관측; 다른 탭·Chrome 재시작·navigation·권한 emulation 없음
 - 기본 출력: 고유 `build/dev-android/snapshot-<UTC>.json`; 명시 `--output`도 기존 파일 덮어쓰기 금지
 - `--record-seconds 1..60`: 실제 Worker 결과 최대1,500개, 전송 시도 IMU 최대12,000개; hook은 시간 상한·종료에서 복원
+- `--timer`: 30초 numeric 기록 전용. Tracking 상태에서 시작, 화면 타이머 기준 0–10초 정지/10–20초 평소 Lost가 발생하는 정도의 이동·회전/20–30초 정지. source gyro를 함께 확인하여 실제 동작 구간 판단
+- 결과별 `pipeline`: IMU/frontend/backend·Ceres/marginalization 시간, 유효 current visual/IMU factor·immature/depth/projection 거부 수. `candidatePipeline`은 motion guard reset 이전 시도의 별도 identity; 미실행·불일치 stage는 null
+- `imuWaitBudgetMs`: 최근 수락 source cadence로 고정한40–80ms bracket deadline. 실제 future sample은 필수이며, 추가 대기는 최대40ms 지연 tradeoff가 있음
+- numeric `submissions`와 결과의 sourceTiming·frameCopyMs·roundtripMs·uiStateUpdatedAtMs는 request/epoch/sequence로 결합. 마지막 snapshot cameraTiming을 개별 결과와 임의 결합하지 않음. UI 시각은 상태 갱신 완료이며 GPU 표시 완료·물리 exposure 시각이 아님
+- 수집 부하: IMU row 복사, sourceTiming clone, hook·타이머 DOM 갱신 포함. 속도 비교는 같은 관측 설정으로 수행, raw image recorder와 numeric recorder 동시 사용 금지
 - 기록: raw pose·timestamp·상태·epoch·solver·입력 IMU·camera 수치·gyro candidate/적용 여부; 영상·camera label/device ID·개인 탭 URL 제외
 - 판정: IMU 호출 인자는 Worker 수락·엔진 입력과 구분; callback·presentation은 physical exposure 시각과 구분; 정지 자기일관성은 독립 GT 정확도와 구분
 - 2026-10-07 연결 확인: Z Flip 6 `SM-F741N`, Android16/API36, Chrome154.0.8037.126, ADB36.0.2; 무선 shell·Chrome CDP 실제 호출 성공

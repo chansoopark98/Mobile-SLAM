@@ -2,8 +2,10 @@
 #include "utility/so3.h"
 
 #include <cmath>
+#include <chrono>
 #include <iomanip>
 #include <sstream>
+#include <stdexcept>
 
 namespace backend {
 
@@ -133,6 +135,11 @@ void Optimizer::setExtrinsicParameters(const Vector3d& t_ic, const Matrix3d& r_i
     r_ic_ = r_ic;
 }
 
+void Optimizer::setExperimentalObservationPolicy(int policy) {
+    if (policy < 0 || policy > 2) throw std::invalid_argument("Experimental observation policy must be 0, 1, or 2");
+    experimental_observation_policy_ = policy;
+}
+
 bool Optimizer::optimize(common::MarginalizationFlag marginalization_flag) {
     diagnostics_ = SolverDiagnostics{};
     // STEP 1: Setup optimization problem and parameter blocks
@@ -201,7 +208,10 @@ bool Optimizer::optimize(common::MarginalizationFlag marginalization_flag) {
 
     // STEP 4: Apply results and handle marginalization
     applyOptimizationResults();
+    const auto marginalization_started = std::chrono::steady_clock::now();
     handleMarginalization(marginalization_flag);
+    diagnostics_.marginalizationMs = std::chrono::duration<double, std::milli>(
+        std::chrono::steady_clock::now() - marginalization_started).count();
     finishDiagnostics();
     return true;
 }
@@ -213,6 +223,13 @@ bool Optimizer::setupOptimizationProblem(ceres::Problem& problem) {
         if (!utility::so3::isRotation((*sliding_window_)[i].R)) return false;
     prepareOptimizationParameters();
     if (!validateOptimizationParameters()) return false;
+    admitted_feature_slots_.fill(false);
+    int slot = 0;
+    for (const auto& feature : feature_manager_->feature_bank_) {
+        if (!feature.isParameterCandidate()) continue;
+        if (slot >= NUM_OF_FEATURES) break;
+        admitted_feature_slots_[slot++] = feature.isDepthAdmitted();
+    }
     // Add pose and speed-bias parameter blocks for sliding window
     for (int i = 0; i < WINDOW_SIZE + 1; i++) {
         ceres::Manifold* pose_manifold = new backend::factor::PoseLocalParameterization();
@@ -273,8 +290,10 @@ int Optimizer::addFeatureFactors(ceres::Problem& problem) {
     int feature_index = -1;
     for (auto& it_per_id : feature_manager_->feature_bank_) {
         it_per_id.used_num = it_per_id.feature_per_frame.size();
-        if (!(it_per_id.used_num >= 2 && it_per_id.start_frame < WINDOW_SIZE - 2))
+        if (!it_per_id.isParameterCandidate()) {
+            ++diagnostics_.immatureFeatures;
             continue;
+        }
 
         ++feature_index;
 
@@ -288,6 +307,7 @@ int Optimizer::addFeatureFactors(ceres::Problem& problem) {
             membership_truncated = true;
             break;
         }
+        ++diagnostics_.eligibleFeatures;
         int added_for_feature = 0, current_for_feature = 0, rejected_geometry = 0;
         const bool depth_valid = membership && it_per_id.solve_flag != 2 && std::isfinite(para_Feature[feature_index][0]) &&
                                  para_Feature[feature_index][0] > 1e-10;
@@ -298,21 +318,29 @@ int Optimizer::addFeatureFactors(ceres::Problem& problem) {
             *membership << "{\"id\":" << it_per_id.feature_id << ",\"parameterIndex\":" << feature_index
                         << ",\"startFrame\":" << it_per_id.start_frame << ",\"observations\":" << it_per_id.used_num
                         << ",\"solveFlag\":" << it_per_id.solve_flag << ",\"depthValid\":" << (depth_valid ? "true" : "false")
+                        << ",\"admitted\":" << (admitted_feature_slots_[feature_index] ? "true" : "false")
+                        << ",\"geometryPending\":" << (it_per_id.geometry_pending ? "true" : "false")
+                        << ",\"geometryReason\":\"" << it_per_id.geometry_reason << "\",\"geometryCondition\":";
+            diagnosticNumber(*membership, it_per_id.geometry_condition);
+            *membership
                         << ",\"inverseDepth\":"; diagnosticNumber(*membership, para_Feature[feature_index][0]);
             *membership << ",\"estimatedDepth\":"; diagnosticNumber(*membership, it_per_id.estimated_depth);
             *membership << ",\"nonfinite\":" << (std::isfinite(para_Feature[feature_index][0]) && std::isfinite(it_per_id.estimated_depth) ? "false" : "true")
                         << ",\"addedResiduals\":" << added_for_feature << ",\"currentImageResiduals\":" << current_for_feature
                         << ",\"rejectedGeometry\":" << rejected_geometry << '}';
         };
-        if (it_per_id.solve_flag == 2 || !std::isfinite(para_Feature[feature_index][0]) ||
-            para_Feature[feature_index][0] <= 1e-10) { record_membership(); continue; }
+        if (!admitted_feature_slots_[feature_index] || !it_per_id.hasValidAnchor() || !std::isfinite(para_Feature[feature_index][0]) ||
+            para_Feature[feature_index][0] <= 1e-10) {
+            ++diagnostics_.invalidDepthFeatures;
+            record_membership(); continue;
+        }
 
         int imu_i = it_per_id.start_frame, imu_j = imu_i - 1;
         Vector3d pts_i = it_per_id.feature_per_frame[0].ray_vector;
 
         for (auto& it_per_frame : it_per_id.feature_per_frame) {
             imu_j++;
-            if (imu_i == imu_j) {
+            if (it_per_frame.projection_outlier || imu_i == imu_j) {
                 continue;
             }
             Vector3d pts_j = it_per_frame.ray_vector;
@@ -320,7 +348,11 @@ int Optimizer::addFeatureFactors(ceres::Problem& problem) {
             auto f = std::make_unique<backend::factor::ProjectionFactor>(pts_i, pts_j);
             const double* parameters[] = {para_Pose[imu_i], para_Pose[imu_j], para_Ex_Pose, para_Feature[feature_index]};
             double residual[2];
-            if (!f->Evaluate(parameters, residual, nullptr)) { if (membership) ++rejected_geometry; continue; }
+            if (!f->Evaluate(parameters, residual, nullptr)) {
+                ++diagnostics_.projectionRejects;
+                if (membership) ++rejected_geometry;
+                continue;
+            }
             problem.AddResidualBlock(f.release(), loss_function.get(), para_Pose[imu_i], para_Pose[imu_j], para_Ex_Pose,
                                      para_Feature[feature_index]);
             f_m_cnt++;
@@ -372,7 +404,10 @@ void Optimizer::solveCeresProblem(ceres::Problem& problem, int pending_frames) {
     options.logging_type = ceres::SILENT;
     options.minimizer_progress_to_stdout = false;
     ceres::Solver::Summary summary;
+    const auto ceres_started = std::chrono::steady_clock::now();
     ceres::Solve(options, &problem, &summary);
+    diagnostics_.ceresMs = std::chrono::duration<double, std::milli>(
+        std::chrono::steady_clock::now() - ceres_started).count();
     diagnostics_.iterations = static_cast<int>(summary.iterations.size());
     diagnostics_.terminationType = static_cast<int>(summary.termination_type);
     diagnostics_.initialCost = summary.initial_cost;
@@ -494,7 +529,7 @@ void Optimizer::applyOptimizationResults() {
     int feature_count = std::min(feature_manager_->getFeatureCount(), NUM_OF_FEATURES);
     for (int i = 0; i < feature_count; i++)
         dep(i) = para_Feature[i][0];
-    feature_manager_->setDepth(dep);
+    feature_manager_->setDepth(dep, &admitted_feature_slots_);
 }
 
 void Optimizer::handleMarginalization(common::MarginalizationFlag marginalization_flag) {
@@ -633,7 +668,7 @@ void Optimizer::addFeatureFactorsForMarginalization(factor::MarginalizationInfo*
     int feature_index = -1;
     for (auto& it_per_id : feature_manager_->feature_bank_) {
         it_per_id.used_num = it_per_id.feature_per_frame.size();
-        if (!(it_per_id.used_num >= 2 && it_per_id.start_frame < WINDOW_SIZE - 2))
+        if (!it_per_id.isParameterCandidate())
             continue;
 
         ++feature_index;
@@ -641,7 +676,7 @@ void Optimizer::addFeatureFactorsForMarginalization(factor::MarginalizationInfo*
         // Bounds check
         if (feature_index >= NUM_OF_FEATURES)
             break;
-        if (it_per_id.solve_flag == 2 || !std::isfinite(para_Feature[feature_index][0]) ||
+        if (!admitted_feature_slots_[feature_index] || !it_per_id.hasValidAnchor() || it_per_id.solve_flag == 2 || !std::isfinite(para_Feature[feature_index][0]) ||
             para_Feature[feature_index][0] <= 1e-10) continue;
 
         int imu_i = it_per_id.start_frame, imu_j = imu_i - 1;
@@ -652,7 +687,7 @@ void Optimizer::addFeatureFactorsForMarginalization(factor::MarginalizationInfo*
 
         for (auto& it_per_frame : it_per_id.feature_per_frame) {
             imu_j++;
-            if (imu_i == imu_j)
+            if (it_per_frame.projection_outlier || imu_i == imu_j)
                 continue;
 
             Vector3d pts_j = it_per_frame.ray_vector;
@@ -766,12 +801,21 @@ bool Optimizer::validateOptimizationParameters() const {
 int Optimizer::filterFinalLandmarks() {
     const Eigen::Vector3d tic(para_Ex_Pose[0],para_Ex_Pose[1],para_Ex_Pose[2]);
     const Eigen::Matrix3d ric = Eigen::Quaterniond(para_Ex_Pose[6],para_Ex_Pose[3],para_Ex_Pose[4],para_Ex_Pose[5]).toRotationMatrix();
+    std::array<Matrix3d, WINDOW_SIZE + 1> camera_rotations;
+    std::array<Vector3d, WINDOW_SIZE + 1> camera_centers;
+    for (int frame = 0; frame <= WINDOW_SIZE; ++frame) {
+        const double* pose = para_Pose[frame];
+        const Matrix3d rotation = Eigen::Quaterniond(pose[6],pose[3],pose[4],pose[5]).toRotationMatrix();
+        camera_rotations[frame] = rotation * ric;
+        camera_centers[frame] = Vector3d(pose[0],pose[1],pose[2]) + rotation * tic;
+    }
     int feature_index = -1, current_features = 0;
-    for (const auto& feature : feature_manager_->feature_bank_) {
-        if (feature.feature_per_frame.size() < 2 || feature.start_frame >= WINDOW_SIZE - 2) continue;
+    for (auto& feature : feature_manager_->feature_bank_) {
+        if (!feature.isParameterCandidate()) continue;
         if (++feature_index >= NUM_OF_FEATURES) break;
+        if (!admitted_feature_slots_[feature_index]) continue;
         const double rho = para_Feature[feature_index][0];
-        bool valid = feature.solve_flag != 2 && std::isfinite(rho) && rho > 1e-10 && feature.start_frame >= 0;
+        bool valid = feature.hasValidAnchor() && feature.solve_flag != 2 && std::isfinite(rho) && rho > 1e-10 && feature.start_frame >= 0;
         Eigen::Vector3d world;
         if (valid) {
             const double* anchor = para_Pose[feature.start_frame];
@@ -781,17 +825,63 @@ int Optimizer::filterFinalLandmarks() {
             valid = world.allFinite();
         }
         int frame = feature.start_frame;
-        for (const auto& observation : feature.feature_per_frame) {
+        bool restore_historical_depth = false;
+        for (auto& observation : feature.feature_per_frame) {
             if (!valid || frame > WINDOW_SIZE) break;
+            const bool is_current = frame == WINDOW_SIZE;
             const double* state = para_Pose[frame++];
+            if (observation.projection_outlier) {
+                if (is_current) current_feature_factors_[feature_index] = false;
+                continue;
+            }
             const Eigen::Quaterniond rotation(state[6],state[3],state[4],state[5]);
             const Eigen::Vector3d camera = ric.transpose() *
                 (rotation.inverse() * (world - Eigen::Vector3d(state[0],state[1],state[2])) - tic);
             valid = observation.ray_vector.allFinite() && observation.ray_vector.z() > 1e-10 &&
                     camera.allFinite() && camera.z() > 1e-10;
+            if (experimental_observation_policy_ >= 1 && valid && is_current && current_feature_factors_[feature_index]) {
+                const double error = std::hypot(
+                    g_config.camera.fx * (camera.x()/camera.z()-observation.ray_vector.x()/observation.ray_vector.z()),
+                    g_config.camera.fy * (camera.y()/camera.z()-observation.ray_vector.y()/observation.ray_vector.z()));
+                valid = std::isfinite(g_config.camera.fx) && g_config.camera.fx > 0 &&
+                        std::isfinite(g_config.camera.fy) && g_config.camera.fy > 0 &&
+                        std::isfinite(error);
+                if (valid && error > 1.5) {
+                    if (feature.solve_flag == 1 && !feature.geometry_pending && feature.isDepthAdmitted()) {
+                        // Reject this measurement without destroying its previously solved metric point.
+                        observation.projection_outlier = true;
+                        current_feature_factors_[feature_index] = false;
+                        restore_historical_depth = true;
+                    } else valid = false;
+                }
+            }
         }
-        // Preserve feature slots until apply/marginalization complete. setDepth
-        // marks this single landmark failed; the estimator removes it afterwards.
+        if (valid && feature.geometry_pending)
+            valid = frontend::FeatureManager::hasObservableGeometry(feature, camera_rotations) &&
+                    frontend::FeatureManager::hasConsistentReprojection(feature, 1/rho, camera_rotations, camera_centers);
+        const bool candidate_depth_certified = experimental_observation_policy_ == 2 && valid && restore_historical_depth &&
+            frontend::FeatureManager::hasObservableGeometry(feature, camera_rotations) &&
+            frontend::FeatureManager::hasConsistentReprojection(feature, 1/rho, camera_rotations, camera_centers);
+        if (valid && restore_historical_depth && !candidate_depth_certified) {
+            const double restored_rho = 1/feature.estimated_depth;
+            valid = std::isfinite(restored_rho) && restored_rho > 1e-10;
+            if (valid) {
+                const Vector3d restored_world = camera_rotations[feature.start_frame] *
+                    (feature.feature_per_frame.front().ray_vector / restored_rho) + camera_centers[feature.start_frame];
+                valid = restored_world.allFinite();
+                int restored_frame = feature.start_frame;
+                for (const auto& observation : feature.feature_per_frame) {
+                    if (!valid) break;
+                    const int observation_frame = restored_frame++;
+                    if (observation.projection_outlier) continue;
+                    const Vector3d camera = camera_rotations[observation_frame].transpose() *
+                        (restored_world - camera_centers[observation_frame]);
+                    valid = camera.allFinite() && camera.z() > 1e-10;
+                }
+            }
+            if (valid) para_Feature[feature_index][0] = restored_rho;
+        }
+        // Invalid geometry still fails the landmark without changing its structural slot.
         if (!valid) para_Feature[feature_index][0] = -1;
         else if (current_feature_factors_[feature_index]) ++current_features;
     }

@@ -256,7 +256,7 @@ void FeatureTracker::detectAndTrack(const cv::Mat& _img, double _cur_time, bool 
         // The denominator includes tracks lost before RANSAC. A strong fit among
         // a small surviving subset must not masquerade as an overall consensus.
         ordinary_trusted=ordinary_estimated && 2*ordinary_inliers>original_count;
-        if(rotation_available) {
+        if(rotation_available && (!ordinary_trusted || diagnostic_capture_)) {
             std::vector<size_t> indices;
             std::vector<cv::Point2f> seed_cur,seed_next;
             const double patch_radius=.5*(lk_win-1);
@@ -294,12 +294,15 @@ void FeatureTracker::detectAndTrack(const cv::Mat& _img, double _cur_time, bool 
                         (!std::isfinite(err[i]) || err[i]<0 || !(2.0*seed_error[j]<err[i]))) continue;
                     candidates.push_back(j);reverse_cur.push_back(seed_next[j]);reverse_next.push_back(seed_cur[j]);
                 }
-                if(!candidates.empty()) {
+                // A rescue cannot dominate the ordinary support if fewer
+                // candidates exist than ordinary geometric inliers.
+                if(candidates.size()>ordinary_inliers) {
                     rotation_reverse_attempted=candidates.size();
                     std::vector<uchar> reverse_status;std::vector<float> reverse_error;
                     // Local verification starts at the known old observation.
                     cv::calcOpticalFlowPyrLK(next_pyramid_,cur_pyramid_,reverse_cur,reverse_next,
                         reverse_status,reverse_error,win_size,0,lk_criteria,cv::OPTFLOW_USE_INITIAL_FLOW);
+                    std::vector<std::pair<size_t,size_t>> verified;
                     for(size_t k=0;k<candidates.size();++k) {
                         if(!reverse_status[k] || !inBorder(reverse_next[k]) ||
                             !std::isfinite(reverse_error[k]) || reverse_error[k]<0) continue;
@@ -307,10 +310,25 @@ void FeatureTracker::detectAndTrack(const cv::Mat& _img, double _cur_time, bool 
                         const double dx=reverse_next[k].x-cur_pts[i].x,dy=reverse_next[k].y-cur_pts[i].y;
                         const double cycle_squared=dx*dx+dy*dy;
                         if(!std::isfinite(cycle_squared) || cycle_squared>.25) continue;
-                        next_pts[i]=seed_next[j];status[i]=1;err[i]=seed_error[j];++rotation_adopted;
+                        verified.emplace_back(i,j);
+                    }
+                    if(verified.size()>ordinary_inliers) {
+                        auto trial_next=next_pts;
+                        auto trial_status=status;
+                        for(const auto& [i,j]:verified) {
+                            trial_next[i]=seed_next[j];trial_status[i]=1;
+                        }
+                        const auto rng_state=cv::theRNG().state;
+                        auto trial_geometry=fundamentalMask(cur_pts,trial_next,trial_status,true);
+                        if(trial_geometry.estimated && trial_geometry.inliers>2*ordinary_inliers) {
+                            next_pts=std::move(trial_next);
+                            status=std::move(trial_status);
+                            for(const auto& [i,j]:verified) err[i]=seed_error[j];
+                            rotation_adopted=verified.size();
+                            geometry=std::move(trial_geometry);
+                        } else cv::theRNG().state=rng_state;
                     }
                 }
-                if(rotation_adopted) geometry=fundamentalMask(cur_pts,next_pts,status,true);
             }
         }
         if(diagnostic_capture_) {

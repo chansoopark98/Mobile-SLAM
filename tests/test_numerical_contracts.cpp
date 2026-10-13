@@ -46,8 +46,10 @@ bool evaluateImu(backend::factor::IntegrationBase& value, Vector15* residual = n
     return ok;
 }
 
-TEST(NumericalContracts, ImuRejectsZeroOneSampleAndSingularCovariance) {
-    for (int count : {0, 1}) {
+TEST(NumericalContracts, ImuAcceptsOnePositiveIntervalAndRejectsSingularCovariance) {
+    auto single = integration(1);
+    ASSERT_TRUE(evaluateImu(single));
+    for (int count : {0}) {
         auto value = integration(count);
         EXPECT_FALSE(evaluateImu(value)) << "count=" << count;
     }
@@ -74,7 +76,11 @@ TEST(NumericalContracts, PnpImuRejectsUncoveredAndRankDeficientIntervals) {
     double bias[6] = {};
     double const* parameters[] = {pose, speed, bias, pose, speed, bias};
     Vector15 residual;
-    for (int count : {0, 1}) {
+    auto single = integration(1);
+    backend::factor::IMUFactorPnP single_factor(&single);
+    ASSERT_TRUE(single_factor.isValid());
+    ASSERT_TRUE(single_factor.Evaluate(parameters, residual.data(), nullptr));
+    for (int count : {0}) {
         auto value = integration(count);
         backend::factor::IMUFactorPnP factor(&value);
         EXPECT_FALSE(factor.isValid());
@@ -355,16 +361,16 @@ TEST(NumericalContracts, PropagationRotationUsesUnitLocalIncrement) {
     EXPECT_LT((R - expected).norm(), 1e-12);
 }
 
-TEST(NumericalContracts, PropagationRotatedAccelerationUsesIndependentMidpointOracle) {
+TEST(NumericalContracts, PropagationRotatedAccelerationUsesIndependentTimeMomentOracle) {
     backend::Estimator estimator;
     const Eigen::Vector3d acceleration(1, 0, 0), gyro(0, 0, 2);
     estimator.processIMU(0, acceleration, gyro);
     estimator.processImage({}, 0);
     estimator.processIMU(0.5, acceleration, gyro);
     // Normalized [1,0,0,0.5] has cos(theta)=0.6, sin(theta)=0.8.
-    // Midpoint acceleration is ((1,0,0)+(0.6,0.8,0))/2=(0.8,0.4,0).
+    // Velocity uses the mean; position integrates the affine endpoint chord.
     EXPECT_LT((estimator.sliding_window_[1].V - Eigen::Vector3d(0.4, 0.2, 0)).norm(), 1e-12);
-    EXPECT_LT((estimator.sliding_window_[1].P - Eigen::Vector3d(0.1, 0.05, 0)).norm(), 1e-12);
+    EXPECT_LT((estimator.sliding_window_[1].P - Eigen::Vector3d(13./120., 1./30., 0)).norm(), 1e-12);
 }
 
 TEST(NumericalContracts, PreintegrationRotatedAccelerationUsesUnitIncrementBeforeRotation) {
@@ -373,11 +379,11 @@ TEST(NumericalContracts, PreintegrationRotatedAccelerationUsesUnitIncrementBefor
     value.push_back(0.5, acceleration, gyro);
     // Normalized increment has cos=0.6, sin=0.8, independently known above.
     EXPECT_LT((value.delta_v - Eigen::Vector3d(0.4, 0.2, 0)).norm(), 1e-12);
-    EXPECT_LT((value.delta_p - Eigen::Vector3d(0.1, 0.05, 0)).norm(), 1e-12);
+    EXPECT_LT((value.delta_p - Eigen::Vector3d(13./120., 1./30., 0)).norm(), 1e-12);
     value.push_back(0.5, acceleration, gyro);
     // Second rotation gives (-0.28,0.96,0), midpoint (0.16,0.88,0).
     EXPECT_LT((value.delta_v - Eigen::Vector3d(0.48, 0.64, 0)).norm(), 1e-12);
-    EXPECT_LT((value.delta_p - Eigen::Vector3d(0.32, 0.26, 0)).norm(), 1e-12);
+    EXPECT_LT((value.delta_p - Eigen::Vector3d(26./75., 6./25., 0)).norm(), 1e-12);
     const Eigen::Matrix3d R = value.delta_q.toRotationMatrix();
     EXPECT_NEAR(R.determinant(), 1, 1e-12);
     EXPECT_LT((R.transpose() * R - Eigen::Matrix3d::Identity()).norm(), 1e-12);
@@ -1070,6 +1076,18 @@ TEST(NumericalContracts, InitializationMapsPhysicalVelocitiesToTheirSourceImageR
             window[key].timestamp = key_times[key];
             window[key].pre_integration = preintegrate(key ? key_times[key - 1] : -frame_dt, key_times[key]);
         }
+        const Eigen::Vector3d known_world(.4,-.2,3);
+        for (int key = 0; key <= WINDOW_SIZE; ++key) {
+            const double time = key_times[key];
+            const Eigen::Vector3d camera = rotation(time).transpose() * (known_world-position(time)) - lever_arm;
+            const double ray_scale = key%3 == 0 ? .2 : key%3 == 1 ? 1 : 7;
+            Eigen::Matrix<double,7,1> observation;
+            observation << ray_scale*camera.x()/camera.z(),ray_scale*camera.y()/camera.z(),ray_scale,0,0,0,0;
+            common::ImageData image{{40,observation}};
+            if (key >= 8) image.emplace(41,observation);
+            if (key >= 9) image.emplace(42,observation);
+            manager.addFeatureAndCheckParallax(key,image);
+        }
         Eigen::Vector3d estimated_gravity = zero;
         const Eigen::Matrix3d r_ic = Eigen::Matrix3d::Identity();
         int frame_count = WINDOW_SIZE;
@@ -1080,6 +1098,13 @@ TEST(NumericalContracts, InitializationMapsPhysicalVelocitiesToTheirSourceImageR
         EXPECT_TRUE(aligned);
         if (aligned) {
             EXPECT_LT((estimated_gravity - true_gravity).norm(), 2e-5);
+            ASSERT_EQ(manager.feature_bank_.size(),3u);
+            for (const auto& feature : manager.feature_bank_) {
+                const double time = key_times[feature.start_frame];
+                const double expected = (rotation(time).transpose() * (known_world-position(time)) - lever_arm).z();
+                EXPECT_NEAR(feature.estimated_depth,expected,2e-5) << "feature=" << feature.feature_id;
+                EXPECT_EQ(feature.solve_flag,0);
+            }
             for (int key = 0; key <= WINDOW_SIZE; ++key) {
                 const double time = key_times[key];
                 EXPECT_LT((window[key].V - velocity(time)).norm(), 2e-5) << "key=" << key << "source t=" << time;

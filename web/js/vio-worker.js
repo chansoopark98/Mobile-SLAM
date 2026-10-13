@@ -12,6 +12,11 @@ const MAX_MOBILE_POSE_TRANSLATION_M = 5;
 let activeRequest = null;
 let frameWait = null;
 const IMU_BRACKET_WAIT_MS = 40;
+const MAX_IMU_BRACKET_WAIT_MS = 80;
+const IMU_CADENCE_WINDOW = 16;
+const imuCadenceMs = new Float64Array(IMU_CADENCE_WINDOW);
+let imuCadenceCount = 0;
+let imuCadenceWriteIdx = 0;
 let memImage = null;
 let memIMU = null;
 let memPose = null;
@@ -42,7 +47,18 @@ function clearIMURing(resetCounters = false) {
     } else imuDrops.reset += imuRingWriteIdx - imuRingReadIdx;
     imuRingWriteIdx = imuRingReadIdx = 0;
     lastIMUTimestamp = null;
+    imuCadenceCount = imuCadenceWriteIdx = 0;
     intervalLoss = null;
+}
+
+function bracketWaitBudgetMs() {
+    if (imuCadenceCount < 3) return IMU_BRACKET_WAIT_MS;
+    // Source timestamps measure accepted sensor cadence, independently of batch
+    // arrival. Two recent periods cover one missed callback; a fixed deadline
+    // still requires a real future bracket and bounds the extra latency.
+    const periods = Array.from(imuCadenceMs.subarray(0, imuCadenceCount)).sort((a, b) => a - b);
+    const p95 = periods[Math.ceil(.95 * periods.length) - 1];
+    return Math.min(MAX_IMU_BRACKET_WAIT_MS, Math.max(IMU_BRACKET_WAIT_MS, 2 * p95));
 }
 
 function recordIntervalLoss(reason, count, firstTimestamp, lastTimestamp) {
@@ -58,9 +74,10 @@ function finishBracketWait(wait, cancelled = false) {
     if (frameWait !== wait) return;
     clearTimeout(wait.timer);
     frameWait = null;
-    wait.resolve({ cancelled, imuWaitMs: performance.now() - wait.startedAtMs,
+    const elapsed = performance.now() - wait.startedAtMs;
+    wait.resolve({ cancelled, imuWaitMs: elapsed, imuWaitBudgetMs: wait.budgetMs,
         bracket: !cancelled && lastIMUTimestamp !== null && lastIMUTimestamp >= wait.timestamp &&
-            performance.now() - wait.startedAtMs <= IMU_BRACKET_WAIT_MS });
+            elapsed <= wait.budgetMs });
 }
 
 function cancelBracketWait() {
@@ -71,10 +88,10 @@ function cancelBracketWait() {
 }
 
 function waitForBracket(request, timestamp) {
-    if (lastIMUTimestamp !== null && lastIMUTimestamp >= timestamp) return Promise.resolve({ bracket: true, cancelled: false, imuWaitMs: 0 });
+    if (lastIMUTimestamp !== null && lastIMUTimestamp >= timestamp) return Promise.resolve({ bracket: true, cancelled: false, imuWaitMs: 0, imuWaitBudgetMs: 0 });
     return new Promise(resolve => {
-        const wait = { request, timestamp, resolve, startedAtMs: performance.now(), timer: null };
-        wait.timer = setTimeout(() => finishBracketWait(wait), IMU_BRACKET_WAIT_MS);
+        const wait = { request, timestamp, resolve, startedAtMs: performance.now(), budgetMs: bracketWaitBudgetMs(), timer: null };
+        wait.timer = setTimeout(() => finishBracketWait(wait), wait.budgetMs);
         frameWait = wait;
     });
 }
@@ -94,6 +111,7 @@ function appendIMU(data, count) {
         for (let j = 0; j < IMU_FIELDS; j++) finite = finite && Number.isFinite(data[base + j]);
         if (!finite) { imuDrops.invalid++; valid = false; continue; }
         const timestamp = data[base];
+        if (timestamp < 0) { imuDrops.invalid++; valid = false; continue; }
         if (lastIMUTimestamp !== null && timestamp <= lastIMUTimestamp) {
             imuDrops.order++;
             valid = false;
@@ -102,6 +120,11 @@ function appendIMU(data, count) {
         if (lastIMUTimestamp !== null && timestamp - lastIMUTimestamp > MAX_IMU_AGE_S) {
             imuDrops.gapCount++;
             imuDrops.lastGapSeconds = timestamp - lastIMUTimestamp;
+            imuCadenceCount = imuCadenceWriteIdx = 0;
+        } else if (lastIMUTimestamp !== null) {
+            imuCadenceMs[imuCadenceWriteIdx] = (timestamp - lastIMUTimestamp) * 1000;
+            imuCadenceWriteIdx = (imuCadenceWriteIdx + 1) % IMU_CADENCE_WINDOW;
+            imuCadenceCount = Math.min(imuCadenceCount + 1, IMU_CADENCE_WINDOW);
         }
         lastIMUTimestamp = timestamp;
         if (imuRingWriteIdx - imuRingReadIdx === IMU_RING_CAPACITY) {
@@ -265,7 +288,61 @@ function effectiveConfig() {
 function emptyResult(timestamp, reason, imuCount = 0) {
     return { ...engineState(), pose: null, poseValid: false, poseFresh: false, poseTimestamp: null,
         inputTimestamp: Number.isFinite(timestamp) ? timestamp : null, timestamp: Number.isFinite(timestamp) ? timestamp : null,
-        reason, imuCount, mapPoints: null, mapPointCount: 0, imuDrops: { ...imuDrops }, engineProcessingMs: 0 };
+        reason, imuCount, mapPoints: null, mapPointCount: 0, imuDrops: { ...imuDrops }, engineProcessingMs: 0, pipeline: null, quality: null };
+}
+
+function pipelineDiagnostics(timestamp, state) {
+    try {
+        const pipeline = JSON.parse(engineValue('getPipelineDiagnostics', 'null'));
+        if (!['mobile-slam-pipeline-v1', 'mobile-slam-pipeline-v2'].includes(pipeline?.schema) || pipeline.frameTimestamp !== timestamp ||
+            pipeline.engineEpoch !== state.engineEpoch) return null;
+        if (pipeline.schema === 'mobile-slam-pipeline-v2' && !validPipelineQuality(pipeline)) return null;
+        return pipeline;
+    } catch (_) { return null; }
+}
+
+function validPipelineQuality(pipeline) {
+    const q = pipeline?.quality, s = pipeline?.solver;
+    const count = value => Number.isSafeInteger(value) && value >= 0;
+    const nullable = value => value === null || Number.isFinite(value) && value >= 0;
+    if (pipeline?.schema !== 'mobile-slam-pipeline-v2' || !q ||
+        !['metric', 'projective_limited', 'none'].includes(q.mode) ||
+        !['visual_inertial_metric', 'imu_model_only', 'none'].includes(q.translationSupport) ||
+        !['rotationVisualSupported', 'metricTranslationSupported', 'fallbackUsed', 'recoveryMode', 'uncertaintyAvailable'].every(key => typeof q[key] === 'boolean') ||
+        !['currentMetricFactors', 'currentProjectiveFactors', 'provisionalObservationsRetired'].every(key => count(q[key])) ||
+        !['limitedDurationS', 'uncertaintyAnchorTimestamp', 'position3SigmaM', 'rotation3SigmaRad', 'rotationConsistencyScore'].every(key => nullable(q[key])) ||
+        !(q.visualRotationRank === null || count(q.visualRotationRank) && q.visualRotationRank <= 3) ||
+        q.rotationConsistencyScoreThreshold !== 16.2663 || q.consistencyScoreIsProbabilistic !== false ||
+        q.relativeCovarianceOrdering !== 'anchor_body_position_xyz_m,right_relative_rotation_xyz_rad' ||
+        !['imu_propagation_joint_15d', 'unavailable'].includes(q.uncertaintyModel) ||
+        !['last_metric_raw_graph', 'unavailable'].includes(q.uncertaintySource) || typeof q.reason !== 'string') return false;
+    if (s === null) {
+        if (q.mode === 'projective_limited' || q.currentMetricFactors !== 0 || q.currentProjectiveFactors !== 0) return false;
+    } else if (!s || !['eligibleFeatures', 'structuralSlots', 'currentMetricFactors', 'currentProjectiveFactors', 'provisionalSlots', 'excludedSlots'].every(key => count(s[key])) ||
+        s.structuralSlots !== s.eligibleFeatures || s.structuralSlots > 1000 ||
+        q.currentMetricFactors !== s.currentMetricFactors || q.currentProjectiveFactors !== s.currentProjectiveFactors) return false;
+    const covariance = q.relativeCovariance6x6;
+    return covariance === null || Array.isArray(covariance) && covariance.length === 36 && covariance.every(Number.isFinite) &&
+        [0, 7, 14, 21, 28, 35].every(index => covariance[index] >= 0);
+}
+
+function validLimitedQuality(quality, timestamp) {
+    return quality?.mode === 'projective_limited' && quality.rotationVisualSupported === true &&
+        quality.metricTranslationSupported === false && quality.translationSupport === 'imu_model_only' &&
+        quality.fallbackUsed === true && quality.recoveryMode === true && quality.currentProjectiveFactors >= 2 &&
+        quality.visualRotationRank === 3 && quality.uncertaintyAvailable === true &&
+        quality.uncertaintyModel === 'imu_propagation_joint_15d' && quality.uncertaintySource === 'last_metric_raw_graph' &&
+        Array.isArray(quality.relativeCovariance6x6) && Number.isFinite(quality.uncertaintyAnchorTimestamp) &&
+        quality.uncertaintyAnchorTimestamp <= timestamp &&
+        Number.isFinite(quality.limitedDurationS) && quality.limitedDurationS <= 2 &&
+        Number.isFinite(quality.position3SigmaM) && quality.position3SigmaM <= .25 + 1e-12 &&
+        Number.isFinite(quality.rotation3SigmaRad) && quality.rotation3SigmaRad <= 5 * Math.PI / 180 + 1e-12 &&
+        Number.isFinite(quality.rotationConsistencyScore) && quality.rotationConsistencyScore <= quality.rotationConsistencyScoreThreshold;
+}
+
+function trackingState(statusCode) {
+    if (!Number.isInteger(statusCode)) return 'unknown';
+    return ({ 0: 'not_configured', 1: 'initializing', 2: 'tracking', 3: 'lost', 4: 'cooldown', 5: 'tracking_limited' })[statusCode] || 'unknown';
 }
 
 function rejectRequest(request, responseType, error) {
@@ -276,7 +353,7 @@ function rejectRequest(request, responseType, error) {
 
 function processFrame(gray, timestamp) {
     if (!configured || !engine) return emptyResult(timestamp, 'not_configured');
-    if (!Number.isFinite(timestamp) || gray.length !== imageWidth * imageHeight) {
+    if (!Number.isFinite(timestamp) || timestamp < 0 || gray.length !== imageWidth * imageHeight) {
         return emptyResult(timestamp, 'invalid_frame');
     }
     memImage.write(gray);
@@ -305,8 +382,17 @@ function processFrame(gray, timestamp) {
     engineEpoch = state.engineEpoch;
     const poseTimestamp = engineValue('getPoseTimestamp', null);
     const poseFresh = hasPose && engineValue('getPoseFresh', false) === true;
-    const poseValid = poseFresh && engineValue('getPoseValid', false) === true && Number.isFinite(poseTimestamp) && poseTimestamp >= 0;
-    const result = { ...emptyResult(timestamp, state.reason, imuCount), ...state, engineProcessingMs, imuIntervalLoss: loss };
+    const candidatePoseValid = poseFresh && engineValue('getPoseValid', false) === true && Number.isFinite(poseTimestamp) && poseTimestamp >= 0;
+    const result = { ...emptyResult(timestamp, state.reason, imuCount), ...state, engineProcessingMs, imuIntervalLoss: loss,
+        pipeline: pipelineDiagnostics(timestamp, state) };
+    result.quality = result.pipeline?.schema === 'mobile-slam-pipeline-v2' ? result.pipeline.quality : null;
+    const limitedCurrent = state.statusCode === 5 && state.initialized === true &&
+        poseTimestamp === timestamp && state.engineFrameTimestamp === timestamp && validLimitedQuality(result.quality, timestamp);
+    const poseValid = candidatePoseValid && (state.statusCode === 2 || limitedCurrent);
+    if (candidatePoseValid && state.statusCode === 5 && !limitedCurrent) {
+        result.engineReason = state.reason;
+        result.reason = 'limited_quality_unavailable';
+    }
     if (loss) {
         // Recent/future samples seed the new lifecycle; this frame cannot connect to its old endpoint.
         result.engineReason = state.reason;
@@ -315,12 +401,17 @@ function processFrame(gray, timestamp) {
         result.statusCode = 1;
         return result;
     }
+    if (candidatePoseValid && poseTimestamp > timestamp) {
+        result.engineReason = state.reason;
+        result.reason = 'future_pose_timestamp';
+        return result;
+    }
     if (poseValid) {
         const pose = memPose.read(16);
         if (pose.every(Number.isFinite)) {
             const previous = lastPublishedPose?.clientEpoch === clientEpoch && lastPublishedPose.engineEpoch === state.engineEpoch ? lastPublishedPose : null;
             const translationM = previous ? Math.hypot(pose[3] - previous.pose[3], pose[7] - previous.pose[7], pose[11] - previous.pose[11]) : null;
-            const measuredWarning = typeof state.reason === 'string' && state.reason.replace(/^tracking:/, '').split(';').includes('relative_translation_threshold');
+            const measuredWarning = typeof state.reason === 'string' && state.reason.replace(/^tracking(?:_limited)?:/, '').split(';').includes('relative_translation_threshold');
             if (mobileMotionGuard && (measuredWarning || (translationM !== null && translationM > MAX_MOBILE_POSE_TRANSLATION_M))) {
                 // Discard the corrupted estimator window/prior before another frame;
                 // suppressing only the rendered pose would leave that state running.
@@ -328,6 +419,9 @@ function processFrame(gray, timestamp) {
                 clearIMURing();
                 engineEpoch = engineState().engineEpoch;
                 return { ...emptyResult(timestamp, 'pose_translation_discontinuity', imuCount), engineProcessingMs,
+                    // This engine attempt preceded the reset; keep its identity
+                    // separate from the empty post-reset pipeline.
+                    candidatePipeline: result.pipeline,
                     motionDiscontinuity: {
                         trigger: measuredWarning ? 'engine_relative_translation_threshold' : 'published_pose_translation',
                         engineReason: state.reason, translationM, thresholdM: MAX_MOBILE_POSE_TRANSLATION_M,
@@ -356,6 +450,7 @@ function processFrame(gray, timestamp) {
 }
 
 function reply(request, type, fields = {}) {
+    if (type === 'result' && fields.data) fields.data.trackingState = trackingState(fields.data.statusCode);
     self.postMessage({ type, requestId: request.requestId, clientEpoch: request.clientEpoch,
         sequence: request.sequence, ...fields });
 }
@@ -399,6 +494,7 @@ self.onmessage = async function(event) {
     const started = performance.now();
     let processingStarted = started;
     let imuWaitMs = 0;
+    let imuWaitBudgetMs = null;
     try {
         if (type === 'init') {
             activeRequest = request;
@@ -483,12 +579,14 @@ self.onmessage = async function(event) {
             if (!(data?.gray instanceof ArrayBuffer)) throw new Error('Invalid image buffer');
             const gray = new Uint8Array(data.gray);
             let bracket = true;
-            if (configured && engine && Number.isFinite(data.timestamp) && gray.length === imageWidth * imageHeight) {
+            if (configured && engine && Number.isFinite(data.timestamp) && data.timestamp >= 0 && gray.length === imageWidth * imageHeight) {
                 const wait = await waitForBracket(request, data.timestamp);
                 imuWaitMs = wait.imuWaitMs;
+                imuWaitBudgetMs = wait.imuWaitBudgetMs;
                 if (wait.cancelled || request.clientEpoch !== clientEpoch || activeRequest !== request) {
                     const result = emptyResult(data.timestamp, 'stale_epoch');
                     result.imuWaitMs = imuWaitMs;
+                    result.imuWaitBudgetMs = imuWaitBudgetMs;
                     result.workerQueueMs = Number.isFinite(request.sentAtMs) ? Math.max(0, receivedAtMs - request.sentAtMs) : null;
                     result.workerProcessingMs = 0;
                     reply(request, 'result', { success: false, error: 'stale_epoch', data: result });
@@ -500,6 +598,7 @@ self.onmessage = async function(event) {
             const result = bracket ? processFrame(gray, data.timestamp) : emptyResult(data.timestamp, 'missing_bracket');
             if (!bracket) result.statusCode = result.initialized ? 3 : 1;
             result.imuWaitMs = imuWaitMs;
+            result.imuWaitBudgetMs = imuWaitBudgetMs;
             result.workerQueueMs = Number.isFinite(request.sentAtMs) ? Math.max(0, receivedAtMs - request.sentAtMs) : null;
             result.workerProcessingMs = performance.now() - processingStarted;
             reply(request, 'result', { success: true, data: result });
@@ -528,6 +627,7 @@ self.onmessage = async function(event) {
             result.error = error.message;
             result.workerQueueMs = Number.isFinite(request.sentAtMs) ? Math.max(0, receivedAtMs - request.sentAtMs) : null;
             result.imuWaitMs = imuWaitMs;
+            result.imuWaitBudgetMs = imuWaitBudgetMs;
             result.workerProcessingMs = performance.now() - processingStarted;
             reply(request, 'result', { success: false, error: error.message, data: result });
         } else reply(request, responseType, { success: false, error: error.message, imuDrops: type === 'imu' ? { ...imuDrops } : undefined });

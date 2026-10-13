@@ -86,9 +86,12 @@ EMSCRIPTEN_BINDINGS(VIOModule) {
         .function("setDiagnosticCapture", &VIOEngine::setDiagnosticCapture)
         .function("setBenchmarkSolverProfile", &VIOEngine::setBenchmarkSolverProfile)
         .function("getBenchmarkSolverProfile", &VIOEngine::getBenchmarkSolverProfile)
+        .function("setExperimentalObservationPolicy", &VIOEngine::setExperimentalObservationPolicy)
+        .function("getExperimentalObservationPolicy", &VIOEngine::getExperimentalObservationPolicy)
         .function("setRotationRescue", &VIOEngine::setRotationRescue)
         .function("getRotationRescueEnabled", &VIOEngine::getRotationRescueEnabled)
         .function("getFeatureDiagnostics", &VIOEngine::getFeatureDiagnostics)
+        .function("getPipelineDiagnostics", &VIOEngine::getPipelineDiagnostics)
         .function("reset", &VIOEngine::reset)
         .function("setPnPParams", &VIOEngine::setPnPParams);
 }

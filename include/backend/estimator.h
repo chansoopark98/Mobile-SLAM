@@ -35,6 +35,8 @@ public:
     const std::string& getBackendDiagnostics() const { return optimizer_.getBackendDiagnostics(); }
     void setBenchmarkSolverProfile(bool enabled) { optimizer_.setBenchmarkSolverProfile(enabled); }
     bool getBenchmarkSolverProfile() const { return optimizer_.getBenchmarkSolverProfile(); }
+    void setExperimentalObservationPolicy(int policy) { optimizer_.setExperimentalObservationPolicy(policy); }
+    int getExperimentalObservationPolicy() const { return optimizer_.getExperimentalObservationPolicy(); }
 
     Eigen::Matrix3d r_ic_;
     Eigen::Vector3d t_ic_;

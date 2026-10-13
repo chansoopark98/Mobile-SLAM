@@ -34,6 +34,8 @@ public:
     const std::string& getBackendDiagnostics() const { return diagnostic_json_; }
     void setBenchmarkSolverProfile(bool enabled) { benchmark_solver_profile_ = enabled; }
     bool getBenchmarkSolverProfile() const { return benchmark_solver_profile_; }
+    void setExperimentalObservationPolicy(int policy);
+    int getExperimentalObservationPolicy() const { return experimental_observation_policy_; }
 
     // Setter for extrinsic parameters
     void setExtrinsicParameters(const Vector3d& t_ic, const Matrix3d& r_ic);
@@ -91,6 +93,7 @@ private:
     double para_Feature[NUM_OF_FEATURES][SIZE_FEATURE];
     double para_Ex_Pose[SIZE_POSE];
     std::array<bool, NUM_OF_FEATURES> current_feature_factors_{};
+    std::array<bool, NUM_OF_FEATURES> admitted_feature_slots_{};
 
     // Marginalization info
     factor::MarginalizationInfo* last_marginalization_info_;
@@ -98,6 +101,7 @@ private:
     std::unique_ptr<ceres::LossFunction> marginalization_loss_;
     SolverDiagnostics diagnostics_;
     bool benchmark_solver_profile_ = false;
+    int experimental_observation_policy_ = 0;
     bool diagnostic_capture_ = false;
     double diagnostic_timestamp_ = -1;
     common::MarginalizationFlag diagnostic_margin_ = common::MarginalizationFlag::MARGIN_OLD_KEYFRAME;
