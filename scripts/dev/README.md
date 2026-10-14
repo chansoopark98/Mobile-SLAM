@@ -32,6 +32,14 @@ python3 scripts/dev/doctor.py --strict --output build/dev-tools/doctor.json
 - 고정 npm: Playwright 1.63.0, Playwright MCP 0.0.83, Context7 MCP 4.1.1, MCP SDK 1.32.1
 - Playwright MCP 0.0.83의 내부 Playwright: upstream 고정 `1.64.0-alpha-1790635538000`; 브라우저 baseline harness는 별도 stable 1.63.0 사용
 
+## 상용·공개 SLAM 직접 비교 환경
+
+- [2026-10-14 통합 보고서](../../docs/research/2026-10-14-commercial-slam-lab.md): 실제 binary 함수 분석·8th Wall/ARCore SDK 실행·동일600image/5976IMU VINS 비교·실패/정확도 한계.
+- [역분석 도구 설치/실행](references/re-lab/README.md): SHA256 고정 radare2 6.2.4·WABT1.0.42를 `scripts/dev/tools/re-lab/`에 설치. 원본 binary 읽기·새 build output만 사용.
+- [8th Wall public API probe](references/eighthwall/README-runtime.md), [ARCore 독립 emulator](../../docs/research/2026-10-13-arcore-runtime-verification.md), [VINS-Mono replay](references/vins-mono/README.md).
+- [ARCore 실기기 앱·감독 실행](references/arcore/physical/README.md): 별도 package·무수집 preflight·명시 시작/저장 flags·host watchdog·실측 분석. [Z Flip 6 실측 결과](../../docs/research/2026-10-14-physical-arcore.md)의 source/APK hash·기록/재생·정확도 한계 참조.
+- 구성·API 호출·유효 추적·독립 GT 정확도는 별도 판정. 신규 결과는 새 output 이름으로 실행하며 dataset·기존 SDK/서비스·실패 evidence 보존.
+
 ## 검증 명령
 
 | 명령 | 검증 범위 | 한계 |
