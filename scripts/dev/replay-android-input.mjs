@@ -192,7 +192,7 @@ export async function main(argv = process.argv.slice(2)) {
         response.setHeader('Cross-Origin-Embedder-Policy', 'credentialless');
         response.setHeader('Cache-Control', 'no-store');
         if (request.url === '/favicon.ico') { response.writeHead(204).end(); return; }
-        const item = routes.get(request.url);
+        const item = routes.get(new URL(request.url, 'http://localhost').pathname);
         report.requests.push({ path: request.url, status: item ? 200 : 404 });
         if (!item) { response.writeHead(404).end(); return; }
         response.setHeader('Content-Type', item.mime); response.end(item.bytes);
@@ -214,7 +214,8 @@ export async function main(argv = process.argv.slice(2)) {
             let imuCursor = 0;
             try {
                 await vio.load('/candidate/vio_engine.js');
-                if (!await vio.configure(config)) throw new Error('Recorded config rejected');
+                // Recordings before the 2026-10-15 opt-in flag ran with low-feature on; keep their replay comparable.
+                if (!await vio.configure({ ...config, lowFeature: config.lowFeature ?? true })) throw new Error('Recorded config rejected');
                 const applied = [await vio.setMobileParams(...parameters.mobile), await vio.setTrackingParams(...parameters.tracking), await vio.setPnPParams(...parameters.pnp)];
                 if (!applied.every(Boolean)) throw new Error('Mobile replay parameters rejected');
                 for (const [index, frame] of frames.entries()) {

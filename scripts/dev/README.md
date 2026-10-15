@@ -103,6 +103,7 @@ python3 scripts/dev/evaluate-synthetic-vio.py --dataset build/synthetic-example 
 - 회전 회귀: `--scenario fast-rotation --portrait`는 첫5초 기존 mobile60 motion을 유지한 뒤 복합축 빠른 회전을 추가. analytic gyro·body GT·영상은 독립 생성하며, 실제 phone 회전 허용 속도 근거가 아님
 - 재현: `python3 scripts/dev/generate-synthetic-vio.py --output build/fast-rotation-example --seed 707 --scenario fast-rotation --portrait`. 출력 폴더는 새 경로만 허용
 - 2026-10-12 회전 복구: live App 기본 ON, `?rotation-rescue=0`은 control OFF, `=1`은 ON. C++/Worker의 명시하지 않은 configure 기본값은 OFF 유지. synthetic browser `--rotation-rescue on|off|default`, native replay PROFILE 다음 ROTATION_RESCUE 인자 `0|1`로 선택
+- 2026-10-15 low-feature(IMU 예측 frustum, 바닥 후보 mesh): 기본 OFF. live App은 `?low-feature=1`일 때만 켬(바닥 GT gate 89.87% < 90%). Worker/Wrapper는 configure의 `lowFeature: true`만 opt-in으로 인정. synthetic browser `--low-feature`, `replay-android-input.mjs`는 플래그 없는 과거 기록을 비교 가능하도록 ON으로 replay
 - 활성값은 configure ACK 대신 C++ `rotation_rescue_enabled` 또는 Worker `rotationRescueEnabled`로 확인. 기본값의 TUM 회귀와 활성화한 합성 회전 수락은 별도 결과로 기록
 - 2026-10-10 ON 후보의 full TUM-VI gate 실패는 역사 기록으로 유지. 2026-10-12 경쟁 F 지지 후보와 IMU 적분 수정의 full TUM/독립 회전 결과는 [최적화 보고서](../../docs/fixes/2026-10-12-optimization-results.md) 참조. 실기기 Lost/발산 해결·속도 향상은 후속 재시험으로 확인
 - 기본 harness는 명시 `fth=1`; `--f-threshold default`는 URL override 생략 후 실제 C++ readback 확인. 현재 engine 기본값도1

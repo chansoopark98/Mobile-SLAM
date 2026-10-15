@@ -1,5 +1,5 @@
 /** Async API for the single VIO Worker. Frames may be dropped while IMU remains deliverable. */
-import { validateInertialPrediction, validateGroundPlane, isCleanVisualContext } from './low-feature.mjs';
+import { validateInertialPrediction, validateGroundPlane, isCleanVisualContext } from './low-feature.mjs?v=14';
 function validPipelineQuality(pipeline) {
     const q = pipeline?.quality, s = pipeline?.solver;
     const count = value => Number.isSafeInteger(value) && value >= 0;
@@ -58,6 +58,8 @@ export class VIOWrapper {
         this._sequence = 0;
         this._lowFeatureBlocked = false;
         this._lowFeatureFenceSequence = 0;
+        // Opt-in per configure (App: ?low-feature=1); unspecified stays off.
+        this._lowFeatureEnabled = false;
         this._pending = new Map();
         this._freeWaiters = new Set();
         this._activeFrame = null;
@@ -128,7 +130,7 @@ export class VIOWrapper {
         this._invalidate(new Error('Worker replaced'));
         this.configured = false;
         if (this.worker) this.worker.terminate();
-        const worker = new Worker('/js/vio-worker.js', { type: 'module' });
+        const worker = new Worker('/js/vio-worker.js?v=14', { type: 'module' });
         this.worker = worker;
         worker.onmessage = event => {
             if (this.worker === worker) this._handleWorkerMessage(event.data);
@@ -146,6 +148,7 @@ export class VIOWrapper {
     async configure(params) {
         this._invalidate(new Error('Worker reconfigured'));
         this.configured = false;
+        this._lowFeatureEnabled = params?.lowFeature === true;
         return this._request('configure', params);
     }
 
@@ -261,7 +264,7 @@ export class VIOWrapper {
         this._lowFeatureBlocked = true;
         this._lowFeatureFenceSequence = this._sequence;
         if (this._latestResult) this._latestResult = { ...this._latestResult, inertialPrediction: null, groundPlane: null };
-        if (this.worker && this.configured) {
+        if (this._lowFeatureEnabled && this.worker && this.configured) {
             this._request('invalidateLowFeature').catch(() => {});
             this._lowFeatureFenceSequence = this._sequence;
         }
@@ -389,8 +392,8 @@ export class VIOWrapper {
             if (this._lowFeatureBlocked && message.sequence > this._lowFeatureFenceSequence && cleanVisual) this._lowFeatureBlocked = false;
             if (!cleanVisual) sideContext.pose = null;
             sideContext.error ||= this._lowFeatureBlocked;
-            const inertialPrediction = validateInertialPrediction(data.inertialPrediction, sideContext);
-            const groundPlane = validateGroundPlane(data.groundPlane, sideContext);
+            const inertialPrediction = this._lowFeatureEnabled ? validateInertialPrediction(data.inertialPrediction, sideContext) : null;
+            const groundPlane = this._lowFeatureEnabled ? validateGroundPlane(data.groundPlane, sideContext) : null;
             const lowFeatureTimings = Object.fromEntries(['predictionReadMs','groundSupportReadMs','groundFitMs','groundPlaneUpdateMs']
                 .map(key => [key, Number.isFinite(data[key]) && data[key] >= 0 ? data[key] : null]));
             this._latestResult = {

@@ -1,5 +1,5 @@
 /** Single-engine module Worker. Engine owns future IMU carry and pose freshness. */
-import { validateInertialPrediction, isCleanVisualContext, GroundPlaneTracker } from './low-feature.mjs';
+import { validateInertialPrediction, isCleanVisualContext, GroundPlaneTracker } from './low-feature.mjs?v=14';
 let wasm = null;
 let engine = null;
 let configured = false;
@@ -8,6 +8,8 @@ let clientEpoch = 0;
 let lastSequence = 0;
 let engineEpoch = null;
 let mobileMotionGuard = false;
+// Low-feature side outputs are opt-in per configure; unspecified stays off.
+let lowFeatureEnabled = false;
 let lastPublishedPose = null;
 const groundPlaneTracker = new GroundPlaneTracker();
 let lowFeatureFenceSequence = 0;
@@ -314,6 +316,7 @@ function emptyResult(timestamp, reason, imuCount = 0) {
 }
 
 function attachLowFeature(result, request) {
+    if (!lowFeatureEnabled) { clearLowFeature(request.sequence); return; }
     const context = { ...result, clientEpoch: request.clientEpoch, sequence: request.sequence,
         transportLost: !!result.imuIntervalLoss };
     const clean = isCleanVisualContext(context);
@@ -578,11 +581,13 @@ self.onmessage = async function(event) {
             predictionInvalidationFailed = false;
             configured = false;
             mobileMotionGuard = false;
+            lowFeatureEnabled = false;
             clearIMURing(true);
             reply(request, 'init', { success: true });
         } else if (type === 'configure') {
             configured = false;
             mobileMotionGuard = false;
+            lowFeatureEnabled = false;
             lastPublishedPose = null;
             if (!engine || !Number.isInteger(data?.width) || !Number.isInteger(data?.height) ||
                 data.width < 1 || data.height < 1 || data.width * data.height > 16777216) throw new Error('Invalid image dimensions');
@@ -601,6 +606,7 @@ self.onmessage = async function(event) {
                 data.gyr_n ?? 0.01, data.gyr_w ?? 0.0001, data.g_norm ?? 9.81) === true;
             if (configured) {
                 mobileMotionGuard = data.mobileMotionGuard === true;
+                lowFeatureEnabled = data.lowFeature === true;
                 const rotationRescue = data.rotationRescue === true;
                 const rotationSetter = typeof engine.setRotationRescue === 'function';
                 const rotationGetter = typeof engine.getRotationRescueEnabled === 'function';
@@ -618,7 +624,7 @@ self.onmessage = async function(event) {
             if (configured && typeof engine.setExecutionParams === 'function') engine.setExecutionParams(data.execution_seed ?? 0, data.cv_threads ?? 1);
             engineEpoch = engineState().engineEpoch;
             reply(request, type, { success: configured, benchmarkSolverProfile: engineState().benchmarkSolverProfile,
-                rotationRescueEnabled: engineState().rotationRescueEnabled, imuDrops: { ...imuDrops } });
+                rotationRescueEnabled: engineState().rotationRescueEnabled, lowFeatureEnabled, imuDrops: { ...imuDrops } });
         } else if (type === 'getEffectiveConfig') {
             reply(request, type, { success: true, data: effectiveConfig() });
         } else if (type === 'invalidateLowFeature') {
@@ -678,6 +684,7 @@ self.onmessage = async function(event) {
         } else if (type === 'dispose') {
             configured = false;
             mobileMotionGuard = false;
+            lowFeatureEnabled = false;
             disposeBuffers();
             if (engine) engine.delete();
             engine = wasm = null;
@@ -687,7 +694,7 @@ self.onmessage = async function(event) {
         } else throw new Error('Unknown worker request');
     } catch (error) {
         clearLowFeature(lastSequence);
-        if (type === 'configure') configured = false;
+        if (type === 'configure') { configured = false; lowFeatureEnabled = false; }
         if (type === 'frame') {
             try { if (engine) engine.reset(); } catch (_) { configured = false; }
             clearIMURing();

@@ -21,13 +21,13 @@ class FakeWorker {
     last(type) { return this.messages.findLast(message => message.type === type); }
 }
 
-async function loaded(options) {
+async function loaded(options, extraConfig = {}) {
     const wrapper = new VIOWrapper(options);
     const promise = wrapper.load('/vio_engine.js');
     const worker = FakeWorker.instances.at(-1);
     worker.reply(worker.last('init'));
     await promise;
-    const configured = wrapper.configure({ width: 2, height: 2 });
+    const configured = wrapper.configure({ width: 2, height: 2, ...extraConfig });
     worker.reply(worker.last('configure'));
     assert.equal(await configured, true);
     return { wrapper, worker };
@@ -599,6 +599,7 @@ function workerFixture(clock = {}) {
         appendIMU, drainIMUToWasm,
         memory(value, heap, count) { return new WorkerSharedMemory(value, heap, count); },
         stats() { return { ...imuDrops, size: imuRingWriteIdx - imuRingReadIdx }; },
+        enableLowFeature() { lowFeatureEnabled = true; },
         setEngine(value, heap) {
             engine = value; wasm = { HEAPF64: heap }; configured = true; imageWidth = 2; imageHeight = 2;
             engineEpoch = engineState().engineEpoch; memImage = { ptr: 0, write() {} }; memIMU = { ptr: 8 };
@@ -660,8 +661,50 @@ function groundPlane(clientEpoch, sequence, timestamp = 1) {
         supportCount: 25, sourcePointCount: 25, rms: 0, maxAgeSeconds: 1 };
 }
 
-test('Wrapper transports a separately validated inertial prediction without promoting visual pose or map', async () => {
+test('Wrapper keeps low-feature extras off unless configure opts in explicitly', async () => {
     const { wrapper, worker } = await loaded();
+    assert.equal('lowFeature' in worker.last('configure').data, false);
+    wrapper.sendFrame(new Uint8Array(4), 1);
+    const first = worker.last('frame');
+    result(worker, first, { statusCode: 3, reason: 'empty_features', engineFrameTimestamp: 1, solverQualityReason: '',
+        inertialPrediction: inertialPrediction(), groundPlane: groundPlane(first.clientEpoch, first.sequence) });
+    assert.equal(wrapper.getLatestResult().inertialPrediction, null);
+    assert.equal(wrapper.getLatestResult().groundPlane, null);
+    const requests = worker.messages.length;
+    assert.equal(wrapper.sendFrame(new Uint8Array(4), Number.NaN), false);
+    assert.equal(worker.messages.slice(requests).some(message => message.type === 'invalidateLowFeature'), false);
+    const reconfigured = wrapper.configure({ width: 2, height: 2, lowFeature: 'true' });
+    worker.reply(worker.last('configure')); await reconfigured;
+    wrapper.sendFrame(new Uint8Array(4), 1.1);
+    result(worker, worker.last('frame'), { statusCode: 3, reason: 'empty_features', engineFrameTimestamp: 1.1, solverQualityReason: '',
+        inertialPrediction: inertialPrediction(1.1) });
+    assert.equal(wrapper.getLatestResult().inertialPrediction, null, 'only boolean true opts in');
+    wrapper.dispose();
+    const enabled = await loaded(undefined, { lowFeature: true });
+    assert.equal(enabled.worker.last('configure').data.lowFeature, true);
+    enabled.wrapper.sendFrame(new Uint8Array(4), 1);
+    result(enabled.worker, enabled.worker.last('frame'), { statusCode: 3, reason: 'empty_features', engineFrameTimestamp: 1,
+        solverQualityReason: '', inertialPrediction: inertialPrediction() });
+    assert.deepEqual(enabled.wrapper.getLatestResult().inertialPrediction, inertialPrediction());
+    enabled.wrapper.dispose();
+});
+
+test('Worker without low-feature opt-in neither reads prediction nor ground support', async () => {
+    const f = workerFixture(); let reads = 0, supportReads = 0;
+    f.audit.setEngine(mockEngine({ getFrameTimestamp: () => 1, isInitialized: () => true, getStatusCode: () => 3,
+        getLastReason: () => 'empty_features', getLastSolverQualityReason: () => '',
+        getInertialPrediction: () => { reads++; return JSON.stringify(inertialPrediction()); },
+        invalidateInertialPrediction() {}, getGroundSupportPoints() { supportReads++; return 0; } }), f.heap);
+    f.audit.appendIMU(imuSamples([.99,1.01]), 2);
+    await f.context.self.onmessage({ data: request('frame', { gray: new ArrayBuffer(4), timestamp: 1 }) });
+    const row = f.replies.at(-1).data;
+    assert.equal(row.inertialPrediction, null); assert.equal(row.groundPlane, null);
+    assert.equal(reads, 0); assert.equal(supportReads, 0);
+    assert.equal(row.predictionReadMs ?? null, null); assert.equal(row.groundPlaneUpdateMs ?? null, null);
+});
+
+test('Wrapper transports a separately validated inertial prediction without promoting visual pose or map', async () => {
+    const { wrapper, worker } = await loaded(undefined, { lowFeature: true });
     wrapper.sendFrame(new Uint8Array(4), 1);
     result(worker, worker.last('frame'), { statusCode: 3, reason: 'empty_features', engineFrameTimestamp: 1,
         solverQualityReason: '', inertialPrediction: inertialPrediction() });
@@ -690,7 +733,7 @@ test('Wrapper strips malformed, uncorrelated, forbidden and failed prediction pa
         data => { data.motionDiscontinuity = {}; },
         data => { data.imuIntervalLoss = {}; },
     ]) {
-        const { wrapper, worker } = await loaded();
+        const { wrapper, worker } = await loaded(undefined, { lowFeature: true });
         wrapper.sendFrame(new Uint8Array(4), 1);
         const data = { statusCode: 3, reason: 'empty_features', engineFrameTimestamp: 1,
             solverQualityReason: '', inertialPrediction: inertialPrediction(), groundPlane: { injected: true } };
@@ -702,7 +745,7 @@ test('Wrapper strips malformed, uncorrelated, forbidden and failed prediction pa
 });
 
 test('Wrapper validates floor source identity and keeps late/reset metadata out of the current lifecycle', async () => {
-    const { wrapper, worker } = await loaded();
+    const { wrapper, worker } = await loaded(undefined, { lowFeature: true });
     wrapper.sendFrame(new Uint8Array(4), 1);
     const first = worker.last('frame'), plane = groundPlane(first.clientEpoch, first.sequence);
     result(worker, first, { reason: 'tracking', engineFrameTimestamp: 1, solverQualityReason: '', pose: new Float64Array(cameraPose), groundPlane: plane });
@@ -722,7 +765,7 @@ test('Wrapper validates floor source identity and keeps late/reset metadata out 
 });
 
 test('Locally rejected IMU fences an in-flight result and requires a later clean visual frame to restore extras', async () => {
-    const { wrapper, worker } = await loaded();
+    const { wrapper, worker } = await loaded(undefined, { lowFeature: true });
     const lost = timestamp => ({ statusCode: 3, reason: 'empty_features', engineFrameTimestamp: timestamp,
         solverQualityReason: '', inertialPrediction: inertialPrediction(timestamp, 1, 1) });
     wrapper.sendFrame(new Uint8Array(4), 1);
@@ -747,7 +790,7 @@ test('Locally rejected IMU fences an in-flight result and requires a later clean
 });
 
 test('Ordinary busy drops preserve extras but malformed local frames send predictor-only invalidation', async () => {
-    const { wrapper, worker } = await loaded();
+    const { wrapper, worker } = await loaded(undefined, { lowFeature: true });
     wrapper.sendFrame(new Uint8Array(4), 1);
     result(worker, worker.last('frame'), { statusCode: 3, reason: 'empty_features', engineFrameTimestamp: 1,
         solverQualityReason: '', inertialPrediction: inertialPrediction() });
@@ -763,7 +806,7 @@ test('Ordinary busy drops preserve extras but malformed local frames send predic
 });
 
 test('A frame postMessage failure invalidates the shadow before a later blank frame can resume it', async t => {
-    const { wrapper, worker } = await loaded(); t.after(() => wrapper.dispose());
+    const { wrapper, worker } = await loaded(undefined, { lowFeature: true }); t.after(() => wrapper.dispose());
     wrapper.sendFrame(new Uint8Array(4), 1);
     result(worker, worker.last('frame'), { statusCode: 3, reason: 'empty_features', engineFrameTimestamp: 1,
         solverQualityReason: '', inertialPrediction: inertialPrediction() });
@@ -792,7 +835,7 @@ test('Worker prediction capability requires both getter and invalidation API and
             getLastSolverQualityReason: () => mode === 'warning' ? 'relative_translation_threshold' : '' });
         if (mode !== 'old') core.getInertialPrediction = () => { reads++; return JSON.stringify(inertialPrediction()); };
         if (mode !== 'getter-only' && mode !== 'old') core.invalidateInertialPrediction = () => {};
-        f.audit.setEngine(core, f.heap); f.audit.appendIMU(imuSamples([.99,1.01]), 2);
+        f.audit.setEngine(core, f.heap); f.audit.enableLowFeature(); f.audit.appendIMU(imuSamples([.99,1.01]), 2);
         await f.context.self.onmessage({ data: request('frame', { gray: new ArrayBuffer(4), timestamp: 1 }) });
         const row = f.replies.at(-1).data;
         if (mode === 'valid') {
@@ -879,7 +922,7 @@ test('Worker current support fitting is bounded and Lost retains its source with
     f.audit.setEngine(mockEngine({ processFrame(...args) { timestamp = args[5]; return visual; }, getFrameTimestamp: () => timestamp,
         isInitialized: () => true, getStatusCode: () => visual ? 2 : 3, getLastReason: () => visual ? 'tracking' : 'empty_features',
         getLastSolverQualityReason: () => '', getPoseTimestamp: () => timestamp, getPoseFresh: () => visual, getPoseValid: () => visual,
-        getGroundSupportPoints(ptr, maxCount) { reads++; assert.equal(maxCount, 512); return 25; } }), f.heap);
+        getGroundSupportPoints(ptr, maxCount) { reads++; assert.equal(maxCount, 512); return 25; } }), f.heap); f.audit.enableLowFeature();
     vm.runInContext('memPose.read = () => new Float64Array(poseFixture); memGroundSupport = { ptr: 0, read: count => new Float64Array(groundFixture.slice(0, count)) };', f.context);
     f.audit.appendIMU(imuSamples([.99,1.01]), 2);
     await f.context.self.onmessage({ data: request('frame', { gray: new ArrayBuffer(4), timestamp: 1 }) });
@@ -1401,6 +1444,20 @@ function realWorker() {
         },
     };
 }
+
+test('Actual Worker defaults low-feature off and reconfiguration clears a stale opt-in', async () => {
+    const { worker, call } = realWorker();
+    try {
+        assert.equal((await call(request('init', { wasmPath: fakeWasm }, 1, 1))).success, true);
+        let sequence = 2;
+        for (const [requested, expected] of [[undefined, false], ['true', false], [1, false], [true, true], [undefined, false]]) {
+            const data = { width: 2, height: 2, fx: 1, fy: 1, cx: 1, cy: 1, ...(requested === undefined ? {} : { lowFeature: requested }) };
+            const configured = await call(request('configure', data, sequence, sequence)); sequence++;
+            assert.equal(configured.success, true);
+            assert.equal(configured.lowFeatureEnabled, expected, String(requested));
+        }
+    } finally { await worker.terminate(); }
+});
 
 test('Actual Worker rejects a future engine pose before publishing its map and retains engine reason', async () => {
     const { worker, call } = realWorker();

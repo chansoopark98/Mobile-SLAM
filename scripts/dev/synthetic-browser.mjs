@@ -52,6 +52,7 @@ export function validateSyntheticInput(input, count = 400) {
     const c = input.config;
     if (!c || ![c.width,c.height].every(n => Number.isInteger(n) && n > 0) || c.width*c.height > 16777216) throw new Error('Invalid image dimensions');
     if(c.rotationRescue!==undefined&&typeof c.rotationRescue!=='boolean')throw new Error('Input rotationRescue must be boolean');
+    if(c.lowFeature!==undefined&&typeof c.lowFeature!=='boolean')throw new Error('Input lowFeature must be boolean');
     if (!Array.isArray(input.frames) || !input.frames.length || !Array.isArray(input.imu) || !input.imu.length) throw new Error('Image and IMU inputs required');
     let previous = -Infinity, previousPhysical = -Infinity, previousIndex = -1;
     for (const frame of input.frames) {
@@ -570,6 +571,7 @@ export async function main(argv = process.argv.slice(2)) {
         mode: { type: 'string', default: 'raw' }, sensor: { type: 'string', default: 'generic' }, frames: { type: 'string', default: '400' },
         'f-threshold':{type:'string',default:'1'},
         'rotation-rescue':{type:'string',default:'default'},
+        'low-feature':{type:'boolean',default:false},
         'imu-policy':{type:'string'},
         capture:{type:'string',default:'sync'},
         'timeout-ms': { type: 'string', default: '600000' } } });
@@ -588,6 +590,7 @@ export async function main(argv = process.argv.slice(2)) {
     const imuBatches=values.mode==='raw'?replayIMUBatches(input,frames,imuPolicy):null;
     const requestedRotationRescue=rotationRescueOverride??input.config.rotationRescue??(values.mode==='raw'?false:null);
     if(requestedRotationRescue!==null)input.config.rotationRescue=requestedRotationRescue;
+    if(values['low-feature'])input.config.lowFeature=true;
     // Captured live replay files live beside their accepted-frames directory.
     const imageRoot = await fs.realpath(path.join(inputRoot, input.capture ? 'accepted-frames' : 'mav0/cam0/data'));
     const requested = path.resolve(values.output);
@@ -601,6 +604,7 @@ export async function main(argv = process.argv.slice(2)) {
         requestedIMUPolicy:values['imu-policy']??null,selectedIMUPolicy:imuPolicy,
         requestedRotationRescueOverride:rotationRescueOverride,
         requestedRotationRescue,
+        requestedLowFeature:input.config.lowFeature===true,
         capture:values.capture,physicalCaptureTargetVerified:false,
         requestedAppProfile:values.mode==='raw'?null:{config:'mobile_default',calibration:'supplied_synthetic_camera_profile',
             fThresholdOverride,fThresholdSource:fThresholdOverride===null?'unchanged_App_default':'URL_override'},
@@ -673,6 +677,7 @@ export async function main(argv = process.argv.slice(2)) {
         if(values.mode!=='raw'&&fThresholdOverride!==null)query.set('fth',String(fThresholdOverride));
         if(values.mode!=='raw'&&requestedRotationRescue!==null)query.set('rotation-rescue',requestedRotationRescue?'1':'0');
         if(values.mode!=='raw'&&values.capture==='worker')query.set('capture','worker');
+        if(values.mode!=='raw'&&input.config.lowFeature===true)query.set('low-feature','1');
         await page.goto(`http://127.0.0.1:${server.address().port}/${values.mode==='raw'?'':`?${query}`}`);
         report.replay=await Promise.race([values.mode==='raw'?rawReplay(page,input,frames,imuBatches,imuPolicy):liveReplay(page,input,frames,values.mode,values.capture),
             new Promise((_,reject)=>{timer=setTimeout(()=>reject(new Error('Bounded synthetic browser timeout')),timeoutMs);})]);

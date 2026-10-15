@@ -171,7 +171,7 @@ try {
     await page.goto(origin + '/test-tumvi.html?frames=5&speed=-1');
     await page.waitForFunction(() => window.__tumviReplay && !document.getElementById('btn-start').disabled, null, { timeout: 15000 });
     const rotations = await page.evaluate(async () => {
-        const { Camera } = await import('/js/camera.js?v=11');
+        const { Camera } = await import('/js/camera.js?v=14');
         const source = document.createElement('canvas'); source.width = 2; source.height = 3;
         const ctx = source.getContext('2d'); const rgba = ctx.createImageData(2,3);
         [10,20,30,40,50,60].forEach((value,i) => { rgba.data.set([value,value,value,255],i*4); }); ctx.putImageData(rgba,0,0);

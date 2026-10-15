@@ -3,7 +3,9 @@
 
 #include "common/common_types.h"
 #include "utility/so3.h"
+#include <cmath>
 #include <cstdint>
+#include <limits>
 
 namespace utility {
 class InertialPrediction {

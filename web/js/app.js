@@ -8,10 +8,10 @@
  *   IMU buffer on each frame.
  * - This prevents IMU data loss when frames are dropped due to worker being busy.
  */
-import { VIOWrapper } from './vio-wrapper.js?v=11';
-import { Camera, validateCameraProfile, transformCameraProfile, processingDimensions } from './camera.js?v=11';
+import { VIOWrapper } from './vio-wrapper.js?v=14';
+import { Camera, validateCameraProfile, transformCameraProfile, processingDimensions } from './camera.js?v=14';
 import { CaptureWorker } from './capture-worker.js?v=1';
-import { IMU } from './imu.js?v=11';
+import { IMU } from './imu.js?v=14';
 import { Renderer } from './renderer.js?v=13';
 import { OrientationHandler } from './orientation.js?v=11';
 
@@ -25,8 +25,10 @@ import { OrientationHandler } from './orientation.js?v=11';
  *   ?rotate=none|cw|ccw — Explicit pixel rotation; default preserves video orientation
  *   ?rotation-rescue=1|0 — IMU rotation tracking rescue; mobile App default on
  *   ?capture=worker — UNVERIFIED VideoFrame capture experiment; default stays synchronous
+ *   ?low-feature=1 — UNVERIFIED IMU prediction frustum and floor candidate mesh; default off (floor GT gate 89.87% < 90%)
  */
 const URL_PARAMS = new URLSearchParams(window.location.search);
+const LOW_FEATURE_ENABLED = URL_PARAMS.get('low-feature') === '1';
 
 /** Send a log message to the server for remote debugging on mobile */
 function remoteLog(level, msg) {
@@ -440,6 +442,7 @@ class App {
             snapshotCaptureFailed: 0, snapshotGeometryRejected: 0, warmupSkipped: 0, shortIntervalSkipped: 0 };
         this._renderResultKey = null;
         this._renderEpoch = null;
+        this.lowFeatureEnabled = LOW_FEATURE_ENABLED;
         this.lowFeatureDisplay = { prediction: false, groundPlane: false };
         this._displayResultState = null;
         this._lastResultStatusUpdateMs = -Infinity;
@@ -699,7 +702,8 @@ class App {
             const fxScaled = calibration.fx, fyScaled = calibration.fy;
             const params = { ...calibration, acc_n: config.acc_n, acc_w: config.acc_w,
                 gyr_n: config.gyr_n, gyr_w: config.gyr_w, g_norm: config.g_norm,
-                mobileMotionGuard: true, rotationRescue: !URL_PARAMS.has('rotation-rescue') || URL_PARAMS.get('rotation-rescue') === '1' };
+                mobileMotionGuard: true, rotationRescue: !URL_PARAMS.has('rotation-rescue') || URL_PARAMS.get('rotation-rescue') === '1',
+                lowFeature: this.lowFeatureEnabled };
             const configured = await this.vio.configure(params);
             if (!configured) throw new Error('VIO configuration failed');
             this._lastConfigParams = params;
@@ -1366,7 +1370,7 @@ class App {
         // Display expiry only: never alter the estimator's pose or freshness fields.
         const displayFresh = fresh && Number.isFinite(ageMs) && ageMs >= 0 && ageMs <= 500;
         // Wrapper owns payload validation; the display rechecks identity and source deadlines every RAF.
-        const lowFeatureAllowed = result && !workerFailed && !result.error && !result.motionDiscontinuity && !result.imuIntervalLoss;
+        const lowFeatureAllowed = this.lowFeatureEnabled === true && result && !workerFailed && !result.error && !result.motionDiscontinuity && !result.imuIntervalLoss;
         const prediction = lowFeatureAllowed ? result.inertialPrediction : null;
         const predictionAgeMs = prediction ? now - prediction.timestamp * 1000 : null;
         const predictionHorizon = prediction ? prediction.timestamp - prediction.anchorTimestamp : NaN;

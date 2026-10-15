@@ -7,7 +7,7 @@ import { loadBrowserSource } from './browser-source-loader.mjs';
 
 const sources = Object.fromEntries(await Promise.all(['imu', 'camera', 'orientation', 'app', 'renderer', 'vio-wrapper', 'test-tumvi-app'].map(async name => [name, await loadBrowserSource(name)])));
 const quiet = { log() {}, warn() {}, error() {} };
-function realm({ ios = false, now = 5000 } = {}) {
+function realm({ ios = false, now = 5000, search = '' } = {}) {
     const listeners = new Map();
     class Sensor {
         constructor() { this.handlers = {}; this.timestamp = null; }
@@ -18,7 +18,7 @@ function realm({ ios = false, now = 5000 } = {}) {
     const context = vm.createContext({ console: quiet, Float64Array, Uint8Array, URL, URLSearchParams, setTimeout, clearTimeout, setInterval, clearInterval,
         navigator: { userAgent: ios ? 'iPhone' : 'Android', platform: '', maxTouchPoints: 0 },
         performance: { now: () => now, timeOrigin: 1700000000000 },
-        window: { location: { search: '', href: 'https://dev.serdic.com:7002/' }, addEventListener: (name, fn) => listeners.set(name, fn), removeEventListener: name => listeners.delete(name) },
+        window: { location: { search, href: 'https://dev.serdic.com:7002/' + search }, addEventListener: (name, fn) => listeners.set(name, fn), removeEventListener: name => listeners.delete(name) },
         screen: { orientation: { type: 'portrait-primary' } }, Accelerometer: Sensor, Gyroscope: Sensor, DeviceMotionEvent: class {},
         document: { addEventListener() {}, hidden: false }, requestAnimationFrame() {}, HTMLVideoElement: class {}, VIOWrapper: class {}, Camera: class {}, Renderer: class {}, OrientationHandler: class {},
     });
@@ -488,6 +488,7 @@ test('Replay exact bound has no extra frame after completion; reset cancels pend
 
 function lowFeatureFixture() {
     const f = displayFixture();
+    f.app.lowFeatureEnabled = true;
     f.app.renderer.predictionVisible = false;
     f.app.renderer.plane = null;
     f.app.renderer.updateInertialPrediction = function (pose) { this.predictionVisible = true; this.predictedPose = pose; f.events.push('prediction'); };
@@ -508,6 +509,18 @@ function lowFeatureFixture() {
         inertialPrediction: prediction, groundPlane: plane };
     return { ...f, prediction, plane, lost };
 }
+
+test('App keeps low-feature layers off by default and opts in only with ?low-feature=1', () => {
+    for (const [search, expected] of [['', false], ['?low-feature=0', false], ['?low-feature=true', false], ['?low-feature=1', true]]) {
+        assert.equal(appRealm({ search }).app.lowFeatureEnabled, expected, search);
+    }
+    const f = lowFeatureFixture(); f.app.lowFeatureEnabled = false;
+    f.app._consumeResult(f.lost);
+    assert.equal(f.app.renderer.predictionVisible, false); assert.equal(f.app.renderer.plane, null);
+    assert.equal(f.app.lowFeatureDisplay.prediction, false); assert.equal(f.app.lowFeatureDisplay.groundPlane, false);
+    assert.doesNotMatch(f.writes.at(-1), /IMU prediction|바닥 후보/);
+    assert.match(sources.app, /lowFeature: this\.lowFeatureEnabled/);
+});
 
 test('Inertial-only display stays separate from Lost metric pose and never appends trajectory or updates maps', () => {
     const f=lowFeatureFixture();f.app._consumeResult(f.lost);f.app._consumeResult(f.lost);

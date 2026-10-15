@@ -51,7 +51,7 @@ try {
     await frame.locator('#btn-start').click();
     await page.waitForFunction(() => (window.__mobileAudit?.summary()?.completed || 0) >= 12, null, { timeout: 12000 });
     const permissionChecks = await frame.evaluate(async () => {
-        const { IMU } = await import('/js/imu.js?v=11');
+        const { IMU } = await import('/js/imu.js?v=14');
         window.__mockPermissionMode = 'denied';
         const denied = await new IMU().requestPermission();
         window.__mockPermissionMode = 'error';
@@ -91,7 +91,7 @@ try {
     assert.ok(report.samples.permission_native.some(row => row.permission === 'denied'));
     assert.ok(report.samples.permission_native.some(row => row.phase === 'error' && row.name === 'NotAllowedError'));
     assert.ok(report.samples.permission_native.some(row => row.phase === 'error' && row.synchronous === true));
-    assert.equal(report.metadata.moduleUrls.wrapper, origin + '/js/vio-wrapper.js?v=11');
+    assert.equal(report.metadata.moduleUrls.wrapper, origin + '/js/vio-wrapper.js?v=14');
     assert.ok(report.totalSamples <= report.limits.maxTotal);
     for (const rows of Object.values(report.samples)) assert.ok(rows.length <= report.limits.maxSamplesPerChannel);
     for (const [file, fingerprint] of Object.entries(report.metadata.manifest)) {
