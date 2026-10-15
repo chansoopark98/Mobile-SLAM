@@ -16,11 +16,14 @@ build/
 data/
 logs/
 
-.claude/
+# Claude Code: shared project config is versioned; personal/local state is not.
+.claude/*
+!.claude/settings.json
+!.claude/skills/
+.claude/settings.local.json
 .omc/
 WORKS.md
 ARCHITECTURE_ANALYSIS.md
-CLAUDE.md
 
 assets/datasets/
 assets/references/

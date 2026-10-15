@@ -1,0 +1,9 @@
+{
+  "mcpServers": {
+    "mobile_slam_playwright": {
+      "type": "stdio",
+      "command": "bash",
+      "args": ["scripts/dev/mcp-server.sh", "playwright"]
+    }
+  }
+}

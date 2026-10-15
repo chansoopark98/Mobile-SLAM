@@ -1,0 +1,35 @@
+{
+  "$schema": "https://json.schemastore.org/claude-code-settings.json",
+  "env": {
+    "MOBILE_SLAM_JOBS": "2"
+  },
+  "permissions": {
+    "allow": [
+      "Bash(bash scripts/dev/check.sh:*)",
+      "Bash(python3 scripts/dev/doctor.py:*)",
+      "Bash(node --test:*)",
+      "Bash(python3 -m unittest:*)",
+      "Bash(cmake --preset:*)",
+      "Bash(cmake --build:*)",
+      "Bash(ctest --preset:*)",
+      "Bash(git status:*)",
+      "Bash(git diff:*)",
+      "Bash(git log:*)"
+    ],
+    "ask": [
+      "Bash(python3 scripts/dev/deploy-candidate.py:*)",
+      "Bash(bash scripts/ops/serve.sh:*)",
+      "Bash(git push:*)"
+    ],
+    "deny": [
+      "Edit(**/web/vio_engine.js)",
+      "Write(**/web/vio_engine.js)",
+      "Edit(**/web/vio_engine.manifest.json)",
+      "Write(**/web/vio_engine.manifest.json)",
+      "Edit(//mnt/backup/SLAM/**)",
+      "Write(//mnt/backup/SLAM/**)"
+    ]
+  },
+  "enableAllProjectMcpServers": false,
+  "enabledMcpjsonServers": ["mobile_slam_playwright"]
+}

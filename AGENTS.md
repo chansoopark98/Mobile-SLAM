@@ -7,10 +7,13 @@ USE CODEX NATIVE SUBAGENTS FOR INDEPENDENT PARALLEL SUBTASKS WHEN THAT IMPROVES 
 
 # Mobile-SLAM 작업 계약
 
+- 현재 상태·WIP·다음 단계: `docs/STATUS.md` (작업 시작 전 확인, 작업 단위 종료 시 갱신)
+- 문서 색인(기준/대체 구분): `docs/README.md`
 - 목표·단계·수락 조건: `docs/refactoring-plan.md`
-- 현재 코드·실행 근거: `docs/audit/2026-10-06/README.md`
+- 초기 baseline(2026-10-06, 역사 기록): `docs/audit/2026-10-06/README.md`
 - 개발 환경·명령: `scripts/dev/README.md`
 - 재현 절차: `.agents/skills/mobile-slam-validation/SKILL.md`
+- Claude Code와 공유: 규칙 변경 시 `CLAUDE.md`·`.claude/skills/`도 함께 갱신
 
 ## 변경 전
 
