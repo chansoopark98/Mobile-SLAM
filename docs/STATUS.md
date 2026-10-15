@@ -1,6 +1,6 @@
 # Mobile-SLAM 현재 상태 (Living Status)
 
-- 최종 갱신: 2026-10-15 (Claude Code 인수인계 시점)
+- 최종 갱신: 2026-10-15 (low-feature opt-in 전환, `887ea58`)
 - 갱신 규칙:
   - 작업 단위가 끝날 때마다 §1, §3, §6을 갱신합니다.
   - 숫자에는 출처 문서 경로를 붙입니다.
@@ -12,13 +12,13 @@
 
 | 항목 | 상태 |
 |---|---|
-| 현재 branch | `main` (2026-10-15에 `codex/flip6-analysis-20261013`를 fast-forward 병합). 작업 브랜치는 여기서 새로 만듦 |
+| 현재 branch | `low-feature-opt-in` (`main`에서 분기, `887ea58` + 이 STATUS 커밋). **main에 병합 안 됨.** `main`은 2026-10-15에 `codex/flip6-analysis-20261013`를 fast-forward 병합한 상태 |
 | `origin/main` | `f210570`. 로컬 `main`이 **12커밋 앞서 있고 push되지 않음** (2026-10-15 기준, `git rev-list --count origin/main..main`) |
 | 기타 branch | `codex/*` 4개: 모두 main에 병합됨(삭제 가능) |
-| 미커밋 WIP | 없음. 2026-10-14 Codex WIP는 2026-10-15에 4개 커밋(`789ed3d`, `4d74630`, `04386e5`, `f76217d`)으로 정리됨. 내용은 §3 |
+| 미커밋 WIP | 없음. 2026-10-14 Codex WIP는 2026-10-15에 4개 커밋(`789ed3d`, `4d74630`, `04386e5`, `f76217d`)으로 정리됨. 내용은 §3. low-feature opt-in 전환은 `887ea58` |
 | 활성 WASM | `web/vio_engine.js` sha256 `38837d4…` (6,044,038B). `5d48e4b` clean tree 기준, C3 OFF 빌드 |
-| 소스와 WASM 일치 여부 | **불일치.** `f76217d`(low-feature)가 `src/vio_engine.cpp`, `include/vio_engine.h`, `include/backend/estimator.h`, `wasm/vio_bindings.cpp`를 바꾸고 `include/utility/inertial_prediction.h`를 추가함. 활성 WASM은 그 이전 소스(`5d48e4b`) 빌드 |
-| 검증 baseline (2026-10-15, WIP tree) | `check.sh native` CTest 16/16 통과(`build/dev-native`), `browser-contracts` 349/349 (skip·todo 0), `eval` OK, `syntax` OK. **VERIFIED** — 단, WASM은 다시 빌드하지 않았고 실기기 측정도 하지 않음 |
+| 소스와 WASM 일치 여부 | **불일치.** `f76217d`(low-feature)가 `src/vio_engine.cpp`, `include/vio_engine.h`, `include/backend/estimator.h`, `wasm/vio_bindings.cpp`를 바꾸고 `include/utility/inertial_prediction.h`를 추가함(`887ea58`에서 include만 보강). 활성 WASM은 그 이전 소스(`5d48e4b`) 빌드 |
+| 검증 baseline (2026-10-15, `887ea58` tree) | `check.sh native` CTest 16/16 통과(`build/dev-native`), `browser-contracts` 353/353 (skip·todo 0, opt-in 테스트 4개 추가), `eval` 19 OK, `syntax` OK. **VERIFIED** — 단, WASM은 다시 빌드하지 않았고 Playwright 브라우저 스크립트·실기기 측정도 하지 않음 |
 | low-feature 후보 WASM | `e7420b36…` (6,056,932B). `build/low-feature-20261014/` 안에만 있고 **승격 안 됨** |
 
 ---
@@ -88,12 +88,13 @@
 출처: `docs/fixes/2026-10-14-low-feature-results.md`, 2026-10-15 WIP 분석
 
 - **바닥 GT gate 미달**: 71/79 = 89.87%로 기준 90%를 넘지 못했습니다. 그래서 서버 승격을 보류했습니다.
-- **기본 OFF 플래그가 없습니다.** 지금은 활성 WASM에 새 ABI(`getInertialPrediction`)가 없어서 *우연히* 꺼져 있을 뿐입니다. WASM을 다시 빌드해 승격하면 바로 표시가 켜집니다. 승격 전에 opt-in 플래그(예: `?low-feature=1`)를 추가할지 결정해야 합니다.
-- cache-busting이 일관되지 않습니다.
-  - `web/index.html:290`은 WIP로 크게 바뀐 `app.js`를 여전히 `?v=11`로 불러옵니다. 그래서 휴대폰이 예전 `app.js`를 캐시에서 쓸 수 있습니다.
-  - `renderer.js?v=13`은 갱신했지만 `vio-wrapper.js?v=11`은 그대로입니다.
-  - worker와 `low-feature.mjs`에는 버전 query가 없습니다.
-- `inertial_prediction.h`가 `<cmath>`와 `<limits>`를 직접 include하지 않습니다(경미).
+- **기본 OFF로 전환됨** (`887ea58`, 2026-10-15). 켜는 방법:
+  - App: `?low-feature=1` (다른 값은 모두 OFF)
+  - Wrapper/Worker: `configure({ lowFeature: true })` (boolean `true`만 인정, 재configure 시 플래그가 없으면 OFF로 돌아감). Worker configure 응답의 `lowFeatureEnabled`로 활성값을 확인합니다.
+  - 개발 도구: `synthetic-browser.mjs --low-feature`. `replay-android-input.mjs`는 플래그가 없던 과거 기록과 비교할 수 있도록 기록된 값이 없으면 ON으로 replay합니다.
+  - C++ engine의 shadow 예측과 바닥 후보 점 export는 그대로 있고, Worker가 opt-in 없이는 읽지 않습니다.
+- cache-busting 정리됨 (`887ea58`): `app.js`, `vio-wrapper.js`, `camera.js`, `imu.js`, Worker URL, `low-feature.mjs` import를 `?v=14`로 통일했습니다. `renderer.js?v=13`, `orientation.js?v=11`, `capture-worker.js?v=1`은 마지막 bump 이후 내용이 바뀌지 않아 유지했습니다. `test-tumvi-app.js`(데스크톱 도구)의 import는 버전 query 없이 그대로입니다.
+- `inertial_prediction.h`에 `<cmath>`와 `<limits>`를 직접 include함 (`887ea58`).
 - `vio-wrapper.js`의 `_invalidateLowFeature` 실패를 `catch(() => {})`로 무시합니다. 문서상으로는 Worker fence가 이를 보완합니다.
 
 ---
@@ -126,9 +127,9 @@
 
 ## 6. 다음 단계 (우선순위 순)
 
-1. **low-feature opt-in 플래그와 cache-busting 정리**
-   - 커밋은 끝났지만 low-feature는 아직 기본으로 켜집니다. opt-in 플래그를 추가하고 `index.html`의 `app.js?v=` 등 버전 query를 맞춥니다.
-   - 그다음 WASM을 다시 빌드하고 provenance를 기록합니다. 승격은 사용자가 요청할 때만 합니다.
+1. **`low-feature-opt-in` 브랜치 병합과 WASM 재빌드**
+   - opt-in 플래그와 cache-busting은 `887ea58`에서 끝났습니다(브랜치 `low-feature-opt-in`, main 미병합).
+   - 병합 후 WASM을 다시 빌드하고 provenance를 기록합니다. 승격은 사용자가 요청할 때만 합니다. 승격해도 low-feature는 `?low-feature=1` 없이는 꺼져 있습니다.
 2. **low-feature 바닥 gate 미달 원인 규명**
    - 평면 재추정 쪽을 조사합니다.
    - 89.87%를 90% 이상으로 맞추려고 gate를 완화하는 것은 금지입니다.
