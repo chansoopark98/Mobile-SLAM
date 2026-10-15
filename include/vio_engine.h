@@ -14,6 +14,7 @@
 #include "frontend/feature_tracker.h"
 #include "frontend/pnp_frontend.h"
 #include "utility/config.h"
+#include "utility/inertial_prediction.h"
 
 // Headless VIO engine for WASM and programmatic use.
 // No visualization, no file I/O, no threading.
@@ -80,6 +81,9 @@ public:
     // output: pointer to 3*count doubles (x,y,z for each point)
     // Returns actual number of points written.
     int getMapPoints(double* output, int max_count) const;
+    std::string getInertialPrediction() const;
+    void invalidateInertialPrediction();
+    int getGroundSupportPoints(double* output, int max_count) const;
 
     // Set mobile-optimized solver parameters (call after configure).
     void setMobileParams(double solver_time, int num_iterations, int max_features);
@@ -102,6 +106,7 @@ public:
     double getFrameTimestamp() const { return frame_timestamp_; }
     double getIMUEndpointTimestamp() const { return current_time_; }
     const std::string& getLastReason() const { return last_reason_; }
+    const std::string& getLastSolverQualityReason() const { return last_solver_quality_reason_; }
     bool getPoseFresh() const { return has_valid_pose_; }
     bool getPoseValid() const { return has_valid_pose_; }
     int getLastSolverIterations() const;
@@ -138,6 +143,11 @@ public:
 
 private:
     friend struct VIOEngineTestAccess;
+    bool processFrameInternal(const uint8_t* gray_image, int width, int height,
+                              const IMUReading* imu_readings, int imu_count,
+                              double image_timestamp, double* pose_output);
+    bool cleanVisualOutput() const;
+    void finishInertialFrame();
     bool processIMUData(const IMUReading* readings, int count,
                         double image_timestamp);
     void resetState(const std::string& reason);
@@ -175,6 +185,10 @@ private:
     bool benchmark_solver_profile_ = false;
     int experimental_observation_policy_ = 0;
     bool rotation_rescue_enabled_ = false;
+    utility::InertialPrediction inertial_prediction_;
+    bool inertial_prediction_available_ = false;
+    bool inertial_raw_coverage_ = false;
+    double raw_imu_left_timestamp_ = -1;
     struct PipelineDiagnostics {
         bool available = false;
         uint64_t epochBefore = 0;

@@ -9,6 +9,7 @@
 #include <sstream>
 #include <iomanip>
 #include <stdexcept>
+#include <unordered_set>
 
 namespace {
 bool isRotation(const Eigen::Matrix3d& rotation) {
@@ -58,11 +59,100 @@ VIOEngine::~VIOEngine() {
     if(execution_configured_) cv::setNumThreads(0);
 }
 
+void VIOEngine::invalidateInertialPrediction() {
+    inertial_prediction_.invalidate();
+    inertial_prediction_available_=false;
+}
+
+bool VIOEngine::cleanVisualOutput() const {
+    return configured_ && estimator_ && isInitialized() && has_valid_pose_ &&
+        last_reason_=="tracking" && last_solver_quality_reason_.empty() &&
+        !utility::g_config.pnp.enable_pnp && estimator_->hasUsableLatestImageUpdate() &&
+        estimator_->getResetGeneration()==estimator_generation_ &&
+        pose_timestamp_==frame_timestamp_ && frame_timestamp_==current_time_ &&
+        std::isfinite(frame_timestamp_) && frame_timestamp_>=0;
+}
+
+void VIOEngine::finishInertialFrame() {
+    inertial_prediction_available_=false;
+    if (!configured_ || !estimator_ || !isInitialized() || utility::g_config.pnp.enable_pnp ||
+        estimator_->getResetGeneration()!=estimator_generation_ || !inertial_raw_coverage_ ||
+        current_time_!=frame_timestamp_ || !last_solver_quality_reason_.empty()) {
+        invalidateInertialPrediction();return;
+    }
+    if (cleanVisualOutput()) {
+        const auto state=estimator_->getLatestVINSResult();
+        const auto camera_rotation=state.R*estimator_->r_ic_;
+        const auto camera_position=state.P+state.R*estimator_->t_ic_;
+        if (state.timestamp!=frame_timestamp_ ||
+            !camera_rotation.isApprox(latest_rotation_,1e-12) ||
+            !camera_position.isApprox(latest_position_,1e-12)) {
+            invalidateInertialPrediction();return;
+        }
+        inertial_prediction_.seed(state,estimator_->getGravity(),estimator_->r_ic_,estimator_->t_ic_,
+                                  prev_acc_,prev_gyro_,epoch_);
+        return;
+    }
+    const bool visual_failure=last_reason_=="empty_features" || last_reason_=="insufficient_current_features" ||
+        last_reason_=="insufficient_final_current_features";
+    if (!visual_failure || has_valid_pose_ || !inertial_prediction_.valid() ||
+        inertial_prediction_.epoch()!=epoch_ || inertial_prediction_.timestamp()!=frame_timestamp_) {
+        invalidateInertialPrediction();return;
+    }
+    inertial_prediction_available_=true;
+}
+
+std::string VIOEngine::getInertialPrediction() const {
+    if (!inertial_prediction_available_ || !inertial_prediction_.valid() ||
+        inertial_prediction_.epoch()!=epoch_ || utility::g_config.pnp.enable_pnp) return "null";
+    const auto pose=inertial_prediction_.cameraPose();
+    if (!pose.allFinite()) return "null";
+    std::ostringstream output;
+    output<<std::setprecision(17)
+          <<"{\"schema\":\"mobile-slam-inertial-prediction-v1\",\"mode\":\"inertial-only\",\"poseFrame\":\"camera\",\"engineEpoch\":"
+          <<epoch_<<",\"timestamp\":"<<inertial_prediction_.timestamp()
+          <<",\"anchorTimestamp\":"<<inertial_prediction_.anchorTimestamp()
+          <<",\"maxHorizonSeconds\":0.5,\"visualSupported\":false,\"metricTranslationSupported\":false,\"positionUncertain\":true,\"pose\":[";
+    for(int row=0;row<4;++row) for(int col=0;col<4;++col) {
+        if(row || col) output<<',';
+        output<<pose(row,col);
+    }
+    output<<"]}";
+    return output.str();
+}
+
+int VIOEngine::getGroundSupportPoints(double* output,int max_count) const {
+    if (!output || max_count<=0 || !feature_tracker_ || !cleanVisualOutput()) return 0;
+    const Eigen::Vector3d gravity=estimator_->getGravity();
+    const double norm=gravity.stableNorm();
+    if (!gravity.allFinite() || !std::isfinite(norm) || norm<=0 ||
+        gravity.z()/norm<std::cos(std::acos(-1.0)/180.0)) return 0;
+    std::unordered_set<int> current_ids;
+    for(size_t i=0;i<feature_tracker_->ids.size() && i<feature_tracker_->track_cnt.size() &&
+        i<feature_tracker_->cur_undistorted_pts.size() && i<feature_tracker_->cur_pts.size() &&
+        i<feature_tracker_->pts_velocity.size();++i) {
+        const auto& observation=feature_tracker_->cur_undistorted_pts[i];
+        const auto& pixel=feature_tracker_->cur_pts[i];
+        const auto& velocity=feature_tracker_->pts_velocity[i];
+        if (feature_tracker_->track_cnt[i]>1 && std::isfinite(observation.x) && std::isfinite(observation.y) &&
+            std::isfinite(pixel.x) && std::isfinite(pixel.y) && std::isfinite(velocity.x) && std::isfinite(velocity.y))
+            current_ids.insert(feature_tracker_->ids[i]);
+    }
+    int count=0;
+    for(const auto& feature:estimator_->getSolvedFeatures()) {
+        if (!current_ids.erase(feature.id) || !feature.position.allFinite()) continue;
+        for(int axis=0;axis<3;++axis) output[3*count+axis]=feature.position[axis];
+        if (++count==std::min(max_count,512)) break;
+    }
+    return count;
+}
+
 bool VIOEngine::configure(int width, int height,
                           double fx, double fy, double cx, double cy, int model_type,
                           double k2, double k3, double k4, double k5,
                           const double* r_ic, const double* t_ic,
                           double acc_n, double acc_w, double gyr_n, double gyr_w, double g_norm) {
+    invalidateInertialPrediction();
     // Copy every input before writing g_config: callers may point into its Eigen storage.
     if (!r_ic || !t_ic) { invalidatePose("invalid_calibration_pointer"); return false; }
     const Eigen::Matrix3d rotation = Eigen::Map<const Eigen::Matrix<double,3,3,Eigen::RowMajor>>(r_ic);
@@ -109,6 +199,7 @@ bool VIOEngine::configure(int width, int height,
 
 #ifndef __EMSCRIPTEN__
 bool VIOEngine::configureFromConfig(const utility::Config& config, const std::string& camera_file) {
+    invalidateInertialPrediction();
     const utility::Config owned = config;
     if (!std::isfinite(owned.camera.col) || !std::isfinite(owned.camera.row) ||
         std::floor(owned.camera.col) != owned.camera.col || std::floor(owned.camera.row) != owned.camera.row ||
@@ -143,6 +234,8 @@ void VIOEngine::invalidatePose(const std::string& reason) {
 }
 
 void VIOEngine::resetState(const std::string& reason) {
+    invalidateInertialPrediction();
+    raw_imu_left_timestamp_=-1;inertial_raw_coverage_=false;
     ++epoch_;
     // A reset inside processFrame belongs to that attempted frame; an external
     // reset clears the previous frame's measurements.
@@ -177,6 +270,7 @@ bool VIOEngine::feedIMU(double timestamp, const Eigen::Vector3d& acc, const Eige
     if (dt > 0 && imu_samples_since_image_ >= kMaxIMUReadings) {
         resetState("imu_history_overflow"); return false;
     }
+    inertial_prediction_.advance(timestamp,acc,gyro,epoch_);
     estimator_->processIMU(dt,acc,gyro);
     if (pnp_initialized_ && pnp_frontend_) pnp_frontend_->processIMU(dt,acc,gyro);
     current_time_ = timestamp; prev_acc_ = acc; prev_gyro_ = gyro;
@@ -185,6 +279,7 @@ bool VIOEngine::feedIMU(double timestamp, const Eigen::Vector3d& acc, const Eige
 }
 
 bool VIOEngine::processIMUData(const IMUReading* readings,int count,double image_timestamp) {
+    inertial_raw_coverage_=true;
     double previous = last_imu_timestamp_;
     for (int i=0;i<count;++i) {
         const auto& value=readings[i];
@@ -207,10 +302,15 @@ bool VIOEngine::processIMUData(const IMUReading* readings,int count,double image
             last_reason_="imu_missing_past"; return false;
         }
         const auto seed=pending_imu_.front(); pending_imu_.pop_front();
+        raw_imu_left_timestamp_=seed.timestamp;
         if(!feedIMU(seed.timestamp,acceleration(seed),angularVelocity(seed))) return false;
     }
     while(!pending_imu_.empty() && pending_imu_.front().timestamp<=image_timestamp) {
         const auto value=pending_imu_.front();
+        if (raw_imu_left_timestamp_<0 || value.timestamp-raw_imu_left_timestamp_>
+            utility::InertialPrediction::max_raw_gap_seconds+utility::InertialPrediction::time_tolerance)
+            inertial_raw_coverage_=false;
+        raw_imu_left_timestamp_=value.timestamp;
         if(value.timestamp-current_time_>kMaxSensorGapSeconds) {
             resetState("imu_gap"); return false;
         }
@@ -220,6 +320,9 @@ bool VIOEngine::processIMUData(const IMUReading* readings,int count,double image
     if(current_time_==image_timestamp) return true;
     if(pending_imu_.empty()) { last_reason_="imu_missing_future"; return false; }
     const auto& right=pending_imu_.front();
+    if (raw_imu_left_timestamp_<0 || right.timestamp-raw_imu_left_timestamp_>
+        utility::InertialPrediction::max_raw_gap_seconds+utility::InertialPrediction::time_tolerance)
+        inertial_raw_coverage_=false;
     const double span=right.timestamp-current_time_;
     if(span>kMaxSensorGapSeconds) { resetState("imu_gap"); return false; }
     const double weight=(image_timestamp-current_time_)/span;
@@ -266,6 +369,20 @@ std::vector<common::SolvedFeature> VIOEngine::matchFeaturesForPnP() const {
 }
 
 bool VIOEngine::processFrame(const uint8_t* gray_image,int width,int height,
+                             const IMUReading* imu_readings,int imu_count,
+                             double image_timestamp,double* output) {
+    inertial_prediction_available_=false;inertial_raw_coverage_=false;
+    bool result;
+    try {
+        result=processFrameInternal(gray_image,width,height,imu_readings,imu_count,image_timestamp,output);
+    } catch (...) {
+        invalidateInertialPrediction();throw;
+    }
+    finishInertialFrame();
+    return result;
+}
+
+bool VIOEngine::processFrameInternal(const uint8_t* gray_image,int width,int height,
                              const IMUReading* imu_readings,int imu_count,
                              double image_timestamp,double* output) {
     pipeline_ = PipelineDiagnostics{};
@@ -616,6 +733,7 @@ void VIOEngine::setTrackingParams(int lk_window, int lk_pyramid, int min_dist, d
 }
 
 void VIOEngine::setPnPParams(bool enable_pnp, int freq) {
+    invalidateInertialPrediction();
     auto& cfg = utility::g_config.pnp;
     cfg.enable_pnp = enable_pnp;
     if (freq >= 1 && freq <= 10) {

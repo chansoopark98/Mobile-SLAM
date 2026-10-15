@@ -90,6 +90,21 @@ export class Renderer {
         this.worldRoot.add(this.frustumGroup);
         this.frustumGroup.visible = false;
 
+        // Separate diagnostics never append metric trajectory or modify the follow-view pose.
+        this.predictionGroup = this._createFrustum(0xffb000);
+        this.predictionGroup.visible = false;
+        this.worldRoot.add(this.predictionGroup);
+        const groundGeometry = new THREE.BufferGeometry();
+        groundGeometry.setAttribute('position', new THREE.BufferAttribute(new Float32Array(12), 3));
+        groundGeometry.setIndex([0, 1, 2, 0, 2, 3]);
+        this.groundPlaneMesh = new THREE.Mesh(groundGeometry, new THREE.MeshBasicMaterial({
+            color: 0x36cbb3, transparent: true, opacity: .28, side: THREE.DoubleSide, depthWrite: false,
+        }));
+        this.groundPlaneMesh.visible = false;
+        this.groundPlaneMesh.frustumCulled = false;
+        this.worldRoot.add(this.groundPlaneMesh);
+        this._groundPlaneIdentity = null;
+
         // ── Pre-allocated map points buffer ──
         this._mapBuffer = new Float32Array(MAX_MAP_POINTS * 3);
         const mapAttr = new THREE.BufferAttribute(this._mapBuffer, 3);
@@ -162,7 +177,7 @@ export class Renderer {
     }
 
     /** Create a wireframe camera frustum */
-    _createFrustum() {
+    _createFrustum(color = 0xffff00) {
         const group = new THREE.Group();
         const s = 0.08; // frustum scale
         const vertices = [
@@ -181,7 +196,7 @@ export class Renderer {
         geometry.setIndex(indices);
         const frustum = new THREE.LineSegments(
             geometry,
-            new THREE.LineBasicMaterial({ color: 0xffff00 })
+            new THREE.LineBasicMaterial({ color })
         );
         group.add(frustum);
         return group;
@@ -292,8 +307,45 @@ export class Renderer {
         return true;
     }
 
+    /** Uncertain IMU-only pose: no trajectory, map, or follow-camera update. */
+    updateInertialPrediction(pose) {
+        this.predictionGroup.matrix.set(
+            pose[0], pose[1], pose[2], pose[3], pose[4], pose[5], pose[6], pose[7],
+            pose[8], pose[9], pose[10], pose[11], 0, 0, 0, 1
+        );
+        this.predictionGroup.matrixAutoUpdate = false;
+        this.predictionGroup.visible = true;
+    }
+
+    hideInertialPrediction() { this.predictionGroup.visible = false; }
+
+    /** Validated world Z-up corners; worldRoot supplies the only display-axis rotation. */
+    updateGroundPlane(plane) {
+        const identity = `${plane.clientEpoch}:${plane.engineEpoch}:${plane.sourceSequence}:${plane.sourceTimestamp}`;
+        if (identity !== this._groundPlaneIdentity) {
+            const attribute = this.groundPlaneMesh.geometry.getAttribute('position');
+            attribute.array.set(plane.corners);
+            attribute.needsUpdate = true;
+            this._groundPlaneIdentity = identity;
+        }
+        const retained = plane.state === 'retained';
+        this.groundPlaneMesh.material.color.setHex(retained ? 0x9a8b68 : 0x36cbb3);
+        this.groundPlaneMesh.material.opacity = retained ? .14 : .28;
+        this.groundPlaneMesh.visible = true;
+    }
+
+    hideGroundPlane() { this.groundPlaneMesh.visible = false; }
+
+    /** Hide only the current pose; retain historical trajectory and map points. */
+    hideCameraPose() {
+        this.frustumGroup.visible = false;
+    }
+
     /** Clear trajectory and points */
     clear() {
+        this.hideInertialPrediction();
+        this.hideGroundPlane();
+        this._groundPlaneIdentity = null;
         this._trajCount = 0;
         const trajAttr = this.trajectoryGeometry.getAttribute('position');
         trajAttr.needsUpdate = true;

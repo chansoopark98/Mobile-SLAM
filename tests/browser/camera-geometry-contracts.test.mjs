@@ -25,7 +25,7 @@ function fixture({ search = '', width = 640, height = 480, darkEdge = false } = 
     vm.runInContext(appSource.replace(/^import .*$/gm, '').replace(/const app = new App\(\);[\s\S]*$/, '') + '\nglobalThis.AppContract=App;', context);
     const camera = new context.CameraContract(), app = Object.create(context.AppContract.prototype), calls = [];
     let fThreshold = 2;
-    Object.assign(app, { running: true, activeConfig: 'mobile_default', camera, renderer: null,
+    Object.assign(app, { lowFeatureDisplay: { prediction: false, groundPlane: false }, running: true, activeConfig: 'mobile_default', camera, renderer: null,
         _lastConfigParams: { width, height, r_ic: portraitRIC, mobileMotionGuard: true, acc_n: 0.5, acc_w: 0.003, gyr_n: 0.2, gyr_w: 0.0002, g_norm: 9.81 },
         imu: { discard() {} }, _stopIMUFlush() { this.flushPaused = true; }, _startIMUFlush() { this.flushPaused = false; },
         updateStatus() {}, stop() { this.running = false; },

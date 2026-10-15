@@ -2,7 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { limitedPipeline } from './limited-fixture.mjs';
 import { validateSyntheticInput, bodyToDevice, sourceCoverage, poseStateSummary, validateResultIdentity, distribution, assertSourceFrameHash, replayIMUBatches,
-    profileFromEffectiveConfig,assertEffectiveProfile,assertSourceFramePixels,schedulerContract,resolvePublishedFrame,parseFThresholdOverride,parseRotationRescueOverride } from '../../scripts/dev/synthetic-browser.mjs';
+    profileFromEffectiveConfig,assertEffectiveProfile,assertSourceFramePixels,schedulerContract,resolvePublishedFrame,parseFThresholdOverride,parseRotationRescueOverride,main } from '../../scripts/dev/synthetic-browser.mjs';
 
 function fixture() {
     return { schema: 'mobile-slam-synthetic-vio-v1', config: { width: 2, height: 2 },
@@ -108,9 +108,56 @@ test('Captured replay preserves submitted IMU membership rather than adding a fu
     assert.deepEqual(replayIMUBatches(input,input.frames),[{start:0,count:2},{start:2,count:2}]);
     input.capture={imuSubmissionCounts:[1,3]};
     assert.doesNotThrow(()=>validateSyntheticInput(input));
-    assert.deepEqual(replayIMUBatches(input,input.frames),[{start:0,count:1},{start:1,count:2}]);
+    assert.deepEqual(replayIMUBatches(input,input.frames,'captured-counts'),[{start:0,count:1},{start:1,count:2}]);
     input.capture.imuSubmissionCounts=[2,1];assert.throws(()=>validateSyntheticInput(input),/submission counts/);
     input.capture.imuSubmissionCounts=[1,100];assert.throws(()=>validateSyntheticInput(input),/submission counts/);
+});
+
+test('Raw replay defaults to future brackets even when pre-submit counts are captured', () => {
+    const input=fixture();
+    input.frames=[.1,.12,.2].map((timestamp,index)=>({...input.frames[0],index,timestamp,physicalTimestamp:timestamp}));
+    input.imu=[0,.15,.2,.25].map(timestamp=>[timestamp,0,0,9.81,0,0,0]);
+    input.capture={imuSubmissionCounts:[1,1,3]};
+    const original=structuredClone(input);
+    assert.doesNotThrow(()=>validateSyntheticInput(input));
+    const expected=[{start:0,count:2},{start:2,count:0},{start:2,count:2}];
+    assert.deepEqual(replayIMUBatches(input,input.frames),expected);
+    assert.deepEqual(replayIMUBatches(input,input.frames,'future-bracket'),expected);
+    assert.deepEqual(replayIMUBatches(input,input.frames,'captured-counts'),[{start:0,count:1},{start:1,count:0},{start:1,count:2}]);
+    assert.deepEqual(input,original,'Policy selection cannot mutate frame, IMU, profile or captured metadata');
+});
+
+test('Future brackets retain exact and adjacent binary64 endpoints without rounding or sample duplication', () => {
+    const input=fixture(),endpoints=[1-Number.EPSILON/2,1,1+Number.EPSILON,2];
+    input.frames=endpoints.map((timestamp,index)=>({...input.frames[0],index,timestamp,physicalTimestamp:timestamp}));
+    input.imu=[0,...endpoints].map(timestamp=>[timestamp,0,0,9.81,0,0,0]);
+    input.capture={imuSubmissionCounts:[1,1,1,5]};
+    assert.doesNotThrow(()=>validateSyntheticInput(input));
+    assert.deepEqual(replayIMUBatches(input,input.frames),[{start:0,count:3},{start:3,count:1},{start:4,count:1},{start:5,count:0}]);
+    assert.deepEqual(replayIMUBatches(input,input.frames.slice(0,2)),[{start:0,count:3},{start:3,count:1}]);
+});
+
+test('Captured diagnostic rejects absent or malformed counts and unknown replay policies', () => {
+    const input=fixture();
+    assert.throws(()=>replayIMUBatches(input,input.frames,'captured-counts'),/captured.*submission counts/i);
+    for(const counts of [null,false,0,[],[1],[1,2,3],[1,NaN],[1,1.5],[0,3],[2,1],[1,5]]) {
+        input.capture={imuSubmissionCounts:counts};
+        assert.throws(()=>validateSyntheticInput(input),/submission counts/);
+        assert.throws(()=>replayIMUBatches(input,input.frames,'captured-counts'),/submission counts/);
+    }
+    for(const policy of ['',null,'captured','one_future_bracket','captured_cumulative_before_frame']) {
+        assert.throws(()=>replayIMUBatches(fixture(),fixture().frames,policy),/imu-policy/);
+    }
+});
+
+test('Invalid policies or explicit live-mode policies fail before opening input, output or browser', async () => {
+    const args=['--input','/missing/input.json','--loader','/missing/vio_engine.js','--output','/missing/output'];
+    await assert.rejects(()=>main([...args,'--imu-policy','unknown']),/imu-policy must be/);
+    for(const mode of ['live-deterministic','live-paced','live-paced-native-raf']) {
+        for(const policy of ['captured-counts','future-bracket']) {
+            await assert.rejects(()=>main([...args,'--mode',mode,'--imu-policy',policy]),/imu-policy applies only to raw/);
+        }
+    }
 });
 
 function effectiveConfig() {

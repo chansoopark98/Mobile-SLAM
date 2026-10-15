@@ -1,3 +1,5 @@
+import { loadBrowserSource } from './browser-source-loader.mjs';
+import { copyLowFeatureMetadata } from '../../scripts/dev/android-input-record.mjs';
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import fs from 'node:fs/promises';
@@ -5,8 +7,8 @@ import vm from 'node:vm';
 import { limitedPipeline } from './limited-fixture.mjs';
 import { Worker as NodeWorker } from 'node:worker_threads';
 
-const wrapperSource = await fs.readFile(new URL('../../web/js/vio-wrapper.js', import.meta.url), 'utf8');
-const workerSource = await fs.readFile(new URL('../../web/js/vio-worker.js', import.meta.url), 'utf8');
+const wrapperSource = await loadBrowserSource('vio-wrapper');
+const workerSource = await loadBrowserSource('vio-worker');
 const asModule = source => 'data:text/javascript;base64,' + Buffer.from(source).toString('base64');
 const { VIOWrapper } = await import(asModule(wrapperSource));
 
@@ -228,7 +230,7 @@ test('Input recorder forwards timing and transfer options to the actual wrapper'
         imu: { getDiagnostics: () => ({}) }, vio: wrapper, resetVIO() {} };
     const recorder = await fs.readFile(new URL('../../scripts/dev/android-input-record.mjs', import.meta.url), 'utf8');
     const begin = recorder.slice(recorder.indexOf('function begin('), recorder.indexOf('\nexport async function drainCapture'));
-    const context = vm.createContext({ Uint8Array, structuredClone, performance,
+    const context = vm.createContext({ Uint8Array, structuredClone, performance, copyLowFeatureMetadata,
         btoa: value => Buffer.from(value, 'binary').toString('base64'),
         setTimeout: () => 1, clearTimeout() {}, setInterval: () => 1, clearInterval() {},
         window: { __mobileSLAM: { app, diagnostics: () => ({}) } } });
@@ -644,6 +646,263 @@ function deterministicClock() {
 function imuSamples(timestamps) {
     return new Float64Array(timestamps.flatMap(timestamp => [timestamp, 0, 0, 9.81, 0, 0, 0]));
 }
+
+const cameraPose = [1,0,0,0,0,1,0,0,0,0,1,1,0,0,0,1];
+function inertialPrediction(timestamp = 1, engineEpoch = 1, anchorTimestamp = .9) {
+    return { schema: 'mobile-slam-inertial-prediction-v1', mode: 'inertial-only', poseFrame: 'camera',
+        engineEpoch, timestamp, anchorTimestamp, maxHorizonSeconds: .5, pose: [...cameraPose],
+        visualSupported: false, metricTranslationSupported: false, positionUncertain: true };
+}
+function groundPlane(clientEpoch, sequence, timestamp = 1) {
+    return { schema: 'mobile-slam-ground-plane-v1', kind: 'horizontal-surface-candidate', semanticClassification: 'unknown',
+        state: 'observed', engineEpoch: 1, clientEpoch, sourceTimestamp: timestamp, sourceSequence: sequence,
+        normal: [0,0,1], offset: 0, centroid: [0,0,0], corners: [-.5,-.5,0,.5,-.5,0,.5,.5,0,-.5,.5,0],
+        supportCount: 25, sourcePointCount: 25, rms: 0, maxAgeSeconds: 1 };
+}
+
+test('Wrapper transports a separately validated inertial prediction without promoting visual pose or map', async () => {
+    const { wrapper, worker } = await loaded();
+    wrapper.sendFrame(new Uint8Array(4), 1);
+    result(worker, worker.last('frame'), { statusCode: 3, reason: 'empty_features', engineFrameTimestamp: 1,
+        solverQualityReason: '', inertialPrediction: inertialPrediction() });
+    const row = wrapper.getLatestResult();
+    assert.deepEqual(row.inertialPrediction, inertialPrediction());
+    assert.equal(row.groundPlane, null);
+    assert.equal(row.poseFresh, false); assert.equal(row.poseValid, false); assert.equal(row.pose, null);
+    assert.equal(row.statusCode, 3); assert.equal(row.trackingState, 'lost');
+    assert.deepEqual(wrapper.getMapPoints(), { points: null, count: 0 });
+    wrapper.dispose();
+});
+
+test('Wrapper strips malformed, uncorrelated, forbidden and failed prediction payloads from raw result fields', async () => {
+    for (const mutate of [
+        data => { data.inertialPrediction.engineEpoch = 2; },
+        data => { data.inertialPrediction.timestamp = 1.001; },
+        data => { data.inertialPrediction.anchorTimestamp = .49; },
+        data => { data.inertialPrediction.pose[0] = NaN; },
+        data => { data.inertialPrediction.pose[0] = 2; },
+        data => { data.inertialPrediction.confidence = 1; },
+        data => { data.statusCode = 2; },
+        data => { data.reason = 'invalid_pose'; },
+        data => { data.solverQualityReason = 'relative_translation_threshold'; },
+        data => { delete data.solverQualityReason; },
+        data => { data.engineFrameTimestamp = .99; },
+        data => { data.motionDiscontinuity = {}; },
+        data => { data.imuIntervalLoss = {}; },
+    ]) {
+        const { wrapper, worker } = await loaded();
+        wrapper.sendFrame(new Uint8Array(4), 1);
+        const data = { statusCode: 3, reason: 'empty_features', engineFrameTimestamp: 1,
+            solverQualityReason: '', inertialPrediction: inertialPrediction(), groundPlane: { injected: true } };
+        mutate(data); result(worker, worker.last('frame'), data);
+        assert.equal(wrapper.getLatestResult().inertialPrediction, null);
+        assert.equal(wrapper.getLatestResult().groundPlane, null);
+        wrapper.dispose();
+    }
+});
+
+test('Wrapper validates floor source identity and keeps late/reset metadata out of the current lifecycle', async () => {
+    const { wrapper, worker } = await loaded();
+    wrapper.sendFrame(new Uint8Array(4), 1);
+    const first = worker.last('frame'), plane = groundPlane(first.clientEpoch, first.sequence);
+    result(worker, first, { reason: 'tracking', engineFrameTimestamp: 1, solverQualityReason: '', pose: new Float64Array(cameraPose), groundPlane: plane });
+    assert.deepEqual(wrapper.getLatestResult().groundPlane, plane);
+    wrapper.sendFrame(new Uint8Array(4), 1.1);
+    const second = worker.last('frame');
+    result(worker, first, { groundPlane: plane, inertialPrediction: inertialPrediction() });
+    assert.equal(wrapper.workerBusy, true);
+    result(worker, second, { statusCode: 3, reason: 'empty_features', engineFrameTimestamp: 1.1,
+        solverQualityReason: '', inertialPrediction: inertialPrediction(1.1), groundPlane: { ...plane, state: 'retained' } });
+    assert.equal(wrapper.getLatestResult().groundPlane.sourceTimestamp, 1);
+    wrapper.reset(); worker.reply(worker.last('reset')); await Promise.resolve();
+    assert.equal(wrapper.getLatestResult(), null);
+    result(worker, second, { inertialPrediction: inertialPrediction(1.1), groundPlane: plane });
+    assert.equal(wrapper.getLatestResult(), null);
+    wrapper.dispose();
+});
+
+test('Locally rejected IMU fences an in-flight result and requires a later clean visual frame to restore extras', async () => {
+    const { wrapper, worker } = await loaded();
+    const lost = timestamp => ({ statusCode: 3, reason: 'empty_features', engineFrameTimestamp: timestamp,
+        solverQualityReason: '', inertialPrediction: inertialPrediction(timestamp, 1, 1) });
+    wrapper.sendFrame(new Uint8Array(4), 1);
+    result(worker, worker.last('frame'), lost(1));
+    wrapper.sendFrame(new Uint8Array(4), 1.1);
+    const inFlight = worker.last('frame');
+    assert.equal(wrapper.sendIMU(new Float64Array([1.1,NaN,0,9.81,0,0,0]), 1), false);
+    const invalidation = worker.last('invalidateLowFeature');
+    assert.ok(invalidation); assert.equal(wrapper.getLatestResult().inertialPrediction, null);
+    worker.reply(invalidation); await Promise.resolve();
+    result(worker, inFlight, lost(1.1));
+    assert.equal(wrapper.getLatestResult().inertialPrediction, null);
+    wrapper.sendFrame(new Uint8Array(4), 1.2); result(worker, worker.last('frame'), lost(1.2));
+    assert.equal(wrapper.getLatestResult().inertialPrediction, null);
+    wrapper.sendFrame(new Uint8Array(4), 1.3);
+    result(worker, worker.last('frame'), { reason: 'tracking', engineFrameTimestamp: 1.3,
+        solverQualityReason: '', pose: new Float64Array(cameraPose) });
+    assert.equal(wrapper.getLatestResult().poseFresh, true);
+    wrapper.sendFrame(new Uint8Array(4), 1.4); result(worker, worker.last('frame'), lost(1.4));
+    assert.ok(wrapper.getLatestResult().inertialPrediction);
+    wrapper.dispose();
+});
+
+test('Ordinary busy drops preserve extras but malformed local frames send predictor-only invalidation', async () => {
+    const { wrapper, worker } = await loaded();
+    wrapper.sendFrame(new Uint8Array(4), 1);
+    result(worker, worker.last('frame'), { statusCode: 3, reason: 'empty_features', engineFrameTimestamp: 1,
+        solverQualityReason: '', inertialPrediction: inertialPrediction() });
+    wrapper.sendFrame(new Uint8Array(4), 1.1);
+    assert.equal(wrapper.sendFrame(new Uint8Array(4), 1.2), false);
+    assert.equal(worker.last('invalidateLowFeature'), undefined);
+    assert.ok(wrapper.getLatestResult().inertialPrediction);
+    assert.equal(wrapper.sendFrame(null, 1.2), false);
+    assert.ok(worker.last('invalidateLowFeature'));
+    assert.equal(wrapper.getLatestResult().inertialPrediction, null);
+    worker.reply(worker.last('invalidateLowFeature'));
+    wrapper.dispose();
+});
+
+test('A frame postMessage failure invalidates the shadow before a later blank frame can resume it', async t => {
+    const { wrapper, worker } = await loaded(); t.after(() => wrapper.dispose());
+    wrapper.sendFrame(new Uint8Array(4), 1);
+    result(worker, worker.last('frame'), { statusCode: 3, reason: 'empty_features', engineFrameTimestamp: 1,
+        solverQualityReason: '', inertialPrediction: inertialPrediction() });
+    const postMessage = worker.postMessage;
+    worker.postMessage = function(message, transfer) {
+        if (message.type === 'frame') throw new Error('fixture frame transfer failure');
+        return postMessage.call(this, message, transfer);
+    };
+    assert.equal(wrapper.sendFrame(new Uint8Array(4), 1.1), false);
+    assert.ok(worker.last('invalidateLowFeature'));
+    worker.reply(worker.last('invalidateLowFeature')); await Promise.resolve();
+    worker.postMessage = postMessage;
+    wrapper.sendFrame(new Uint8Array(4), 1.2);
+    result(worker, worker.last('frame'), { statusCode: 3, reason: 'empty_features', engineFrameTimestamp: 1.2,
+        solverQualityReason: '', inertialPrediction: inertialPrediction(1.2) });
+    assert.equal(wrapper.getLatestResult().inertialPrediction, null);
+    assert.equal(wrapper.getLatestResult().poseFresh, false);
+});
+
+test('Worker prediction capability requires both getter and invalidation API and exact clear Lost context', async () => {
+    for (const mode of ['valid', 'old', 'getter-only', 'warning', 'frame-mismatch', 'forbidden']) {
+        const f = workerFixture(); let reads = 0;
+        const core = mockEngine({ getFrameTimestamp: () => mode === 'frame-mismatch' ? .99 : 1,
+            isInitialized: () => true, getStatusCode: () => 3,
+            getLastReason: () => mode === 'forbidden' ? 'invalid_pose' : 'empty_features',
+            getLastSolverQualityReason: () => mode === 'warning' ? 'relative_translation_threshold' : '' });
+        if (mode !== 'old') core.getInertialPrediction = () => { reads++; return JSON.stringify(inertialPrediction()); };
+        if (mode !== 'getter-only' && mode !== 'old') core.invalidateInertialPrediction = () => {};
+        f.audit.setEngine(core, f.heap); f.audit.appendIMU(imuSamples([.99,1.01]), 2);
+        await f.context.self.onmessage({ data: request('frame', { gray: new ArrayBuffer(4), timestamp: 1 }) });
+        const row = f.replies.at(-1).data;
+        if (mode === 'valid') {
+            assert.deepEqual(JSON.parse(JSON.stringify(row.inertialPrediction)), inertialPrediction());
+            assert.equal(reads, 1); assert.ok(Number.isFinite(row.predictionReadMs));
+        } else { assert.equal(row.inertialPrediction, null, mode); assert.equal(reads, 0, mode); }
+        assert.equal(row.poseFresh, false); assert.equal(row.pose, null); assert.equal(row.mapPointCount, 0);
+    }
+});
+
+test('Missing bracket invalidates only the predictor even though the engine frame call is skipped', async () => {
+    const clock = deterministicClock(), f = workerFixture(clock);
+    let anchor = true, calls = 0, invalidations = 0, resets = 0, timestamp = .9;
+    f.audit.setEngine(mockEngine({ processFrame(...args) { calls++; timestamp = args[5]; return false; },
+        getFrameTimestamp: () => timestamp, isInitialized: () => true, getStatusCode: () => 3,
+        getLastReason: () => 'empty_features', getLastSolverQualityReason: () => '',
+        getInertialPrediction: () => JSON.stringify(anchor ? inertialPrediction(timestamp) : null),
+        invalidateInertialPrediction() { anchor = false; invalidations++; }, reset() { resets++; } }), f.heap);
+    const missing = f.context.self.onmessage({ data: request('frame', { gray: new ArrayBuffer(4), timestamp: 1 }) });
+    clock.advance(41); await missing;
+    assert.equal(calls, 0); assert.equal(resets, 0); assert.ok(invalidations > 0);
+    assert.equal(f.replies.at(-1).data.inertialPrediction, null);
+    f.audit.appendIMU(imuSamples([1.09,1.11]), 2);
+    await f.context.self.onmessage({ data: request('frame', { gray: new ArrayBuffer(4), timestamp: 1.1 }, 2) });
+    assert.equal(calls, 1); assert.equal(f.replies.at(-1).data.inertialPrediction, null);
+});
+
+test('Worker invalidation RPC quarantines an earlier waiting frame without resetting the metric engine', async () => {
+    const clock = deterministicClock(), f = workerFixture(clock);
+    let anchor = true, resets = 0, calls = 0, timestamp = 1;
+    f.audit.setEngine(mockEngine({ processFrame(...args) { calls++; timestamp = args[5]; if (calls === 1) anchor = true; return false; },
+        getFrameTimestamp: () => timestamp, isInitialized: () => true, getStatusCode: () => 3,
+        getLastReason: () => 'empty_features', getLastSolverQualityReason: () => '',
+        getInertialPrediction: () => JSON.stringify(anchor ? inertialPrediction(timestamp) : null),
+        invalidateInertialPrediction() { anchor = false; }, reset() { resets++; } }), f.heap);
+    const old = f.context.self.onmessage({ data: request('frame', { gray: new ArrayBuffer(4), timestamp: 1 }) });
+    await f.context.self.onmessage({ data: request('invalidateLowFeature', undefined, 2) });
+    assert.equal(f.replies.at(-1).success, true);
+    await f.context.self.onmessage({ data: request('imu', { imuData: imuSamples([.99,1.01]).buffer, count: 2 }, 3) });
+    await old;
+    assert.equal(f.replies.at(-1).data.inertialPrediction, null);
+    assert.equal(anchor, false); assert.equal(resets, 0);
+    f.audit.appendIMU(imuSamples([1.09,1.11]), 2);
+    await f.context.self.onmessage({ data: request('frame', { gray: new ArrayBuffer(4), timestamp: 1.1 }, 4) });
+    assert.equal(calls, 2); assert.equal(f.replies.at(-1).data.inertialPrediction, null);
+});
+
+test('Worker malformed IMU received during a frame wait fences that older frame before publication', async () => {
+    const clock = deterministicClock(), f = workerFixture(clock);
+    let anchor = true, invalidations = 0;
+    f.audit.setEngine(mockEngine({ processFrame() { anchor = true; return false; }, getFrameTimestamp: () => 1,
+        isInitialized: () => true, getStatusCode: () => 3, getLastReason: () => 'empty_features', getLastSolverQualityReason: () => '',
+        getInertialPrediction: () => JSON.stringify(anchor ? inertialPrediction() : null),
+        invalidateInertialPrediction() { anchor = false; invalidations++; } }), f.heap);
+    const old = f.context.self.onmessage({ data: request('frame', { gray: new ArrayBuffer(4), timestamp: 1 }) });
+    await f.context.self.onmessage({ data: request('imu', { imuData: imuSamples([NaN]).buffer, count: 1 }, 2) });
+    assert.equal(f.replies.at(-1).success, false);
+    await f.context.self.onmessage({ data: request('imu', { imuData: imuSamples([.99,1.01]).buffer, count: 2 }, 3) });
+    await old;
+    assert.equal(f.replies.at(-1).data.inertialPrediction, null);
+    assert.equal(anchor, false); assert.ok(invalidations >= 2);
+});
+
+test('Worker rejects invalid IMU and transport loss without permitting predictor reads or stale anchor reuse', async () => {
+    for (const loss of ['invalid', 'overflow']) {
+        const f = workerFixture(); let anchor = true, reads = 0, resets = 0;
+        f.audit.setEngine(mockEngine({ getFrameTimestamp: () => 1.1, isInitialized: () => true, getStatusCode: () => 3,
+            getLastReason: () => 'empty_features', getLastSolverQualityReason: () => '',
+            getInertialPrediction() { reads++; return JSON.stringify(anchor ? inertialPrediction(1.1) : null); },
+            invalidateInertialPrediction() { anchor = false; }, reset() { resets++; } }), f.heap);
+        if (loss === 'invalid') { assert.equal(f.audit.appendIMU(imuSamples([NaN]), 1), false); f.audit.appendIMU(imuSamples([1.09,1.11]), 2); }
+        else f.audit.appendIMU(imuSamples(Array.from({ length: 1025 }, (_, i) => .9 + i * .0002)), 1025);
+        await f.context.self.onmessage({ data: request('frame', { gray: new ArrayBuffer(4), timestamp: 1.1 }) });
+        const row = f.replies.at(-1).data;
+        assert.equal(anchor, false); assert.equal(row.inertialPrediction, null); assert.equal(row.groundPlane, null);
+        if (loss === 'overflow') { assert.equal(reads, 0); assert.equal(resets, 1); assert.equal(row.reason, 'imu_transport_loss'); }
+    }
+});
+
+test('Worker current support fitting is bounded and Lost retains its source without reading or fitting again', async () => {
+    const f = workerFixture(); let timestamp = 1, visual = true, reads = 0;
+    const points = []; for (let x = -2; x <= 2; x++) for (let y = -2; y <= 2; y++) points.push(x * .25, y * .25, 0);
+    f.context.groundFixture = points; f.context.poseFixture = cameraPose;
+    f.audit.setEngine(mockEngine({ processFrame(...args) { timestamp = args[5]; return visual; }, getFrameTimestamp: () => timestamp,
+        isInitialized: () => true, getStatusCode: () => visual ? 2 : 3, getLastReason: () => visual ? 'tracking' : 'empty_features',
+        getLastSolverQualityReason: () => '', getPoseTimestamp: () => timestamp, getPoseFresh: () => visual, getPoseValid: () => visual,
+        getGroundSupportPoints(ptr, maxCount) { reads++; assert.equal(maxCount, 512); return 25; } }), f.heap);
+    vm.runInContext('memPose.read = () => new Float64Array(poseFixture); memGroundSupport = { ptr: 0, read: count => new Float64Array(groundFixture.slice(0, count)) };', f.context);
+    f.audit.appendIMU(imuSamples([.99,1.01]), 2);
+    await f.context.self.onmessage({ data: request('frame', { gray: new ArrayBuffer(4), timestamp: 1 }) });
+    const observed = f.replies.at(-1).data;
+    assert.equal(observed.groundPlane?.state, 'observed');
+    assert.equal(observed.groundSupportPointCount, 25);
+    assert.ok(Number.isFinite(observed.groundFitMs)); assert.ok(Number.isFinite(observed.groundSupportReadMs));
+    visual = false; f.audit.appendIMU(imuSamples([1.09,1.11]), 2);
+    await f.context.self.onmessage({ data: request('frame', { gray: new ArrayBuffer(4), timestamp: 1.1 }, 2) });
+    const retained = f.replies.at(-1).data;
+    assert.equal(reads, 1); assert.equal(retained.groundPlane?.state, 'retained');
+    assert.equal(retained.groundSupportPointCount, null);
+    assert.equal(retained.groundPlane.sourceTimestamp, 1); assert.equal(retained.groundPlane.sourceSequence, 1);
+    assert.equal(retained.groundFitMs, null); assert.equal(retained.groundSupportReadMs, null);
+    await f.context.self.onmessage({ data: request('imu', { imuData: imuSamples([NaN]).buffer, count: 1 }, 3) });
+    f.audit.appendIMU(imuSamples([1.19,1.21]), 2);
+    await f.context.self.onmessage({ data: request('frame', { gray: new ArrayBuffer(4), timestamp: 1.2 }, 4) });
+    assert.equal(f.replies.at(-1).data.groundPlane, null, 'Input rejection clears retained geometry');
+    await f.context.self.onmessage({ data: request('reset', undefined, 1, 1) });
+    f.audit.appendIMU(imuSamples([1.29,1.31]), 2);
+    await f.context.self.onmessage({ data: request('frame', { gray: new ArrayBuffer(4), timestamp: 1.3 }, 2, 1) });
+    assert.equal(f.replies.at(-1).data.groundPlane, null);
+});
 
 test('Worker observed slow or jittering cadence admits a real bracket at 52ms and fixes the wait budget at entry', async () => {
     for (const [times, budget] of [[ [.90, .93, .96, .99], 60 ], [ [.906, .922, .938, .99], 80 ]]) {

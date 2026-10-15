@@ -97,6 +97,22 @@ export function summarizeResults(rows) {
         reasons, engineProcessingMs: timing('engineProcessingMs'), roundTripMs: timing('roundTripMs') };
 }
 
+/** Separate side-channel availability/display counts; never contributes to visual accuracy. */
+export function summarizeLowFeatureResults(rows, displayed = null) {
+    return {
+        visualFresh: rows.filter(row => row.poseFresh === true && row.poseValid === true && Number.isFinite(row.poseTimestamp) &&
+            row.pose?.length === 16 && row.pose.every(Number.isFinite)).length,
+        predictionAvailable: rows.filter(row => row.inertialPrediction !== null && row.inertialPrediction !== undefined).length,
+        predictionDisplayed: displayed === null ? null : displayed.filter(row => row.prediction).length,
+        planeCandidate: rows.filter(row => row.groundPlane !== null && row.groundPlane !== undefined).length,
+        planeObserved: rows.filter(row => row.groundPlane?.state === 'observed').length,
+        planeRetained: rows.filter(row => row.groundPlane?.state === 'retained').length,
+        planeDisplayed: displayed === null ? null : displayed.filter(row => row.groundPlane).length,
+        displayCountUnit: displayed === null ? 'not-rendered' : 'unique-result-identities-displayed-at-least-once',
+        contributesToVisualAccuracy: false,
+    };
+}
+
 /** Each sample is submitted once; an already submitted future bracket covers later frames. */
 export function imuBatchRanges(frames, imu) {
     let cursor = 0;
@@ -150,7 +166,7 @@ export async function main(argv = process.argv.slice(2)) {
             'mobile_default solver/tracking parameters reconstructed from app defaults; recorder did not persist parameter RPCs.',
             'Heuristic camera calibration, physical exposure timing, sensor synchronization and independent trajectory accuracy remain unverified.'] };
     const routes = new Map([['/', { mime: 'text/html', bytes: Buffer.from('<!doctype html><title>Preserved Android input replay</title>') }]]);
-    for (const [url, file] of [['/candidate/vio_engine.js', loaderPath], ['/js/vio-worker.js', path.join(root, 'web/js/vio-worker.js')], ['/js/vio-wrapper.js', path.join(root, 'web/js/vio-wrapper.js')]]) {
+    for (const [url, file] of [['/candidate/vio_engine.js', loaderPath], ...['vio-worker.js','vio-wrapper.js','low-feature.mjs'].map(name => [`/js/${name}`, path.join(root, 'web/js', name)])]) {
         const bytes = await fs.readFile(file);
         report.fingerprints[url] = { path: file, bytes: bytes.length, sha256: sha256(bytes) };
         routes.set(url, { bytes, mime: 'application/javascript' });
@@ -225,6 +241,7 @@ export async function main(argv = process.argv.slice(2)) {
         }, { frames, imu: recording.imu, imuBatches, config: recording.config, parameters: report.parameters }),
         new Promise((_, reject) => { timeout = setTimeout(() => reject(new Error('Bounded replay timeout')), timeoutMs); })]);
         report.summary = summarizeResults(report.replay.rows);
+        report.lowFeature = summarizeLowFeatureResults(report.replay.rows);
         const drops = report.replay.transport.imuDrops || {};
         report.inputDelivery = {
             workerDrops: Object.fromEntries(['overflow', 'stale', 'capacity', 'invalid', 'order', 'invalidBatches'].map(key => [key, drops[key] ?? null])),

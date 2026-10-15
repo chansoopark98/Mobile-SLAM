@@ -3,8 +3,9 @@ import assert from 'node:assert/strict';
 import fs from 'node:fs/promises';
 import vm from 'node:vm';
 import { limitedPipeline } from './limited-fixture.mjs';
+import { loadBrowserSource } from './browser-source-loader.mjs';
 
-const sources = Object.fromEntries(await Promise.all(['imu', 'camera', 'orientation', 'app', 'renderer', 'test-tumvi-app'].map(async name => [name, await fs.readFile(new URL(`../../web/js/${name}.js`, import.meta.url), 'utf8')])));
+const sources = Object.fromEntries(await Promise.all(['imu', 'camera', 'orientation', 'app', 'renderer', 'vio-wrapper', 'test-tumvi-app'].map(async name => [name, await loadBrowserSource(name)])));
 const quiet = { log() {}, warn() {}, error() {} };
 function realm({ ios = false, now = 5000 } = {}) {
     const listeners = new Map();
@@ -24,8 +25,8 @@ function realm({ ios = false, now = 5000 } = {}) {
     vm.runInContext(sources.imu.replace(/export /g, '') + '\nglobalThis.IMU = IMU;', context);
     return { context, listeners, imu: new context.IMU() };
 }
-function appRealm() {
-    const fixture = realm();
+function appRealm(options = {}) {
+    const fixture = realm(options);
     vm.runInContext(sources.app.replace(/^import .*$/gm, '').replace(/const app = new App\(\);[\s\S]*$/, '') + '\nglobalThis.App = App;', fixture.context);
     const app = new fixture.context.App();
     return { ...fixture, app };
@@ -171,6 +172,7 @@ test('Renderer clears an empty map and hides pose frustum after reset', () => {
     const renderer = { pointsGeometry: geometry, trajectoryGeometry: geometry, frustumGroup: { visible: true, matrix: { identity() {} } }, _latestPoseMatrix: {}, _trajCount: 10 };
     context.RendererContract.prototype.updateMapPoints.call(renderer, null, 0);
     assert.deepEqual(draws.at(-1), [0,0]);
+    renderer.hideInertialPrediction = () => {}; renderer.hideGroundPlane = () => {};
     context.RendererContract.prototype.clear.call(renderer);
     assert.equal(renderer.frustumGroup.visible, false); assert.equal(renderer._latestPoseMatrix, null);
 });
@@ -186,7 +188,7 @@ test('Start invokes native iOS permission inside gesture before orientation/came
 });
 
 test('Live result consumes a pose only once and clears state on loss/engine epoch', () => {
-    const { app } = appRealm();
+    const { app } = appRealm({ now: 1000 });
     const events = [];
     app.renderer = { clear: () => events.push('clear'), updateCameraPose: () => events.push('pose'), updateMapPoints: () => events.push('map') };
     app.vio.getMapPoints = () => ({ points: null, count: 0 });
@@ -202,7 +204,7 @@ test('Live result consumes a pose only once and clears state on loss/engine epoc
 
 test('App never renders Lost or unknown status as a normal finite fresh pose', () => {
     for(const statusCode of [3,99]) {
-        const {app}=appRealm(),events=[];
+        const {app}=appRealm({ now: 1000 }),events=[];
         app.statusEl={};
         app.renderer={clear:()=>events.push('clear'),updateCameraPose:()=>events.push('pose'),updateMapPoints:()=>events.push('map')};
         app.vio.getMapPoints=()=>({points:null,count:0});
@@ -216,7 +218,7 @@ test('App never renders Lost or unknown status as a normal finite fresh pose', (
 });
 
 test('App renders current Limited once with a concise position-quality label and preserves loss/epoch clearing', () => {
-    const {app}=appRealm(),events=[];app.statusEl={};
+    const {app}=appRealm({ now: 1000 }),events=[];app.statusEl={};
     app.renderer={clear:()=>events.push('clear'),updateCameraPose:()=>events.push('pose'),updateMapPoints:()=>events.push('map')};
     app.vio.getMapPoints=()=>({points:null,count:0});
     const row={clientEpoch:1,engineEpoch:1,sequence:1,statusCode:5,trackingState:'tracking_limited',initialized:true,
@@ -262,6 +264,186 @@ test('Future IMU time cannot be labeled active while the engine waits for past s
     assert.match(app.statusEl.textContent, /60000ms/);
 });
 
+function displayFixture() {
+    const { app, context } = appRealm();
+    let now = 1000;
+    context.performance.now = () => now;
+    const events = [], writes = [], metrics = { workerErrors: 0, lastError: null };
+    app.updateStatus = message => writes.push(message);
+    app.renderer = {
+        visible: false, trajectory: [], map: null,
+        updateCameraPose(pose) { this.visible = true; this.trajectory.push(pose); events.push('pose'); },
+        updateMapPoints(points) { this.map = points; events.push('map'); },
+        hideCameraPose() { this.visible = false; events.push('hide'); },
+        clear() { this.visible = false; this.trajectory = []; this.map = null; events.push('clear'); },
+    };
+    app.vio.worker = {};
+    app.vio.configured = true;
+    app.vio.getMetrics = () => metrics;
+    const map = new Float64Array([1, 2, 3]);
+    app.vio.getMapPoints = () => ({ points: map, count: 1 });
+    const result = Object.freeze({ clientEpoch: 1, engineEpoch: 1, sequence: 1, statusCode: 2,
+        initialized: true, poseFresh: true, poseValid: true, poseTimestamp: 1, inputTimestamp: 1,
+        sourceTiming: Object.freeze({ source: 'video_capture_time', timestampS: 1 }),
+        pose: new Float64Array([1,0,0,1,0,1,0,2,0,0,1,3,0,0,0,1]) });
+    return { app, context, result, events, writes, metrics, map, setNow: value => { now = value; } };
+}
+
+test('Display age advances for a repeated result and expires immediately after the inclusive 500ms boundary', () => {
+    const f = displayFixture();
+    for (const [now, age] of [[1000, 0], [1100, 100], [1500, 500]]) {
+        f.setNow(now); f.app._consumeResult(f.result);
+        assert.equal(f.app.renderer.visible, true);
+        assert.match(f.writes.at(-1), new RegExp(`Tracking.*pose age ${age}ms`));
+    }
+    f.setNow(1501); f.app._consumeResult(f.result);
+    assert.equal(f.app.renderer.visible, false);
+    assert.match(f.writes.at(-1), /Stale.*pose age 501ms/);
+    f.setNow(6000); f.app._consumeResult(f.result);
+    assert.match(f.writes.at(-1), /Stale.*pose age 5000ms/);
+    assert.equal(f.events.filter(event => event === 'pose').length, 1);
+    assert.equal(f.events.filter(event => event === 'map').length, 1);
+    assert.equal(f.events.includes('clear'), false);
+    assert.deepEqual(f.app.renderer.trajectory, [f.result.pose]);
+    assert.equal(f.app.renderer.map, f.map);
+    assert.equal(f.app.frameMetrics.completed, 1);
+    assert.equal(f.result.poseFresh, true);
+    assert.equal(f.result.statusCode, 2);
+    assert.equal(f.result.poseTimestamp, 1);
+});
+
+test('Repeated result status updates are at most 10Hz, with new result and stale transitions immediate', () => {
+    const f = displayFixture();
+    f.app.imu.running = true;
+    f.app.imu._diagnostics.lastSample = { timestampS: 0.95 };
+    f.app._consumeResult(f.result);
+    assert.match(f.writes.at(-1), /IMU active/);
+    for (let now = 1001; now < 1100; now++) { f.setNow(now); f.app._consumeResult(f.result); }
+    assert.equal(f.writes.length, 1);
+    f.setNow(1100); f.app._consumeResult(f.result);
+    assert.equal(f.writes.length, 2);
+    f.setNow(1101); f.app._consumeResult({ ...f.result, sequence: 2 });
+    assert.equal(f.writes.length, 3, 'new result bypasses periodic throttle');
+    f.setNow(1500); f.app._consumeResult({ ...f.result, sequence: 2 });
+    assert.match(f.writes.at(-1), /IMU waiting for data/);
+    const beforeExpiry = f.writes.length;
+    f.setNow(1501); f.app._consumeResult({ ...f.result, sequence: 2 });
+    assert.equal(f.writes.length, beforeExpiry + 1);
+    assert.match(f.writes.at(-1), /Stale/);
+});
+
+test('A new result with an expired, future, or nonfinite pose time never displays a current pose', () => {
+    for (const timestamp of [0, 1.001, NaN]) {
+        const f = displayFixture();
+        f.app._consumeResult(f.result);
+        f.app._consumeResult({ ...f.result, sequence: 2, poseTimestamp: timestamp });
+        assert.equal(f.app.renderer.visible, false, `timestamp ${timestamp}`);
+        assert.equal(f.events.filter(event => event === 'pose').length, 1);
+        assert.doesNotMatch(f.writes.at(-1), /· Tracking(?:\s|\/|·)/);
+        assert.match(f.writes.at(-1), /Stale/);
+        if (Number.isFinite(timestamp)) {
+            assert.equal(f.events.includes('clear'), false);
+            assert.equal(f.app.renderer.map, f.map);
+        }
+    }
+});
+
+test('Temporary null and current Worker failure hide only the frustum, then a new result resumes once', () => {
+    const f = displayFixture();
+    f.app._consumeResult(f.result);
+    f.setNow(1001); f.app._consumeResult(null);
+    assert.equal(f.app.renderer.visible, false);
+    assert.match(f.writes.at(-1), /Waiting/);
+    f.metrics.workerErrors = 1; f.metrics.lastError = 'fixture Worker failure';
+    f.app.vio.worker = null; f.app.vio.configured = false;
+    f.setNow(1002); f.app._consumeResult(null);
+    assert.match(f.writes.at(-1), /Worker error.*fixture Worker failure/);
+    assert.equal(f.events.includes('clear'), false);
+    assert.deepEqual(f.app.renderer.trajectory, [f.result.pose]);
+    assert.equal(f.app.renderer.map, f.map);
+    f.app.vio.worker = {}; f.app.vio.configured = true;
+    const recovered = { ...f.result, sequence: 2 };
+    f.setNow(1003); f.app._consumeResult(recovered); f.app._consumeResult(recovered);
+    assert.equal(f.app.renderer.visible, true);
+    assert.equal(f.events.filter(event => event === 'pose').length, 2);
+    assert.equal(f.events.filter(event => event === 'map').length, 2);
+    assert.match(f.writes.at(-1), /Tracking/);
+    f.app.vio.configured = false;
+    f.setNow(1004); f.app._consumeResult(null);
+    assert.match(f.writes.at(-1), /Waiting/);
+    assert.doesNotMatch(f.writes.at(-1), /Worker error/);
+    assert.equal(f.events.includes('clear'), false);
+});
+
+test('Missing Worker without a failure metric is Waiting, including after prior status writes', () => {
+    const f = displayFixture();
+    f.app.vio.worker = null; f.app.vio.configured = false;
+    f.app._consumeResult(null);
+    assert.match(f.writes.at(-1), /Waiting/);
+    assert.doesNotMatch(f.writes.at(-1), /Worker error/);
+});
+
+test('Actual Worker failure invalidation is displayed on the next tick and normal reset still clears history', () => {
+    const f = displayFixture();
+    vm.runInContext(sources['vio-wrapper'].replace(/export /g, '') + '\nglobalThis.WrapperContract = VIOWrapper;', f.context);
+    const wrapper = new f.context.WrapperContract();
+    let terminated = false;
+    wrapper.worker = { terminate() { terminated = true; } };
+    wrapper.configured = true;
+    wrapper._latestResult = f.result;
+    wrapper._latestMapPoints = { points: f.map, count: 1 };
+    f.app.vio = wrapper;
+    f.app._consumeResult(wrapper.getLatestResult());
+    wrapper._workerFailure(new Error('actual fixture failure'));
+    assert.equal(terminated, true);
+    assert.equal(wrapper.getLatestResult(), null);
+    f.setNow(1001); f.app._consumeResult(wrapper.getLatestResult());
+    assert.match(f.writes.at(-1), /Worker error.*actual fixture failure/);
+    assert.equal(f.app.renderer.visible, false);
+    assert.equal(f.events.includes('clear'), false);
+    assert.deepEqual(f.app.renderer.trajectory, [f.result.pose]);
+    assert.equal(f.app.renderer.map, f.map);
+    wrapper.worker = {};
+    wrapper._request = () => new Promise(() => {});
+    wrapper.configured = true;
+    f.app.camera.getVideoElement = () => ({});
+    f.app._startVideoFrameCallbacks = () => {};
+    f.app.resetVIO();
+    assert.equal(f.events.at(-1), 'clear');
+    assert.deepEqual(f.app.renderer.trajectory, []);
+    assert.equal(f.app.renderer.map, null);
+    f.setNow(1002); f.app._consumeResult(wrapper.getLatestResult());
+    assert.match(f.writes.at(-1), /Waiting/);
+    assert.doesNotMatch(f.writes.at(-1), /Worker error/);
+});
+
+test('Nonfinite display age hides the frustum without mutating the finite producer result', () => {
+    const f = displayFixture();
+    f.app._consumeResult(f.result);
+    f.setNow(NaN); f.app._consumeResult(f.result);
+    assert.equal(f.app.renderer.visible, false);
+    assert.match(f.writes.at(-1), /Stale/);
+    assert.equal(f.events.includes('clear'), false);
+    assert.deepEqual(f.app.renderer.trajectory, [f.result.pose]);
+    assert.equal(f.result.poseTimestamp, 1);
+    assert.equal(f.result.poseFresh, true);
+});
+
+test('Renderer hides a current pose without discarding historical map, trajectory or transform', () => {
+    const { context } = realm();
+    vm.runInContext(sources.renderer.replace(/^import .*$/gm, '').replace(/export /g, '') + '\nglobalThis.RendererContract = Renderer;', context);
+    const matrix = {}, trajectoryGeometry = {}, pointsGeometry = {};
+    const renderer = { frustumGroup: { visible: true, matrix }, _latestPoseMatrix: matrix,
+        _trajCount: 12, trajectoryGeometry, pointsGeometry };
+    context.RendererContract.prototype.hideCameraPose.call(renderer);
+    assert.equal(renderer.frustumGroup.visible, false);
+    assert.equal(renderer._latestPoseMatrix, matrix);
+    assert.equal(renderer.frustumGroup.matrix, matrix);
+    assert.equal(renderer._trajCount, 12);
+    assert.equal(renderer.trajectoryGeometry, trajectoryGeometry);
+    assert.equal(renderer.pointsGeometry, pointsGeometry);
+});
+
 function replayRealm(options = {}) {
     const { context } = realm(options);
     vm.runInContext(sources['test-tumvi-app'].replace(/^import .*$/gm, '').replace(/const app = new TUMVITestApp\(\);[\s\S]*$/, '') + '\nglobalThis.replayContract = { TUMVITestApp, sliceIMUCursor, replayDeadline };', context);
@@ -302,4 +484,111 @@ test('Replay exact bound has no extra frame after completion; reset cancels pend
     app.prefetcher.get = () => new Promise(resolve => { decode = resolve; });
     const pending = app.processNextFrame(); await app.reset(); decode(new Uint8Array(4)); await pending;
     assert.deepEqual(calls, [1]);
+});
+
+function lowFeatureFixture() {
+    const f = displayFixture();
+    f.app.renderer.predictionVisible = false;
+    f.app.renderer.plane = null;
+    f.app.renderer.updateInertialPrediction = function (pose) { this.predictionVisible = true; this.predictedPose = pose; f.events.push('prediction'); };
+    f.app.renderer.hideInertialPrediction = function () { this.predictionVisible = false; };
+    f.app.renderer.updateGroundPlane = function (plane) { this.plane = plane; };
+    f.app.renderer.hideGroundPlane = function () { this.plane = null; };
+    const originalClear = f.app.renderer.clear;
+    f.app.renderer.clear = function () { originalClear.call(this); this.predictionVisible = false; this.plane = null; };
+    const prediction = { schema: 'mobile-slam-inertial-prediction-v1', mode: 'inertial-only', poseFrame: 'camera', engineEpoch: 1,
+        timestamp: 1, anchorTimestamp: .6, maxHorizonSeconds: .5, pose: Array.from(f.result.pose),
+        visualSupported: false, metricTranslationSupported: false, positionUncertain: true };
+    const plane = { schema: 'mobile-slam-ground-plane-v1', kind: 'horizontal-surface-candidate', semanticClassification: 'unknown',
+        state: 'retained', engineEpoch: 1, clientEpoch: 1, sourceTimestamp: .5, sourceSequence: 1,
+        normal: [0,0,1], offset: 0, centroid: [0,0,0], corners: [-1,-1,0,1,-1,0,1,1,0,-1,1,0],
+        supportCount: 24, sourcePointCount: 30, rms: .01, maxAgeSeconds: 1 };
+    const lost = { ...f.result, sequence: 2, statusCode: 3, trackingState: 'lost', reason: 'empty_features',
+        poseFresh: false, poseValid: false, poseTimestamp: null, pose: null, engineFrameTimestamp: 1,
+        inertialPrediction: prediction, groundPlane: plane };
+    return { ...f, prediction, plane, lost };
+}
+
+test('Inertial-only display stays separate from Lost metric pose and never appends trajectory or updates maps', () => {
+    const f=lowFeatureFixture();f.app._consumeResult(f.lost);f.app._consumeResult(f.lost);
+    assert.equal(f.app.renderer.predictionVisible,true);
+    assert.equal(f.app.renderer.visible,false);
+    assert.equal(f.events.filter(x=>x==='pose'||x==='map').length,0);
+    assert.equal(f.events.filter(x=>x==='prediction').length,1);
+    assert.match(f.writes.at(-1),/Lost.*IMU prediction.*position uncertain/);
+    assert.equal(f.lost.poseFresh,false);assert.equal(f.lost.pose,null);
+    assert.equal(f.app.lowFeatureDisplay.prediction,true);
+});
+
+test('Prediction source age100ms and source horizon500ms are inclusive and arrival cannot renew expiry', () => {
+    const f=lowFeatureFixture();f.lost.inertialPrediction={...f.prediction,anchorTimestamp:.5};
+    f.setNow(1100);f.app._consumeResult(f.lost);assert.equal(f.app.renderer.predictionVisible,true);
+    f.setNow(1100.01);f.app._consumeResult({...f.lost,sequence:3});assert.equal(f.app.renderer.predictionVisible,false);
+    f.setNow(1000);f.app._consumeResult({...f.lost,sequence:4,inertialPrediction:{...f.prediction,anchorTimestamp:.49999}});
+    assert.equal(f.app.renderer.predictionVisible,false);
+    f.app._consumeResult({...f.lost,sequence:5,inertialPrediction:{...f.prediction,timestamp:1.001}});
+    assert.equal(f.app.renderer.predictionVisible,false);
+});
+
+test('Current visual pose takes priority and raw visual recovery replaces prediction without changing pose', () => {
+    const f=lowFeatureFixture();f.app._consumeResult(f.lost);assert.equal(f.app.renderer.predictionVisible,true);
+    const visual={...f.result,sequence:3,inertialPrediction:f.prediction};f.app._consumeResult(visual);
+    assert.equal(f.app.renderer.predictionVisible,false);assert.equal(f.app.renderer.visible,true);
+    assert.equal(f.events.filter(x=>x==='pose').length,1);assert.equal(f.events.filter(x=>x==='map').length,1);
+    assert.equal(f.app.renderer.trajectory[0],visual.pose);
+});
+
+test('Ground candidate retained geometry expires independently on RAF without extending sourceTimestamp', () => {
+    const f=lowFeatureFixture();f.app._consumeResult(f.lost);assert.equal(f.app.renderer.plane,f.plane);
+    assert.match(f.writes.at(-1),/바닥 후보.*분류 미확인.*retained.*24/);
+    f.setNow(1500);f.app._consumeResult(f.lost);assert.equal(f.app.renderer.plane,f.plane);
+    assert.equal(f.app.renderer.predictionVisible,false);
+    f.setNow(1500.01);f.app._consumeResult(f.lost);assert.equal(f.app.renderer.plane,null);
+    assert.equal(f.plane.sourceTimestamp,.5);
+});
+
+test('Null, failure, old payload epoch and source sequence clear extra displays; old binary is unavailable', () => {
+    const f=lowFeatureFixture();f.app._consumeResult(f.lost);f.app._consumeResult(null);
+    assert.equal(f.app.renderer.predictionVisible,false);assert.equal(f.app.renderer.plane,null);
+    f.app._consumeResult({...f.lost,sequence:3,engineEpoch:2});
+    assert.equal(f.app.renderer.predictionVisible,false);assert.equal(f.app.renderer.plane,null);
+    f.app._consumeResult({...f.lost,sequence:4,groundPlane:{...f.plane,sourceSequence:99}});
+    assert.equal(f.app.renderer.plane,null);
+    f.metrics.workerErrors=1;f.app.vio.worker=null;f.app.vio.configured=false;
+    f.app._consumeResult({...f.lost,sequence:5});assert.equal(f.app.renderer.predictionVisible,false);assert.equal(f.app.renderer.plane,null);
+    f.metrics.workerErrors=0;f.app.vio.worker={};f.app.vio.configured=true;
+    f.app._consumeResult({...f.lost,sequence:6,inertialPrediction:null,groundPlane:null});
+    assert.equal(f.app.renderer.predictionVisible,false);assert.equal(f.app.renderer.plane,null);
+});
+
+test('Source deadlines reject a late producer, reset clears all extra layers, and no auxiliary payload means old-binary behavior', () => {
+    const f=lowFeatureFixture();
+    f.setNow(5000);f.app._consumeResult(f.lost);
+    assert.equal(f.app.lowFeatureDisplay.prediction,false);assert.equal(f.app.lowFeatureDisplay.groundPlane,false);
+    assert.equal(f.app.renderer.predictionVisible,false);assert.equal(f.app.renderer.plane,null);
+    f.setNow(1000);f.app._consumeResult({...f.lost,sequence:3});
+    assert.equal(f.app.renderer.predictionVisible,true);assert.notEqual(f.app.renderer.plane,null);
+    f.app.vio.reset=()=>{};f.app.camera.getVideoElement=()=>({});f.app._startVideoFrameCallbacks=()=>{};
+    f.app.resetVIO();
+    assert.equal(f.app.lowFeatureDisplay.prediction,false);assert.equal(f.app.lowFeatureDisplay.groundPlane,false);
+    assert.equal(f.app.renderer.predictionVisible,false);assert.equal(f.app.renderer.plane,null);
+    const legacy={...f.lost,sequence:4};delete legacy.inertialPrediction;delete legacy.groundPlane;
+    f.app._consumeResult(legacy);assert.match(f.writes.at(-1),/Lost/);assert.doesNotMatch(f.writes.at(-1),/IMU prediction|바닥 후보/);
+    assert.equal(f.app.renderer.predictionVisible,false);assert.equal(f.app.renderer.plane,null);
+});
+
+test('Retained floor rejects foreign client identity and nonfinite source time without changing original payload', () => {
+    for(const change of [{clientEpoch:99},{sourceTimestamp:NaN},{sourceTimestamp:1.01}]) {
+        const f=lowFeatureFixture();const plane={...f.plane,...change};
+        f.app._consumeResult({...f.lost,groundPlane:plane});assert.equal(f.app.renderer.plane,null);
+        assert.equal(f.plane.sourceTimestamp,.5);assert.equal(f.plane.clientEpoch,1);
+    }
+});
+
+test('Blur/visibility/capture lifecycle removes extra layers even when the result loop is paused', () => {
+    const f=lowFeatureFixture();let draws=0;f.app.renderer.render=()=>{draws++;};
+    f.app._consumeResult(f.lost);assert.equal(f.app.lowFeatureDisplay.prediction,true);
+    f.app._clearVideoFrameCapture();
+    assert.equal(f.app.lowFeatureDisplay.prediction,false);assert.equal(f.app.lowFeatureDisplay.groundPlane,false);
+    assert.equal(f.app.renderer.predictionVisible,false);assert.equal(f.app.renderer.plane,null);assert.equal(draws,1);
 });

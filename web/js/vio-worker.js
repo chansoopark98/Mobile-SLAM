@@ -1,4 +1,5 @@
 /** Single-engine module Worker. Engine owns future IMU carry and pose freshness. */
+import { validateInertialPrediction, isCleanVisualContext, GroundPlaneTracker } from './low-feature.mjs';
 let wasm = null;
 let engine = null;
 let configured = false;
@@ -8,6 +9,9 @@ let lastSequence = 0;
 let engineEpoch = null;
 let mobileMotionGuard = false;
 let lastPublishedPose = null;
+const groundPlaneTracker = new GroundPlaneTracker();
+let lowFeatureFenceSequence = 0;
+let predictionInvalidationFailed = false;
 const MAX_MOBILE_POSE_TRANSLATION_M = 5;
 let activeRequest = null;
 let frameWait = null;
@@ -21,12 +25,14 @@ let memImage = null;
 let memIMU = null;
 let memPose = null;
 let memMapPoints = null;
+let memGroundSupport = null;
 let memExtrinsicR = null;
 let memExtrinsicT = null;
 let imageWidth = 0;
 let imageHeight = 0;
 const maxIMUReadings = 512;
 const maxMapPoints = 2000;
+const maxGroundSupportPoints = 512;
 const IMU_FIELDS = 7;
 const IMU_RING_CAPACITY = 1024;
 const MAX_IMU_AGE_S = 0.5;
@@ -41,6 +47,7 @@ const imuDrops = {
 };
 
 function clearIMURing(resetCounters = false) {
+    clearLowFeature();
     lastPublishedPose = null;
     if (resetCounters) {
         for (const key of Object.keys(imuDrops)) imuDrops[key] = key === 'lastGapSeconds' ? null : 0;
@@ -49,6 +56,13 @@ function clearIMURing(resetCounters = false) {
     lastIMUTimestamp = null;
     imuCadenceCount = imuCadenceWriteIdx = 0;
     intervalLoss = null;
+}
+
+function clearLowFeature(fenceSequence = null) {
+    if (Number.isSafeInteger(fenceSequence)) lowFeatureFenceSequence = Math.max(lowFeatureFenceSequence, fenceSequence);
+    groundPlaneTracker.clear();
+    try { engine?.invalidateInertialPrediction?.(); }
+    catch (_) { predictionInvalidationFailed = true; }
 }
 
 function bracketWaitBudgetMs() {
@@ -63,6 +77,7 @@ function bracketWaitBudgetMs() {
 
 function recordIntervalLoss(reason, count, firstTimestamp, lastTimestamp) {
     if (count <= 0) return;
+    clearLowFeature(lastSequence);
     if (!intervalLoss) intervalLoss = { count: 0, reasons: { overflow: 0, stale: 0, capacity: 0 }, droppedTimestampMin: firstTimestamp, droppedTimestampMax: lastTimestamp };
     intervalLoss.count += count;
     intervalLoss.reasons[reason] += count;
@@ -102,6 +117,7 @@ function appendIMU(data, count) {
     if (!(data instanceof Float64Array) || !Number.isInteger(count) || count < 0 || count > 4096 || count * IMU_FIELDS > data.length) {
         imuDrops.invalidBatches++;
         imuDrops.invalid += Number.isInteger(count) && count > 0 && count <= 4096 ? count : 0;
+        clearLowFeature(lastSequence);
         return false;
     }
     let valid = true;
@@ -109,15 +125,17 @@ function appendIMU(data, count) {
         const base = i * IMU_FIELDS;
         let finite = true;
         for (let j = 0; j < IMU_FIELDS; j++) finite = finite && Number.isFinite(data[base + j]);
-        if (!finite) { imuDrops.invalid++; valid = false; continue; }
+        if (!finite) { imuDrops.invalid++; valid = false; clearLowFeature(lastSequence); continue; }
         const timestamp = data[base];
-        if (timestamp < 0) { imuDrops.invalid++; valid = false; continue; }
+        if (timestamp < 0) { imuDrops.invalid++; valid = false; clearLowFeature(lastSequence); continue; }
         if (lastIMUTimestamp !== null && timestamp <= lastIMUTimestamp) {
             imuDrops.order++;
             valid = false;
+            clearLowFeature(lastSequence);
             continue;
         }
         if (lastIMUTimestamp !== null && timestamp - lastIMUTimestamp > MAX_IMU_AGE_S) {
+            clearLowFeature(lastSequence);
             imuDrops.gapCount++;
             imuDrops.lastGapSeconds = timestamp - lastIMUTimestamp;
             imuCadenceCount = imuCadenceWriteIdx = 0;
@@ -219,15 +237,16 @@ function allocateBuffers() {
     memIMU = new WorkerSharedMemory(wasm, wasm.HEAPF64, maxIMUReadings * IMU_FIELDS);
     memPose = new WorkerSharedMemory(wasm, wasm.HEAPF64, 16);
     memMapPoints = new WorkerSharedMemory(wasm, wasm.HEAPF64, maxMapPoints * 3);
+    memGroundSupport = new WorkerSharedMemory(wasm, wasm.HEAPF64, maxGroundSupportPoints * 3);
     memExtrinsicR = new WorkerSharedMemory(wasm, wasm.HEAPF64, 9);
     memExtrinsicT = new WorkerSharedMemory(wasm, wasm.HEAPF64, 3);
 }
 
 function disposeBuffers() {
-    [memImage, memIMU, memPose, memMapPoints, memExtrinsicR, memExtrinsicT].forEach(m => {
+    [memImage, memIMU, memPose, memMapPoints, memGroundSupport, memExtrinsicR, memExtrinsicT].forEach(m => {
         if (m) m.dispose();
     });
-    memImage = memIMU = memPose = memMapPoints = memExtrinsicR = memExtrinsicT = null;
+    memImage = memIMU = memPose = memMapPoints = memGroundSupport = memExtrinsicR = memExtrinsicT = null;
 }
 
 function engineValue(name, fallback) {
@@ -247,6 +266,7 @@ function engineState() {
         featureCount: engineValue('getFeaturePointCount', 0),
         statusCode: engineValue('getStatusCode', 0),
         reason: engineValue('getLastReason', 'engine_status_unavailable'),
+        solverQualityReason: engineValue('getLastSolverQualityReason', null),
         solverIterations: engineValue('getLastSolverIterations', null),
         solverTermination: engineValue('getLastSolverTermination', null),
         benchmarkSolverProfile,
@@ -288,7 +308,49 @@ function effectiveConfig() {
 function emptyResult(timestamp, reason, imuCount = 0) {
     return { ...engineState(), pose: null, poseValid: false, poseFresh: false, poseTimestamp: null,
         inputTimestamp: Number.isFinite(timestamp) ? timestamp : null, timestamp: Number.isFinite(timestamp) ? timestamp : null,
-        reason, imuCount, mapPoints: null, mapPointCount: 0, imuDrops: { ...imuDrops }, engineProcessingMs: 0, pipeline: null, quality: null };
+        reason, imuCount, mapPoints: null, mapPointCount: 0, imuDrops: { ...imuDrops }, engineProcessingMs: 0, pipeline: null, quality: null,
+        inertialPrediction: null, groundPlane: null, groundSupportPointCount: null,
+        predictionReadMs: null, groundSupportReadMs: null, groundFitMs: null, groundPlaneUpdateMs: null };
+}
+
+function attachLowFeature(result, request) {
+    const context = { ...result, clientEpoch: request.clientEpoch, sequence: request.sequence,
+        transportLost: !!result.imuIntervalLoss };
+    const clean = isCleanVisualContext(context);
+    const allowedLost = result.statusCode === 3 && result.initialized === true &&
+        ['empty_features', 'insufficient_current_features', 'insufficient_final_current_features'].includes(result.reason);
+    if (request.clientEpoch !== clientEpoch || request.sequence <= lowFeatureFenceSequence ||
+        result.engineEpoch !== engineEpoch || result.engineFrameTimestamp !== result.inputTimestamp ||
+        result.solverQualityReason !== '' || result.error || result.motionDiscontinuity || result.imuIntervalLoss || !clean && !allowedLost) {
+        clearLowFeature(request.sequence);
+        return;
+    }
+    if (allowedLost && !predictionInvalidationFailed && typeof engine.getInertialPrediction === 'function' &&
+        typeof engine.invalidateInertialPrediction === 'function') {
+        const started = performance.now();
+        try {
+            const prediction = JSON.parse(engine.getInertialPrediction());
+            result.inertialPrediction = validateInertialPrediction(prediction, context);
+            if (prediction !== null && !result.inertialPrediction) clearLowFeature();
+        }
+        catch (_) { clearLowFeature(); }
+        result.predictionReadMs = performance.now() - started;
+    }
+    let points = null;
+    if (clean && typeof engine.getGroundSupportPoints === 'function') {
+        const started = performance.now();
+        try {
+            const count = engine.getGroundSupportPoints(memGroundSupport.ptr, maxGroundSupportPoints);
+            if (!Number.isInteger(count) || count < 0 || count > maxGroundSupportPoints) throw new Error('Invalid ground support count');
+            points = memGroundSupport.read(count * 3);
+            result.groundSupportPointCount = count;
+        } catch (_) { clearLowFeature(); return; }
+        finally { result.groundSupportReadMs = performance.now() - started; }
+    }
+    const started = performance.now();
+    result.groundPlane = groundPlaneTracker.update(points, context);
+    result.groundPlaneUpdateMs = performance.now() - started;
+    if (groundPlaneTracker.lastFitAttempted) result.groundFitMs = result.groundPlaneUpdateMs;
 }
 
 function pipelineDiagnostics(timestamp, state) {
@@ -486,7 +548,7 @@ self.onmessage = async function(event) {
         return;
     }
     lastSequence = request.sequence;
-    if (lifecycle) cancelBracketWait();
+    if (lifecycle) { cancelBracketWait(); clearLowFeature(); lowFeatureFenceSequence = 0; }
     if (type === 'frame' && processing) {
         rejectRequest(request, 'result', 'worker_busy');
         return;
@@ -513,6 +575,7 @@ self.onmessage = async function(event) {
             if (engine) engine.delete();
             wasm = loadedWasm;
             engine = new wasm.VIOEngine();
+            predictionInvalidationFailed = false;
             configured = false;
             mobileMotionGuard = false;
             clearIMURing(true);
@@ -558,6 +621,10 @@ self.onmessage = async function(event) {
                 rotationRescueEnabled: engineState().rotationRescueEnabled, imuDrops: { ...imuDrops } });
         } else if (type === 'getEffectiveConfig') {
             reply(request, type, { success: true, data: effectiveConfig() });
+        } else if (type === 'invalidateLowFeature') {
+            lowFeatureFenceSequence = request.sequence;
+            clearLowFeature();
+            reply(request, type, { success: true });
         } else if (Object.hasOwn(parameterCalls, type)) {
             if (!engine) throw new Error('Engine is not loaded');
             engine[type](...parameterCalls[type].map(name => data?.[name]));
@@ -596,7 +663,8 @@ self.onmessage = async function(event) {
             }
             processingStarted = performance.now();
             const result = bracket ? processFrame(gray, data.timestamp) : emptyResult(data.timestamp, 'missing_bracket');
-            if (!bracket) result.statusCode = result.initialized ? 3 : 1;
+            if (!bracket) { clearLowFeature(request.sequence); result.statusCode = result.initialized ? 3 : 1; }
+            else attachLowFeature(result, request);
             result.imuWaitMs = imuWaitMs;
             result.imuWaitBudgetMs = imuWaitBudgetMs;
             result.workerQueueMs = Number.isFinite(request.sentAtMs) ? Math.max(0, receivedAtMs - request.sentAtMs) : null;
@@ -618,6 +686,7 @@ self.onmessage = async function(event) {
             reply(request, type, { success: true });
         } else throw new Error('Unknown worker request');
     } catch (error) {
+        clearLowFeature(lastSequence);
         if (type === 'configure') configured = false;
         if (type === 'frame') {
             try { if (engine) engine.reset(); } catch (_) { configured = false; }
@@ -640,6 +709,7 @@ self.onmessage = async function(event) {
 };
 
 self.onunhandledrejection = function(event) {
+    clearLowFeature();
     self.postMessage({ type: 'runtime_error', clientEpoch: activeRequest?.clientEpoch ?? clientEpoch, requestId: activeRequest?.requestId ?? null,
         sequence: activeRequest?.sequence ?? null, error: event.reason?.message || String(event.reason) });
     event.preventDefault();

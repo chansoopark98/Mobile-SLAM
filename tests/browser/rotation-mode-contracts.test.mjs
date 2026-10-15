@@ -1,9 +1,10 @@
+import { loadBrowserSource } from './browser-source-loader.mjs';
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import fs from 'node:fs/promises';
 import { Worker } from 'node:worker_threads';
 
-const source = await fs.readFile(new URL('../../web/js/vio-worker.js', import.meta.url), 'utf8');
+const source = await loadBrowserSource('vio-worker');
 const asModule = text => 'data:text/javascript;base64,' + Buffer.from(text).toString('base64');
 function fixture({ api = true, getter = true, mismatch = false } = {}) {
     const factory = asModule(`export default function () {

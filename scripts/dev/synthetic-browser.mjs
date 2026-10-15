@@ -5,7 +5,7 @@ import http from 'node:http';
 import { createHash } from 'node:crypto';
 import { fileURLToPath } from 'node:url';
 import { parseArgs } from 'node:util';
-import { parsePGM, imuBatchRanges, summarizeResults } from './replay-android-input.mjs';
+import { parsePGM, imuBatchRanges, summarizeResults, summarizeLowFeatureResults } from './replay-android-input.mjs';
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../..');
 const sha = bytes => createHash('sha256').update(bytes).digest('hex');
@@ -32,6 +32,18 @@ export function parseRotationRescueOverride(value='default') {
     if(value==='on')return true;
     if(value==='off')return false;
     throw new Error('rotation-rescue must be default, on or off');
+}
+
+function selectIMUPolicy(requested, mode='raw') {
+    if(requested!==undefined&&!['future-bracket','captured-counts'].includes(requested))throw new Error('imu-policy must be future-bracket or captured-counts');
+    if(mode!=='raw'&&requested!==undefined)throw new Error('imu-policy applies only to raw replay');
+    return mode==='raw'?(requested??'future-bracket'):null;
+}
+
+function capturedIMUCounts(input) {
+    const counts=input.capture?.imuSubmissionCounts;
+    if(counts!==undefined&&(!Array.isArray(counts)||counts.length!==input.frames.length||counts.some((value,index)=>!Number.isInteger(value)||value<1||value>input.imu.length||(index>0&&value<counts[index-1]))))throw new Error('Invalid captured IMU submission counts');
+    return counts;
 }
 
 export function validateSyntheticInput(input, count = 400) {
@@ -61,16 +73,15 @@ export function validateSyntheticInput(input, count = 400) {
     const frames = input.frames.slice(0, count);
     if (c.width*c.height*frames.length > 512*1024*1024) throw new Error('Raw image budget exceeds 512 MiB');
     if (input.imu[0][0] > frames[0].timestamp || input.imu.at(-1)[0] < frames.at(-1).timestamp) throw new Error('Missing past/future IMU bracket');
-    if(input.capture?.imuSubmissionCounts) {
-        const counts=input.capture.imuSubmissionCounts;
-        if(!Array.isArray(counts)||counts.length!==input.frames.length||counts.some((value,index)=>!Number.isInteger(value)||value<1||value>input.imu.length||(index>0&&value<counts[index-1])))throw new Error('Invalid captured IMU submission counts');
-    }
+    capturedIMUCounts(input);
     return frames;
 }
 
-export function replayIMUBatches(input, frames) {
-    const counts=input.capture?.imuSubmissionCounts;
-    return counts?frames.map((_,index)=>({start:index?counts[index-1]:0,count:counts[index]-(index?counts[index-1]:0)})):imuBatchRanges(frames,input.imu);
+export function replayIMUBatches(input, frames, policy='future-bracket') {
+    if(selectIMUPolicy(policy)==='future-bracket')return imuBatchRanges(frames,input.imu);
+    const counts=capturedIMUCounts(input);
+    if(counts===undefined)throw new Error('captured-counts requires captured IMU submission counts');
+    return frames.map((_,index)=>({start:index?counts[index-1]:0,count:counts[index]-(index?counts[index-1]:0)}));
 }
 
 /** Independent inverse of the declared device-to-body +90 degree x rotation. */
@@ -204,8 +215,8 @@ async function rendererAssets() {
     return assets;
 }
 
-async function rawReplay(page, input, frames) {
-    return page.evaluate(async ({ input, frames, batches }) => {
+async function rawReplay(page, input, frames, batches, imuPolicy) {
+    return page.evaluate(async ({ input, frames, batches, imuPolicy }) => {
         const { VIOWrapper } = await import('/js/vio-wrapper.js');
         const vio = new VIOWrapper({ frameTimeoutMs: 60000 });
         const rows = [], accepted = [];
@@ -236,9 +247,9 @@ async function rawReplay(page, input, frames) {
             }
             return { rows, accepted, config, parameters: input.parameters, effectiveConfig, effectiveConfigStage:'after_all_profile_RPCS_before_first_input',transport: vio.getMetrics(),
                 imuSamplesSubmitted: batches.at(-1).start + batches.at(-1).count,
-                imuPolicy:input.capture?.imuSubmissionCounts?'captured_cumulative_before_frame':'one_future_bracket',secureContext: isSecureContext, crossOriginIsolated };
+                imuPolicy,secureContext: isSecureContext, crossOriginIsolated };
         } finally { vio.dispose(); }
-    }, { input, frames, batches: replayIMUBatches(input, frames) });
+    }, { input, frames, batches, imuPolicy });
 }
 
 /** Replace only browser device/clock APIs; App, Camera, IMU, Worker and renderer stay real. */
@@ -249,7 +260,7 @@ function installDeviceBoundary({ width, height, sensor, deterministic, orientati
     const state = window.__synthetic = { realNow, nativeRVFC, nativeCancelRVFC, virtualMs: 100000,
         raf: new Map(), rvfc: new Map(), nextId: 1, sensors: [], current: null, deterministic,
         drawReadback: [], captures: [], accepted: [], frameAttempts: [], submittedIMU: [], rows: [], calls: [], timings: [], sourceDelivery: [],
-        nativeRAF,observerTimings:[],callbackTimings:[],captureCompletions:[],rafTicks:0,rafIntervals:[],lastRAFTime:null,publications:new Map(),acceptedTimestamps:new Set() };
+        nativeRAF,observerTimings:[],callbackTimings:[],captureCompletions:[],rafTicks:0,rafIntervals:[],lastRAFTime:null,publications:new Map(),acceptedTimestamps:new Set(),lowFeatureDisplays:new Map() };
     if (deterministic) Object.defineProperty(performance, 'now', { configurable: true, value: () => state.virtualMs });
     if(!nativeRAF) {
         window.requestAnimationFrame = callback => { const id = state.nextId++; state.raf.set(id, callback); return id; };
@@ -371,6 +382,17 @@ async function liveReplay(page, input, frames, mode, capture = 'sync') {
                     poseAgeWallMs: !deterministic&&latest.poseFresh&&latest.poseValid&&Number.isFinite(latest.poseTimestamp) ? receivedWallMs-latest.poseTimestamp*1000 : null });
             }
             return result;
+        });
+        wrap(app, '_consumeResult', (fn, args) => {
+            const returned = fn(...args), row = args[0];
+            if (row && app.lowFeatureDisplay) {
+                const key = `${row.clientEpoch}:${row.engineEpoch}:${row.sequence}`;
+                const previous = state.lowFeatureDisplays.get(key);
+                state.lowFeatureDisplays.set(key, { clientEpoch: row.clientEpoch, engineEpoch: row.engineEpoch, sequence: row.sequence,
+                    prediction: previous?.prediction || app.lowFeatureDisplay.prediction === true,
+                    groundPlane: previous?.groundPlane || app.lowFeatureDisplay.groundPlane === true });
+            }
+            return returned;
         });
         if (app.renderer) wrap(app.renderer, 'render', (fn, args) => {
             const started = state.realNow(), result = fn(...args); state.timings.push({ stage: 'render', sourceIndex: state.current?.index ?? null, initialized: app._vioInitialized, ms: state.realNow() - started }); return result;
@@ -529,7 +551,7 @@ async function liveReplay(page, input, frames, mode, capture = 'sync') {
                 captureWorker: app._captureWorker?.getMetrics() ?? null,
                 captures: state.captures, timings: state.timings, sourceDelivery: state.sourceDelivery, drawReadback: state.drawReadback,
                 callbackTimings:state.callbackTimings,captureCompletions:state.captureCompletions,
-                frameAttempts:state.frameAttempts,observerTimings:state.observerTimings,
+                frameAttempts:state.frameAttempts,observerTimings:state.observerTimings,lowFeatureDisplays:Array.from(state.lowFeatureDisplays.values()),
                 sourcePublications:Array.from(state.publications,([timestamp,source])=>({timestamp,sourceFrameIndex:source.frame.index,
                     physicalTimestamp:source.frame.physicalTimestamp,presentedFrames:source.presentedFrames,captureGeneration:source.captureGeneration,clientEpoch:source.clientEpoch,geometry:source.geometry,
                     packetTiming:source.packetTiming})),
@@ -548,6 +570,7 @@ export async function main(argv = process.argv.slice(2)) {
         mode: { type: 'string', default: 'raw' }, sensor: { type: 'string', default: 'generic' }, frames: { type: 'string', default: '400' },
         'f-threshold':{type:'string',default:'1'},
         'rotation-rescue':{type:'string',default:'default'},
+        'imu-policy':{type:'string'},
         capture:{type:'string',default:'sync'},
         'timeout-ms': { type: 'string', default: '600000' } } });
     if (!values.input || !values.loader || !values.output || !modes.includes(values.mode) || !['generic','device-motion'].includes(values.sensor)) {
@@ -555,12 +578,14 @@ export async function main(argv = process.argv.slice(2)) {
     }
     const fThresholdOverride=parseFThresholdOverride(values['f-threshold']);
     const rotationRescueOverride=parseRotationRescueOverride(values['rotation-rescue']);
+    const imuPolicy=selectIMUPolicy(values['imu-policy'],values.mode);
     if (!['sync','worker'].includes(values.capture) || values.mode==='raw' && values.capture!=='sync') throw new Error('capture must be sync or worker; worker requires a live App mode');
     if(values.mode==='raw'&&fThresholdOverride!==1)throw new Error('f-threshold applies only to live App modes; raw replay uses its input profile');
     const timeoutMs = Number(values['timeout-ms']);
     if (!Number.isInteger(timeoutMs) || timeoutMs < 1000 || timeoutMs > 1800000) throw new Error('timeout-ms must be 1000..1800000');
     const inputFile = await fs.realpath(values.input), loaderFile = await fs.realpath(values.loader), inputRoot = path.dirname(inputFile);
     const inputBytes = await fs.readFile(inputFile), input = JSON.parse(inputBytes), frames = validateSyntheticInput(input, Number(values.frames));
+    const imuBatches=values.mode==='raw'?replayIMUBatches(input,frames,imuPolicy):null;
     const requestedRotationRescue=rotationRescueOverride??input.config.rotationRescue??(values.mode==='raw'?false:null);
     if(requestedRotationRescue!==null)input.config.rotationRescue=requestedRotationRescue;
     // Captured live replay files live beside their accepted-frames directory.
@@ -573,6 +598,7 @@ export async function main(argv = process.argv.slice(2)) {
     const report = { schema: 'mobile-slam-synthetic-browser-v1', createdAt: new Date().toISOString(), completed: false,
         completionMeaning: 'Input transport and browser execution checks only; accuracy acceptance is independently evaluated and never inferred from completion.',
         mode: values.mode, scheduler:schedulerContract(values.mode),sensor: values.mode === 'raw' ? null : values.sensor,
+        requestedIMUPolicy:values['imu-policy']??null,selectedIMUPolicy:imuPolicy,
         requestedRotationRescueOverride:rotationRescueOverride,
         requestedRotationRescue,
         capture:values.capture,physicalCaptureTargetVerified:false,
@@ -589,12 +615,15 @@ export async function main(argv = process.argv.slice(2)) {
             'Each native video readback must exactly match the intended source grayscale hash before its source identity/timestamp is published; any color conversion mismatch fails closed.',
             'Mock sensors emit the fixture rate, including ideal 200Hz tests above the App requested60Hz; this does not prove a browser hardware delivery rate.',
             'Live mode retains actual mobile_default budget/tracking/motion guard; fixed-work raw fixture is a different profile. Captured input/profile enable a matched replay.'] };
+    if(imuPolicy)report.limits.push(imuPolicy==='captured-counts'
+        ? 'IMU captured-counts: pre-submit-only / not-live-schedule. Serial replay omits subsequent IMU arrival while a frame is in flight; missing brackets remain diagnostic failures.'
+        : 'IMU future-bracket: mathematical input replay with endpoint samples supplied before each frame; not-live-schedule. Recorded arrival timing and live wall latency are not reproduced.');
     const routes = new Map();
     const addFile = async (url, file, mime) => { const bytes=await fs.readFile(file); routes.set(url,{bytes,mime}); report.fingerprints[url]={path:file,bytes:bytes.length,sha256:sha(bytes)}; };
     await addFile('/candidate/vio_engine.js', loaderFile, 'application/javascript');
     report.fingerprints['scripts/dev/synthetic-browser.mjs']={sha256:sha(await fs.readFile(fileURLToPath(import.meta.url)))};
     await addFile('/', path.join(root, 'web/index.html'), 'text/html');
-    for (const name of ['app.js','vio-wrapper.js','vio-worker.js','capture-worker.js','camera.js','imu.js','orientation.js','renderer.js']) await addFile(`/js/${name}`, path.join(root,'web/js',name), 'application/javascript');
+    for (const name of ['app.js','vio-wrapper.js','vio-worker.js','low-feature.mjs','capture-worker.js','camera.js','imu.js','orientation.js','renderer.js']) await addFile(`/js/${name}`, path.join(root,'web/js',name), 'application/javascript');
     for (const [index, frame] of frames.entries()) {
         const file = await fs.realpath(path.join(imageRoot, frame.file)); if (!inside(imageRoot,file)) throw new Error('Frame link escapes input directory');
         const bytes = await fs.readFile(file), gray = parsePGM(bytes, input.config.width, input.config.height);
@@ -645,11 +674,12 @@ export async function main(argv = process.argv.slice(2)) {
         if(values.mode!=='raw'&&requestedRotationRescue!==null)query.set('rotation-rescue',requestedRotationRescue?'1':'0');
         if(values.mode!=='raw'&&values.capture==='worker')query.set('capture','worker');
         await page.goto(`http://127.0.0.1:${server.address().port}/${values.mode==='raw'?'':`?${query}`}`);
-        report.replay=await Promise.race([values.mode==='raw'?rawReplay(page,input,frames):liveReplay(page,input,frames,values.mode,values.capture),
+        report.replay=await Promise.race([values.mode==='raw'?rawReplay(page,input,frames,imuBatches,imuPolicy):liveReplay(page,input,frames,values.mode,values.capture),
             new Promise((_,reject)=>{timer=setTimeout(()=>reject(new Error('Bounded synthetic browser timeout')),timeoutMs);})]);
         validateResultIdentity(report.replay.rows,report.replay.accepted);
         report.effectiveProfile=assertEffectiveProfile(report.replay.effectiveConfig,report.replay.config,report.replay.parameters);
         report.summary=summarizeResults(report.replay.rows);
+        report.lowFeature=summarizeLowFeatureResults(report.replay.rows, report.replay.lowFeatureDisplays ?? null);
         report.tracking=poseStateSummary(report.replay.rows);
         const planned=input.capture?.plannedFrames&&frames.length===input.frames.length?input.capture.plannedFrames:frames;
         report.coverage=sourceCoverage(planned,report.replay.accepted,report.replay.rows);
@@ -669,7 +699,8 @@ export async function main(argv = process.argv.slice(2)) {
         });
         report.poseEvidence={nonzeroFreshPoses:report.summary.freshPoseFrames>0,accuracyStatus:'not_evaluated_here',
             zeroPoseMeaning:'No accuracy success can be claimed from zero fresh poses; intentional degeneracy requires its own frozen expectation.'};
-        const timedKeys=['engineProcessingMs','workerProcessingMs','workerQueueMs','imuWaitMs','frameCopyMs','roundTripMs','poseAgeWallMs'];
+        const timedKeys=['engineProcessingMs','workerProcessingMs','workerQueueMs','imuWaitMs','frameCopyMs','roundTripMs','poseAgeWallMs',
+            'predictionReadMs','groundSupportReadMs','groundFitMs','groundPlaneUpdateMs'];
         report.performance={clock:values.mode==='live-deterministic'?'real engine/roundTrip; virtual frameCopy/queue not latency evidence':'wall-clock desktop',
             all:Object.fromEntries(timedKeys.map(key=>[key,distribution(report.replay.rows.map(row=>row[key]))])),
             beforeInitialization:Object.fromEntries(timedKeys.map(key=>[key,distribution(report.replay.rows.filter(row=>!row.initialized).map(row=>row[key]))])),

@@ -9,6 +9,7 @@
 #include <filesystem>
 #include <stdexcept>
 #include <opencv2/imgproc.hpp>
+#include <yaml-cpp/yaml.h>
 #include "vio_engine.h"
 
 struct VIOEngineTestAccess {
@@ -25,6 +26,16 @@ struct VIOEngineTestAccess {
     }
     static void solver(VIOEngine& engine,const backend::SolverDiagnostics& diagnostics) { engine.recordSolver(diagnostics); }
     static frontend::FeatureTracker& tracker(VIOEngine& engine) { return *engine.feature_tracker_; }
+    static utility::InertialPrediction& prediction(VIOEngine& engine) { return engine.inertial_prediction_; }
+    static void finishPrediction(VIOEngine& engine) { engine.finishInertialFrame(); }
+    static bool rawCoverage(const VIOEngine& engine) { return engine.inertial_raw_coverage_; }
+    static void anchorInputs(VIOEngine& engine,double time,const Eigen::Vector3d& acc,const Eigen::Vector3d& gyro) {
+        engine.current_time_=engine.prev_image_timestamp_=engine.last_imu_timestamp_=time;
+        engine.raw_imu_left_timestamp_=engine.frame_timestamp_=time;engine.inertial_raw_coverage_=true;
+        engine.prev_acc_=acc;engine.prev_gyro_=gyro;engine.pending_imu_.clear();
+    }
+    static void failure(VIOEngine& engine,const std::string& reason) { engine.invalidatePose(reason); }
+    static void frameTime(VIOEngine& engine,double time) { engine.frame_timestamp_=time; }
 };
 
 namespace backend {
@@ -37,6 +48,8 @@ struct EstimatorTestAccess {
         estimator.frame_count_=utility::WINDOW_SIZE;
         estimator.g_=utility::g_config.estimator.g;
     }
+    static void usable(backend::Estimator& estimator,bool value) { estimator.latest_image_update_usable_=value; }
+    static void gravity(backend::Estimator& estimator,const Eigen::Vector3d& value) { estimator.g_=value; }
 };
 }
 
@@ -1135,4 +1148,289 @@ TEST(EngineContracts, ConfigureFromOrdinaryConfigDisablesExperimentalObservation
     EXPECT_EQ(engine.getEffectiveExperimentalObservationPolicy(),0);
     ASSERT_TRUE(populatePolicyBackend(engine));
     EXPECT_EQ(backend::EstimatorTestAccess::optimizer(VIOEngineTestAccess::estimator(engine)).getLastSolverDiagnostics().currentVisualFactors,8);
+}
+
+namespace {
+common::VINSResult inertialSeed(double time = 1) {
+    common::VINSResult seed;
+    seed.timestamp=time;seed.P.setZero();seed.R.setIdentity();seed.V.setZero();
+    seed.Ba.setZero();seed.Bg.setZero();return seed;
+}
+}
+
+TEST(EngineContracts, InertialPredictionUsesKnownStateVelocityAndAffineAcceleration) {
+    utility::InertialPrediction prediction;
+    auto seed=inertialSeed();seed.V={1,-2,.5};
+    const Eigen::Vector3d gravity(0,0,9.81),zero=Eigen::Vector3d::Zero();
+    ASSERT_TRUE(prediction.seed(seed,gravity,Eigen::Matrix3d::Identity(),zero,gravity,zero,7));
+    prediction.advance(1.1,gravity+Eigen::Vector3d(3,0,0),zero,7);
+    ASSERT_TRUE(prediction.valid());
+    // a(t)=30*t: displacement .1 + 30*.1^3/6 along x.
+    EXPECT_TRUE((prediction.cameraPose().block<3,1>(0,3).isApprox(Eigen::Vector3d(.105,-.2,.05),1e-12)));
+    EXPECT_DOUBLE_EQ(prediction.anchorTimestamp(),1);EXPECT_DOUBLE_EQ(prediction.timestamp(),1.1);
+}
+
+TEST(EngineContracts, InertialPredictionExactRotationIncludesCameraLeverArm) {
+    utility::InertialPrediction prediction;auto seed=inertialSeed();
+    const Eigen::Vector3d gravity(0,0,9.81),omega(0,0,2),lever(1,0,0);
+    const Eigen::Matrix3d extrinsic=Eigen::AngleAxisd(.3,Eigen::Vector3d::UnitX()).toRotationMatrix();
+    ASSERT_TRUE(prediction.seed(seed,gravity,extrinsic,lever,gravity,omega,4));
+    prediction.advance(1.1,gravity,omega,4);
+    ASSERT_TRUE(prediction.valid());
+    const Eigen::Matrix3d expected=Eigen::AngleAxisd(.2,Eigen::Vector3d::UnitZ()).toRotationMatrix();
+    EXPECT_TRUE((prediction.cameraPose().block<3,3>(0,0).isApprox(expected*extrinsic,1e-12)));
+    EXPECT_TRUE((prediction.cameraPose().block<3,1>(0,3).isApprox(expected*lever,1e-12)));
+}
+
+TEST(EngineContracts, InertialPredictionExpirationAndInvalidationRequireNewSeed) {
+    utility::InertialPrediction prediction;auto seed=inertialSeed();
+    const Eigen::Vector3d gravity(0,0,9.81),zero=Eigen::Vector3d::Zero();
+    ASSERT_TRUE(prediction.seed(seed,gravity,Eigen::Matrix3d::Identity(),zero,gravity,zero,4));
+    for(int i=1;i<=5;++i) prediction.advance(1+.1*i,gravity,zero,4);
+    EXPECT_TRUE(prediction.valid());prediction.advance(1.50000001,gravity,zero,4);
+    EXPECT_FALSE(prediction.valid());prediction.advance(1.51,gravity,zero,4);EXPECT_FALSE(prediction.valid());
+    seed.timestamp=2;ASSERT_TRUE(prediction.seed(seed,gravity,Eigen::Matrix3d::Identity(),zero,gravity,zero,4));
+    prediction.invalidate();prediction.advance(2.01,gravity,zero,4);EXPECT_FALSE(prediction.valid());
+}
+
+namespace {
+void prepareInertialAnchor(VIOEngine& engine, const common::VINSResult& seed,
+                           const Eigen::Vector3d& acc=Eigen::Vector3d(0,0,9.81),
+                           const Eigen::Vector3d& gyro=Eigen::Vector3d::Zero()) {
+    auto& estimator=VIOEngineTestAccess::estimator(engine);
+    backend::EstimatorTestAccess::initialized(estimator);
+    backend::EstimatorTestAccess::usable(estimator,true);
+    for(int i=0;i<=utility::WINDOW_SIZE;++i) {
+        auto& frame=estimator.sliding_window_[i];
+        frame.timestamp=seed.timestamp;frame.P=seed.P;frame.R=seed.R;frame.V=seed.V;frame.Ba=seed.Ba;frame.Bg=seed.Bg;
+    }
+    VIOEngineTestAccess::anchorInputs(engine,seed.timestamp,acc,gyro);
+    backend::SolverDiagnostics diagnostic;diagnostic.usable=true;
+    VIOEngineTestAccess::solver(engine,diagnostic);
+    double output[16];ASSERT_TRUE(VIOEngineTestAccess::pose(engine,seed.P,seed.R,seed.timestamp,output));
+    VIOEngineTestAccess::finishPrediction(engine);
+}
+void addGroundFeatures(VIOEngine& engine,int count) {
+    auto& features=backend::EstimatorTestAccess::features(VIOEngineTestAccess::estimator(engine));
+    features.clearState();auto& tracker=VIOEngineTestAccess::tracker(engine);
+    tracker.ids.clear();tracker.track_cnt.clear();tracker.cur_pts.clear();
+    tracker.cur_undistorted_pts.clear();tracker.pts_velocity.clear();
+    for(int id=0;id<count;++id) {
+        Eigen::Matrix<double,7,1> observation;observation<<.01*id,.1,1,30,30,0,0;
+        features.feature_bank_.emplace_back(id,0);auto& feature=features.feature_bank_.back();
+        feature.feature_per_frame.emplace_back(observation);feature.feature_per_frame.emplace_back(observation);
+        feature.estimated_depth=5;feature.solve_flag=1;
+        tracker.ids.push_back(id);tracker.track_cnt.push_back(2);tracker.cur_pts.emplace_back(30,30);
+        tracker.cur_undistorted_pts.emplace_back(.01*id,.1);tracker.pts_velocity.emplace_back(0,0);
+    }
+}
+}
+
+TEST(EngineContracts, InertialBlankOutputIsSeparateAndExplicitInvalidationIsSticky) {
+    RestorePolicyConfig restore;VIOEngine engine;ASSERT_TRUE(configure(engine));engine.setPnPParams(false,3);
+    auto seed=inertialSeed();seed.V={1,0,0};prepareInertialAnchor(engine,seed);
+    ASSERT_TRUE(VIOEngineTestAccess::prediction(engine).valid());EXPECT_EQ(engine.getInertialPrediction(),"null");
+    std::vector<uint8_t> blank(96*96,0);double output[16],map[3];
+    const IMUReading first{1.05,0,0,9.81,0,0,0};
+    EXPECT_FALSE(engine.processFrame(blank.data(),96,96,&first,1,1.05,output));
+    EXPECT_FALSE(engine.getPoseFresh());EXPECT_FALSE(engine.getPoseValid());EXPECT_EQ(engine.getStatusCode(),3);
+    EXPECT_EQ(engine.getMapPoints(map,1),0);EXPECT_EQ(engine.getGroundSupportPoints(map,1),0);
+    for(double value:output) EXPECT_TRUE(std::isnan(value));
+    const auto prediction=YAML::Load(engine.getInertialPrediction());ASSERT_TRUE(prediction.IsMap());
+    EXPECT_EQ(prediction["schema"].as<std::string>(),"mobile-slam-inertial-prediction-v1");
+    EXPECT_EQ(prediction["mode"].as<std::string>(),"inertial-only");EXPECT_EQ(prediction["poseFrame"].as<std::string>(),"camera");
+    EXPECT_FALSE(prediction["visualSupported"].as<bool>());EXPECT_FALSE(prediction["metricTranslationSupported"].as<bool>());
+    EXPECT_TRUE(prediction["positionUncertain"].as<bool>());EXPECT_DOUBLE_EQ(prediction["maxHorizonSeconds"].as<double>(),.5);
+    EXPECT_DOUBLE_EQ(prediction["timestamp"].as<double>(),1.05);EXPECT_DOUBLE_EQ(prediction["anchorTimestamp"].as<double>(),1);
+    EXPECT_NEAR(prediction["pose"][3].as<double>(),.05,1e-12);
+    const auto epoch=engine.getEpoch();engine.invalidateInertialPrediction();EXPECT_EQ(engine.getEpoch(),epoch);
+    const IMUReading next{1.1,0,0,9.81,0,0,0};
+    EXPECT_FALSE(engine.processFrame(blank.data(),96,96,&next,1,1.1,output));EXPECT_EQ(engine.getInertialPrediction(),"null");
+    seed.timestamp=2;prepareInertialAnchor(engine,seed);
+    const IMUReading reseeded{2.05,0,0,9.81,0,0,0};
+    EXPECT_FALSE(engine.processFrame(blank.data(),96,96,&reseeded,1,2.05,output));EXPECT_NE(engine.getInertialPrediction(),"null");
+}
+
+TEST(EngineContracts, InertialRawGapCannotBeLaunderedByCameraInterpolationOrReseed) {
+    RestorePolicyConfig restore;VIOEngine engine;ASSERT_TRUE(configure(engine));engine.setPnPParams(false,3);
+    prepareInertialAnchor(engine,inertialSeed());
+    const IMUReading future{1.2,0,0,9.81,0,0,0};std::vector<uint8_t> blank(96*96,0);double output[16];
+    for(int i=1;i<=4;++i) {
+        const double time=1+.05*i;
+        EXPECT_FALSE(engine.processFrame(blank.data(),96,96,i==1?&future:nullptr,i==1?1:0,time,output));
+        EXPECT_EQ(engine.getInertialPrediction(),"null");EXPECT_FALSE(VIOEngineTestAccess::rawCoverage(engine));
+        // A successful visual result at this interpolated endpoint still cannot seed this bad raw interval.
+        auto& estimator=VIOEngineTestAccess::estimator(engine);
+        estimator.sliding_window_[utility::WINDOW_SIZE-1].timestamp=time;
+        backend::EstimatorTestAccess::usable(estimator,true);
+        ASSERT_TRUE(VIOEngineTestAccess::pose(engine,estimator.sliding_window_[utility::WINDOW_SIZE].P,
+                    estimator.sliding_window_[utility::WINDOW_SIZE].R,time,output));
+        VIOEngineTestAccess::finishPrediction(engine);EXPECT_FALSE(VIOEngineTestAccess::prediction(engine).valid());
+    }
+    const IMUReading valid{1.25,0,0,9.81,0,0,0};
+    EXPECT_FALSE(engine.processFrame(blank.data(),96,96,&valid,1,1.25,output));
+    EXPECT_TRUE(VIOEngineTestAccess::rawCoverage(engine));EXPECT_EQ(engine.getInertialPrediction(),"null");
+}
+
+TEST(EngineContracts, InertialCoverageQualitySeedTimeAndPnPFailClosed) {
+    RestorePolicyConfig restore;VIOEngine engine;ASSERT_TRUE(configure(engine));engine.setPnPParams(false,3);
+    prepareInertialAnchor(engine,inertialSeed());auto& estimator=VIOEngineTestAccess::estimator(engine);
+    estimator.sliding_window_[utility::WINDOW_SIZE-1].timestamp=.9;
+    VIOEngineTestAccess::finishPrediction(engine);EXPECT_FALSE(VIOEngineTestAccess::prediction(engine).valid());
+    prepareInertialAnchor(engine,inertialSeed());VIOEngineTestAccess::frameTime(engine,1.01);
+    VIOEngineTestAccess::finishPrediction(engine);EXPECT_FALSE(VIOEngineTestAccess::prediction(engine).valid());
+    prepareInertialAnchor(engine,inertialSeed());
+    backend::SolverDiagnostics warning;warning.qualityReason="relative_translation_threshold";
+    VIOEngineTestAccess::solver(engine,warning);EXPECT_EQ(engine.getLastSolverQualityReason(),warning.qualityReason);
+    VIOEngineTestAccess::failure(engine,"insufficient_final_current_features");
+    VIOEngineTestAccess::finishPrediction(engine);EXPECT_EQ(engine.getInertialPrediction(),"null");
+    EXPECT_FALSE(VIOEngineTestAccess::prediction(engine).valid());
+    prepareInertialAnchor(engine,inertialSeed());engine.setPnPParams(true,3);
+    EXPECT_FALSE(VIOEngineTestAccess::prediction(engine).valid());VIOEngineTestAccess::finishPrediction(engine);
+    EXPECT_EQ(engine.getInertialPrediction(),"null");
+    engine.setPnPParams(false,3);prepareInertialAnchor(engine,inertialSeed());
+    std::vector<uint8_t> blank(96*96,0);double output[16];
+    EXPECT_FALSE(engine.processFrame(blank.data(),96,96,nullptr,0,1.05,output));
+    EXPECT_EQ(engine.getLastReason(),"imu_missing_future");EXPECT_FALSE(VIOEngineTestAccess::prediction(engine).valid());
+    prepareInertialAnchor(engine,inertialSeed());engine.reset();EXPECT_FALSE(VIOEngineTestAccess::prediction(engine).valid());
+    EXPECT_EQ(engine.getLastSolverQualityReason(),"");
+    prepareInertialAnchor(engine,inertialSeed());EXPECT_FALSE(engine.configure(96,96,100,100,48,48,2,0,0,0,0,nullptr,nullptr,.1,.001,.01,.0001,9.81));
+    EXPECT_FALSE(VIOEngineTestAccess::prediction(engine).valid());
+}
+
+TEST(EngineContracts, InertialDomainsAndFiveMeterBoundHaveIndependentExpectedValues) {
+    utility::InertialPrediction prediction;auto seed=inertialSeed();
+    const Eigen::Vector3d gravity(0,0,9.81),zero=Eigen::Vector3d::Zero();
+    seed.V={10,0,0};ASSERT_TRUE(prediction.seed(seed,gravity,Eigen::Matrix3d::Identity(),zero,gravity,zero,1));
+    for(int i=1;i<=5;++i) prediction.advance(1+.1*i,gravity,zero,1);
+    EXPECT_TRUE(prediction.valid());EXPECT_NEAR(prediction.cameraPose()(0,3),5,1e-12);
+    seed.V={10.1,0,0};ASSERT_TRUE(prediction.seed(seed,gravity,Eigen::Matrix3d::Identity(),zero,gravity,zero,1));
+    for(int i=1;i<=5;++i) prediction.advance(1+.1*i,gravity,zero,1);EXPECT_FALSE(prediction.valid());
+    seed=inertialSeed();seed.Bg.x()=NAN;EXPECT_FALSE(prediction.seed(seed,gravity,Eigen::Matrix3d::Identity(),zero,gravity,zero,1));
+    seed=inertialSeed();seed.R(0,0)=2;EXPECT_FALSE(prediction.seed(seed,gravity,Eigen::Matrix3d::Identity(),zero,gravity,zero,1));
+    seed=inertialSeed();ASSERT_TRUE(prediction.seed(seed,gravity,Eigen::Matrix3d::Identity(),zero,gravity,zero,1));
+    prediction.advance(1.01,gravity,zero,2);EXPECT_FALSE(prediction.valid());
+    ASSERT_TRUE(prediction.seed(seed,gravity,Eigen::Matrix3d::Identity(),zero,gravity,zero,1));
+    prediction.advance(1.10000001,gravity,zero,1);EXPECT_FALSE(prediction.valid());
+    ASSERT_TRUE(prediction.seed(seed,gravity,Eigen::Matrix3d::Identity(),zero,gravity,zero,1));
+    prediction.advance(1.01,Eigen::Vector3d(NAN,0,0),zero,1);EXPECT_FALSE(prediction.valid());
+}
+
+TEST(EngineContracts, GroundSupportRequiresCurrentFiniteFullObservationAndAdmittedDepth) {
+    RestorePolicyConfig restore;VIOEngine engine;ASSERT_TRUE(configure(engine));engine.setPnPParams(false,3);
+    prepareInertialAnchor(engine,inertialSeed());addGroundFeatures(engine,8);
+    auto& tracker=VIOEngineTestAccess::tracker(engine);
+    auto& features=backend::EstimatorTestAccess::features(VIOEngineTestAccess::estimator(engine));
+    tracker.ids[1]=999;tracker.track_cnt[2]=1;tracker.cur_undistorted_pts[3].x=NAN;
+    tracker.cur_pts[4].y=NAN;tracker.pts_velocity[5].x=NAN;
+    auto feature=features.feature_bank_.begin();std::advance(feature,6);feature->geometry_pending=true;
+    ++feature;feature->feature_per_frame.back().projection_outlier=true;
+    double output[9]={0,0,0,123,123,123,123,123,123};
+    ASSERT_EQ(engine.getGroundSupportPoints(output,3),1);EXPECT_DOUBLE_EQ(output[0],0);EXPECT_DOUBLE_EQ(output[1],.5);EXPECT_DOUBLE_EQ(output[2],5);
+    EXPECT_DOUBLE_EQ(output[3],123);EXPECT_EQ(features.feature_bank_.size(),8u);
+    EXPECT_EQ(engine.getGroundSupportPoints(nullptr,3),0);EXPECT_EQ(engine.getGroundSupportPoints(output,0),0);
+    backend::EstimatorTestAccess::gravity(VIOEngineTestAccess::estimator(engine),Eigen::Vector3d(0,0,-9.81));
+    EXPECT_EQ(engine.getGroundSupportPoints(output,3),0);
+    backend::EstimatorTestAccess::gravity(VIOEngineTestAccess::estimator(engine),Eigen::AngleAxisd(.04,Eigen::Vector3d::UnitX())*Eigen::Vector3d(0,0,9.81));
+    EXPECT_EQ(engine.getGroundSupportPoints(output,3),0);
+    backend::EstimatorTestAccess::gravity(VIOEngineTestAccess::estimator(engine),Eigen::Vector3d(0,0,9.81));
+    backend::SolverDiagnostics warning;warning.qualityReason="acc_bias_threshold";VIOEngineTestAccess::solver(engine,warning);
+    EXPECT_EQ(engine.getGroundSupportPoints(output,3),0);
+}
+
+TEST(EngineContracts, GroundSupportCapacityAndReadsDoNotChangeBackendOrPrediction) {
+    RestorePolicyConfig restore;VIOEngine engine;ASSERT_TRUE(configure(engine));engine.setPnPParams(false,3);
+    prepareInertialAnchor(engine,inertialSeed());addGroundFeatures(engine,520);
+    auto& estimator=VIOEngineTestAccess::estimator(engine);const auto before=estimator.getLatestVINSResult();
+    const auto epoch=engine.getEpoch();const auto reason=engine.getLastReason();
+    std::vector<double> output(3*513,123456);ASSERT_EQ(engine.getGroundSupportPoints(output.data(),999),512);
+    EXPECT_DOUBLE_EQ(output[3*512],123456);EXPECT_EQ(engine.getEpoch(),epoch);EXPECT_EQ(engine.getLastReason(),reason);
+    EXPECT_EQ(engine.getInertialPrediction(),"null");const auto after=estimator.getLatestVINSResult();
+    EXPECT_TRUE(before.P.isApprox(after.P,0));EXPECT_TRUE(before.R.isApprox(after.R,0));EXPECT_TRUE(before.V.isApprox(after.V,0));
+    EXPECT_TRUE(before.Ba.isApprox(after.Ba,0));EXPECT_TRUE(before.Bg.isApprox(after.Bg,0));
+    const bool prior=backend::EstimatorTestAccess::optimizer(estimator).hasMarginalizationPrior();
+    engine.invalidateInertialPrediction();EXPECT_EQ(backend::EstimatorTestAccess::optimizer(estimator).hasMarginalizationPrior(),prior);
+    EXPECT_EQ(engine.getGroundSupportPoints(output.data(),1),1);engine.setPnPParams(true,3);EXPECT_EQ(engine.getGroundSupportPoints(output.data(),1),0);
+}
+
+TEST(EngineContracts, InertialAffineOracleIsIndependentOfSamplePartitionBiasGravityAndExtrinsic) {
+    auto seed=inertialSeed();seed.P={.3,-.2,.1};seed.V={1,.2,-.1};seed.Ba={.02,-.03,.04};seed.Bg={.01,-.02,.03};
+    seed.R=Eigen::AngleAxisd(.3,Eigen::Vector3d::UnitY()).toRotationMatrix();
+    const Eigen::Vector3d gravity(0,9.81,0),omega(0,0,.7),a0(.4,-.3,.2),slope(.6,.2,-.1),lever(.2,-.1,.3);
+    const Eigen::Matrix3d ric=Eigen::AngleAxisd(-.4,Eigen::Vector3d::UnitX()).toRotationMatrix();
+    for(const std::vector<double>& times:{std::vector<double>{.05,.1,.15,.2,.25,.3,.35,.4,.45,.5},
+                                        std::vector<double>{.02,.1,.15,.19,.25,.31,.36,.4,.45,.5}}) {
+        utility::InertialPrediction prediction;
+        ASSERT_TRUE(prediction.seed(seed,gravity,ric,lever,seed.R.transpose()*(gravity+a0)+seed.Ba,omega+seed.Bg,2));
+        for(double time:times) {
+            const Eigen::Matrix3d rotation=seed.R*Eigen::AngleAxisd(.7*time,Eigen::Vector3d::UnitZ()).toRotationMatrix();
+            prediction.advance(1+time,rotation.transpose()*(gravity+a0+slope*time)+seed.Ba,omega+seed.Bg,2);
+            ASSERT_TRUE(prediction.valid());
+            const Eigen::Vector3d position=seed.P+seed.V*time+.5*a0*time*time+slope*time*time*time/6;
+            EXPECT_TRUE((prediction.cameraPose().block<3,1>(0,3).isApprox(position+rotation*lever,1e-10)));
+            EXPECT_TRUE((prediction.cameraPose().block<3,3>(0,0).isApprox(rotation*ric,1e-12)));
+        }
+    }
+}
+
+TEST(EngineContracts, InertialSeedRequiresMatchingPublishedStateAndActualGravity) {
+    RestorePolicyConfig restore;VIOEngine engine;ASSERT_TRUE(configure(engine));engine.setPnPParams(false,3);
+    prepareInertialAnchor(engine,inertialSeed());auto& estimator=VIOEngineTestAccess::estimator(engine);
+    estimator.sliding_window_[utility::WINDOW_SIZE-1].P.x()=.1;
+    VIOEngineTestAccess::finishPrediction(engine);EXPECT_FALSE(VIOEngineTestAccess::prediction(engine).valid());
+    prepareInertialAnchor(engine,inertialSeed());backend::EstimatorTestAccess::usable(estimator,false);
+    VIOEngineTestAccess::finishPrediction(engine);EXPECT_FALSE(VIOEngineTestAccess::prediction(engine).valid());
+    prepareInertialAnchor(engine,inertialSeed());backend::EstimatorTestAccess::gravity(estimator,Eigen::Vector3d::Zero());
+    VIOEngineTestAccess::finishPrediction(engine);EXPECT_FALSE(VIOEngineTestAccess::prediction(engine).valid());
+    const Eigen::Vector3d gravity(0,9.81,0);
+    prepareInertialAnchor(engine,inertialSeed(),gravity);backend::EstimatorTestAccess::gravity(estimator,gravity);
+    VIOEngineTestAccess::finishPrediction(engine);ASSERT_TRUE(VIOEngineTestAccess::prediction(engine).valid());
+    const IMUReading sample{1.05,0,9.81,0,0,0,0};std::vector<uint8_t> blank(96*96,0);double output[16];
+    EXPECT_FALSE(engine.processFrame(blank.data(),96,96,&sample,1,1.05,output));
+    const auto prediction=YAML::Load(engine.getInertialPrediction());ASSERT_TRUE(prediction.IsMap());
+    EXPECT_NEAR(prediction["pose"][3].as<double>(),0,1e-12);EXPECT_NEAR(prediction["pose"][7].as<double>(),0,1e-12);
+    EXPECT_NEAR(prediction["pose"][11].as<double>(),0,1e-12);
+}
+
+TEST(EngineContracts, InertialChannelAndGroundReadsNeverFeedBackIntoBackendState) {
+    RestorePolicyConfig restore;VIOEngine predicted,control;ASSERT_TRUE(configure(predicted));ASSERT_TRUE(configure(control));
+    predicted.setPnPParams(false,3);auto seed=inertialSeed();seed.V={.5,0,0};
+    prepareInertialAnchor(predicted,seed);prepareInertialAnchor(control,seed);control.invalidateInertialPrediction();
+    std::vector<uint8_t> blank(96*96,0);double out_a[16],out_b[16],ground[9];
+    for(int frame=1;frame<=5;++frame) {
+        const IMUReading sample{1+.05*frame,.1,0,9.81,0,0,.2};
+        EXPECT_EQ(predicted.processFrame(blank.data(),96,96,&sample,1,sample.timestamp,out_a),
+                  control.processFrame(blank.data(),96,96,&sample,1,sample.timestamp,out_b));
+        EXPECT_NE(predicted.getInertialPrediction(),"null");EXPECT_EQ(control.getInertialPrediction(),"null");
+        EXPECT_EQ(predicted.getGroundSupportPoints(ground,3),0);
+        EXPECT_EQ(predicted.getEpoch(),control.getEpoch());EXPECT_EQ(predicted.getLastReason(),control.getLastReason());
+        EXPECT_EQ(predicted.getStatusCode(),control.getStatusCode());EXPECT_EQ(predicted.getFeaturePointCount(),control.getFeaturePointCount());
+        auto& a=VIOEngineTestAccess::estimator(predicted);auto& b=VIOEngineTestAccess::estimator(control);
+        for(int slot=0;slot<=utility::WINDOW_SIZE;++slot) {
+            const auto& x=a.sliding_window_[slot];const auto& y=b.sliding_window_[slot];
+            EXPECT_TRUE(x.P.isApprox(y.P,0));EXPECT_TRUE(x.R.isApprox(y.R,0));EXPECT_TRUE(x.V.isApprox(y.V,0));
+            EXPECT_TRUE(x.Ba.isApprox(y.Ba,0));EXPECT_TRUE(x.Bg.isApprox(y.Bg,0));EXPECT_EQ(x.dt_buf,y.dt_buf);
+            ASSERT_EQ(bool(x.pre_integration),bool(y.pre_integration));
+            if(x.pre_integration) {
+                EXPECT_TRUE(x.pre_integration->jacobian.isApprox(y.pre_integration->jacobian,0));
+                EXPECT_TRUE(x.pre_integration->covariance.isApprox(y.pre_integration->covariance,0));
+            }
+        }
+        EXPECT_EQ(backend::EstimatorTestAccess::optimizer(a).hasMarginalizationPrior(),backend::EstimatorTestAccess::optimizer(b).hasMarginalizationPrior());
+    }
+}
+
+TEST(EngineContracts, InertialFrameErrorsDoNotReuseAPreviousAvailablePrediction) {
+    RestorePolicyConfig restore;VIOEngine engine;ASSERT_TRUE(configure(engine));engine.setPnPParams(false,3);
+    std::vector<uint8_t> blank(96*96,0);double output[16];
+    for(int fault=0;fault<4;++fault) {
+        prepareInertialAnchor(engine,inertialSeed());const IMUReading valid{1.05,0,0,9.81,0,0,0};
+        EXPECT_FALSE(engine.processFrame(blank.data(),96,96,&valid,1,1.05,output));ASSERT_NE(engine.getInertialPrediction(),"null");
+        IMUReading next{1.1,0,0,9.81,0,0,0};
+        if(fault==0)next.acc_x=NAN;
+        if(fault==1)next.timestamp=1.05;
+        const double time=fault==2?1.05:1.1;
+        EXPECT_FALSE(engine.processFrame(blank.data(),fault==3?95:96,96,&next,1,time,output));
+        EXPECT_EQ(engine.getInertialPrediction(),"null");EXPECT_FALSE(VIOEngineTestAccess::prediction(engine).valid());
+    }
 }

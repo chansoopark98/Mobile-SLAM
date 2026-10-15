@@ -1,11 +1,12 @@
+import { loadBrowserSource } from './browser-source-loader.mjs';
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import fs from 'node:fs/promises';
 import vm from 'node:vm';
 
-const source = await fs.readFile(new URL('../../web/js/vio-wrapper.js', import.meta.url), 'utf8');
+const source = await loadBrowserSource('vio-wrapper');
 const { VIOWrapper } = await import('data:text/javascript;base64,' + Buffer.from(source).toString('base64'));
-const workerSource = await fs.readFile(new URL('../../web/js/vio-worker.js', import.meta.url), 'utf8');
+const workerSource = await loadBrowserSource('vio-worker');
 
 function configuredWrapper() {
     const wrapper = new VIOWrapper();

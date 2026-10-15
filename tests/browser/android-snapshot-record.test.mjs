@@ -2,6 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import fs from 'node:fs/promises';
 import vm from 'node:vm';
+import { copyLowFeatureMetadata } from '../../scripts/dev/android-input-record.mjs';
 import { spawnSync } from 'node:child_process';
 
 const source = await fs.readFile(new URL('../../scripts/dev/android-snapshot.mjs', import.meta.url), 'utf8');
@@ -27,7 +28,7 @@ function fixture() {
         vio: { worker: { addEventListener: (name, fn) => listeners.set(name, fn),
             removeEventListener: (name, fn) => { if (listeners.get(name) === fn) listeners.delete(name); } },
             sendFrame: frameMethod, sendIMU: imuMethod }, _consumeResult: consumeMethod };
-    const context = vm.createContext({ window: { __mobileSLAM: { app } }, document: {
+    const context = vm.createContext({ copyLowFeatureMetadata, window: { __mobileSLAM: { app } }, document: {
         createElement: () => ({ style: {}, textContent: '', remove() { children.splice(children.indexOf(this), 1); } }),
         body: { appendChild: node => children.push(node) } },
         performance: { now: () => now, timeOrigin: 9000 }, structuredClone, Object, Number, Array, Map,
@@ -126,4 +127,16 @@ test('Optional timer requires an exact 30-second recording before any CDP access
         { cwd: new URL('../..', import.meta.url), encoding: 'utf8', timeout: 5000 });
     assert.notEqual(run.status, 0);
     assert.match(run.stderr, /--timer requires --record-seconds 30/);
+});
+
+
+test('Numeric recorder keeps bounded prediction and floor metadata separate from raw visual pose', () => {
+    const f=fixture();f.context.begin(30,'token',false);
+    const prediction={schema:'mobile-slam-inertial-prediction-v1',pose:new Float64Array(16),timestamp:.9,anchorTimestamp:.8,positionUncertain:true};
+    const plane={schema:'mobile-slam-ground-plane-v1',normal:[0,0,1],corners:new Array(12).fill(2),state:'retained'};
+    f.result({clientEpoch:2,requestId:1,sequence:1},{statusCode:3,poseFresh:false,poseValid:false,pose:null,inertialPrediction:prediction,groundPlane:plane});
+    const row=f.context.window.__mobileSLAMAndroidRecording.record.results[0];assert.equal(row.pose,null);assert.equal(row.poseFresh,false);
+    assert.equal(row.inertialPrediction.pose.length,16);assert.equal(row.groundPlane.corners.length,12);
+    prediction.pose[0]=9;plane.corners[0]=9;assert.equal(row.inertialPrediction.pose[0],0);assert.equal(row.groundPlane.corners[0],2);
+    f.context.window.__mobileSLAMAndroidRecording.stop();
 });

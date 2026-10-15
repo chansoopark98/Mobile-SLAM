@@ -12,7 +12,7 @@ import { VIOWrapper } from './vio-wrapper.js?v=11';
 import { Camera, validateCameraProfile, transformCameraProfile, processingDimensions } from './camera.js?v=11';
 import { CaptureWorker } from './capture-worker.js?v=1';
 import { IMU } from './imu.js?v=11';
-import { Renderer } from './renderer.js?v=11';
+import { Renderer } from './renderer.js?v=13';
 import { OrientationHandler } from './orientation.js?v=11';
 
 /**
@@ -440,6 +440,9 @@ class App {
             snapshotCaptureFailed: 0, snapshotGeometryRejected: 0, warmupSkipped: 0, shortIntervalSkipped: 0 };
         this._renderResultKey = null;
         this._renderEpoch = null;
+        this.lowFeatureDisplay = { prediction: false, groundPlane: false };
+        this._displayResultState = null;
+        this._lastResultStatusUpdateMs = -Infinity;
         this._cameraProfile = null;
         this._orientationUpdate = null;
         this._pendingOrientation = null;
@@ -1038,6 +1041,12 @@ class App {
     }
 
     _clearVideoFrameCapture() {
+        const hadLowFeatureDisplay = this.lowFeatureDisplay.prediction || this.lowFeatureDisplay.groundPlane;
+        this.lowFeatureDisplay.prediction = this.lowFeatureDisplay.groundPlane = false;
+        this.renderer?.hideInertialPrediction?.();
+        this.renderer?.hideGroundPlane?.();
+        // Paused/hidden loops do not consume results; erase the overlays at the lifecycle boundary.
+        if (hadLowFeatureDisplay) this.renderer?.render?.();
         this._captureWorker?.cancel();
         this._videoFrameCallbackVideo?.cancelVideoFrameCallback?.(this._videoFrameCallbackHandle);
         this._videoFrameCallbackHandle = null;
@@ -1331,45 +1340,86 @@ class App {
     }
 
     _consumeResult(result) {
-        if (!result) return;
-        const epoch = `${result.clientEpoch}:${result.engineEpoch}`;
-        const key = `${epoch}:${result.sequence}`;
-        if (key === this._renderResultKey) return;
-        if (this._renderEpoch !== null && epoch !== this._renderEpoch) this.renderer?.clear();
-        this._renderEpoch = epoch;
-        this._renderResultKey = key;
-        this.frameMetrics.completed++;
+        const now = performance.now();
+        const epoch = result ? `${result.clientEpoch}:${result.engineEpoch}` : null;
+        const key = result ? `${epoch}:${result.sequence}` : null;
+        const newResult = result && key !== this._renderResultKey;
         const metrics = this.vio.getMetrics?.();
-        if (this.featureEl) this.featureEl.textContent = result.featureCount;
-        if (this.frameEl) this.frameEl.textContent = `${metrics?.framesSubmitted ?? this.frameMetrics.accepted}/${metrics?.framesCompleted ?? this.frameMetrics.completed}/${metrics?.framesDropped ?? this.frameMetrics.dropped}`;
-        this._vioInitialized = !!result.initialized;
-        const limited = result.statusCode === 5;
-        const supportedState = result.trackingState !== 'unknown' && (result.statusCode === 2 || limited &&
+        const workerFailed = this.vio.worker === null && this.vio.configured === false && metrics?.workerErrors > 0;
+        if (newResult) {
+            if (this._renderEpoch !== null && epoch !== this._renderEpoch) this.renderer?.clear();
+            this._renderEpoch = epoch;
+            this._renderResultKey = key;
+            this.frameMetrics.completed++;
+            if (this.featureEl) this.featureEl.textContent = result.featureCount;
+            if (this.frameEl) this.frameEl.textContent = `${metrics?.framesSubmitted ?? this.frameMetrics.accepted}/${metrics?.framesCompleted ?? this.frameMetrics.completed}/${metrics?.framesDropped ?? this.frameMetrics.dropped}`;
+            this._vioInitialized = !!result.initialized;
+        }
+        const limited = result?.statusCode === 5;
+        const supportedState = result && result.trackingState !== 'unknown' && (result.statusCode === 2 || limited &&
             result.trackingState === 'tracking_limited' && result.quality?.mode === 'projective_limited' &&
             result.quality.rotationVisualSupported === true && result.quality.metricTranslationSupported === false &&
             result.poseTimestamp === result.inputTimestamp);
         const fresh = supportedState && result.poseFresh && result.poseValid && Number.isFinite(result.poseTimestamp) && result.poseTimestamp >= 0 &&
             result.pose?.length === 16 && Array.from(result.pose).every(Number.isFinite);
+        const ageMs = result && Number.isFinite(result.poseTimestamp) ? now - result.poseTimestamp * 1000 : null;
+        // Display expiry only: never alter the estimator's pose or freshness fields.
+        const displayFresh = fresh && Number.isFinite(ageMs) && ageMs >= 0 && ageMs <= 500;
+        // Wrapper owns payload validation; the display rechecks identity and source deadlines every RAF.
+        const lowFeatureAllowed = result && !workerFailed && !result.error && !result.motionDiscontinuity && !result.imuIntervalLoss;
+        const prediction = lowFeatureAllowed ? result.inertialPrediction : null;
+        const predictionAgeMs = prediction ? now - prediction.timestamp * 1000 : null;
+        const predictionHorizon = prediction ? prediction.timestamp - prediction.anchorTimestamp : NaN;
+        const displayPrediction = !displayFresh && prediction?.schema === 'mobile-slam-inertial-prediction-v1' &&
+            result.statusCode === 3 && result.initialized === true &&
+            ['empty_features', 'insufficient_current_features', 'insufficient_final_current_features'].includes(result.reason) &&
+            prediction.engineEpoch === result.engineEpoch && prediction.timestamp === result.inputTimestamp &&
+            prediction.timestamp === result.engineFrameTimestamp && Number.isFinite(predictionHorizon) &&
+            predictionHorizon >= 0 && predictionHorizon <= .5 + 1e-9 &&
+            Number.isFinite(predictionAgeMs) && predictionAgeMs >= 0 && predictionAgeMs <= 100;
+        const plane = lowFeatureAllowed ? result.groundPlane : null;
+        const planeAgeMs = plane ? now - plane.sourceTimestamp * 1000 : null;
+        const displayPlane = plane?.schema === 'mobile-slam-ground-plane-v1' &&
+            plane.engineEpoch === result.engineEpoch && plane.clientEpoch === result.clientEpoch &&
+            plane.sourceSequence <= result.sequence && plane.sourceTimestamp <= result.inputTimestamp &&
+            Number.isFinite(planeAgeMs) && planeAgeMs >= 0 && planeAgeMs <= 1000;
+        this.lowFeatureDisplay.prediction = !!displayPrediction;
+        this.lowFeatureDisplay.groundPlane = !!displayPlane;
         const names = { 0: 'Not configured', 1: 'Initializing', 2: 'Tracking', 3: 'Lost', 4: 'Cooldown' };
-        const imu = this.imu.getDiagnostics();
-        const sourceAgeMs = imu.lastSample ? performance.now() - imu.lastSample.timestampS * 1000 : null;
-        const sourceFresh = Number.isFinite(sourceAgeMs) && sourceAgeMs >= -1 && sourceAgeMs <= 500;
-        if (!['denied', 'error'].includes(imu.permission.state)) {
-            if (Number.isFinite(sourceAgeMs) && sourceAgeMs < -1) this._inputStatus = `IMU clock ahead (+${Math.round(-sourceAgeMs)}ms)`;
-            else this._inputStatus = this.imu.running && sourceFresh ?
-                (this.imu.isCalibrated() ? 'IMU active' : 'IMU active / bias unverified') : `IMU ${this.imu.running ? 'waiting for data' : imu.status}`;
-        }
-        const source = result.sourceTiming?.source || 'camera time proxy';
-        const ageMs = fresh ? performance.now() - result.poseTimestamp * 1000 : null;
-        const qualityLabel = limited ? `Limited / ${fresh ? 'position uncertain' : 'pose unavailable'}` :
+        const qualityLabel = workerFailed ? 'Worker error' : !result ? 'Waiting' :
+            supportedState && !displayFresh && (!limited || fresh) ? 'Stale' :
+            limited ? `Limited / ${fresh ? 'position uncertain' : 'pose unavailable'}` :
             result.trackingState === 'unknown' || !Number.isInteger(result.statusCode) ? 'Unknown' : names[result.statusCode] || 'Unknown';
-        this.updateStatus(`${this._inputStatus || 'IMU'} · ${qualityLabel}${!limited && result.reason ? ` / ${result.reason}` : ''} · ${this.calibrationProvenance.status}${ageMs !== null ? ` · pose age ${Math.round(ageMs)}ms (${source})` : ''}`);
+        const reason = workerFailed ? metrics.lastError : !limited && result?.reason;
+        const displayState = `${qualityLabel}${reason ? ` / ${reason}` : ''}${displayPrediction ? ' · IMU prediction / position uncertain' : ''}${displayPlane ? ` · 바닥 후보(수평면, 분류 미확인) / ${plane.state} / support ${plane.supportCount}` : ''}`;
+        // New results and state transitions are immediate; only repeated text is capped at 10Hz.
+        if (newResult || displayState !== this._displayResultState || now - this._lastResultStatusUpdateMs >= 100) {
+            const imu = this.imu.getDiagnostics();
+            const sourceAgeMs = imu.lastSample ? now - imu.lastSample.timestampS * 1000 : null;
+            const sourceFresh = Number.isFinite(sourceAgeMs) && sourceAgeMs >= -1 && sourceAgeMs <= 500;
+            if (!['denied', 'error'].includes(imu.permission.state)) {
+                if (Number.isFinite(sourceAgeMs) && sourceAgeMs < -1) this._inputStatus = `IMU clock ahead (+${Math.round(-sourceAgeMs)}ms)`;
+                else this._inputStatus = this.imu.running && sourceFresh ?
+                    (this.imu.isCalibrated() ? 'IMU active' : 'IMU active / bias unverified') : `IMU ${this.imu.running ? 'waiting for data' : imu.status}`;
+            }
+            const source = result?.sourceTiming?.source || 'camera time proxy';
+            this.updateStatus(`${this._inputStatus || 'IMU'} · ${displayState} · ${this.calibrationProvenance.status}${Number.isFinite(ageMs) ? ` · pose age ${Math.round(ageMs)}ms (${source})` : ''}${displayPrediction ? ` · prediction age ${Math.round(predictionAgeMs)}ms` : ''}${displayPlane ? ` · plane age ${Math.round(planeAgeMs)}ms` : ''}`);
+            this._displayResultState = displayState;
+            this._lastResultStatusUpdateMs = now;
+        }
         if (this.renderer) {
-            if (fresh) {
+            if (newResult && !fresh && !workerFailed) this.renderer.clear();
+            else if (!displayFresh || workerFailed) this.renderer.hideCameraPose();
+            else if (newResult) {
                 this.renderer.updateCameraPose(result.pose);
                 const map = this.vio.getMapPoints();
                 this.renderer.updateMapPoints(map.points, map.count);
-            } else this.renderer.clear();
+            }
+            if (displayPrediction) {
+                if (newResult) this.renderer.updateInertialPrediction(prediction.pose);
+            } else this.renderer.hideInertialPrediction?.();
+            if (displayPlane) this.renderer.updateGroundPlane(plane);
+            else this.renderer.hideGroundPlane?.();
         }
     }
 
@@ -1492,6 +1542,7 @@ class App {
         // that in-flight lifecycle request and leave calibration incomplete.
         if (this._reconfiguring) return;
         this.vio.reset();
+        this.lowFeatureDisplay.prediction = this.lowFeatureDisplay.groundPlane = false;
         this.imu.discard('engine_reset');
         this._renderResultKey = null;
         this._renderEpoch = null;
@@ -1519,6 +1570,7 @@ class App {
 
     stop() {
         this.running = false;
+        this.lowFeatureDisplay.prediction = this.lowFeatureDisplay.groundPlane = false;
         this._cancelFrameLoop();
         this._pendingOrientation = null;
         this.camera.getVideoElement()?.removeEventListener?.('resize', this._videoResizeHandler);

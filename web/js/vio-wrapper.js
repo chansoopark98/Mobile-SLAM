@@ -1,4 +1,5 @@
 /** Async API for the single VIO Worker. Frames may be dropped while IMU remains deliverable. */
+import { validateInertialPrediction, validateGroundPlane, isCleanVisualContext } from './low-feature.mjs';
 function validPipelineQuality(pipeline) {
     const q = pipeline?.quality, s = pipeline?.solver;
     const count = value => Number.isSafeInteger(value) && value >= 0;
@@ -55,6 +56,8 @@ export class VIOWrapper {
         this._clientEpoch = 0;
         this._nextRequestId = 1;
         this._sequence = 0;
+        this._lowFeatureBlocked = false;
+        this._lowFeatureFenceSequence = 0;
         this._pending = new Map();
         this._freeWaiters = new Set();
         this._activeFrame = null;
@@ -108,6 +111,8 @@ export class VIOWrapper {
         if (this._activeFrame && !this._activeFrame.timedOut) this._metrics.framesCancelled++;
         this._clientEpoch++;
         this._sequence = 0;
+        this._lowFeatureBlocked = false;
+        this._lowFeatureFenceSequence = 0;
         this._latestResult = null;
         this._latestMapPoints = null;
         this._engineEpoch = null;
@@ -177,12 +182,14 @@ export class VIOWrapper {
             count > 4096 || count * 7 > imuData.length) {
             this._metrics.imuReadingsRejected += Number.isInteger(count) && count > 0 ? count : 0;
             this._metrics.lastError = 'invalid_imu_batch';
+            this._invalidateLowFeature();
             return false;
         }
         for (let i = 0; i < count * 7; i++) {
             if (!Number.isFinite(imuData[i]) || (i % 7 === 0 && i >= 7 && imuData[i] <= imuData[i - 7])) {
                 this._metrics.imuReadingsRejected += count;
                 this._metrics.lastError = 'invalid_imu_sample';
+                this._invalidateLowFeature();
                 return false;
             }
         }
@@ -195,6 +202,7 @@ export class VIOWrapper {
         } catch (error) {
             this._metrics.imuReadingsRejected += count;
             this._metrics.lastError = error.message;
+            this._invalidateLowFeature();
             return false;
         }
     }
@@ -206,6 +214,7 @@ export class VIOWrapper {
             this._metrics.framesDropped++;
             const reason = !this.configured || !this.worker ? 'notConfigured' : this.workerBusy ? 'busy' : 'invalid';
             this._metrics.frameDropReasons[reason]++;
+            if (!(grayImage instanceof Uint8Array) || !Number.isFinite(timestamp)) this._invalidateLowFeature();
             return false;
         }
         const copyStarted = performance.now();
@@ -232,6 +241,7 @@ export class VIOWrapper {
             this._metrics.framesDropped++;
             this._metrics.frameDropReasons.postMessage++;
             this._metrics.lastError = error.message;
+            this._invalidateLowFeature();
             this._latestResult = this._latestMapPoints = null;
             this._finishFrame(error);
             return false;
@@ -245,6 +255,16 @@ export class VIOWrapper {
         return { ...this._metrics, imuDrops: this._metrics.imuDrops ? { ...this._metrics.imuDrops } : null,
             frameDropReasons: { ...this._metrics.frameDropReasons },
             workerBusy: this.workerBusy, clientEpoch: this._clientEpoch };
+    }
+
+    _invalidateLowFeature() {
+        this._lowFeatureBlocked = true;
+        this._lowFeatureFenceSequence = this._sequence;
+        if (this._latestResult) this._latestResult = { ...this._latestResult, inertialPrediction: null, groundPlane: null };
+        if (this.worker && this.configured) {
+            this._request('invalidateLowFeature').catch(() => {});
+            this._lowFeatureFenceSequence = this._sequence;
+        }
     }
 
     reset() {
@@ -323,7 +343,7 @@ export class VIOWrapper {
         }
         if (message.type === 'imu') {
             if (message.imuDrops) this._metrics.imuDrops = message.imuDrops;
-            if (!message.success) this._metrics.lastError = message.error;
+            if (!message.success) { this._metrics.lastError = message.error; this._invalidateLowFeature(); }
             return;
         }
         if (message.type === 'result') {
@@ -360,8 +380,24 @@ export class VIOWrapper {
             const count = data.mapPointCount;
             const mapValid = poseValid && data.mapPoints instanceof Float64Array && Number.isInteger(count) &&
                 count > 0 && count <= 2000 && data.mapPoints.length === count * 3 && data.mapPoints.every(Number.isFinite);
+            const sideContext = { ...data, pose: poseValid ? data.pose : null, poseValid, poseFresh: poseValid,
+                poseTimestamp: poseValid ? poseTimestamp : null, inputTimestamp,
+                clientEpoch: message.clientEpoch, sequence: message.sequence,
+                error: error || futurePose || data.error,
+                transportLost: !!data.imuIntervalLoss };
+            const cleanVisual = isCleanVisualContext(sideContext);
+            if (this._lowFeatureBlocked && message.sequence > this._lowFeatureFenceSequence && cleanVisual) this._lowFeatureBlocked = false;
+            if (!cleanVisual) sideContext.pose = null;
+            sideContext.error ||= this._lowFeatureBlocked;
+            const inertialPrediction = validateInertialPrediction(data.inertialPrediction, sideContext);
+            const groundPlane = validateGroundPlane(data.groundPlane, sideContext);
+            const lowFeatureTimings = Object.fromEntries(['predictionReadMs','groundSupportReadMs','groundFitMs','groundPlaneUpdateMs']
+                .map(key => [key, Number.isFinite(data[key]) && data[key] >= 0 ? data[key] : null]));
             this._latestResult = {
                 ...data, pose: poseValid ? data.pose : null, poseValid, poseFresh: poseValid,
+                inertialPrediction, groundPlane, ...lowFeatureTimings,
+                groundSupportPointCount: Number.isInteger(data.groundSupportPointCount) && data.groundSupportPointCount >= 0 &&
+                    data.groundSupportPointCount <= 512 ? data.groundSupportPointCount : null,
                 trackingState: error ? 'unknown' : trackingState(data.statusCode), pipeline, quality,
                 poseTimestamp: poseValid ? poseTimestamp : null,
                 inputTimestamp, timestamp: inputTimestamp, requestId: message.requestId,

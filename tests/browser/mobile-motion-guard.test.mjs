@@ -1,10 +1,11 @@
+import { loadBrowserSource } from './browser-source-loader.mjs';
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import fs from 'node:fs/promises';
 import { Worker } from 'node:worker_threads';
 import { limitedPipeline } from './limited-fixture.mjs';
 
-const workerSource = await fs.readFile(new URL('../../web/js/vio-worker.js', import.meta.url), 'utf8');
+const workerSource = await loadBrowserSource('vio-worker');
 const moduleURL = source => 'data:text/javascript;base64,' + Buffer.from(source).toString('base64');
 
 // Actual Worker dispatch, with a controlled engine at the existing WASM boundary.

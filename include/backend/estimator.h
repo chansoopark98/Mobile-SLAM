@@ -55,6 +55,7 @@ public:
     std::vector<common::SolvedFeature> getSolvedFeatures() const;
     /** Get latest backend solution as VINSResult for PnP frontend initialization */
     common::VINSResult getLatestVINSResult() const;
+    Eigen::Vector3d getGravity() const { return g_; }
 
 private:
     friend struct EstimatorTestAccess;

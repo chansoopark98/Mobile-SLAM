@@ -31,6 +31,19 @@ try {
         for(const method of ['configure','processFrame','getEpoch','getPoseTimestamp','getFrameTimestamp','getPoseFresh','getPoseValid','getLastReason','getLastSolverIterations','getLastSolverTermination','setExecutionParams','getExecutionSeed','getCVThreadCount','getIMUEndpointTimestamp','setDiagnosticCapture','getFeatureDiagnostics','getPipelineDiagnostics','setBenchmarkSolverProfile','getBenchmarkSolverProfile','setExperimentalObservationPolicy','getExperimentalObservationPolicy','setRotationRescue','getRotationRescueEnabled','reset'])
             if(typeof engine[method]!=='function')throw new Error('Missing mandatory binding '+method);
         if(engine.getExperimentalObservationPolicy()!==0)throw new Error('Experimental observation policy must default to legacy0');
+        for(const method of ['getInertialPrediction','invalidateInertialPrediction','getGroundSupportPoints','getLastSolverQualityReason'])
+            if(typeof engine[method]!=='function')throw new Error('Missing low-feature binding '+method);
+        const lowFeatureEpoch=Number(engine.getEpoch());
+        const support=module._malloc(512*3*8+8);
+        module.HEAPF64.fill(123456,support/8,support/8+512*3+1);
+        for(const [pointer,count] of [[0,512],[support+1,512],[module.HEAPU8.byteLength-8,512],[support,-1],[support,0],[support,2147483647]]) {
+            if(engine.getGroundSupportPoints(pointer,count)!==0)throw new Error('Invalid/uninitialized ground support must be empty');
+        }
+        if(!module.HEAPF64.subarray(support/8,support/8+512*3+1).every(value=>value===123456))throw new Error('Ground getter wrote without visual support');
+        engine.invalidateInertialPrediction();
+        if(engine.getInertialPrediction()!=='null' || engine.getLastSolverQualityReason()!=='' || Number(engine.getEpoch())!==lowFeatureEpoch)
+            throw new Error('Unseeded invalidation changed metric epoch or exposed prediction');
+        module._free(support);
         const rotation=module._malloc(72),translation=module._malloc(24);
         module.HEAPF64.set([1,0,0,0,1,0,0,0,1],rotation/8);module.HEAPF64.set([0,0,0],translation/8);
         if(!engine.configure(96,96,100,100,48,48,2,0,0,0,0,rotation,translation,.1,.001,.01,.0001,9.81))throw new Error('Calibrated configure rejected');
@@ -98,7 +111,7 @@ try {
         const resetEpoch=Number(engine.getEpoch());
         if(resetEpoch<=configuredEpoch || engine.getExecutionSeed()!==0 || engine.getCVThreadCount()!==1)throw new Error('Reset profile/epoch mismatch');
         engine.delete();module._free(rotation);module._free(translation);
-        return {configuredEpoch,resetEpoch,executionSeed:0,cvThreads:1,mandatoryBindings:true,diagnosticCaptureDefault:false,diagnosticArmWarmupResetJson:true,benchmarkSolverProfileDefault:false,benchmarkEnableResetReconfigureDisable:true,experimentalObservationPolicyDefault:0,experimentalPolicyReadbackResetConfigureRangeEpoch:true,rotationRescueDefault:false,rotationRescueEnableResetConfigure:true,initialPose:'invalid',acceptanceScope:'loader_and_public_contracts_only_not_tracking_or_accuracy'};
+        return {configuredEpoch,resetEpoch,executionSeed:0,cvThreads:1,mandatoryBindings:true,lowFeatureBindingsAndHeapGuards:true,diagnosticCaptureDefault:false,diagnosticArmWarmupResetJson:true,benchmarkSolverProfileDefault:false,benchmarkEnableResetReconfigureDisable:true,experimentalObservationPolicyDefault:0,experimentalPolicyReadbackResetConfigureRangeEpoch:true,rotationRescueDefault:false,rotationRescueEnableResetConfigure:true,initialPose:'invalid',acceptanceScope:'loader_and_public_contracts_only_not_tracking_or_accuracy'};
     });
     assert.deepEqual(failures,[]);
     await fs.mkdir(path.dirname(output),{recursive:true});

@@ -2,6 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import fs from 'node:fs/promises';
 import vm from 'node:vm';
+import { copyLowFeatureMetadata } from '../../scripts/dev/android-input-record.mjs';
 
 const source = await fs.readFile(new URL('../../scripts/dev/android-input-record.mjs', import.meta.url), 'utf8');
 const start = source.indexOf('function begin(');
@@ -23,7 +24,7 @@ function fixture({ transfer = false, frameBytes = 4 } = {}) {
         vio: { sendFrame: originalFrame, sendIMU: originalIMU, _clientEpoch: 7, isInitialized: () => false,
             worker: { addEventListener: (name, fn) => listeners.set(name, fn),
                 removeEventListener: (name, fn) => { if (listeners.get(name) === fn) listeners.delete(name); } } } };
-    const context = vm.createContext({ Uint8Array, structuredClone, Math, Number, Object,
+    const context = vm.createContext({ copyLowFeatureMetadata, Uint8Array, structuredClone, Math, Number, Object,
         btoa: value => Buffer.from(value, 'binary').toString('base64'),
         performance: { now: () => now, timeOrigin: 10000 },
         setTimeout: fn => { const id = timers.size + 1; timers.set(id, fn); return id; },
@@ -219,4 +220,22 @@ test('wrong token cannot acknowledge or remove another recording', async t => {
         'unrelated-token', f.cameraDirectory, new Map()), /Capture lost after navigation/);
     assert.equal(f.capture.record.counters.queuedBytes, 4);
     assert.equal(f.context.window.__mobileSLAMInputCapture.token, 'owned-token');
+});
+
+
+test('Low-feature producer fields are copied with bounded arrays and never substitute a Lost pose', () => {
+    const f=fixture(); f.app.vio.sendFrame(new Uint8Array(4),1);
+    const prediction={schema:'mobile-slam-inertial-prediction-v1',timestamp:1,anchorTimestamp:.8,pose:new Float64Array(16),positionUncertain:true,unexpected:new Array(100000).fill(1)};
+    const groundPlane={schema:'mobile-slam-ground-plane-v1',normal:[0,0,1],corners:new Array(12).fill(1),supportCount:20,state:'retained'};
+    f.listeners.get('message')({data:{type:'result',requestId:1,clientEpoch:7,sequence:1,data:{statusCode:3,poseFresh:false,poseValid:false,pose:null,inertialPrediction:prediction,groundPlane}}});
+    const row=f.capture.record.results[0]; assert.equal(row.pose,null);assert.equal(row.poseFresh,false);assert.equal(row.statusCode,3);
+    assert.equal(row.inertialPrediction.pose.length,16);assert.equal(row.groundPlane.corners.length,12);assert.equal('unexpected' in row.inertialPrediction,false);
+    prediction.pose[0]=99;groundPlane.corners[0]=99;assert.equal(row.inertialPrediction.pose[0],0);assert.equal(row.groundPlane.corners[0],1);
+    f.capture.stop();
+});
+
+test('Metadata copy rejects oversized side arrays and bounds strings without traversing unknown fields', () => {
+    const copied=copyLowFeatureMetadata({inertialPrediction:{schema:'x'.repeat(300),pose:new Float64Array(10000)},groundPlane:{corners:new Array(10000),normal:[0,0,1],centroid:[0,0,0]}});
+    assert.equal(copied.inertialPrediction.schema.length,128);assert.equal(copied.inertialPrediction.pose,null);
+    assert.equal(copied.groundPlane.corners,null);assert.deepEqual(copied.groundPlane.normal,[0,0,1]);
 });

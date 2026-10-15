@@ -108,7 +108,10 @@ python3 scripts/dev/evaluate-synthetic-vio.py --dataset build/synthetic-example 
 - 기본 harness는 명시 `fth=1`; `--f-threshold default`는 URL override 생략 후 실제 C++ readback 확인. 현재 engine 기본값도1
 - `live-deterministic`의 가상 clock 비용을 실제 latency로 보고하지 않음. 실제 rAF도 camera captureTime·sensor API는 mock이며 물리 phone 검증과 구분
 - 원본400frame·warmup 이후300frame 분모 유지. 누락·busy·실패·pose 없는 frame을 평가에서 숨기지 않음
-- 캡처한 App 입력 재생: 생성된 `captured-input.json`을 `--mode raw`에 전달하고 `--frames`를 실제 accepted 수로 지정. 실제 C++ readback 설정·accepted pixels·IMU batch 경계 보존
+- 캡처한 App 입력 재생: 생성된 `captured-input.json`을 `--mode raw`에 전달하고 `--frames`를 실제 accepted 수로 지정. 실제 C++ readback 설정·accepted pixels·원본 IMU 값/순서 보존
+- raw 기본 `--imu-policy future-bracket`: captured counts가 있어도 각 frame의 뒤쪽 IMU endpoint를 먼저 공급하는 수학적 재생. 기존 `imuBatchRanges`를 사용하며 sample 중복 전송 없음. frame 대기 중 실제 후속 IMU arrival schedule·live wall latency는 재현하지 않음
+- 과거 pre-submit batch 경계 진단은 명시 `--imu-policy captured-counts`: 유효한 `capture.imuSubmissionCounts` 필수. report에 `pre-submit-only / not-live-schedule` 한계를 기록하며 기존 missing-bracket 실패도 보존. 원본 input JSON·pixels·IMU 파일을 변경하지 않음
+- `--imu-policy`는 raw 전용. live 모드의 명시 policy·잘못된 policy·누락/비정상 captured counts는 browser 실행 전 거부. report의 `requestedIMUPolicy`(생략 시 null), `selectedIMUPolicy`, 각 row의 `submittedIMUStart/Count`로 선택과 실제 공급 경계를 확인
 - native replay trailing 인자: `[PROFILE=legacy|yaml] [ROTATION_RESCUE=0|1] [EXPERIMENTAL_OBSERVATION_POLICY=0|1|2]`. 기본 `legacy`는 기존 고정 tracker 유지, `yaml`은 supplied tracker 설정 사용
 - 실패한 current-observation 실험은 instance API `setExperimentalObservationPolicy(0|1|2)`로만 선택. 기본0=시작 A2 legacy,1=D2 old-depth 복구,2=D3 good-history candidate 선택. Config/g_config·App/Worker의 자동 활성화·UI 추가 없음
 - `getExperimentalObservationPolicy()`는 해당 Engine selected 값, native `getEffectiveExperimentalObservationPolicy()`와 `getFeatureDiagnostics().params.experimental_observation_policy_effective`는 실제 backend 값. backend 미생성 시 effective−1; configure/configureFromConfig는0, reset은 선택 보존, 값 변경은 새 epoch와 빈 history, 같은 값은 무동작
@@ -219,7 +222,7 @@ node scripts/dev/replay-android-input.mjs \
 ## 실제 HTTPS 7002 수동 운영
 
 ```bash
-# 검증된 paired candidate 승격/부모 start flag 이후
+# 검증된 embedded candidate와 수동 start flag 준비 후
 bash scripts/ops/serve.sh start
 bash scripts/ops/serve.sh status
 
@@ -244,7 +247,8 @@ curl -q --noproxy '*' --cacert /etc/ssl/certs/ca-certificates.crt \
 - 시작 flag: `build/refactor-orchestration/server-start-authorized.json`의 authorized·active artifact hash·mode 필요. 실제 public7002는 fresh candidate 준비 후 실행
 - 검증: `node --test tests/server/server.test.cjs`, `python3 -m unittest discover -s tests/server -p 'test_*.py' -v`
 - localhost/LAN-host strict TLS 성공과 외부 internet/실제 phone 접근·센서 품질을 구분
-- 현재 실행 기록(2026-10-07 01:48:26 KST): PID `3002812`, instance `c98f10df76144a3c80311b09d1e0d5cf`, deployment `refactor-final-20261007`, embedded loader `6,009,632 bytes` / SHA256 `9973d58eca6f95fcf5fcaf2d553d02bc2215f419e4ba1fc1cc94ae417eb3014d`; source manifest `b936982e5fea0c8ad0fb77e3e8b311770998763ff77ef2ef4bb082945866674b`
+- 최신 수동 실행 준비(2026-10-14): [서버 파일 갱신 기록](../../docs/fixes/2026-10-14-server-ready.md). 현재 기본 OFF loader `38837d4…`, deployment `mobile-slam-latest-20261014`, source86개 일치. 사용자 직접 시작 조건으로 파일·flag만 갱신; 실행 중인 별도 `node server.js`는 중지하지 않음.
+- 과거 실행 기록(2026-10-07 01:48:26 KST): PID `3002812`, instance `c98f10df76144a3c80311b09d1e0d5cf`, deployment `refactor-final-20261007`, embedded loader `6,009,632 bytes` / SHA256 `9973d58eca6f95fcf5fcaf2d553d02bc2215f419e4ba1fc1cc94ae417eb3014d`; source manifest `b936982e5fea0c8ad0fb77e3e8b311770998763ff77ef2ef4bb082945866674b`
 - 세션 로그: `logs/https/20261006T164826765565Z-7002-c98f10df76144a3c80311b09d1e0d5cf.log`; exact-owned PID2449945 종료 → 기존 helper atomic backup/promotion → 새 후보 시작1회. 이전 후보·session 로그·TLS 보존, 현재 상태는 `status`로 재확인. 상세 근거: [HTTPS/Ops 결과](../../docs/refactor/2026-10-06/server-lane.md)
 - 같은 host의 기본 hostname은 기존 `/etc/hosts` development override로 `127.0.0.1` 연결. public 경로 근거는 `dig @1.1.1.1`의 A `183.98.179.103` 조회 후 해당 주소로 `--resolve` strict SNI 연결; 둘을 구분, ops에서 DNS/hosts 변경 없음
 

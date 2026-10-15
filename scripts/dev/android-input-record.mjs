@@ -4,7 +4,35 @@ import { pathToFileURL } from 'node:url';
 import { parseArgs } from 'node:util';
 import { randomUUID, createHash } from 'node:crypto';
 
-export function begin(seconds, maxFrames, token, showTimer) {
+/** Bounded observation copy, not acceptance validation; visual result fields stay untouched. */
+export function copyLowFeatureMetadata(data) {
+    const copy = (value, fields, arrays) => {
+        if (!value || typeof value !== 'object') return null;
+        const result = {};
+        for (const key of fields) {
+            const item = value[key];
+            if (item === null || typeof item === 'number' || typeof item === 'boolean') result[key] = item;
+            else if (typeof item === 'string') result[key] = item.slice(0, 128);
+        }
+        for (const [key, length] of arrays) {
+            const item = value[key];
+            result[key] = (Array.isArray(item) || ArrayBuffer.isView(item)) && item.length === length
+                ? Array.from(item, number => typeof number === 'number' ? number : null) : null;
+        }
+        return result;
+    };
+    return {
+        inertialPrediction: copy(data?.inertialPrediction,
+            ['schema','mode','poseFrame','engineEpoch','timestamp','anchorTimestamp','maxHorizonSeconds',
+                'visualSupported','metricTranslationSupported','positionUncertain'], [['pose',16]]),
+        groundPlane: copy(data?.groundPlane,
+            ['schema','kind','semanticClassification','state','engineEpoch','clientEpoch','sourceTimestamp',
+                'sourceSequence','offset','supportCount','sourcePointCount','rms','maxAgeSeconds'],
+            [['normal',3],['centroid',3],['corners',12]]),
+    };
+}
+
+export function begin(seconds, maxFrames, token, showTimer, copyMetadata = copyLowFeatureMetadata) {
     const app = window.__mobileSLAM?.app, worker = app?.vio.worker;
     if (!app?.running || !worker) throw new Error('Start Mobile-SLAM before arming input capture');
     if (window.__mobileSLAMInputCapture || window.__mobileSLAMAndroidRecording) throw new Error('Finish the existing recording first');
@@ -82,7 +110,7 @@ export function begin(seconds, maxFrames, token, showTimer) {
                 'poseTimestamp', 'poseFresh', 'poseValid', 'imuEndpointTimestamp', 'engineProcessingMs', 'workerProcessingMs',
                 'imuWaitMs', 'imuWaitBudgetMs', 'workerQueueMs', 'imuDrops', 'motionDiscontinuity', 'solverIterations', 'solverTermination',
                 'pipeline', 'candidatePipeline'].map(key => [key, data[key]])),
-            pose: data.pose ? Array.from(data.pose) : null });
+            pose: data.pose ? Array.from(data.pose) : null, ...copyMetadata(data) });
     };
     app.vio.sendFrame = sendFrame; app.vio.sendIMU = sendIMU; worker.addEventListener('message', receive);
     const stop = (reason = 'duration') => {
@@ -211,7 +239,7 @@ async function main() {
             socket.addEventListener('open', () => { clearTimeout(timer); resolve(); }, { once: true });
             socket.addEventListener('error', () => { clearTimeout(timer); reject(new Error('CDP connection failed')); }, { once: true });
         });
-        report.armed = await call(`(${begin.toString()})(${seconds}, ${maxFrames}, ${JSON.stringify(token)}, ${values.timer})`);
+        report.armed = await call(`(${begin.toString()})(${seconds}, ${maxFrames}, ${JSON.stringify(token)}, ${values.timer}, ${copyLowFeatureMetadata.toString()})`);
         report.initialRecording = report.armed.initialRecording; delete report.armed.initialRecording;
         const initial = await fs.open(path.join(directory, 'capture-start.json'), 'wx', 0o600);
         try { await initial.writeFile(JSON.stringify(report.initialRecording, null, 2) + '\n'); await initial.sync(); }

@@ -2,6 +2,7 @@ import fs from 'node:fs/promises';
 import path from 'node:path';
 import { parseArgs } from 'node:util';
 import { randomUUID } from 'node:crypto';
+import { copyLowFeatureMetadata } from './android-input-record.mjs';
 
 // Read only the existing Mobile-SLAM page. Do not launch or navigate Chrome.
 const { values } = parseArgs({ options: {
@@ -49,7 +50,7 @@ function call(method, params) {
         socket.send(JSON.stringify({ id, method, params }));
     });
 }
-function snapshot() {
+function snapshot(copyMetadata = copyLowFeatureMetadata) {
     const app = window.__mobileSLAM?.app;
     if (!app) return { available: false, visibility: document.visibilityState };
     const result = app.vio.getLatestResult();
@@ -64,13 +65,14 @@ function snapshot() {
             'featureCount', 'imuCount', 'inputTimestamp', 'engineFrameTimestamp', 'imuEndpointTimestamp',
             'poseTimestamp', 'poseFresh', 'poseValid', 'engineProcessingMs', 'imuWaitMs', 'imuWaitBudgetMs', 'workerProcessingMs',
             'roundtripMs', 'imuIntervalLoss'].map(key => [key, result[key]])),
-        pose: result?.pose ? Array.from(result.pose) : null,
+        pose: result?.pose ? Array.from(result.pose) : null, ...copyMetadata(result),
+        lowFeatureDisplay: { ...app.lowFeatureDisplay },
         camera: settings && Object.fromEntries(['width', 'height', 'frameRate', 'facingMode', 'aspectRatio'].map(key => [key, settings[key]])),
         renderer: { trajectoryPoints: app.renderer?._trajCount, pixelRatio: app.renderer?.renderer.getPixelRatio(),
             css: box && { width: box.width, height: box.height, bottom: box.bottom },
             buffer: canvas && { width: canvas.width, height: canvas.height }, viewportHeight: innerHeight, devicePixelRatio } };
 }
-function startRecording(seconds, token, showTimer = false) {
+function startRecording(seconds, token, showTimer = false, copyMetadata = copyLowFeatureMetadata) {
     const app = window.__mobileSLAM?.app, worker = app?.vio.worker;
     if (!app || !worker || !app.running) throw new Error('Start Mobile-SLAM before recording');
     if (window.__mobileSLAMAndroidRecording || window.__mobileSLAMInputCapture) throw new Error('A recording is already active');
@@ -104,7 +106,7 @@ function startRecording(seconds, token, showTimer = false) {
                 'inputTimestamp', 'engineFrameTimestamp', 'imuEndpointTimestamp', 'poseTimestamp', 'poseFresh', 'poseValid',
                 'engineProcessingMs', 'imuWaitMs', 'imuWaitBudgetMs', 'workerProcessingMs', 'workerQueueMs', 'solverIterations',
                 'solverTermination', 'imuDrops', 'imuIntervalLoss', 'motionDiscontinuity', 'pipeline', 'candidatePipeline'].map(key => [key, data[key]])),
-            pose: data.pose ? Array.from(data.pose) : null };
+            pose: data.pose ? Array.from(data.pose) : null, ...copyMetadata(data) };
         record.results.push(row);
         received.set(key, row);
     };
@@ -135,7 +137,7 @@ function startRecording(seconds, token, showTimer = false) {
         if (result) {
             const key = frameKey(result.clientEpoch, result.requestId, result.sequence);
             const row = received.get(key);
-            if (row) { row.uiStateUpdatedAtMs = performance.now(); received.delete(key); }
+            if (row) { row.uiStateUpdatedAtMs = performance.now(); row.lowFeatureDisplay = { ...app.lowFeatureDisplay }; received.delete(key); }
         }
         return value;
     }
@@ -194,11 +196,11 @@ try {
         socket.addEventListener('error', () => { clearTimeout(timer); reject(new Error('CDP connection failed')); }, { once: true });
     });
     if (seconds) {
-        const started = await call('Runtime.evaluate', { expression: `(${startRecording.toString()})(${seconds}, ${JSON.stringify(token)}, ${values.timer})`, returnByValue: true, userGesture: false });
+        const started = await call('Runtime.evaluate', { expression: `(${startRecording.toString()})(${seconds}, ${JSON.stringify(token)}, ${values.timer}, ${copyLowFeatureMetadata.toString()})`, returnByValue: true, userGesture: false });
         if (started.exceptionDetails) throw new Error(JSON.stringify(started.exceptionDetails));
     }
     for (let index = 0; index < count; index++) {
-        const result = await call('Runtime.evaluate', { expression: `(${snapshot.toString()})()`, returnByValue: true, userGesture: false });
+        const result = await call('Runtime.evaluate', { expression: `(${snapshot.toString()})(${copyLowFeatureMetadata.toString()})`, returnByValue: true, userGesture: false });
         if (result.exceptionDetails) throw new Error(JSON.stringify(result.exceptionDetails));
         report.samples.push(result.result.value);
         if (index + 1 < count) await new Promise(resolve => setTimeout(resolve, 1000));

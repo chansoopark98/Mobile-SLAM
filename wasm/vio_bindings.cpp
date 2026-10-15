@@ -1,6 +1,7 @@
 #include <emscripten/bind.h>
 #include <emscripten/val.h>
 #include <cstdint>
+#include <algorithm>
 #include <emscripten/heap.h>
 #include "vio_engine.h"
 
@@ -59,6 +60,13 @@ int getMapPoints_wrapper(const VIOEngine& self,
     return self.getMapPoints(reinterpret_cast<double*>(output_ptr), max_count);
 }
 
+int getGroundSupportPoints_wrapper(const VIOEngine& self, uintptr_t output_ptr, int max_count) {
+    if(max_count<=0) return 0;
+    const int capacity=std::min(max_count,512);
+    if(!heapRange(output_ptr,static_cast<size_t>(capacity)*3*sizeof(double),alignof(double))) return 0;
+    return self.getGroundSupportPoints(reinterpret_cast<double*>(output_ptr),capacity);
+}
+
 EMSCRIPTEN_BINDINGS(VIOModule) {
     class_<VIOEngine>("VIOEngine")
         .constructor()
@@ -67,6 +75,9 @@ EMSCRIPTEN_BINDINGS(VIOModule) {
         .function("isInitialized", &VIOEngine::isInitialized)
         .function("getFeaturePointCount", &VIOEngine::getFeaturePointCount)
         .function("getMapPoints", &getMapPoints_wrapper)
+        .function("getGroundSupportPoints", &getGroundSupportPoints_wrapper)
+        .function("getInertialPrediction", &VIOEngine::getInertialPrediction)
+        .function("invalidateInertialPrediction", &VIOEngine::invalidateInertialPrediction)
         .function("setMobileParams", &VIOEngine::setMobileParams)
         .function("setFThreshold", &VIOEngine::setFThreshold)
         .function("setTrackingParams", &VIOEngine::setTrackingParams)
@@ -76,6 +87,7 @@ EMSCRIPTEN_BINDINGS(VIOModule) {
         .function("getFrameTimestamp", &VIOEngine::getFrameTimestamp)
         .function("getIMUEndpointTimestamp", &VIOEngine::getIMUEndpointTimestamp)
         .function("getLastReason", &VIOEngine::getLastReason)
+        .function("getLastSolverQualityReason", &VIOEngine::getLastSolverQualityReason)
         .function("getPoseFresh", &VIOEngine::getPoseFresh)
         .function("getPoseValid", &VIOEngine::getPoseValid)
         .function("getLastSolverIterations", &VIOEngine::getLastSolverIterations)

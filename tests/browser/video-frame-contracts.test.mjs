@@ -43,7 +43,8 @@ function fixture({ callbacks = true, now = 1337516.710, search = '', transferFra
         sent.push(timestamp); sentPixels.push(Array.from(submitted)); sentOptions.push(options); return true;
     },
         getLatestResult: () => null, getMetrics: () => ({ clientEpoch: epoch }), reset() { epoch++; }, dispose() {} };
-    app.imu = { discard() {}, getRate: () => 60, stop() {} };
+    app.imu = { discard() {}, getRate: () => 60, stop() {},
+        getDiagnostics: () => ({ permission: { state: 'granted' }, status: 'ready', lastSample: null }) };
     app.orientation = { stopListening() {} };
     app._flushAndSendIMU = () => 1; app.updateIMUOverlay = () => {};
     app._startIMUFlush = () => {}; app._stopIMUFlush = () => {};

@@ -1,10 +1,11 @@
+import { loadBrowserSource } from './browser-source-loader.mjs';
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import fs from 'node:fs/promises';
 import vm from 'node:vm';
 
-const workerSource = await fs.readFile(new URL('../../web/js/vio-worker.js', import.meta.url), 'utf8');
-const wrapperSource = await fs.readFile(new URL('../../web/js/vio-wrapper.js', import.meta.url), 'utf8');
+const workerSource = await loadBrowserSource('vio-worker');
+const wrapperSource = await loadBrowserSource('vio-wrapper');
 const { VIOWrapper } = await import('data:text/javascript;base64,' + Buffer.from(wrapperSource).toString('base64'));
 const snapshot = { enabled: true, epoch: 7, frameTimestamp: -1, opencvVersion: 'fixture-opencv', executionSeed: 19, cvThreads: 2,
     params: { width: 640, height: 480, min_dist: 30, solver_time: 0.06, lk_iterations: 20, projection_sqrt_info_00: 307.3 } };
