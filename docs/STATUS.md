@@ -12,14 +12,14 @@
 
 | 항목 | 상태 |
 |---|---|
-| 현재 branch | `low-feature-opt-in` (`main`에서 분기, `887ea58` + 이 STATUS 커밋). **main에 병합 안 됨.** `main`은 2026-10-15에 `codex/flip6-analysis-20261013`를 fast-forward 병합한 상태 |
-| `origin/main` | `f210570`. 로컬 `main`이 **12커밋 앞서 있고 push되지 않음** (2026-10-15 기준, `git rev-list --count origin/main..main`) |
-| 기타 branch | `codex/*` 4개: 모두 main에 병합됨(삭제 가능) |
+| 현재 branch | `main` (`low-feature-opt-in`을 2026-10-15에 fast-forward 병합) |
+| `origin/main` | 로컬 `main`과 같음 (2026-10-15 push) |
+| 기타 branch | `codex/*` 4개, `low-feature-opt-in`: 모두 main에 병합됨(삭제 가능) |
 | 미커밋 WIP | 없음. 2026-10-14 Codex WIP는 2026-10-15에 4개 커밋(`789ed3d`, `4d74630`, `04386e5`, `f76217d`)으로 정리됨. 내용은 §3. low-feature opt-in 전환은 `887ea58` |
 | 활성 WASM | `web/vio_engine.js` sha256 `38837d4…` (6,044,038B). `5d48e4b` clean tree 기준, C3 OFF 빌드 |
-| 소스와 WASM 일치 여부 | **불일치.** `f76217d`(low-feature)가 `src/vio_engine.cpp`, `include/vio_engine.h`, `include/backend/estimator.h`, `wasm/vio_bindings.cpp`를 바꾸고 `include/utility/inertial_prediction.h`를 추가함(`887ea58`에서 include만 보강). 활성 WASM은 그 이전 소스(`5d48e4b`) 빌드 |
+| 소스와 WASM 일치 여부 | **활성 WASM은 불일치** (`5d48e4b` 소스 빌드, low-feature ABI 없음). 현재 소스 빌드 `e7420b36…`은 아래 후보로 준비됨 |
 | 검증 baseline (2026-10-15, `887ea58` tree) | `check.sh native` CTest 16/16 통과(`build/dev-native`), `browser-contracts` 353/353 (skip·todo 0, opt-in 테스트 4개 추가), `eval` 19 OK, `syntax` OK. **VERIFIED** — 단, WASM은 다시 빌드하지 않았고 Playwright 브라우저 스크립트·실기기 측정도 하지 않음 |
-| low-feature 후보 WASM | `e7420b36…` (6,056,932B). `build/low-feature-20261014/` 안에만 있고 **승격 안 됨** |
+| 후보 WASM (현재 소스) | `e7420b36…` (6,056,932B). `20ab79d` clean tree에서 `build/dev-wasm/`에 재빌드, `build/low-feature-20261014/` 후보와 byte 동일. smoke 통과(`build/dev-wasm/wasm-smoke.json`), provenance `build/dev-wasm/vio_engine.manifest.json`. **승격 안 됨** — 승격해도 low-feature는 `?low-feature=1` 없이는 꺼짐 |
 
 ---
 
@@ -127,9 +127,8 @@
 
 ## 6. 다음 단계 (우선순위 순)
 
-1. **`low-feature-opt-in` 브랜치 병합과 WASM 재빌드**
-   - opt-in 플래그와 cache-busting은 `887ea58`에서 끝났습니다(브랜치 `low-feature-opt-in`, main 미병합).
-   - 병합 후 WASM을 다시 빌드하고 provenance를 기록합니다. 승격은 사용자가 요청할 때만 합니다. 승격해도 low-feature는 `?low-feature=1` 없이는 꺼져 있습니다.
+1. **후보 WASM `e7420b36` 승격 여부 결정** (사용자 결정)
+   - 병합, push, 재빌드, smoke, provenance는 2026-10-15에 끝났습니다. 승격은 `wasm-release` skill 절차를 따릅니다.
 2. **low-feature 바닥 gate 미달 원인 규명**
    - 평면 재추정 쪽을 조사합니다.
    - 89.87%를 90% 이상으로 맞추려고 gate를 완화하는 것은 금지입니다.
