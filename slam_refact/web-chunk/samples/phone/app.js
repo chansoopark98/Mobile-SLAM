@@ -307,7 +307,7 @@ ui.clear.addEventListener('click', () => scene && clearObjects());
 ui.recenter.addEventListener('click', () => { try { XR8.XrController.recenter(); ui.msg.textContent = '원점을 다시 잡았습니다.'; } catch (e) { showError('원점', e.message); } });
 // The only place data leaves the page: the user clicks, the browser downloads a small JSON file to the user's own device.
 ui.metrics.addEventListener('click', () => {
-  const json = metrics.snapshot({ createdAtMs: Date.now(), userAgent: navigator.userAgent, screen: state.screenOrientation, video: state.videoSize, finalStatus: state.status, finalReason: state.reason, chunkWarnings: state.chunkWarnings });
+  const json = metrics.snapshot({ createdAtMs: Date.now(), userAgent: navigator.userAgent, screen: state.screenOrientation, video: state.videoSize, camera: window.XrCameraResolution || null, finalStatus: state.status, finalReason: state.reason, chunkWarnings: state.chunkWarnings });
   const url = URL.createObjectURL(new Blob([JSON.stringify(json, null, 1)], { type: 'application/json' }));
   const a = document.createElement('a');
   a.href = url; a.download = `slam-refact-phone-metrics-${new Date().toISOString().replace(/[:.]/g, '-')}.json`;
