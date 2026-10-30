@@ -1,0 +1,12 @@
+diff -ruN a/reality/engine/geometry/pose-pnp.cc b/reality/engine/geometry/pose-pnp.cc
+--- a/reality/engine/geometry/pose-pnp.cc	2026-10-15 18:44:49.671720196 +0900
++++ b/reality/engine/geometry/pose-pnp.cc	2026-10-15 18:44:49.671720196 +0900
+@@ -195,7 +195,7 @@
+     }
+ 
+     *sampledPair = {first, second};
+-    if (first != second && !usedPairs.contains(*sampledPair)) {
++    if (first != second && usedPairs.count(*sampledPair) == 0) {
+       return true;
+     }
+   }

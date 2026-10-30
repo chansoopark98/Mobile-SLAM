@@ -1,0 +1,35 @@
+{
+ "wasm_sha256": "780731fe294a725acf1b7717ed5ffb07ad9f0929e408a1d74f47450c291ec422",
+ "patched_sha256": "87954c0a32fe9117e00ea876f36b16bfa502c587dd13a19fe3ccb2ec9fe93057",
+ "code_section_sha256": "6ff897c9bfb8709f4b792d1595eae175e4bc5947f09d16c011273e94be00a809",
+ "exports": [
+  [
+   "probeYaw519",
+   519
+  ],
+  [
+   "probeFromHMatrix520",
+   520
+  ],
+  [
+   "probeReplaceYaw1271",
+   1271
+  ]
+ ],
+ "tolerances": {
+  "yaw519Rad": 0.00001,
+  "quat520": 0.000001,
+  "rot1271": 0.00001,
+  "invTrans1271Rel": 0.00001
+ },
+ "n_cases": 205,
+ "n_fail": 0,
+ "worst": {
+  "yaw519": 2.4839596257653085e-7,
+  "quat520": 5.078725795470973e-8,
+  "rot1271": 6.91967310340047e-7,
+  "invT1271": 4.558248134472066e-7
+ },
+ "invokedImports": [],
+ "node": "v22.21.1"
+}

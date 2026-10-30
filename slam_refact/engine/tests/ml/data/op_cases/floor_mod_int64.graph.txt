@@ -1,0 +1,12 @@
+model version=3 subgraphs=1 name=main
+tensor 0 x FLOAT32 [4,6] bytes=0 quant=0 var=0 sparse=0
+tensor 1 i INT64 [4,6] bytes=0 quant=0 var=0 sparse=0
+tensor 2 m INT64 [] bytes=8 quant=0 var=0 sparse=0
+tensor 3 mn INT64 [] bytes=8 quant=0 var=0 sparse=0
+tensor 4 r INT64 [4,6] bytes=0 quant=0 var=0 sparse=0
+tensor 5 rn INT64 [4,6] bytes=0 quant=0 var=0 sparse=0
+op 0 CAST v1 in=[0] out=[1] opts={} custom=
+op 1 FLOOR_MOD v1 in=[1,2] out=[4] opts={} custom=
+op 2 FLOOR_MOD v1 in=[1,3] out=[5] opts={} custom=
+inputs [0]
+outputs [4,5]

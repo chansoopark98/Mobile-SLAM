@@ -1,0 +1,2236 @@
+{
+ "tolerance_s": 0.15,
+ "min_hold_s": 2.0,
+ "results": [
+  {
+   "trace": "build/slam-refact-20261015/reference/runs/flip6-n1/r1/trace.jsonl",
+   "n_fresh": 660,
+   "P1_limited_runs_closed": 0,
+   "P1_min_limited_run_s": null,
+   "P1_violations": [],
+   "P2_normal_after_limited_closed": 0,
+   "P2_min_normal_run_s": null,
+   "P2_violations": [],
+   "P3_first_limited": null,
+   "P3_ok": true,
+   "P4_reasons": [
+    "UNSPECIFIED"
+   ],
+   "P4_ok": true,
+   "P5_first_positions": [
+    [
+     0,
+     2,
+     0
+    ],
+    [
+     0,
+     2,
+     0
+    ],
+    [
+     0,
+     2,
+     0
+    ],
+    [
+     0,
+     2,
+     0
+    ],
+    [
+     0,
+     2,
+     0
+    ]
+   ],
+   "P5_ok": true,
+   "P6_heading_pitch_deg_first": [
+    {
+     "i": 0,
+     "heading_pitch": [
+      -0.0,
+      -20.055
+     ]
+    },
+    {
+     "i": 1,
+     "heading_pitch": [
+      -0.0,
+      -20.055
+     ]
+    },
+    {
+     "i": 2,
+     "heading_pitch": [
+      -0.023,
+      -20.325
+     ]
+    },
+    {
+     "i": 3,
+     "heading_pitch": [
+      0.793,
+      -20.704
+     ]
+    },
+    {
+     "i": 4,
+     "heading_pitch": [
+      1.729,
+      -21.248
+     ]
+    },
+    {
+     "i": 5,
+     "heading_pitch": [
+      1.729,
+      -21.248
+     ]
+    },
+    {
+     "i": 6,
+     "heading_pitch": [
+      -0.0,
+      -23.083
+     ]
+    },
+    {
+     "i": 7,
+     "heading_pitch": [
+      0.997,
+      -23.408
+     ]
+    },
+    {
+     "i": 8,
+     "heading_pitch": [
+      3.011,
+      -23.775
+     ]
+    },
+    {
+     "i": 9,
+     "heading_pitch": [
+      4.017,
+      -23.675
+     ]
+    },
+    {
+     "i": 10,
+     "heading_pitch": [
+      5.975,
+      -23.436
+     ]
+    },
+    {
+     "i": 11,
+     "heading_pitch": [
+      7.815,
+      -23.583
+     ]
+    }
+   ],
+   "first_translation": {
+    "i": 7,
+    "t": 0.42112
+   },
+   "P7_zero_translation_step_fraction": {
+    "NORMAL": {
+     "zero": 6,
+     "total": 599,
+     "frac": 0.01
+    }
+   },
+   "P8_worldpoint_padding": {
+    "points": 3619,
+    "padding": 1105,
+    "frac": 0.3053
+   },
+   "status_runs": [
+    {
+     "status": "NORMAL",
+     "start_i": 0,
+     "start_t": 0.026,
+     "dur": null
+    }
+   ]
+  },
+  {
+   "trace": "build/slam-refact-20261015/reference/runs/flip6-n1/r2/trace.jsonl",
+   "n_fresh": 665,
+   "P1_limited_runs_closed": 0,
+   "P1_min_limited_run_s": null,
+   "P1_violations": [],
+   "P2_normal_after_limited_closed": 0,
+   "P2_min_normal_run_s": null,
+   "P2_violations": [],
+   "P3_first_limited": null,
+   "P3_ok": true,
+   "P4_reasons": [
+    "UNSPECIFIED"
+   ],
+   "P4_ok": true,
+   "P5_first_positions": [
+    [
+     0,
+     2,
+     0
+    ],
+    [
+     0,
+     2,
+     0
+    ],
+    [
+     0,
+     2,
+     0
+    ],
+    [
+     0,
+     2,
+     0
+    ],
+    [
+     0,
+     2,
+     0
+    ]
+   ],
+   "P5_ok": true,
+   "P6_heading_pitch_deg_first": [
+    {
+     "i": 0,
+     "heading_pitch": [
+      -0.0,
+      -20.055
+     ]
+    },
+    {
+     "i": 1,
+     "heading_pitch": [
+      -0.0,
+      -20.055
+     ]
+    },
+    {
+     "i": 2,
+     "heading_pitch": [
+      -0.023,
+      -20.325
+     ]
+    },
+    {
+     "i": 3,
+     "heading_pitch": [
+      0.793,
+      -20.704
+     ]
+    },
+    {
+     "i": 4,
+     "heading_pitch": [
+      1.729,
+      -21.248
+     ]
+    },
+    {
+     "i": 5,
+     "heading_pitch": [
+      1.729,
+      -21.248
+     ]
+    },
+    {
+     "i": 6,
+     "heading_pitch": [
+      -0.0,
+      -23.083
+     ]
+    },
+    {
+     "i": 7,
+     "heading_pitch": [
+      0.997,
+      -23.408
+     ]
+    },
+    {
+     "i": 8,
+     "heading_pitch": [
+      3.011,
+      -23.775
+     ]
+    },
+    {
+     "i": 9,
+     "heading_pitch": [
+      4.017,
+      -23.675
+     ]
+    },
+    {
+     "i": 10,
+     "heading_pitch": [
+      6.022,
+      -23.465
+     ]
+    },
+    {
+     "i": 11,
+     "heading_pitch": [
+      7.799,
+      -23.583
+     ]
+    }
+   ],
+   "first_translation": {
+    "i": 7,
+    "t": 0.42112
+   },
+   "P7_zero_translation_step_fraction": {
+    "NORMAL": {
+     "zero": 7,
+     "total": 612,
+     "frac": 0.0114
+    }
+   },
+   "P8_worldpoint_padding": {
+    "points": 3706,
+    "padding": 1176,
+    "frac": 0.3173
+   },
+   "status_runs": [
+    {
+     "status": "NORMAL",
+     "start_i": 0,
+     "start_t": 0.026,
+     "dur": null
+    }
+   ]
+  },
+  {
+   "trace": "build/slam-refact-20261015/reference/runs/flip6-s2/r1/trace.jsonl",
+   "n_fresh": 987,
+   "P1_limited_runs_closed": 0,
+   "P1_min_limited_run_s": null,
+   "P1_violations": [],
+   "P2_normal_after_limited_closed": 0,
+   "P2_min_normal_run_s": null,
+   "P2_violations": [],
+   "P3_first_limited": null,
+   "P3_ok": true,
+   "P4_reasons": [
+    "UNSPECIFIED"
+   ],
+   "P4_ok": true,
+   "P5_first_positions": [
+    [
+     0,
+     2,
+     0
+    ],
+    [
+     0,
+     2,
+     0
+    ],
+    [
+     0,
+     2,
+     0
+    ],
+    [
+     0,
+     2,
+     0
+    ],
+    [
+     0,
+     2,
+     0
+    ]
+   ],
+   "P5_ok": true,
+   "P6_heading_pitch_deg_first": [
+    {
+     "i": 0,
+     "heading_pitch": [
+      0.0,
+      -26.826
+     ]
+    },
+    {
+     "i": 1,
+     "heading_pitch": [
+      0.0,
+      -26.826
+     ]
+    },
+    {
+     "i": 2,
+     "heading_pitch": [
+      -0.163,
+      -26.738
+     ]
+    },
+    {
+     "i": 3,
+     "heading_pitch": [
+      -0.363,
+      -26.875
+     ]
+    },
+    {
+     "i": 4,
+     "heading_pitch": [
+      -0.408,
+      -27.019
+     ]
+    },
+    {
+     "i": 5,
+     "heading_pitch": [
+      -0.408,
+      -27.019
+     ]
+    },
+    {
+     "i": 6,
+     "heading_pitch": [
+      -0.0,
+      -27.272
+     ]
+    },
+    {
+     "i": 7,
+     "heading_pitch": [
+      0.522,
+      -27.41
+     ]
+    },
+    {
+     "i": 8,
+     "heading_pitch": [
+      1.201,
+      -27.442
+     ]
+    },
+    {
+     "i": 9,
+     "heading_pitch": [
+      1.597,
+      -27.267
+     ]
+    },
+    {
+     "i": 10,
+     "heading_pitch": [
+      1.706,
+      -27.199
+     ]
+    },
+    {
+     "i": 11,
+     "heading_pitch": [
+      2.001,
+      -27.02
+     ]
+    }
+   ],
+   "first_translation": {
+    "i": 7,
+    "t": 0.370965
+   },
+   "P7_zero_translation_step_fraction": {
+    "NORMAL": {
+     "zero": 6,
+     "total": 937,
+     "frac": 0.0064
+    }
+   },
+   "P8_worldpoint_padding": {
+    "points": 5657,
+    "padding": 1349,
+    "frac": 0.2385
+   },
+   "status_runs": [
+    {
+     "status": "NORMAL",
+     "start_i": 0,
+     "start_t": 0.003,
+     "dur": null
+    }
+   ]
+  },
+  {
+   "trace": "build/slam-refact-20261015/reference/runs/flip6-s2/r2/trace.jsonl",
+   "n_fresh": 987,
+   "P1_limited_runs_closed": 0,
+   "P1_min_limited_run_s": null,
+   "P1_violations": [],
+   "P2_normal_after_limited_closed": 0,
+   "P2_min_normal_run_s": null,
+   "P2_violations": [],
+   "P3_first_limited": null,
+   "P3_ok": true,
+   "P4_reasons": [
+    "UNSPECIFIED"
+   ],
+   "P4_ok": true,
+   "P5_first_positions": [
+    [
+     0,
+     2,
+     0
+    ],
+    [
+     0,
+     2,
+     0
+    ],
+    [
+     0,
+     2,
+     0
+    ],
+    [
+     0,
+     2,
+     0
+    ],
+    [
+     0,
+     2,
+     0
+    ]
+   ],
+   "P5_ok": true,
+   "P6_heading_pitch_deg_first": [
+    {
+     "i": 0,
+     "heading_pitch": [
+      0.0,
+      -26.826
+     ]
+    },
+    {
+     "i": 1,
+     "heading_pitch": [
+      0.0,
+      -26.826
+     ]
+    },
+    {
+     "i": 2,
+     "heading_pitch": [
+      -0.191,
+      -26.727
+     ]
+    },
+    {
+     "i": 3,
+     "heading_pitch": [
+      -0.416,
+      -26.875
+     ]
+    },
+    {
+     "i": 4,
+     "heading_pitch": [
+      -0.461,
+      -27.019
+     ]
+    },
+    {
+     "i": 5,
+     "heading_pitch": [
+      -0.461,
+      -27.019
+     ]
+    },
+    {
+     "i": 6,
+     "heading_pitch": [
+      -0.0,
+      -27.272
+     ]
+    },
+    {
+     "i": 7,
+     "heading_pitch": [
+      0.522,
+      -27.41
+     ]
+    },
+    {
+     "i": 8,
+     "heading_pitch": [
+      1.169,
+      -27.493
+     ]
+    },
+    {
+     "i": 9,
+     "heading_pitch": [
+      1.504,
+      -27.267
+     ]
+    },
+    {
+     "i": 10,
+     "heading_pitch": [
+      1.614,
+      -27.199
+     ]
+    },
+    {
+     "i": 12,
+     "heading_pitch": [
+      1.911,
+      -27.092
+     ]
+    }
+   ],
+   "first_translation": {
+    "i": 7,
+    "t": 0.370965
+   },
+   "P7_zero_translation_step_fraction": {
+    "NORMAL": {
+     "zero": 6,
+     "total": 937,
+     "frac": 0.0064
+    }
+   },
+   "P8_worldpoint_padding": {
+    "points": 5553,
+    "padding": 1347,
+    "frac": 0.2426
+   },
+   "status_runs": [
+    {
+     "status": "NORMAL",
+     "start_i": 0,
+     "start_t": 0.003,
+     "dur": null
+    }
+   ]
+  },
+  {
+   "trace": "build/slam-refact-20261015/reference/runs/flip6-s3-lowtex/r1/trace.jsonl",
+   "n_fresh": 381,
+   "P1_limited_runs_closed": 3,
+   "P1_min_limited_run_s": 2.0848999999999975,
+   "P1_violations": [],
+   "P2_normal_after_limited_closed": 2,
+   "P2_min_normal_run_s": 7.4603,
+   "P2_violations": [],
+   "P3_first_limited": {
+    "i": 70,
+    "t": 5.463195
+   },
+   "P3_ok": true,
+   "P4_reasons": [
+    "UNSPECIFIED"
+   ],
+   "P4_ok": true,
+   "P5_first_positions": [
+    [
+     0,
+     2,
+     0
+    ],
+    [
+     0,
+     2,
+     0
+    ],
+    [
+     0,
+     2,
+     0
+    ],
+    [
+     0,
+     2,
+     0
+    ],
+    [
+     0,
+     2,
+     0
+    ]
+   ],
+   "P5_ok": true,
+   "P6_heading_pitch_deg_first": [
+    {
+     "i": 0,
+     "heading_pitch": [
+      -0.0,
+      -36.851
+     ]
+    },
+    {
+     "i": 1,
+     "heading_pitch": [
+      -0.0,
+      -36.851
+     ]
+    },
+    {
+     "i": 2,
+     "heading_pitch": [
+      0.064,
+      -36.927
+     ]
+    },
+    {
+     "i": 3,
+     "heading_pitch": [
+      -0.476,
+      -36.285
+     ]
+    },
+    {
+     "i": 4,
+     "heading_pitch": [
+      -0.301,
+      -35.469
+     ]
+    },
+    {
+     "i": 5,
+     "heading_pitch": [
+      -0.301,
+      -35.469
+     ]
+    },
+    {
+     "i": 6,
+     "heading_pitch": [
+      -0.0,
+      -35.208
+     ]
+    },
+    {
+     "i": 7,
+     "heading_pitch": [
+      0.008,
+      -35.23
+     ]
+    },
+    {
+     "i": 8,
+     "heading_pitch": [
+      0.087,
+      -35.455
+     ]
+    },
+    {
+     "i": 9,
+     "heading_pitch": [
+      0.073,
+      -35.472
+     ]
+    },
+    {
+     "i": 10,
+     "heading_pitch": [
+      0.08,
+      -35.477
+     ]
+    },
+    {
+     "i": 11,
+     "heading_pitch": [
+      0.13,
+      -35.564
+     ]
+    }
+   ],
+   "first_translation": {
+    "i": 7,
+    "t": 0.46615
+   },
+   "P7_zero_translation_step_fraction": {
+    "NORMAL": {
+     "zero": 78,
+     "total": 287,
+     "frac": 0.2718
+    },
+    "LIMITED": {
+     "zero": 17,
+     "total": 93,
+     "frac": 0.1828
+    }
+   },
+   "P8_worldpoint_padding": {
+    "points": 901,
+    "padding": 236,
+    "frac": 0.2619
+   },
+   "status_runs": [
+    {
+     "status": "NORMAL",
+     "start_i": 0,
+     "start_t": 0.001,
+     "dur": 5.462
+    },
+    {
+     "status": "LIMITED",
+     "start_i": 70,
+     "start_t": 5.463,
+     "dur": 2.807
+    },
+    {
+     "status": "NORMAL",
+     "start_i": 109,
+     "start_t": 8.271,
+     "dur": 7.46
+    },
+    {
+     "status": "LIMITED",
+     "start_i": 197,
+     "start_t": 15.731,
+     "dur": 2.477
+    },
+    {
+     "status": "NORMAL",
+     "start_i": 233,
+     "start_t": 18.208,
+     "dur": 8.042
+    },
+    {
+     "status": "LIMITED",
+     "start_i": 342,
+     "start_t": 26.25,
+     "dur": 2.085
+    },
+    {
+     "status": "NORMAL",
+     "start_i": 360,
+     "start_t": 28.335,
+     "dur": null
+    }
+   ]
+  },
+  {
+   "trace": "build/slam-refact-20261015/reference/runs/flip6-s3-lowtex/r2/trace.jsonl",
+   "n_fresh": 381,
+   "P1_limited_runs_closed": 2,
+   "P1_min_limited_run_s": 2.260695000000002,
+   "P1_violations": [],
+   "P2_normal_after_limited_closed": 1,
+   "P2_min_normal_run_s": 7.590104999999999,
+   "P2_violations": [],
+   "P3_first_limited": {
+    "i": 71,
+    "t": 5.53985
+   },
+   "P3_ok": true,
+   "P4_reasons": [
+    "UNSPECIFIED"
+   ],
+   "P4_ok": true,
+   "P5_first_positions": [
+    [
+     0,
+     2,
+     0
+    ],
+    [
+     0,
+     2,
+     0
+    ],
+    [
+     0,
+     2,
+     0
+    ],
+    [
+     0,
+     2,
+     0
+    ],
+    [
+     0,
+     2,
+     0
+    ]
+   ],
+   "P5_ok": true,
+   "P6_heading_pitch_deg_first": [
+    {
+     "i": 0,
+     "heading_pitch": [
+      -0.0,
+      -36.851
+     ]
+    },
+    {
+     "i": 1,
+     "heading_pitch": [
+      -0.0,
+      -36.851
+     ]
+    },
+    {
+     "i": 2,
+     "heading_pitch": [
+      0.064,
+      -36.927
+     ]
+    },
+    {
+     "i": 3,
+     "heading_pitch": [
+      -0.476,
+      -36.285
+     ]
+    },
+    {
+     "i": 4,
+     "heading_pitch": [
+      -0.301,
+      -35.469
+     ]
+    },
+    {
+     "i": 5,
+     "heading_pitch": [
+      -0.301,
+      -35.469
+     ]
+    },
+    {
+     "i": 6,
+     "heading_pitch": [
+      -0.0,
+      -35.23
+     ]
+    },
+    {
+     "i": 7,
+     "heading_pitch": [
+      0.04,
+      -35.23
+     ]
+    },
+    {
+     "i": 8,
+     "heading_pitch": [
+      0.118,
+      -35.455
+     ]
+    },
+    {
+     "i": 9,
+     "heading_pitch": [
+      0.104,
+      -35.472
+     ]
+    },
+    {
+     "i": 10,
+     "heading_pitch": [
+      0.111,
+      -35.477
+     ]
+    },
+    {
+     "i": 11,
+     "heading_pitch": [
+      0.161,
+      -35.564
+     ]
+    }
+   ],
+   "first_translation": {
+    "i": 7,
+    "t": 0.46615
+   },
+   "P7_zero_translation_step_fraction": {
+    "NORMAL": {
+     "zero": 82,
+     "total": 309,
+     "frac": 0.2654
+    },
+    "LIMITED": {
+     "zero": 14,
+     "total": 71,
+     "frac": 0.1972
+    }
+   },
+   "P8_worldpoint_padding": {
+    "points": 773,
+    "padding": 267,
+    "frac": 0.3454
+   },
+   "status_runs": [
+    {
+     "status": "NORMAL",
+     "start_i": 0,
+     "start_t": 0.001,
+     "dur": 5.538
+    },
+    {
+     "status": "LIMITED",
+     "start_i": 71,
+     "start_t": 5.54,
+     "dur": 2.731
+    },
+    {
+     "status": "NORMAL",
+     "start_i": 109,
+     "start_t": 8.271,
+     "dur": 7.59
+    },
+    {
+     "status": "LIMITED",
+     "start_i": 199,
+     "start_t": 15.861,
+     "dur": 2.261
+    },
+    {
+     "status": "NORMAL",
+     "start_i": 232,
+     "start_t": 18.121,
+     "dur": null
+    }
+   ]
+  },
+  {
+   "trace": "build/slam-refact-20261015/reference/runs/tum-room1-full/profile1/trace.jsonl",
+   "n_fresh": 2817,
+   "P1_limited_runs_closed": 12,
+   "P1_min_limited_run_s": 2.7995731929999934,
+   "P1_violations": [],
+   "P2_normal_after_limited_closed": 12,
+   "P2_min_normal_run_s": 2.049547860000004,
+   "P2_violations": [],
+   "P3_first_limited": {
+    "i": 47,
+    "t": 2.352680175
+   },
+   "P3_ok": true,
+   "P4_reasons": [
+    "UNSPECIFIED"
+   ],
+   "P4_ok": true,
+   "P5_first_positions": [
+    [
+     0,
+     2,
+     0
+    ],
+    [
+     0,
+     2,
+     0
+    ],
+    [
+     0,
+     2,
+     0
+    ],
+    [
+     0,
+     2,
+     0
+    ],
+    [
+     0,
+     2,
+     0
+    ]
+   ],
+   "P5_ok": true,
+   "P6_heading_pitch_deg_first": [
+    {
+     "i": 0,
+     "heading_pitch": [
+      -0.0,
+      1.878
+     ]
+    },
+    {
+     "i": 1,
+     "heading_pitch": [
+      -0.0,
+      1.878
+     ]
+    },
+    {
+     "i": 2,
+     "heading_pitch": [
+      -0.042,
+      1.687
+     ]
+    },
+    {
+     "i": 3,
+     "heading_pitch": [
+      -0.198,
+      1.475
+     ]
+    },
+    {
+     "i": 4,
+     "heading_pitch": [
+      -0.348,
+      1.207
+     ]
+    },
+    {
+     "i": 5,
+     "heading_pitch": [
+      -0.348,
+      1.207
+     ]
+    },
+    {
+     "i": 6,
+     "heading_pitch": [
+      0.0,
+      0.749
+     ]
+    },
+    {
+     "i": 7,
+     "heading_pitch": [
+      0.475,
+      0.843
+     ]
+    },
+    {
+     "i": 8,
+     "heading_pitch": [
+      1.224,
+      1.183
+     ]
+    },
+    {
+     "i": 9,
+     "heading_pitch": [
+      1.761,
+      1.703
+     ]
+    },
+    {
+     "i": 10,
+     "heading_pitch": [
+      1.668,
+      2.058
+     ]
+    },
+    {
+     "i": 11,
+     "heading_pitch": [
+      1.431,
+      1.988
+     ]
+    }
+   ],
+   "first_translation": {
+    "i": 139,
+    "t": 6.952868877
+   },
+   "P7_zero_translation_step_fraction": {
+    "NORMAL": {
+     "zero": 342,
+     "total": 1105,
+     "frac": 0.3095
+    },
+    "LIMITED": {
+     "zero": 873,
+     "total": 1707,
+     "frac": 0.5114
+    }
+   },
+   "P8_worldpoint_padding": {
+    "points": 8670,
+    "padding": 826,
+    "frac": 0.0953
+   },
+   "status_runs": [
+    {
+     "status": "NORMAL",
+     "start_i": 0,
+     "start_t": 0.002,
+     "dur": 2.35
+    },
+    {
+     "status": "LIMITED",
+     "start_i": 47,
+     "start_t": 2.353,
+     "dur": 8.65
+    },
+    {
+     "status": "NORMAL",
+     "start_i": 220,
+     "start_t": 11.003,
+     "dur": 3.15
+    },
+    {
+     "status": "LIMITED",
+     "start_i": 283,
+     "start_t": 14.153,
+     "dur": 3.051
+    },
+    {
+     "status": "NORMAL",
+     "start_i": 344,
+     "start_t": 17.204,
+     "dur": 4.449
+    },
+    {
+     "status": "LIMITED",
+     "start_i": 433,
+     "start_t": 21.653,
+     "dur": 6.2
+    },
+    {
+     "status": "NORMAL",
+     "start_i": 557,
+     "start_t": 27.853,
+     "dur": 2.35
+    },
+    {
+     "status": "LIMITED",
+     "start_i": 604,
+     "start_t": 30.204,
+     "dur": 4.25
+    },
+    {
+     "status": "NORMAL",
+     "start_i": 689,
+     "start_t": 34.454,
+     "dur": 5.4
+    },
+    {
+     "status": "LIMITED",
+     "start_i": 797,
+     "start_t": 39.854,
+     "dur": 4.201
+    },
+    {
+     "status": "NORMAL",
+     "start_i": 881,
+     "start_t": 44.055,
+     "dur": 3.15
+    },
+    {
+     "status": "LIMITED",
+     "start_i": 944,
+     "start_t": 47.204,
+     "dur": 4.5
+    },
+    {
+     "status": "NORMAL",
+     "start_i": 1034,
+     "start_t": 51.705,
+     "dur": 2.65
+    },
+    {
+     "status": "LIMITED",
+     "start_i": 1087,
+     "start_t": 54.355,
+     "dur": 4.351
+    },
+    {
+     "status": "NORMAL",
+     "start_i": 1174,
+     "start_t": 58.705,
+     "dur": 3.95
+    },
+    {
+     "status": "LIMITED",
+     "start_i": 1253,
+     "start_t": 62.655,
+     "dur": 2.8
+    },
+    {
+     "status": "NORMAL",
+     "start_i": 1309,
+     "start_t": 65.455,
+     "dur": 5.201
+    },
+    {
+     "status": "LIMITED",
+     "start_i": 1413,
+     "start_t": 70.655,
+     "dur": 4.25
+    },
+    {
+     "status": "NORMAL",
+     "start_i": 1498,
+     "start_t": 74.905,
+     "dur": 2.2
+    },
+    {
+     "status": "LIMITED",
+     "start_i": 1542,
+     "start_t": 77.106,
+     "dur": 11.85
+    },
+    {
+     "status": "NORMAL",
+     "start_i": 1779,
+     "start_t": 88.956,
+     "dur": 2.05
+    },
+    {
+     "status": "LIMITED",
+     "start_i": 1820,
+     "start_t": 91.005,
+     "dur": 16.401
+    },
+    {
+     "status": "NORMAL",
+     "start_i": 2148,
+     "start_t": 107.406,
+     "dur": 14.95
+    },
+    {
+     "status": "LIMITED",
+     "start_i": 2447,
+     "start_t": 122.356,
+     "dur": 8.901
+    },
+    {
+     "status": "NORMAL",
+     "start_i": 2625,
+     "start_t": 131.258,
+     "dur": 3.55
+    },
+    {
+     "status": "LIMITED",
+     "start_i": 2696,
+     "start_t": 134.807,
+     "dur": null
+    }
+   ]
+  },
+  {
+   "trace": "build/slam-refact-20261015/reference/runs/tum-room1-full/r1/trace.jsonl",
+   "n_fresh": 2812,
+   "P1_limited_runs_closed": 9,
+   "P1_min_limited_run_s": 2.950612071,
+   "P1_violations": [],
+   "P2_normal_after_limited_closed": 9,
+   "P2_min_normal_run_s": 2.0505522099999993,
+   "P2_violations": [],
+   "P3_first_limited": {
+    "i": 47,
+    "t": 2.352680175
+   },
+   "P3_ok": true,
+   "P4_reasons": [
+    "UNSPECIFIED"
+   ],
+   "P4_ok": true,
+   "P5_first_positions": [
+    [
+     0,
+     2,
+     0
+    ],
+    [
+     0,
+     2,
+     0
+    ],
+    [
+     0,
+     2,
+     0
+    ],
+    [
+     0,
+     2,
+     0
+    ],
+    [
+     0,
+     2,
+     0
+    ]
+   ],
+   "P5_ok": true,
+   "P6_heading_pitch_deg_first": [
+    {
+     "i": 0,
+     "heading_pitch": [
+      -0.0,
+      1.878
+     ]
+    },
+    {
+     "i": 1,
+     "heading_pitch": [
+      -0.002,
+      1.854
+     ]
+    },
+    {
+     "i": 2,
+     "heading_pitch": [
+      -0.055,
+      1.67
+     ]
+    },
+    {
+     "i": 3,
+     "heading_pitch": [
+      -0.198,
+      1.475
+     ]
+    },
+    {
+     "i": 4,
+     "heading_pitch": [
+      -0.348,
+      1.207
+     ]
+    },
+    {
+     "i": 5,
+     "heading_pitch": [
+      -0.348,
+      1.207
+     ]
+    },
+    {
+     "i": 6,
+     "heading_pitch": [
+      0.0,
+      0.745
+     ]
+    },
+    {
+     "i": 7,
+     "heading_pitch": [
+      0.512,
+      0.867
+     ]
+    },
+    {
+     "i": 8,
+     "heading_pitch": [
+      1.265,
+      1.228
+     ]
+    },
+    {
+     "i": 9,
+     "heading_pitch": [
+      1.744,
+      1.755
+     ]
+    },
+    {
+     "i": 10,
+     "heading_pitch": [
+      1.619,
+      2.072
+     ]
+    },
+    {
+     "i": 11,
+     "heading_pitch": [
+      1.401,
+      1.988
+     ]
+    }
+   ],
+   "first_translation": {
+    "i": 139,
+    "t": 6.952868877
+   },
+   "P7_zero_translation_step_fraction": {
+    "NORMAL": {
+     "zero": 284,
+     "total": 826,
+     "frac": 0.3438
+    },
+    "LIMITED": {
+     "zero": 1048,
+     "total": 1976,
+     "frac": 0.5304
+    }
+   },
+   "P8_worldpoint_padding": {
+    "points": 5643,
+    "padding": 1396,
+    "frac": 0.2474
+   },
+   "status_runs": [
+    {
+     "status": "NORMAL",
+     "start_i": 0,
+     "start_t": 0.002,
+     "dur": 2.35
+    },
+    {
+     "status": "LIMITED",
+     "start_i": 47,
+     "start_t": 2.353,
+     "dur": 8.7
+    },
+    {
+     "status": "NORMAL",
+     "start_i": 221,
+     "start_t": 11.053,
+     "dur": 3.15
+    },
+    {
+     "status": "LIMITED",
+     "start_i": 284,
+     "start_t": 14.203,
+     "dur": 2.951
+    },
+    {
+     "status": "NORMAL",
+     "start_i": 343,
+     "start_t": 17.154,
+     "dur": 4.449
+    },
+    {
+     "status": "LIMITED",
+     "start_i": 432,
+     "start_t": 21.603,
+     "dur": 12.801
+    },
+    {
+     "status": "NORMAL",
+     "start_i": 688,
+     "start_t": 34.404,
+     "dur": 5.45
+    },
+    {
+     "status": "LIMITED",
+     "start_i": 797,
+     "start_t": 39.854,
+     "dur": 4.351
+    },
+    {
+     "status": "NORMAL",
+     "start_i": 884,
+     "start_t": 44.205,
+     "dur": 3.0
+    },
+    {
+     "status": "LIMITED",
+     "start_i": 944,
+     "start_t": 47.204,
+     "dur": 4.65
+    },
+    {
+     "status": "NORMAL",
+     "start_i": 1037,
+     "start_t": 51.855,
+     "dur": 2.5
+    },
+    {
+     "status": "LIMITED",
+     "start_i": 1087,
+     "start_t": 54.355,
+     "dur": 6.5
+    },
+    {
+     "status": "NORMAL",
+     "start_i": 1217,
+     "start_t": 60.854,
+     "dur": 2.051
+    },
+    {
+     "status": "LIMITED",
+     "start_i": 1258,
+     "start_t": 62.905,
+     "dur": 4.55
+    },
+    {
+     "status": "NORMAL",
+     "start_i": 1349,
+     "start_t": 67.455,
+     "dur": 3.1
+    },
+    {
+     "status": "LIMITED",
+     "start_i": 1411,
+     "start_t": 70.555,
+     "dur": 38.101
+    },
+    {
+     "status": "NORMAL",
+     "start_i": 2173,
+     "start_t": 108.656,
+     "dur": 12.45
+    },
+    {
+     "status": "LIMITED",
+     "start_i": 2422,
+     "start_t": 121.107,
+     "dur": 10.751
+    },
+    {
+     "status": "NORMAL",
+     "start_i": 2637,
+     "start_t": 131.857,
+     "dur": 2.95
+    },
+    {
+     "status": "LIMITED",
+     "start_i": 2696,
+     "start_t": 134.807,
+     "dur": null
+    }
+   ]
+  },
+  {
+   "trace": "build/slam-refact-20261015/reference/runs/tum-room1-full/r2/trace.jsonl",
+   "n_fresh": 2805,
+   "P1_limited_runs_closed": 8,
+   "P1_min_limited_run_s": 2.800607071,
+   "P1_violations": [],
+   "P2_normal_after_limited_closed": 8,
+   "P2_min_normal_run_s": 2.100553210000001,
+   "P2_violations": [],
+   "P3_first_limited": {
+    "i": 47,
+    "t": 2.352680175
+   },
+   "P3_ok": true,
+   "P4_reasons": [
+    "UNSPECIFIED"
+   ],
+   "P4_ok": true,
+   "P5_first_positions": [
+    [
+     0,
+     2,
+     0
+    ],
+    [
+     0,
+     2,
+     0
+    ],
+    [
+     0,
+     2,
+     0
+    ],
+    [
+     0,
+     2,
+     0
+    ],
+    [
+     0,
+     2,
+     0
+    ]
+   ],
+   "P5_ok": true,
+   "P6_heading_pitch_deg_first": [
+    {
+     "i": 0,
+     "heading_pitch": [
+      -0.0,
+      1.878
+     ]
+    },
+    {
+     "i": 1,
+     "heading_pitch": [
+      -0.0,
+      1.878
+     ]
+    },
+    {
+     "i": 2,
+     "heading_pitch": [
+      -0.042,
+      1.687
+     ]
+    },
+    {
+     "i": 3,
+     "heading_pitch": [
+      -0.184,
+      1.497
+     ]
+    },
+    {
+     "i": 4,
+     "heading_pitch": [
+      -0.335,
+      1.238
+     ]
+    },
+    {
+     "i": 5,
+     "heading_pitch": [
+      -0.335,
+      1.238
+     ]
+    },
+    {
+     "i": 6,
+     "heading_pitch": [
+      -0.0,
+      0.751
+     ]
+    },
+    {
+     "i": 7,
+     "heading_pitch": [
+      0.332,
+      0.843
+     ]
+    },
+    {
+     "i": 8,
+     "heading_pitch": [
+      1.287,
+      1.325
+     ]
+    },
+    {
+     "i": 9,
+     "heading_pitch": [
+      1.636,
+      1.848
+     ]
+    },
+    {
+     "i": 10,
+     "heading_pitch": [
+      1.525,
+      2.058
+     ]
+    },
+    {
+     "i": 11,
+     "heading_pitch": [
+      1.287,
+      1.988
+     ]
+    }
+   ],
+   "first_translation": {
+    "i": 139,
+    "t": 6.952868877
+   },
+   "P7_zero_translation_step_fraction": {
+    "NORMAL": {
+     "zero": 250,
+     "total": 729,
+     "frac": 0.3429
+    },
+    "LIMITED": {
+     "zero": 1136,
+     "total": 2061,
+     "frac": 0.5512
+    }
+   },
+   "P8_worldpoint_padding": {
+    "points": 5593,
+    "padding": 1116,
+    "frac": 0.1995
+   },
+   "status_runs": [
+    {
+     "status": "NORMAL",
+     "start_i": 0,
+     "start_t": 0.002,
+     "dur": 2.35
+    },
+    {
+     "status": "LIMITED",
+     "start_i": 47,
+     "start_t": 2.353,
+     "dur": 8.7
+    },
+    {
+     "status": "NORMAL",
+     "start_i": 221,
+     "start_t": 11.053,
+     "dur": 3.1
+    },
+    {
+     "status": "LIMITED",
+     "start_i": 283,
+     "start_t": 14.153,
+     "dur": 2.801
+    },
+    {
+     "status": "NORMAL",
+     "start_i": 339,
+     "start_t": 16.954,
+     "dur": 4.899
+    },
+    {
+     "status": "LIMITED",
+     "start_i": 437,
+     "start_t": 21.853,
+     "dur": 13.951
+    },
+    {
+     "status": "NORMAL",
+     "start_i": 716,
+     "start_t": 35.804,
+     "dur": 4.05
+    },
+    {
+     "status": "LIMITED",
+     "start_i": 797,
+     "start_t": 39.854,
+     "dur": 4.351
+    },
+    {
+     "status": "NORMAL",
+     "start_i": 884,
+     "start_t": 44.205,
+     "dur": 3.0
+    },
+    {
+     "status": "LIMITED",
+     "start_i": 944,
+     "start_t": 47.204,
+     "dur": 4.6
+    },
+    {
+     "status": "NORMAL",
+     "start_i": 1036,
+     "start_t": 51.805,
+     "dur": 2.55
+    },
+    {
+     "status": "LIMITED",
+     "start_i": 1087,
+     "start_t": 54.355,
+     "dur": 6.45
+    },
+    {
+     "status": "NORMAL",
+     "start_i": 1216,
+     "start_t": 60.804,
+     "dur": 2.101
+    },
+    {
+     "status": "LIMITED",
+     "start_i": 1258,
+     "start_t": 62.905,
+     "dur": 4.55
+    },
+    {
+     "status": "NORMAL",
+     "start_i": 1349,
+     "start_t": 67.455,
+     "dur": 3.15
+    },
+    {
+     "status": "LIMITED",
+     "start_i": 1412,
+     "start_t": 70.605,
+     "dur": 39.051
+    },
+    {
+     "status": "NORMAL",
+     "start_i": 2193,
+     "start_t": 109.657,
+     "dur": 11.5
+    },
+    {
+     "status": "LIMITED",
+     "start_i": 2423,
+     "start_t": 121.157,
+     "dur": null
+    }
+   ]
+  },
+  {
+   "trace": "build/slam-refact-20261015/reference/runs/tum-room1-lowtex/r1/trace.jsonl",
+   "n_fresh": 462,
+   "P1_limited_runs_closed": 2,
+   "P1_min_limited_run_s": 2.900610071000001,
+   "P1_violations": [],
+   "P2_normal_after_limited_closed": 2,
+   "P2_min_normal_run_s": 2.1992664029999993,
+   "P2_violations": [],
+   "P3_first_limited": {
+    "i": 46,
+    "t": 2.302678175
+   },
+   "P3_ok": true,
+   "P4_reasons": [
+    "UNSPECIFIED"
+   ],
+   "P4_ok": true,
+   "P5_first_positions": [
+    [
+     0,
+     2,
+     0
+    ],
+    [
+     0,
+     2,
+     0
+    ],
+    [
+     0,
+     2,
+     0
+    ],
+    [
+     0,
+     2,
+     0
+    ],
+    [
+     0,
+     2,
+     0
+    ]
+   ],
+   "P5_ok": true,
+   "P6_heading_pitch_deg_first": [
+    {
+     "i": 0,
+     "heading_pitch": [
+      -0.0,
+      1.878
+     ]
+    },
+    {
+     "i": 1,
+     "heading_pitch": [
+      -0.0,
+      1.878
+     ]
+    },
+    {
+     "i": 2,
+     "heading_pitch": [
+      -0.055,
+      1.67
+     ]
+    },
+    {
+     "i": 3,
+     "heading_pitch": [
+      -0.184,
+      1.497
+     ]
+    },
+    {
+     "i": 4,
+     "heading_pitch": [
+      -0.348,
+      1.207
+     ]
+    },
+    {
+     "i": 5,
+     "heading_pitch": [
+      -0.348,
+      1.207
+     ]
+    },
+    {
+     "i": 6,
+     "heading_pitch": [
+      0.0,
+      0.749
+     ]
+    },
+    {
+     "i": 7,
+     "heading_pitch": [
+      0.475,
+      0.843
+     ]
+    },
+    {
+     "i": 8,
+     "heading_pitch": [
+      1.224,
+      1.183
+     ]
+    },
+    {
+     "i": 9,
+     "heading_pitch": [
+      1.761,
+      1.703
+     ]
+    },
+    {
+     "i": 10,
+     "heading_pitch": [
+      1.668,
+      2.058
+     ]
+    },
+    {
+     "i": 11,
+     "heading_pitch": [
+      1.431,
+      1.988
+     ]
+    }
+   ],
+   "first_translation": {
+    "i": 139,
+    "t": 6.952868877
+   },
+   "P7_zero_translation_step_fraction": {
+    "NORMAL": {
+     "zero": 111,
+     "total": 139,
+     "frac": 0.7986
+    },
+    "LIMITED": {
+     "zero": 159,
+     "total": 305,
+     "frac": 0.5213
+    }
+   },
+   "P8_worldpoint_padding": {
+    "points": 1219,
+    "padding": 335,
+    "frac": 0.2748
+   },
+   "status_runs": [
+    {
+     "status": "NORMAL",
+     "start_i": 0,
+     "start_t": 0.002,
+     "dur": 2.3
+    },
+    {
+     "status": "LIMITED",
+     "start_i": 46,
+     "start_t": 2.303,
+     "dur": 8.9
+    },
+    {
+     "status": "NORMAL",
+     "start_i": 224,
+     "start_t": 11.203,
+     "dur": 3.05
+    },
+    {
+     "status": "LIMITED",
+     "start_i": 285,
+     "start_t": 14.253,
+     "dur": 2.901
+    },
+    {
+     "status": "NORMAL",
+     "start_i": 343,
+     "start_t": 17.154,
+     "dur": 2.199
+    },
+    {
+     "status": "LIMITED",
+     "start_i": 387,
+     "start_t": 19.353,
+     "dur": null
+    }
+   ]
+  },
+  {
+   "trace": "build/slam-refact-20261015/reference/runs/tum-room1-lowtex/r2/trace.jsonl",
+   "n_fresh": 470,
+   "P1_limited_runs_closed": 2,
+   "P1_min_limited_run_s": 3.0507022280000022,
+   "P1_violations": [],
+   "P2_normal_after_limited_closed": 1,
+   "P2_min_normal_run_s": 8.350127666999999,
+   "P2_violations": [],
+   "P3_first_limited": {
+    "i": 46,
+    "t": 2.302678175
+   },
+   "P3_ok": true,
+   "P4_reasons": [
+    "UNSPECIFIED"
+   ],
+   "P4_ok": true,
+   "P5_first_positions": [
+    [
+     0,
+     2,
+     0
+    ],
+    [
+     0,
+     2,
+     0
+    ],
+    [
+     0,
+     2,
+     0
+    ],
+    [
+     0,
+     2,
+     0
+    ],
+    [
+     0,
+     2,
+     0
+    ]
+   ],
+   "P5_ok": true,
+   "P6_heading_pitch_deg_first": [
+    {
+     "i": 0,
+     "heading_pitch": [
+      -0.0,
+      1.878
+     ]
+    },
+    {
+     "i": 1,
+     "heading_pitch": [
+      -0.0,
+      1.878
+     ]
+    },
+    {
+     "i": 2,
+     "heading_pitch": [
+      -0.084,
+      1.634
+     ]
+    },
+    {
+     "i": 3,
+     "heading_pitch": [
+      -0.198,
+      1.475
+     ]
+    },
+    {
+     "i": 4,
+     "heading_pitch": [
+      -0.335,
+      1.238
+     ]
+    },
+    {
+     "i": 5,
+     "heading_pitch": [
+      -0.335,
+      1.238
+     ]
+    },
+    {
+     "i": 6,
+     "heading_pitch": [
+      0.0,
+      0.749
+     ]
+    },
+    {
+     "i": 7,
+     "heading_pitch": [
+      0.475,
+      0.843
+     ]
+    },
+    {
+     "i": 8,
+     "heading_pitch": [
+      1.224,
+      1.183
+     ]
+    },
+    {
+     "i": 9,
+     "heading_pitch": [
+      1.761,
+      1.703
+     ]
+    },
+    {
+     "i": 10,
+     "heading_pitch": [
+      1.668,
+      2.058
+     ]
+    },
+    {
+     "i": 11,
+     "heading_pitch": [
+      1.431,
+      1.988
+     ]
+    }
+   ],
+   "first_translation": {
+    "i": 139,
+    "t": 6.952868877
+   },
+   "P7_zero_translation_step_fraction": {
+    "NORMAL": {
+     "zero": 92,
+     "total": 235,
+     "frac": 0.3915
+    },
+    "LIMITED": {
+     "zero": 126,
+     "total": 226,
+     "frac": 0.5575
+    }
+   },
+   "P8_worldpoint_padding": {
+    "points": 1637,
+    "padding": 168,
+    "frac": 0.1026
+   },
+   "status_runs": [
+    {
+     "status": "NORMAL",
+     "start_i": 0,
+     "start_t": 0.002,
+     "dur": 2.3
+    },
+    {
+     "status": "LIMITED",
+     "start_i": 46,
+     "start_t": 2.303,
+     "dur": 8.7
+    },
+    {
+     "status": "NORMAL",
+     "start_i": 220,
+     "start_t": 11.003,
+     "dur": 8.35
+    },
+    {
+     "status": "LIMITED",
+     "start_i": 387,
+     "start_t": 19.353,
+     "dur": 3.051
+    },
+    {
+     "status": "NORMAL",
+     "start_i": 448,
+     "start_t": 22.404,
+     "dur": null
+    }
+   ]
+  }
+ ]
+}

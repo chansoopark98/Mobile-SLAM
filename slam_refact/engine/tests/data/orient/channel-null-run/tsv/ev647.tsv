@@ -1,0 +1,6 @@
+# call idx kind timeNanos intervalNanos xbits ybits zbits (post-647 kind numbers: accel 1, mag 2, gyro 3, lin 4; idx -1 = a call with no events)
+0	0	1	1000	16666667	00000000	80000000	00000001
+0	1	2	1001	16666667	80000001	007fffff	807fffff
+0	2	3	1002	16666667	00800000	80800000	3f800000
+0	3	4	1003	16666667	bf800000	c08ccccd	7f7fffff
+0	4	1	1004	16666667	ff7fffff	7f800000	ff800000

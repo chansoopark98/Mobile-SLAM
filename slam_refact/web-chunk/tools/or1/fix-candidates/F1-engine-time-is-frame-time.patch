@@ -1,0 +1,11 @@
+--- a/slam_refact/web-chunk/xr-slam.js
++++ b/slam_refact/web-chunk/xr-slam.js
+@@ -395,7 +395,7 @@
+       rows = s.layout.roiAtlasRows;
+       diag.stats.roiPaddedFrames++;
+     }
+-    const pose = s.glue.processFramePyramid(f.timeNanos, f.videoTime * 1e9, atlas, s.layout.textureSize, rows);
++    const pose = s.glue.processFramePyramid(f.frameTime ? f.frameTime * 1e9 : f.timeNanos, f.videoTime * 1e9, atlas, s.layout.textureSize, rows);
+     pushSample(diag.stats.engineMs, performance.now() - t1);
+     diag.stats.processedFrames++;
+     // The glue's own stage index of this frame is the key (RM-4a2: a counter kept here drifted for good after one

@@ -1,0 +1,23 @@
+# name	lo	hi  (gen_op_cases.py; RM-1b structure-aware models: accepted ones must run with every output in [lo, hi])
+family_resize_w_in1_out13103685	0.24999	0.75001
+family_resize_w_in1_out13103685_int32	0.24999	0.75001
+family_resize_h_in3_out10935533	0.24999	0.75001
+family_resize_w_in5_out9718272	0.24999	0.75001
+family_resize_w_in7_out12056526	0.24999	0.75001
+family_resize_w_in1_out13103685_half_pixel	0.24999	0.75001
+family_resize_w_in1_out13103685_align_corners	0.24999	0.75001
+family_resize_w_in1_out2pow24	0.24999	0.75001
+family_resize_w_in2_out3	0.24999	0.75001
+family_resize_big_input_small_output	0.24999	0.75001
+family_resize_big_input_half_pixel	0.24999	0.75001
+family_pad_out2pow24	0.0	0.75001
+family_pad_out2pow25	0.0	0.75001
+family_conv_im2col_98mib	-1e-06	1e-06
+family_conv_im2col_49mib	-1e-06	1e-06
+family_conv_im2col_over_budget	-1e-06	1e-06
+family_conv_stride3_valid_large	-1e-06	1e-06
+family_ttb_4096x4096	0.0	0.75001
+family_ttb_8192x8192	0.0	0.75001
+family_ttb_1x2pow24	0.0	0.75001
+family_tconv_stride300	-10000.0	10000.0
+family_tconv_stride500	-10000.0	10000.0

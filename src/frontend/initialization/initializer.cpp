@@ -1,0 +1,342 @@
+#include "frontend/initialization/initializer.h"
+
+namespace frontend {
+namespace initialization {
+
+Initializer::Initializer(backend::SlidingWindow* sliding_window, FeatureManager* feature_manager,
+                         MotionEstimator* motion_estimator, std::map<double, common::ImageFrame>* all_image_frame,
+                         int* frame_count, common::MarginalizationFlag* marginalization_flag, Vector3d* g,
+                         const Matrix3d* r_ic, const Vector3d* t_ic)
+    : sliding_window_(sliding_window),
+      feature_manager_(feature_manager),
+      motion_estimator_(motion_estimator),
+      all_image_frame_(all_image_frame),
+      frame_count_(frame_count),
+      marginalization_flag_(marginalization_flag),
+      g_(g),
+      r_ic_(r_ic),
+      t_ic_(t_ic) {}
+
+bool Initializer::initialize() {
+    // Perform initial SfM reconstruction
+    if (!solveInitialSfM()) {
+#ifndef NDEBUG
+        std::cout << "Initial SfM reconstruction failed!" << std::endl;
+#endif
+        return false;
+    }
+
+    if (visualInitialAlign()) {
+#ifndef NDEBUG
+        std::cout << "visualInertialAlign() success!" << std::endl;
+#endif
+        return true;
+    } else {
+#ifndef NDEBUG
+        std::cout << "misalign visual structure with IMU" << std::endl;
+#endif
+        return false;
+    }
+}
+
+bool Initializer::solveInitialSfM() {
+#ifndef NDEBUG
+    std::cout << "Starting initial SfM reconstruction..." << std::endl;
+#endif
+
+    std::map<int, Vector3d> sfm_tracked_points;
+
+    // Prepare SfM features from feature manager
+    vector<SFMFeature> sfm_f;
+    for (auto& it_per_id : feature_manager_->feature_bank_) {
+        int imu_j = it_per_id.start_frame - 1;
+        SFMFeature sfm_feature;
+        sfm_feature.state = false;
+        sfm_feature.id = it_per_id.feature_id;
+        sfm_feature.position[0] = 0.0;
+        sfm_feature.position[1] = 0.0;
+        sfm_feature.position[2] = 0.0;
+        sfm_feature.depth = 0.0;
+        for (auto& it_per_frame : it_per_id.feature_per_frame) {
+            imu_j++;
+            Vector3d pts_j = it_per_frame.ray_vector;
+            sfm_feature.observation.push_back(make_pair(imu_j, Eigen::Vector2d{pts_j.x(), pts_j.y()}));
+        }
+        sfm_f.push_back(sfm_feature);
+    }
+
+#ifndef NDEBUG
+    std::cout << "Prepared " << sfm_f.size() << " SfM features for reconstruction" << std::endl;
+#endif
+
+    // Find relative pose between frames
+    Matrix3d relative_R;
+    Vector3d relative_T;
+    // index of reference frame
+    int l;
+    if (!relativePose(relative_R, relative_T, l)) {
+#ifndef NDEBUG
+        std::cout << "Initial SfM failed: Not enough features or parallax. Move device "
+                     "around!"
+                  << std::endl;
+#endif
+        return false;
+    }
+
+#ifndef NDEBUG
+    std::cout << "Found relative pose between frame " << l << " and latest frame" << std::endl;
+#endif
+
+    // Perform initial SfM reconstruction
+    Quaterniond Q[(*frame_count_) + 1];
+    Vector3d T[(*frame_count_) + 1];
+
+    InitialSFM sfm;
+    if (!sfm.construct((*frame_count_) + 1, Q, T, l, relative_R, relative_T, sfm_f, sfm_tracked_points)) {
+#ifndef NDEBUG
+        std::cout << "Initial SfM reconstruction failed!" << std::endl;
+#endif
+        *marginalization_flag_ = common::MarginalizationFlag::MARGIN_OLD_KEYFRAME;
+        return false;
+    }
+
+#ifndef NDEBUG
+    std::cout << "Initial SfM successful! Reconstructed " << sfm_tracked_points.size() << " 3D points" << std::endl;
+#endif
+
+    // Solve PnP for all frames to get camera poses
+    if (!solvePnPForAllFrames(Q, T, sfm_tracked_points)) {
+#ifndef NDEBUG
+        std::cout << "PnP solving failed for non-keyframes!" << std::endl;
+#endif
+        return false;
+    }
+
+#ifndef NDEBUG
+    std::cout << "Initial SfM completed" << std::endl;
+#endif
+    return true;
+}
+
+bool Initializer::relativePose(Matrix3d& relative_R, Vector3d& relative_T, int& l) {
+    // find previous frame which contians enough correspondance and parallex with
+    // newest frame
+    for (int i = 0; i < WINDOW_SIZE; i++) {
+        frontend::Correspondences corres;
+        corres = feature_manager_->getCorresponding(i, WINDOW_SIZE);
+
+        if (corres.size() > 20) {
+            double sum_parallax = 0;
+            for (int j = 0; j < int(corres.size()); j++) {
+                Vector2d pts_0(corres[j].first(0), corres[j].first(1));
+                Vector2d pts_1(corres[j].second(0), corres[j].second(1));
+                double parallax = (pts_0 - pts_1).norm();
+                sum_parallax = sum_parallax + parallax;
+            }
+
+            double average_parallax = 1.0 * sum_parallax / int(corres.size());
+            // Parallax in "virtual pixels" = average_parallax * focal_length
+            // Threshold 30 "virtual pixels" — same as VINS-Mono reference
+            double focal = g_config.camera.focal_length;
+            if (average_parallax * focal > 30 &&
+                motion_estimator_->solveRelativeRT(corres, relative_R, relative_T)) {
+                l = i;
+#ifndef NDEBUG
+                std::cout << "average_parallax " << average_parallax * focal
+                          << " choose index " << l
+                          << " and newest frame to triangulate the whole structure"
+                          << std::endl;
+#endif
+                return true;
+            }
+        }
+    }
+    return false;
+}
+
+bool Initializer::solvePnPForAllFrames(const Quaterniond Q[], const Vector3d T[],
+                                       const std::map<int, Vector3d>& sfm_tracked_points) {
+    std::map<double, common::ImageFrame>::iterator frame_it;
+    std::map<int, Vector3d>::const_iterator it;
+    frame_it = all_image_frame_->begin();
+
+    // CRITICAL: Evaluate r_ic transpose once. Do NOT use 'auto' with Eigen
+    // expressions — lazy expression templates hold references to temporaries
+    // that become dangling, producing NaN in WASM builds.
+    const Matrix3d r_ic_t = (*r_ic_).transpose();
+
+    int frame_idx = 0;
+    for (int i = 0; frame_it != all_image_frame_->end(); frame_it++, frame_idx++) {
+        // Handle keyframes (those with SfM solutions)
+        if (i <= *frame_count_ && (frame_it->first) == (*sliding_window_)[i].timestamp) {
+            frame_it->second.is_key_frame = true;
+            Matrix3d Ri = Q[i].toRotationMatrix();
+            frame_it->second.R = Ri * r_ic_t;
+            frame_it->second.T = T[i];
+            i++;
+            continue;
+        }
+
+        // Handle frame timing - bounds check i
+        if (i <= *frame_count_ && (frame_it->first) > (*sliding_window_)[i].timestamp) {
+            i++;
+        }
+
+        // Bounds check before using Q[i] and T[i]
+        if (i > *frame_count_) {
+            frame_it->second.is_key_frame = false;
+            frame_it->second.R = Matrix3d::Identity();
+            frame_it->second.T = Vector3d::Zero();
+            continue;
+        }
+
+        // Solve PnP for non-keyframes
+        Matrix3d R_initial = (Q[i].inverse()).toRotationMatrix();
+        Vector3d P_initial = -R_initial * T[i];
+
+        cv::Mat r, rvec, t, D, tmp_r;
+        cv::eigen2cv(R_initial, tmp_r);
+        cv::Rodrigues(tmp_r, rvec);
+        cv::eigen2cv(P_initial, t);
+
+        frame_it->second.is_key_frame = false;
+
+        // Collect 3D-2D correspondences
+        vector<cv::Point3f> pts_3_vector;
+        vector<cv::Point2f> pts_2_vector;
+
+        for (auto& id_pts : frame_it->second.points) {
+            int feature_id = id_pts.first;
+            it = sfm_tracked_points.find(feature_id);
+            if (it != sfm_tracked_points.end()) {
+                Vector3d world_pts = it->second;
+                cv::Point3f pts_3(world_pts(0), world_pts(1), world_pts(2));
+                pts_3_vector.push_back(pts_3);
+                Vector2d img_pts = id_pts.second.head<2>();
+                cv::Point2f pts_2(img_pts(0), img_pts(1));
+                pts_2_vector.push_back(pts_2);
+            }
+        }
+
+        // Check if we have enough points for PnP
+        if (pts_3_vector.size() < 6) {
+#ifndef NDEBUG
+            std::cout << "Not enough 3D-2D correspondences (" << pts_3_vector.size() << ") for PnP at frame "
+                      << frame_it->first << std::endl;
+#endif
+            return false;
+        }
+
+        // Solve PnP
+        cv::Mat K = cv::Mat::eye(3, 3, CV_64F);
+        if (!cv::solvePnP(pts_3_vector, pts_2_vector, K, D, rvec, t, 1)) {
+#ifndef NDEBUG
+            std::cout << "PnP solving failed for frame " << frame_it->first << std::endl;
+#endif
+            return false;
+        }
+
+        // Convert result back to pose
+        cv::Rodrigues(rvec, r);
+        MatrixXd R_pnp, tmp_R_pnp;
+        cv::cv2eigen(r, tmp_R_pnp);
+        R_pnp = tmp_R_pnp.transpose();
+        MatrixXd T_pnp;
+        cv::cv2eigen(t, T_pnp);
+        T_pnp = R_pnp * (-T_pnp);
+
+        Matrix3d R_pnp_mat = R_pnp;  // MatrixXd → Matrix3d
+        frame_it->second.R = R_pnp_mat * r_ic_t;
+        frame_it->second.T = T_pnp;
+    }
+
+#ifndef NDEBUG
+    std::cout << "PnP solving completed for all frames" << std::endl;
+#endif
+    return true;
+}
+
+bool Initializer::visualInitialAlign() {
+    VectorXd x;
+
+    // solve for gravity vector and scale, gyroscope bias
+    bool result = VisualIMUAlignment(*all_image_frame_, *sliding_window_, *g_, x);
+    if (!result) {
+#ifndef NDEBUG
+        std::cout << "solve gravity vector failed!" << std::endl;
+#endif
+        return false;
+    }
+
+    // change state
+    for (int i = 0; i <= *frame_count_; i++) {
+        Matrix3d Ri = (*all_image_frame_)[(*sliding_window_)[i].timestamp].R;
+        Vector3d Pi = (*all_image_frame_)[(*sliding_window_)[i].timestamp].T;
+
+        (*sliding_window_)[i].P = Pi;
+        (*sliding_window_)[i].R = Ri;
+        (*all_image_frame_)[(*sliding_window_)[i].timestamp].is_key_frame = true;
+    }
+
+    VectorXd dep = feature_manager_->getDepthVector();
+    for (int i = 0; i < dep.size(); i++)
+        dep[i] = -1;
+    feature_manager_->clearDepth(dep);
+
+    // triangulat on cam pose , no tic
+    Vector3d T_IC_TMP;
+    T_IC_TMP.setZero();
+    feature_manager_->triangulateAcrossAllViews(*sliding_window_, T_IC_TMP, *r_ic_);
+
+    double scale = (x.tail<1>())(0);
+
+    for (int i = 0; i <= WINDOW_SIZE; i++) {
+        (*sliding_window_)[i].pre_integration->repropagate(Vector3d::Zero(), (*sliding_window_)[i].Bg);
+    }
+
+    // update the position
+    for (int i = *frame_count_; i >= 0; i--)
+        (*sliding_window_)[i].P = scale * (*sliding_window_)[i].P - (*sliding_window_)[i].R * (*t_ic_) -
+                                  (scale * (*sliding_window_).front().P - (*sliding_window_).front().R * (*t_ic_));
+
+    // update the speed
+    int kv = -1;
+    int image_index = 0;
+    std::map<double, common::ImageFrame>::iterator frame_i;
+    for (frame_i = all_image_frame_->begin(); frame_i != all_image_frame_->end(); frame_i++, image_index++) {
+        if (frame_i->second.is_key_frame) {
+            kv++;
+            // Alignment stores a velocity for every image, including non-keyframes.
+            (*sliding_window_)[kv].V = frame_i->second.R * x.segment<3>(image_index * 3);
+        }
+    }
+
+    // update the depth
+    int feature_slot = 0;
+    for (auto& it_per_id : feature_manager_->feature_bank_) {
+        it_per_id.used_num = it_per_id.feature_per_frame.size();
+        if (!it_per_id.isParameterCandidate()) continue;
+        if (feature_slot++ >= NUM_OF_FEATURES) break;
+        if (std::isfinite(it_per_id.estimated_depth) && it_per_id.estimated_depth > 1e-10)
+            it_per_id.estimated_depth *= scale;
+    }
+
+    // update the gravity vector
+    Matrix3d R0 = Utility::g2R(*g_);
+    double yaw = Utility::R2ypr(R0 * (*sliding_window_).front().R).x();
+    R0 = Utility::ypr2R(Eigen::Vector3d{-yaw, 0, 0}) * R0;
+    *g_ = R0 * (*g_);
+
+    // apply the rotation
+    Matrix3d rot_diff = R0;
+    for (int i = 0; i <= *frame_count_; i++) {
+        (*sliding_window_)[i].P = rot_diff * (*sliding_window_)[i].P;
+        (*sliding_window_)[i].R = rot_diff * (*sliding_window_)[i].R;
+        (*sliding_window_)[i].V = rot_diff * (*sliding_window_)[i].V;
+    }
+
+    return true;
+}
+
+}  // namespace initialization
+}  // namespace frontend

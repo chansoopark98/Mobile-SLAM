@@ -1,0 +1,74 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <meta name="theme-color" content="#10212b">
+  <title>공간 살펴보기 | Mobile SLAM</title>
+  <link rel="stylesheet" href="./style.css">
+</head>
+<body>
+  <canvas id="camerafeed" tabindex="-1" role="button" aria-label="카메라 화면. 탭하거나 Enter 키를 눌러 물체를 놓을 수 있습니다."></canvas>
+
+  <section id="start-screen" aria-labelledby="start-title">
+    <div class="start-content">
+      <div class="brand"><span class="brand-mark" aria-hidden="true"></span><span>Mobile SLAM</span></div>
+      <div class="start-copy">
+        <p class="start-kicker">카메라로 만나는 공간</p>
+        <h1 id="start-title">주변을 살펴보고<br>공간에 물체를 놓아보세요</h1>
+        <p class="start-description">카메라를 켠 뒤 휴대폰을 천천히 움직여 주변을 비춰주세요. 준비가 되면 화면을 탭해 물체를 놓을 수 있습니다.</p>
+      </div>
+      <div class="start-action">
+        <button id="start" type="button">카메라 시작</button>
+        <p class="permission-note">시작하면 카메라와 기기에 따라 모션 센서 권한을 요청합니다. 영상과 센서 원본은 저장하거나 전송하지 않습니다.</p>
+        <p id="start-note" class="note"></p>
+      </div>
+    </div>
+  </section>
+
+  <section id="hud" hidden aria-label="AR 상태">
+    <div class="status-pill"><span class="status-dot" aria-hidden="true"></span><span id="h-status" aria-live="polite">준비 중</span><span id="h-reason" class="sr-only"></span></div>
+    <div class="guidance" id="h-msg" role="status">휴대폰을 천천히 움직여 주변을 살펴보세요.</div>
+  </section>
+
+  <div id="error-box" hidden><div id="errors" role="alert"></div><button id="error-dismiss" type="button">닫기</button></div>
+
+  <details id="panel" hidden>
+    <summary aria-label="도구 및 설정"><span class="menu-icon" aria-hidden="true">☰</span><span>도구</span></summary>
+    <div class="panel-body">
+      <div class="panel-heading"><div><h2>도구 및 설정</h2><p>물체와 현재 세션을 관리합니다.</p></div></div>
+      <div class="buttons">
+        <button id="b-clear" type="button" disabled>물체 지우기</button>
+        <button id="b-recenter" type="button" disabled>원점 다시 잡기</button>
+        <button id="b-stop" type="button" disabled>카메라 종료</button>
+        <button id="b-restart" type="button" hidden>다시 시작</button>
+      </div>
+      <details class="advanced">
+        <summary>이미지 타깃</summary>
+        <div class="advanced-body">
+          <p>준비된 이미지나 파일을 선택해 타깃을 추가합니다.</p>
+          <div id="demo-targets" class="dim">타깃 목록을 확인하는 중…</div>
+          <label>타깃 JSON <input id="f-json" type="file" accept="application/json,.json"></label>
+          <label>타깃 이미지 <input id="f-image" type="file" accept="image/*"></label>
+          <button id="b-add-target" type="button">선택한 파일로 추가</button>
+          <ul id="target-list"></ul>
+        </div>
+      </details>
+      <details class="advanced">
+        <summary>세션 정보</summary>
+        <div class="advanced-body diagnostics">
+          <div><span>월드 포인트</span><b id="h-points">0</b></div>
+          <div><span>갱신</span><b><span id="h-ups">0</span>/s</b></div>
+          <div><span>화면 방향</span><b id="h-orient">-</b></div>
+          <div><span>영상</span><b id="h-video">-</b></div>
+          <div><span>이미지 타깃</span><b id="h-targets">없음</b></div>
+          <button id="b-metrics" type="button" disabled>지표 JSON 받기</button>
+          <p>지표에는 브라우저 정보와 화면 방향이 포함되며 영상과 센서 원본은 포함되지 않습니다.</p>
+        </div>
+      </details>
+    </div>
+  </details>
+
+  <script type="module" src="./app.js"></script>
+</body>
+</html>

@@ -1,0 +1,1166 @@
+{
+ "schema": "slam-refact-spec-frontend-cpu-half-parity-v1",
+ "capture_dir": "build/slam-refact-20261015/spec/frontend/capture/tum-room1-full/c2",
+ "summary": {
+  "native_same_set": 84,
+  "native_same_order": 27,
+  "wasm_same_set": 92,
+  "wasm_same_order": 92,
+  "retain_best_trimmed": 65,
+  "level_cases": 92,
+  "trimmed_native_same_order": 0,
+  "trimmed_wasm_same_order": 65
+ },
+ "results": [
+  {
+   "capture": 1,
+   "inputFrame": 0,
+   "levels": [
+    {
+     "level": 0,
+     "candidates_binary": 115,
+     "candidates_public": 115,
+     "kept": 115,
+     "native_same_set": true,
+     "native_same_order": true,
+     "wasm_same_set": true,
+     "wasm_same_order": true,
+     "retain_best_trimmed": false
+    },
+    {
+     "level": 1,
+     "candidates_binary": 138,
+     "candidates_public": 138,
+     "kept": 138,
+     "native_same_set": true,
+     "native_same_order": true,
+     "wasm_same_set": true,
+     "wasm_same_order": true,
+     "retain_best_trimmed": false
+    },
+    {
+     "level": 2,
+     "candidates_binary": 124,
+     "candidates_public": 124,
+     "kept": 96,
+     "native_same_set": true,
+     "native_same_order": false,
+     "wasm_same_set": true,
+     "wasm_same_order": true,
+     "retain_best_trimmed": true
+    },
+    {
+     "level": 3,
+     "candidates_binary": 66,
+     "candidates_public": 66,
+     "kept": 66,
+     "native_same_set": true,
+     "native_same_order": true,
+     "wasm_same_set": true,
+     "wasm_same_order": true,
+     "retain_best_trimmed": false
+    }
+   ]
+  },
+  {
+   "capture": 2,
+   "inputFrame": 1,
+   "levels": [
+    {
+     "level": 0,
+     "candidates_binary": 114,
+     "candidates_public": 114,
+     "kept": 114,
+     "native_same_set": true,
+     "native_same_order": true,
+     "wasm_same_set": true,
+     "wasm_same_order": true,
+     "retain_best_trimmed": false
+    },
+    {
+     "level": 1,
+     "candidates_binary": 147,
+     "candidates_public": 147,
+     "kept": 138,
+     "native_same_set": true,
+     "native_same_order": false,
+     "wasm_same_set": true,
+     "wasm_same_order": true,
+     "retain_best_trimmed": true
+    },
+    {
+     "level": 2,
+     "candidates_binary": 119,
+     "candidates_public": 119,
+     "kept": 96,
+     "native_same_set": true,
+     "native_same_order": false,
+     "wasm_same_set": true,
+     "wasm_same_order": true,
+     "retain_best_trimmed": true
+    },
+    {
+     "level": 3,
+     "candidates_binary": 65,
+     "candidates_public": 65,
+     "kept": 65,
+     "native_same_set": true,
+     "native_same_order": true,
+     "wasm_same_set": true,
+     "wasm_same_order": true,
+     "retain_best_trimmed": false
+    }
+   ]
+  },
+  {
+   "capture": 3,
+   "inputFrame": 2,
+   "levels": [
+    {
+     "level": 0,
+     "candidates_binary": 107,
+     "candidates_public": 107,
+     "kept": 107,
+     "native_same_set": true,
+     "native_same_order": true,
+     "wasm_same_set": true,
+     "wasm_same_order": true,
+     "retain_best_trimmed": false
+    },
+    {
+     "level": 1,
+     "candidates_binary": 148,
+     "candidates_public": 148,
+     "kept": 138,
+     "native_same_set": true,
+     "native_same_order": false,
+     "wasm_same_set": true,
+     "wasm_same_order": true,
+     "retain_best_trimmed": true
+    },
+    {
+     "level": 2,
+     "candidates_binary": 128,
+     "candidates_public": 128,
+     "kept": 96,
+     "native_same_set": true,
+     "native_same_order": false,
+     "wasm_same_set": true,
+     "wasm_same_order": true,
+     "retain_best_trimmed": true
+    },
+    {
+     "level": 3,
+     "candidates_binary": 72,
+     "candidates_public": 72,
+     "kept": 67,
+     "native_same_set": true,
+     "native_same_order": false,
+     "wasm_same_set": true,
+     "wasm_same_order": true,
+     "retain_best_trimmed": true
+    }
+   ]
+  },
+  {
+   "capture": 4,
+   "inputFrame": 3,
+   "levels": [
+    {
+     "level": 0,
+     "candidates_binary": 119,
+     "candidates_public": 119,
+     "kept": 119,
+     "native_same_set": true,
+     "native_same_order": true,
+     "wasm_same_set": true,
+     "wasm_same_order": true,
+     "retain_best_trimmed": false
+    },
+    {
+     "level": 1,
+     "candidates_binary": 155,
+     "candidates_public": 155,
+     "kept": 138,
+     "native_same_set": true,
+     "native_same_order": false,
+     "wasm_same_set": true,
+     "wasm_same_order": true,
+     "retain_best_trimmed": true
+    },
+    {
+     "level": 2,
+     "candidates_binary": 125,
+     "candidates_public": 125,
+     "kept": 96,
+     "native_same_set": true,
+     "native_same_order": false,
+     "wasm_same_set": true,
+     "wasm_same_order": true,
+     "retain_best_trimmed": true
+    },
+    {
+     "level": 3,
+     "candidates_binary": 69,
+     "candidates_public": 69,
+     "kept": 67,
+     "native_same_set": true,
+     "native_same_order": false,
+     "wasm_same_set": true,
+     "wasm_same_order": true,
+     "retain_best_trimmed": true
+    }
+   ]
+  },
+  {
+   "capture": 5,
+   "inputFrame": 4,
+   "levels": [
+    {
+     "level": 0,
+     "candidates_binary": 129,
+     "candidates_public": 129,
+     "kept": 129,
+     "native_same_set": true,
+     "native_same_order": true,
+     "wasm_same_set": true,
+     "wasm_same_order": true,
+     "retain_best_trimmed": false
+    },
+    {
+     "level": 1,
+     "candidates_binary": 150,
+     "candidates_public": 150,
+     "kept": 138,
+     "native_same_set": true,
+     "native_same_order": false,
+     "wasm_same_set": true,
+     "wasm_same_order": true,
+     "retain_best_trimmed": true
+    },
+    {
+     "level": 2,
+     "candidates_binary": 122,
+     "candidates_public": 122,
+     "kept": 96,
+     "native_same_set": false,
+     "native_same_order": false,
+     "wasm_same_set": true,
+     "wasm_same_order": true,
+     "retain_best_trimmed": true
+    },
+    {
+     "level": 3,
+     "candidates_binary": 72,
+     "candidates_public": 72,
+     "kept": 67,
+     "native_same_set": true,
+     "native_same_order": false,
+     "wasm_same_set": true,
+     "wasm_same_order": true,
+     "retain_best_trimmed": true
+    }
+   ]
+  },
+  {
+   "capture": 6,
+   "inputFrame": 5,
+   "levels": [
+    {
+     "level": 0,
+     "candidates_binary": 124,
+     "candidates_public": 124,
+     "kept": 124,
+     "native_same_set": true,
+     "native_same_order": true,
+     "wasm_same_set": true,
+     "wasm_same_order": true,
+     "retain_best_trimmed": false
+    },
+    {
+     "level": 1,
+     "candidates_binary": 164,
+     "candidates_public": 164,
+     "kept": 138,
+     "native_same_set": false,
+     "native_same_order": false,
+     "wasm_same_set": true,
+     "wasm_same_order": true,
+     "retain_best_trimmed": true
+    },
+    {
+     "level": 2,
+     "candidates_binary": 122,
+     "candidates_public": 122,
+     "kept": 96,
+     "native_same_set": true,
+     "native_same_order": false,
+     "wasm_same_set": true,
+     "wasm_same_order": true,
+     "retain_best_trimmed": true
+    },
+    {
+     "level": 3,
+     "candidates_binary": 74,
+     "candidates_public": 74,
+     "kept": 67,
+     "native_same_set": true,
+     "native_same_order": false,
+     "wasm_same_set": true,
+     "wasm_same_order": true,
+     "retain_best_trimmed": true
+    }
+   ]
+  },
+  {
+   "capture": 7,
+   "inputFrame": 6,
+   "levels": [
+    {
+     "level": 0,
+     "candidates_binary": 129,
+     "candidates_public": 129,
+     "kept": 129,
+     "native_same_set": true,
+     "native_same_order": true,
+     "wasm_same_set": true,
+     "wasm_same_order": true,
+     "retain_best_trimmed": false
+    },
+    {
+     "level": 1,
+     "candidates_binary": 155,
+     "candidates_public": 155,
+     "kept": 138,
+     "native_same_set": true,
+     "native_same_order": false,
+     "wasm_same_set": true,
+     "wasm_same_order": true,
+     "retain_best_trimmed": true
+    },
+    {
+     "level": 2,
+     "candidates_binary": 120,
+     "candidates_public": 120,
+     "kept": 96,
+     "native_same_set": true,
+     "native_same_order": false,
+     "wasm_same_set": true,
+     "wasm_same_order": true,
+     "retain_best_trimmed": true
+    },
+    {
+     "level": 3,
+     "candidates_binary": 66,
+     "candidates_public": 66,
+     "kept": 66,
+     "native_same_set": true,
+     "native_same_order": true,
+     "wasm_same_set": true,
+     "wasm_same_order": true,
+     "retain_best_trimmed": false
+    }
+   ]
+  },
+  {
+   "capture": 8,
+   "inputFrame": 7,
+   "levels": [
+    {
+     "level": 0,
+     "candidates_binary": 122,
+     "candidates_public": 122,
+     "kept": 122,
+     "native_same_set": true,
+     "native_same_order": true,
+     "wasm_same_set": true,
+     "wasm_same_order": true,
+     "retain_best_trimmed": false
+    },
+    {
+     "level": 1,
+     "candidates_binary": 152,
+     "candidates_public": 152,
+     "kept": 138,
+     "native_same_set": true,
+     "native_same_order": false,
+     "wasm_same_set": true,
+     "wasm_same_order": true,
+     "retain_best_trimmed": true
+    },
+    {
+     "level": 2,
+     "candidates_binary": 120,
+     "candidates_public": 120,
+     "kept": 96,
+     "native_same_set": true,
+     "native_same_order": false,
+     "wasm_same_set": true,
+     "wasm_same_order": true,
+     "retain_best_trimmed": true
+    },
+    {
+     "level": 3,
+     "candidates_binary": 74,
+     "candidates_public": 74,
+     "kept": 67,
+     "native_same_set": true,
+     "native_same_order": false,
+     "wasm_same_set": true,
+     "wasm_same_order": true,
+     "retain_best_trimmed": true
+    }
+   ]
+  },
+  {
+   "capture": 9,
+   "inputFrame": 8,
+   "levels": [
+    {
+     "level": 0,
+     "candidates_binary": 120,
+     "candidates_public": 120,
+     "kept": 120,
+     "native_same_set": true,
+     "native_same_order": true,
+     "wasm_same_set": true,
+     "wasm_same_order": true,
+     "retain_best_trimmed": false
+    },
+    {
+     "level": 1,
+     "candidates_binary": 149,
+     "candidates_public": 149,
+     "kept": 138,
+     "native_same_set": true,
+     "native_same_order": false,
+     "wasm_same_set": true,
+     "wasm_same_order": true,
+     "retain_best_trimmed": true
+    },
+    {
+     "level": 2,
+     "candidates_binary": 120,
+     "candidates_public": 120,
+     "kept": 96,
+     "native_same_set": true,
+     "native_same_order": false,
+     "wasm_same_set": true,
+     "wasm_same_order": true,
+     "retain_best_trimmed": true
+    },
+    {
+     "level": 3,
+     "candidates_binary": 78,
+     "candidates_public": 78,
+     "kept": 67,
+     "native_same_set": true,
+     "native_same_order": false,
+     "wasm_same_set": true,
+     "wasm_same_order": true,
+     "retain_best_trimmed": true
+    }
+   ]
+  },
+  {
+   "capture": 10,
+   "inputFrame": 9,
+   "levels": [
+    {
+     "level": 0,
+     "candidates_binary": 124,
+     "candidates_public": 124,
+     "kept": 124,
+     "native_same_set": true,
+     "native_same_order": true,
+     "wasm_same_set": true,
+     "wasm_same_order": true,
+     "retain_best_trimmed": false
+    },
+    {
+     "level": 1,
+     "candidates_binary": 158,
+     "candidates_public": 158,
+     "kept": 138,
+     "native_same_set": true,
+     "native_same_order": false,
+     "wasm_same_set": true,
+     "wasm_same_order": true,
+     "retain_best_trimmed": true
+    },
+    {
+     "level": 2,
+     "candidates_binary": 116,
+     "candidates_public": 116,
+     "kept": 96,
+     "native_same_set": true,
+     "native_same_order": false,
+     "wasm_same_set": true,
+     "wasm_same_order": true,
+     "retain_best_trimmed": true
+    },
+    {
+     "level": 3,
+     "candidates_binary": 73,
+     "candidates_public": 73,
+     "kept": 67,
+     "native_same_set": true,
+     "native_same_order": false,
+     "wasm_same_set": true,
+     "wasm_same_order": true,
+     "retain_best_trimmed": true
+    }
+   ]
+  },
+  {
+   "capture": 11,
+   "inputFrame": 10,
+   "levels": [
+    {
+     "level": 0,
+     "candidates_binary": 121,
+     "candidates_public": 121,
+     "kept": 121,
+     "native_same_set": true,
+     "native_same_order": true,
+     "wasm_same_set": true,
+     "wasm_same_order": true,
+     "retain_best_trimmed": false
+    },
+    {
+     "level": 1,
+     "candidates_binary": 151,
+     "candidates_public": 151,
+     "kept": 138,
+     "native_same_set": false,
+     "native_same_order": false,
+     "wasm_same_set": true,
+     "wasm_same_order": true,
+     "retain_best_trimmed": true
+    },
+    {
+     "level": 2,
+     "candidates_binary": 120,
+     "candidates_public": 120,
+     "kept": 96,
+     "native_same_set": true,
+     "native_same_order": false,
+     "wasm_same_set": true,
+     "wasm_same_order": true,
+     "retain_best_trimmed": true
+    },
+    {
+     "level": 3,
+     "candidates_binary": 78,
+     "candidates_public": 78,
+     "kept": 67,
+     "native_same_set": true,
+     "native_same_order": false,
+     "wasm_same_set": true,
+     "wasm_same_order": true,
+     "retain_best_trimmed": true
+    }
+   ]
+  },
+  {
+   "capture": 12,
+   "inputFrame": 11,
+   "levels": [
+    {
+     "level": 0,
+     "candidates_binary": 139,
+     "candidates_public": 139,
+     "kept": 139,
+     "native_same_set": true,
+     "native_same_order": true,
+     "wasm_same_set": true,
+     "wasm_same_order": true,
+     "retain_best_trimmed": false
+    },
+    {
+     "level": 1,
+     "candidates_binary": 161,
+     "candidates_public": 161,
+     "kept": 138,
+     "native_same_set": true,
+     "native_same_order": false,
+     "wasm_same_set": true,
+     "wasm_same_order": true,
+     "retain_best_trimmed": true
+    },
+    {
+     "level": 2,
+     "candidates_binary": 128,
+     "candidates_public": 128,
+     "kept": 96,
+     "native_same_set": true,
+     "native_same_order": false,
+     "wasm_same_set": true,
+     "wasm_same_order": true,
+     "retain_best_trimmed": true
+    },
+    {
+     "level": 3,
+     "candidates_binary": 77,
+     "candidates_public": 77,
+     "kept": 67,
+     "native_same_set": true,
+     "native_same_order": false,
+     "wasm_same_set": true,
+     "wasm_same_order": true,
+     "retain_best_trimmed": true
+    }
+   ]
+  },
+  {
+   "capture": 13,
+   "inputFrame": 12,
+   "levels": [
+    {
+     "level": 0,
+     "candidates_binary": 139,
+     "candidates_public": 139,
+     "kept": 139,
+     "native_same_set": true,
+     "native_same_order": true,
+     "wasm_same_set": true,
+     "wasm_same_order": true,
+     "retain_best_trimmed": false
+    },
+    {
+     "level": 1,
+     "candidates_binary": 160,
+     "candidates_public": 160,
+     "kept": 138,
+     "native_same_set": true,
+     "native_same_order": false,
+     "wasm_same_set": true,
+     "wasm_same_order": true,
+     "retain_best_trimmed": true
+    },
+    {
+     "level": 2,
+     "candidates_binary": 128,
+     "candidates_public": 128,
+     "kept": 96,
+     "native_same_set": true,
+     "native_same_order": false,
+     "wasm_same_set": true,
+     "wasm_same_order": true,
+     "retain_best_trimmed": true
+    },
+    {
+     "level": 3,
+     "candidates_binary": 73,
+     "candidates_public": 73,
+     "kept": 67,
+     "native_same_set": true,
+     "native_same_order": false,
+     "wasm_same_set": true,
+     "wasm_same_order": true,
+     "retain_best_trimmed": true
+    }
+   ]
+  },
+  {
+   "capture": 14,
+   "inputFrame": 13,
+   "levels": [
+    {
+     "level": 0,
+     "candidates_binary": 148,
+     "candidates_public": 148,
+     "kept": 148,
+     "native_same_set": true,
+     "native_same_order": true,
+     "wasm_same_set": true,
+     "wasm_same_order": true,
+     "retain_best_trimmed": false
+    },
+    {
+     "level": 1,
+     "candidates_binary": 166,
+     "candidates_public": 166,
+     "kept": 138,
+     "native_same_set": true,
+     "native_same_order": false,
+     "wasm_same_set": true,
+     "wasm_same_order": true,
+     "retain_best_trimmed": true
+    },
+    {
+     "level": 2,
+     "candidates_binary": 132,
+     "candidates_public": 132,
+     "kept": 96,
+     "native_same_set": true,
+     "native_same_order": false,
+     "wasm_same_set": true,
+     "wasm_same_order": true,
+     "retain_best_trimmed": true
+    },
+    {
+     "level": 3,
+     "candidates_binary": 75,
+     "candidates_public": 75,
+     "kept": 67,
+     "native_same_set": true,
+     "native_same_order": false,
+     "wasm_same_set": true,
+     "wasm_same_order": true,
+     "retain_best_trimmed": true
+    }
+   ]
+  },
+  {
+   "capture": 15,
+   "inputFrame": 14,
+   "levels": [
+    {
+     "level": 0,
+     "candidates_binary": 148,
+     "candidates_public": 148,
+     "kept": 148,
+     "native_same_set": true,
+     "native_same_order": true,
+     "wasm_same_set": true,
+     "wasm_same_order": true,
+     "retain_best_trimmed": false
+    },
+    {
+     "level": 1,
+     "candidates_binary": 171,
+     "candidates_public": 171,
+     "kept": 138,
+     "native_same_set": true,
+     "native_same_order": false,
+     "wasm_same_set": true,
+     "wasm_same_order": true,
+     "retain_best_trimmed": true
+    },
+    {
+     "level": 2,
+     "candidates_binary": 129,
+     "candidates_public": 129,
+     "kept": 96,
+     "native_same_set": true,
+     "native_same_order": false,
+     "wasm_same_set": true,
+     "wasm_same_order": true,
+     "retain_best_trimmed": true
+    },
+    {
+     "level": 3,
+     "candidates_binary": 75,
+     "candidates_public": 75,
+     "kept": 67,
+     "native_same_set": true,
+     "native_same_order": false,
+     "wasm_same_set": true,
+     "wasm_same_order": true,
+     "retain_best_trimmed": true
+    }
+   ]
+  },
+  {
+   "capture": 16,
+   "inputFrame": 15,
+   "levels": [
+    {
+     "level": 0,
+     "candidates_binary": 144,
+     "candidates_public": 144,
+     "kept": 144,
+     "native_same_set": true,
+     "native_same_order": true,
+     "wasm_same_set": true,
+     "wasm_same_order": true,
+     "retain_best_trimmed": false
+    },
+    {
+     "level": 1,
+     "candidates_binary": 164,
+     "candidates_public": 164,
+     "kept": 138,
+     "native_same_set": true,
+     "native_same_order": false,
+     "wasm_same_set": true,
+     "wasm_same_order": true,
+     "retain_best_trimmed": true
+    },
+    {
+     "level": 2,
+     "candidates_binary": 126,
+     "candidates_public": 126,
+     "kept": 96,
+     "native_same_set": true,
+     "native_same_order": false,
+     "wasm_same_set": true,
+     "wasm_same_order": true,
+     "retain_best_trimmed": true
+    },
+    {
+     "level": 3,
+     "candidates_binary": 69,
+     "candidates_public": 69,
+     "kept": 67,
+     "native_same_set": true,
+     "native_same_order": false,
+     "wasm_same_set": true,
+     "wasm_same_order": true,
+     "retain_best_trimmed": true
+    }
+   ]
+  },
+  {
+   "capture": 17,
+   "inputFrame": 16,
+   "levels": [
+    {
+     "level": 0,
+     "candidates_binary": 141,
+     "candidates_public": 141,
+     "kept": 141,
+     "native_same_set": true,
+     "native_same_order": true,
+     "wasm_same_set": true,
+     "wasm_same_order": true,
+     "retain_best_trimmed": false
+    },
+    {
+     "level": 1,
+     "candidates_binary": 173,
+     "candidates_public": 173,
+     "kept": 138,
+     "native_same_set": false,
+     "native_same_order": false,
+     "wasm_same_set": true,
+     "wasm_same_order": true,
+     "retain_best_trimmed": true
+    },
+    {
+     "level": 2,
+     "candidates_binary": 130,
+     "candidates_public": 130,
+     "kept": 96,
+     "native_same_set": true,
+     "native_same_order": false,
+     "wasm_same_set": true,
+     "wasm_same_order": true,
+     "retain_best_trimmed": true
+    },
+    {
+     "level": 3,
+     "candidates_binary": 74,
+     "candidates_public": 74,
+     "kept": 67,
+     "native_same_set": true,
+     "native_same_order": false,
+     "wasm_same_set": true,
+     "wasm_same_order": true,
+     "retain_best_trimmed": true
+    }
+   ]
+  },
+  {
+   "capture": 18,
+   "inputFrame": 17,
+   "levels": [
+    {
+     "level": 0,
+     "candidates_binary": 145,
+     "candidates_public": 145,
+     "kept": 145,
+     "native_same_set": true,
+     "native_same_order": true,
+     "wasm_same_set": true,
+     "wasm_same_order": true,
+     "retain_best_trimmed": false
+    },
+    {
+     "level": 1,
+     "candidates_binary": 164,
+     "candidates_public": 164,
+     "kept": 138,
+     "native_same_set": false,
+     "native_same_order": false,
+     "wasm_same_set": true,
+     "wasm_same_order": true,
+     "retain_best_trimmed": true
+    },
+    {
+     "level": 2,
+     "candidates_binary": 131,
+     "candidates_public": 131,
+     "kept": 96,
+     "native_same_set": true,
+     "native_same_order": false,
+     "wasm_same_set": true,
+     "wasm_same_order": true,
+     "retain_best_trimmed": true
+    },
+    {
+     "level": 3,
+     "candidates_binary": 75,
+     "candidates_public": 75,
+     "kept": 67,
+     "native_same_set": true,
+     "native_same_order": false,
+     "wasm_same_set": true,
+     "wasm_same_order": true,
+     "retain_best_trimmed": true
+    }
+   ]
+  },
+  {
+   "capture": 19,
+   "inputFrame": 18,
+   "levels": [
+    {
+     "level": 0,
+     "candidates_binary": 139,
+     "candidates_public": 139,
+     "kept": 139,
+     "native_same_set": true,
+     "native_same_order": true,
+     "wasm_same_set": true,
+     "wasm_same_order": true,
+     "retain_best_trimmed": false
+    },
+    {
+     "level": 1,
+     "candidates_binary": 172,
+     "candidates_public": 172,
+     "kept": 138,
+     "native_same_set": false,
+     "native_same_order": false,
+     "wasm_same_set": true,
+     "wasm_same_order": true,
+     "retain_best_trimmed": true
+    },
+    {
+     "level": 2,
+     "candidates_binary": 128,
+     "candidates_public": 128,
+     "kept": 96,
+     "native_same_set": true,
+     "native_same_order": false,
+     "wasm_same_set": true,
+     "wasm_same_order": true,
+     "retain_best_trimmed": true
+    },
+    {
+     "level": 3,
+     "candidates_binary": 71,
+     "candidates_public": 71,
+     "kept": 67,
+     "native_same_set": true,
+     "native_same_order": false,
+     "wasm_same_set": true,
+     "wasm_same_order": true,
+     "retain_best_trimmed": true
+    }
+   ]
+  },
+  {
+   "capture": 20,
+   "inputFrame": 19,
+   "levels": [
+    {
+     "level": 0,
+     "candidates_binary": 141,
+     "candidates_public": 141,
+     "kept": 141,
+     "native_same_set": true,
+     "native_same_order": true,
+     "wasm_same_set": true,
+     "wasm_same_order": true,
+     "retain_best_trimmed": false
+    },
+    {
+     "level": 1,
+     "candidates_binary": 171,
+     "candidates_public": 171,
+     "kept": 138,
+     "native_same_set": true,
+     "native_same_order": false,
+     "wasm_same_set": true,
+     "wasm_same_order": true,
+     "retain_best_trimmed": true
+    },
+    {
+     "level": 2,
+     "candidates_binary": 137,
+     "candidates_public": 137,
+     "kept": 96,
+     "native_same_set": true,
+     "native_same_order": false,
+     "wasm_same_set": true,
+     "wasm_same_order": true,
+     "retain_best_trimmed": true
+    },
+    {
+     "level": 3,
+     "candidates_binary": 70,
+     "candidates_public": 70,
+     "kept": 67,
+     "native_same_set": true,
+     "native_same_order": false,
+     "wasm_same_set": true,
+     "wasm_same_order": true,
+     "retain_best_trimmed": true
+    }
+   ]
+  },
+  {
+   "capture": 21,
+   "inputFrame": 20,
+   "levels": [
+    {
+     "level": 0,
+     "candidates_binary": 143,
+     "candidates_public": 143,
+     "kept": 143,
+     "native_same_set": true,
+     "native_same_order": true,
+     "wasm_same_set": true,
+     "wasm_same_order": true,
+     "retain_best_trimmed": false
+    },
+    {
+     "level": 1,
+     "candidates_binary": 182,
+     "candidates_public": 182,
+     "kept": 138,
+     "native_same_set": false,
+     "native_same_order": false,
+     "wasm_same_set": true,
+     "wasm_same_order": true,
+     "retain_best_trimmed": true
+    },
+    {
+     "level": 2,
+     "candidates_binary": 138,
+     "candidates_public": 138,
+     "kept": 96,
+     "native_same_set": false,
+     "native_same_order": false,
+     "wasm_same_set": true,
+     "wasm_same_order": true,
+     "retain_best_trimmed": true
+    },
+    {
+     "level": 3,
+     "candidates_binary": 72,
+     "candidates_public": 72,
+     "kept": 67,
+     "native_same_set": true,
+     "native_same_order": false,
+     "wasm_same_set": true,
+     "wasm_same_order": true,
+     "retain_best_trimmed": true
+    }
+   ]
+  },
+  {
+   "capture": 22,
+   "inputFrame": 21,
+   "levels": [
+    {
+     "level": 0,
+     "candidates_binary": 141,
+     "candidates_public": 141,
+     "kept": 141,
+     "native_same_set": true,
+     "native_same_order": true,
+     "wasm_same_set": true,
+     "wasm_same_order": true,
+     "retain_best_trimmed": false
+    },
+    {
+     "level": 1,
+     "candidates_binary": 172,
+     "candidates_public": 172,
+     "kept": 138,
+     "native_same_set": true,
+     "native_same_order": false,
+     "wasm_same_set": true,
+     "wasm_same_order": true,
+     "retain_best_trimmed": true
+    },
+    {
+     "level": 2,
+     "candidates_binary": 138,
+     "candidates_public": 138,
+     "kept": 96,
+     "native_same_set": true,
+     "native_same_order": false,
+     "wasm_same_set": true,
+     "wasm_same_order": true,
+     "retain_best_trimmed": true
+    },
+    {
+     "level": 3,
+     "candidates_binary": 80,
+     "candidates_public": 80,
+     "kept": 67,
+     "native_same_set": true,
+     "native_same_order": false,
+     "wasm_same_set": true,
+     "wasm_same_order": true,
+     "retain_best_trimmed": true
+    }
+   ]
+  },
+  {
+   "capture": 23,
+   "inputFrame": 22,
+   "levels": [
+    {
+     "level": 0,
+     "candidates_binary": 138,
+     "candidates_public": 138,
+     "kept": 138,
+     "native_same_set": true,
+     "native_same_order": true,
+     "wasm_same_set": true,
+     "wasm_same_order": true,
+     "retain_best_trimmed": false
+    },
+    {
+     "level": 1,
+     "candidates_binary": 163,
+     "candidates_public": 163,
+     "kept": 138,
+     "native_same_set": true,
+     "native_same_order": false,
+     "wasm_same_set": true,
+     "wasm_same_order": true,
+     "retain_best_trimmed": true
+    },
+    {
+     "level": 2,
+     "candidates_binary": 129,
+     "candidates_public": 129,
+     "kept": 96,
+     "native_same_set": true,
+     "native_same_order": false,
+     "wasm_same_set": true,
+     "wasm_same_order": true,
+     "retain_best_trimmed": true
+    },
+    {
+     "level": 3,
+     "candidates_binary": 78,
+     "candidates_public": 78,
+     "kept": 67,
+     "native_same_set": true,
+     "native_same_order": false,
+     "wasm_same_set": true,
+     "wasm_same_order": true,
+     "retain_best_trimmed": true
+    }
+   ]
+  }
+ ]
+}

@@ -1,0 +1,99 @@
+#ifndef FRONTEND__FEATURE_TRACKER_H
+#define FRONTEND__FEATURE_TRACKER_H
+
+#include <cstdio>
+#include <Eigen/Dense>
+#include <iostream>
+#include <opencv2/opencv.hpp>
+#include <queue>
+#include <vector>
+#include <map>
+#include <string>
+
+#include "common/camera_models/CameraFactory.h"
+#include "common/camera_models/EquidistantCamera.h"
+#include "common/camera_models/PinholeCamera.h"
+#include "utility/config.h"
+
+namespace frontend {
+
+bool inBorder(const cv::Point2f& pt);
+
+void filterByStatus(std::vector<cv::Point2f>& v, const std::vector<uchar>& status);
+void filterByStatus(std::vector<int>& v, const std::vector<uchar>& status);
+
+class FeatureTracker {
+public:
+    FeatureTracker();
+    void reset();
+    void setDiagnosticCapture(bool enabled);
+    const std::string& getFeatureDiagnostics() const { return diagnostic_json_; }
+
+    // backend_frame=true: full pipeline (track + detect new features + setMask)
+    // backend_frame=false: track-only (LK flow + F-matrix rejection, no new features)
+    // Optional rotation maps the preceding tracked camera rays into the current camera.
+    void detectAndTrack(const cv::Mat& _img, double _cur_time, bool backend_frame = true,
+                        const Eigen::Matrix3d* camera_rotation = nullptr);
+
+    void setMask();
+
+    void addPoints();
+
+    bool updateID(unsigned int i);
+
+    void readIntrinsicParameter(const std::string& calib_file);
+
+    // Direct camera model initialization (no file I/O, for WASM)
+    bool setIntrinsicParameter(int model_type, int width, int height,
+                               double fx, double fy, double cx, double cy,
+                               double k2, double k3, double k4, double k5);
+
+    void rejectWithFundamentalMatrix();
+
+    void undistortedPoints();
+
+    cv::Mat mask;
+    cv::Mat fisheye_mask;
+    cv::Mat prev_img, cur_img, next_img;
+    std::vector<cv::Point2f> n_pts;
+    std::vector<cv::Point2f> prev_pts, cur_pts, next_pts;
+    std::vector<cv::Point2f> prev_undistorted_pts, cur_undistorted_pts;
+    std::vector<cv::Point2f> pts_velocity;
+    std::vector<int> ids;
+    std::vector<int> track_cnt;
+    std::map<int, cv::Point2f> cur_undistorted_pts_map;
+    std::map<int, cv::Point2f> prev_undistorted_pts_map;
+    common::camera_models::CameraPtr m_camera;
+    double cur_time;
+    double prev_time;
+
+    static int n_id;
+
+private:
+    struct FundamentalResult {
+        std::vector<uchar> mask;
+        bool estimated=false;
+        size_t inliers=0;
+        std::string valid_json,inliers_json;
+    };
+    FundamentalResult fundamentalMask(const std::vector<cv::Point2f>& previous,
+        const std::vector<cv::Point2f>& current,const std::vector<uchar>& accepted,bool check_motion) const;
+    void pruneTrackedPoints(const std::vector<uchar>& status);
+    void recordDiagnostic(const char* name, const std::string& json);
+    bool diagnostic_capture_ = false;
+    std::string diagnostic_stages_;
+    std::string diagnostic_json_;
+    // Cached CLAHE object — avoids per-frame allocation overhead.
+    // VINS-Mono creates CLAHE per frame; caching is a pure optimization.
+    cv::Ptr<cv::CLAHE> clahe_;
+
+    // Cached LK pyramids — avoids rebuilding the reference image pyramid every frame.
+    // buildOpticalFlowPyramid pre-computes blurred + derivative images for each level.
+    // cur_pyramid_ is reused from the previous frame's next_pyramid_ (zero-copy move).
+    // Saves ~30-40% of LK optical flow time (pyramid build is a major cost).
+    std::vector<cv::Mat> cur_pyramid_;
+    std::vector<cv::Mat> next_pyramid_;
+};
+
+}  // namespace frontend
+#endif  // FRONTEND__FEATURE_TRACKER_H

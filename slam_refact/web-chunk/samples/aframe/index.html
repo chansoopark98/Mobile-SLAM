@@ -1,0 +1,29 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no">
+  <title>slam_refact chunk: A-Frame tap to place</title>
+  <style>
+    html, body { margin: 0; height: 100%; overflow: hidden; background: #000; }
+    #hud { position: fixed; left: 0; right: 0; top: 0; z-index: 10; padding: 8px 12px; font: 14px/1.3 sans-serif; color: #fff; background: rgba(0, 0, 0, .35); pointer-events: none; }
+  </style>
+  <!-- Paths come from slam_refact/web-chunk/samples/serve.mjs (nothing is copied). A-Frame must be loaded before xr.js: xr.js registers the
+       `xrconfig` / `xrweb` components itself when window.AFRAME exists (they are part of the deployed xr.js, no extra script is needed). -->
+  <script src="/aframe/aframe-v1.5.0.min.js"></script>
+  <script src="/engine/xr.js" async data-preload-chunks="slam"></script>
+  <script src="/samples/common/probe.js"></script>
+  <script src="./app.js"></script>
+</head>
+<body>
+  <div id="hud">Starting...</div>
+  <!-- xrweb runs XR8 with the XrController pipeline module (here: the slam_refact chunk). xr-hit-place is this sample's component. -->
+  <a-scene xrweb="allowedDevices: any; disableDefaultEnvironment: true" xr-hit-place vr-mode-ui="enabled: false"
+           device-orientation-permission-ui="enabled: false" renderer="colorManagement: true">
+    <a-camera id="camera" position="0 2 2"></a-camera>
+    <a-plane id="floor" rotation="-90 0 0" width="40" height="40" material="shader: flat; color: #4488aa; opacity: 0.2; transparent: true; side: double"></a-plane>
+    <!-- unlit, so its colour is exact; placed where the user taps -->
+    <a-box id="cube" visible="false" width="0.3" height="0.3" depth="0.3" material="shader: flat; color: #ff00ff"></a-box>
+  </a-scene>
+</body>
+</html>

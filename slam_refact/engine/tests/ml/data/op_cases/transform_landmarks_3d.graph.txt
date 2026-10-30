@@ -1,0 +1,7 @@
+model version=3 subgraphs=1 name=main
+tensor 0 lm FLOAT32 [1,10,3] bytes=0 quant=0 var=0 sparse=0
+tensor 1 m FLOAT32 [1,4,4] bytes=0 quant=0 var=0 sparse=0
+tensor 2 y FLOAT32 [1,10,3] bytes=0 quant=0 var=0 sparse=0
+op 0 TransformLandmarks v2 in=[0,1] out=[2] opts={} custom=
+inputs [0,1]
+outputs [2]

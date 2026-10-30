@@ -1,0 +1,187 @@
+{
+  "schema": "slam-refact-xr-deploy-v1",
+  "record_kind": "source-artifact-index",
+  "engine": {
+    "js_sha256": "e59c52fd33ad7f5810fc5fe146b28753d624a6c3360ea27ed3967571dcb3d885",
+    "wasm_sha256": "6ff5f165ec597055fb3cf516a600fbc8895fecc564a77bb412acff9850040021",
+    "wasm_bytes": 3711760
+  },
+  "xr_js": {
+    "sha256": "1e4c00ab32d0eef25110891ef2aba6ad41cac76fac5e27f1361fd694a5c05563",
+    "bytes": 1020612
+  },
+  "bundle_sha256": "62e45f24ba23ff7045e8fcc3df563b9a6a824f66bbda842c452ba180f9081b93",
+  "bundle_digest_rule": "sha256 over \"served path\\0sha256(content)\\n\", sorted, excluding slam-refact-xr/deploy.json",
+  "files": [
+    {
+      "path": "slam-refact-xr.html",
+      "sha256": "c4e2c649044eb426e4718b0d40d0ff6cde7546512a3c8c45c3cdc1614759db70",
+      "bytes": 4411
+    },
+    {
+      "path": "slam-refact-xr/aframe/aframe-v1.5.0.min.js",
+      "sha256": "0729eeb5e37481bb39059c3e6161ec45f644854e5b658b64fe45ff2c3f9c6f33",
+      "bytes": 1390008
+    },
+    {
+      "path": "slam-refact-xr/engine/engine-loader.js",
+      "sha256": "79fd72e3586eb3b7943c3a44b6af8c97dd721c7fc01f7dc8b2f8e172666a159f",
+      "bytes": 5318
+    },
+    {
+      "path": "slam-refact-xr/engine/gr8-compute-pyramid.js",
+      "sha256": "92ffe5259a80db403d68eeeb0c06b573453f77756a4f01d3eaa6486e9b0c5fd8",
+      "bytes": 24580
+    },
+    {
+      "path": "slam-refact-xr/engine/gr8-shaders.js",
+      "sha256": "ce364d42182845eb82e5e5cb548edbae3000934d633ada0b89643852d8ed3ac7",
+      "bytes": 32142
+    },
+    {
+      "path": "slam-refact-xr/engine/image-events.js",
+      "sha256": "ce17d8d61a9354a7e0a99dd286b930c1461071bf706688f2ff82af1688d211ac",
+      "bytes": 1174
+    },
+    {
+      "path": "slam-refact-xr/engine/image-targets.js",
+      "sha256": "20ac6080becbfe01f6b949fc2d5f6d50bb53756369982cdc2cd332b52fbba998",
+      "bytes": 21100
+    },
+    {
+      "path": "slam-refact-xr/engine/sensors.js",
+      "sha256": "0d8cb1cf6d7e19f3acf71b962f6139585d653752dc95827531a13a1d021d6ef4",
+      "bytes": 4262
+    },
+    {
+      "path": "slam-refact-xr/engine/slam-refact-engine/manifest.json",
+      "sha256": "7bb78b11a5aa6529b70fb62fb3cea8c44ac473476960fe075a9bd49561449e44",
+      "bytes": 468
+    },
+    {
+      "path": "slam-refact-xr/engine/slam-refact-engine/slam_refact_engine.js",
+      "sha256": "e59c52fd33ad7f5810fc5fe146b28753d624a6c3360ea27ed3967571dcb3d885",
+      "bytes": 99858
+    },
+    {
+      "path": "slam-refact-xr/engine/slam-refact-engine/slam_refact_engine.wasm",
+      "sha256": "6ff5f165ec597055fb3cf516a600fbc8895fecc564a77bb412acff9850040021",
+      "bytes": 3711760
+    },
+    {
+      "path": "slam-refact-xr/engine/xr-slam.js",
+      "sha256": "c9c1369b7f2923fd485a48cef7d4bae60724b987620d7de1228b4debc924be77",
+      "bytes": 59762
+    },
+    {
+      "path": "slam-refact-xr/engine/xr.js",
+      "sha256": "1e4c00ab32d0eef25110891ef2aba6ad41cac76fac5e27f1361fd694a5c05563",
+      "bytes": 1020612
+    },
+    {
+      "path": "slam-refact-xr/gate.js",
+      "sha256": "4ab45e14a7ffb2f38cf6a141fae37dd1d337b683151d068c047694a0eb0ba728",
+      "bytes": 3431
+    },
+    {
+      "path": "slam-refact-xr/samples/aframe/app.js",
+      "sha256": "e37680c56ba71213e28d293c3b86ab7c3ff48599b47455b197f9d900ba9355a7",
+      "bytes": 2727
+    },
+    {
+      "path": "slam-refact-xr/samples/aframe/index.html",
+      "sha256": "e22c3baabd87b82228d2e261403dc712d29afc522b596512b48e7f79e56b8e5b",
+      "bytes": 1899
+    },
+    {
+      "path": "slam-refact-xr/samples/common/probe.js",
+      "sha256": "bb14b7ebf1304d5e973485adcd166d86c22d31a6ad831c245fc6fe6aa26e3a68",
+      "bytes": 11682
+    },
+    {
+      "path": "slam-refact-xr/samples/phone/app.js",
+      "sha256": "4092f74289fcd64762d6866807cd613cdc29cbc32bd5c1573739b290ee2362d0",
+      "bytes": 17797
+    },
+    {
+      "path": "slam-refact-xr/samples/phone/metrics.js",
+      "sha256": "20e87c1153ce6b8d127db703d21fbb687d56e6375735148ae0328c3ba0e49703",
+      "bytes": 3027
+    },
+    {
+      "path": "slam-refact-xr/samples/phone/style.css",
+      "sha256": "8471dc452a4b47c818f849ac537f3c71294d1130d43e4ce68ad22e01275bc114",
+      "bytes": 2852
+    },
+    {
+      "path": "slam-refact-xr/samples/phone/targets.js",
+      "sha256": "8b7566792534be2c3f8947e05b09fa73d8c0f15e34d8448f4701074106323d9f",
+      "bytes": 3762
+    },
+    {
+      "path": "slam-refact-xr/samples/phone/targets/demo-cylinder.json",
+      "sha256": "a2e6cd1cad1f2376a9613ff98d2a5f05137a36be44024c9eacf594108f62f7e3",
+      "bytes": 828
+    },
+    {
+      "path": "slam-refact-xr/samples/phone/targets/demo-cylinder_luminance.png",
+      "sha256": "c4dc43a46d51e38160d3f33a9a3c1cc2ecb1962e68950b6a2d9530433189b4a5",
+      "bytes": 304150
+    },
+    {
+      "path": "slam-refact-xr/samples/phone/targets/demo-flat.json",
+      "sha256": "0615467ac2039ca2a5df804aad8bcbe849499142f1fd479ee48aa81a73c59054",
+      "bytes": 558
+    },
+    {
+      "path": "slam-refact-xr/samples/phone/targets/demo-flat_luminance.png",
+      "sha256": "5a8deb99c45a6a20ec2b46fc820ec728ee92ad9a9411d22b0e3336b8ea25aaf3",
+      "bytes": 308410
+    },
+    {
+      "path": "slam-refact-xr/samples/phone/targets/manifest.json",
+      "sha256": "e95c5197fce0ce84caba8f9146c2c60b4c73fca553c3ddf0246682fdacb8915b",
+      "bytes": 454
+    },
+    {
+      "path": "slam-refact-xr/samples/phone/targets/print/demo-cylinder-sheet.pdf",
+      "sha256": "e3ada0b70a214fcbe53b7104211347f2897b3c51d912e2a9fa0e742c648ee576",
+      "bytes": 444553
+    },
+    {
+      "path": "slam-refact-xr/samples/phone/targets/print/demo-cylinder-sheet.png",
+      "sha256": "a4a3a0bd99fc9fa4fbd2c029b3607510ed250f7915e87a85d4f9ef1e8e0e132f",
+      "bytes": 1584066
+    },
+    {
+      "path": "slam-refact-xr/samples/phone/targets/print/demo-flat-sheet.pdf",
+      "sha256": "cdbf151611d23ca1d181efe9d1244c9f21a8cc29e1a92f74e37eb80b17e4b01a",
+      "bytes": 633285
+    },
+    {
+      "path": "slam-refact-xr/samples/phone/targets/print/demo-flat-sheet.png",
+      "sha256": "8abc292a33e17a22731d85e3956cc9a42bf06c3284996a9140b9ab5c91474d60",
+      "bytes": 2571156
+    },
+    {
+      "path": "slam-refact-xr/samples/threejs/app.js",
+      "sha256": "d5273e4db7f77c446a8a0e9759df1ce3d05966231fd0a879c92818bf8ea8f46c",
+      "bytes": 4033
+    },
+    {
+      "path": "slam-refact-xr/samples/threejs/index.html",
+      "sha256": "b9b73d25e3ec100b83a19dfbe4c74a950b3e2d35e964d86001b471d64ab184c4",
+      "bytes": 1159
+    },
+    {
+      "path": "slam-refact-xr/three/three.core.min.js",
+      "sha256": "065c1e27e1e87051cf65e2d41d2f8f102b5dc0e5decf87d3da5fd79da6432110",
+      "bytes": 376914
+    },
+    {
+      "path": "slam-refact-xr/three/three.module.min.js",
+      "sha256": "c49cf3f5bfd5d7fb588b19d725e70e5bf9d88e2a4e040ffb9a64a7f8f5fb372d",
+      "bytes": 337689
+    }
+  ]
+}

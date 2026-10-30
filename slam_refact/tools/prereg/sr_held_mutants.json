@@ -1,0 +1,1706 @@
+{
+ "format": "sr_held_mutants.v1",
+ "doc": "Mutants of sr_held.h / sr_held.mjs: one switched-off check (or one altered constant) each. Each target case must deviate from its expectation under the mutant. Applied by run_sr_held_mutants.py on copies; the sources are never touched.",
+ "mutants": [
+  {
+   "id": "ARGS-GATE-ID",
+   "doc": "gate_id charset check off",
+   "targets": [
+    "args-gate-id-path"
+   ],
+   "edits": [
+    {
+     "if_false": "gate_id is not [A-Za-z0-9]"
+    }
+   ]
+  },
+  {
+   "id": "ARGS-VERSION",
+   "doc": "version range check off",
+   "targets": [
+    "args-version-zero"
+   ],
+   "edits": [
+    {
+     "if_false": "version is not in 1..999999"
+    }
+   ]
+  },
+  {
+   "id": "ARGS-KIND",
+   "doc": "kind charset check off",
+   "targets": [
+    "args-kind-path"
+   ],
+   "edits": [
+    {
+     "if_false": "kind is not [A-Za-z0-9]"
+    }
+   ]
+  },
+  {
+   "id": "ARGS-PREREG-EMPTY",
+   "doc": "empty prereg_dir check off",
+   "targets": [
+    "args-prereg-empty"
+   ],
+   "edits": [
+    {
+     "if_false": "prereg_dir is empty"
+    }
+   ]
+  },
+  {
+   "id": "ARGS-NOW",
+   "doc": "bad 'now' check off",
+   "targets": [
+    "args-bad-now"
+   ],
+   "edits": [
+    {
+     "if_false": "now is not an ISO instant"
+    }
+   ]
+  },
+  {
+   "id": "ENV-MISSING",
+   "doc": "missing environment value check off",
+   "targets": [
+    "env-missing"
+   ],
+   "edits": [
+    {
+     "if_false": "ENV_MISSING"
+    }
+   ]
+  },
+  {
+   "id": "MANIFEST-UNREADABLE",
+   "doc": "unreadable manifest check off",
+   "targets": [
+    "manifest-missing"
+   ],
+   "edits": [
+    {
+     "if_false": "MANIFEST_UNREADABLE"
+    }
+   ]
+  },
+  {
+   "id": "MANIFEST-STRICT-JSON",
+   "doc": "manifest parse failure ignored",
+   "targets": [
+    "manifest-duplicate-key"
+   ],
+   "edits": [
+    {
+     "if_false": "manifest is not strict JSON"
+    }
+   ]
+  },
+  {
+   "id": "MANIFEST-NOT-OBJECT",
+   "doc": "manifest object check and the next guard off (defense in depth)",
+   "targets": [
+    "manifest-not-object"
+   ],
+   "edits": [
+    {
+     "if_false": "manifest is not a JSON object"
+    },
+    {
+     "if_false": "manifest gate_id / version missing or mistyped"
+    }
+   ]
+  },
+  {
+   "id": "MANIFEST-GATE-VERSION-FIELDS",
+   "doc": "gate_id / version type check off",
+   "targets": [
+    "manifest-version-string"
+   ],
+   "edits": [
+    {
+     "if_false": "manifest gate_id / version missing or mistyped"
+    }
+   ]
+  },
+  {
+   "id": "MANIFEST-IDENTITY-ID",
+   "doc": "gate_id identity check off",
+   "targets": [
+    "manifest-identity-id"
+   ],
+   "edits": [
+    {
+     "if_false": "manifest names gate_id"
+    }
+   ]
+  },
+  {
+   "id": "MANIFEST-IDENTITY-VERSION",
+   "doc": "version identity check off",
+   "targets": [
+    "manifest-identity-version"
+   ],
+   "edits": [
+    {
+     "if_false": "manifest names version"
+    }
+   ]
+  },
+  {
+   "id": "SHAPE-HELD",
+   "doc": "held object check and the four guards that also refuse a missing held off (defense in depth)",
+   "targets": [
+    "manifest-held-missing"
+   ],
+   "edits": [
+    {
+     "if_false": "manifest held is not an object"
+    },
+    {
+     "if_false": "manifest held.kinds is not a non-empty array"
+    },
+    {
+     "if_false": "manifest held.pins is not an object"
+    },
+    {
+     "if_false": "manifest held.inputs is not an object"
+    },
+    {
+     "if_false": "manifest held.seed is not a boolean"
+    }
+   ]
+  },
+  {
+   "id": "SHAPE-PINS-ENTRY",
+   "doc": "held.pins entry check off",
+   "targets": [
+    "manifest-pin-bad-sha"
+   ],
+   "edits": [
+    {
+     "if_false": "manifest held.pins has a bad entry"
+    }
+   ]
+  },
+  {
+   "id": "SHAPE-INPUTS-ENTRY",
+   "doc": "held.inputs entry check off",
+   "targets": [
+    "manifest-input-kind-unknown"
+   ],
+   "edits": [
+    {
+     "if_false": "manifest held.inputs has a bad entry"
+    }
+   ]
+  },
+  {
+   "id": "SHAPE-SEED-BOOL",
+   "doc": "held.seed type check off",
+   "targets": [
+    "manifest-seed-not-bool"
+   ],
+   "edits": [
+    {
+     "if_false": "manifest held.seed is not a boolean"
+    }
+   ]
+  },
+  {
+   "id": "SHAPE-REVIEW-STRINGS",
+   "doc": "review string fields check off",
+   "targets": [
+    "name-designation-empty-review"
+   ],
+   "edits": [
+    {
+     "if_false": "is not a non-empty string"
+    }
+   ]
+  },
+  {
+   "id": "SHAPE-REVIEW-AT",
+   "doc": "review.at type check and the ISO parse guard off (defense in depth)",
+   "targets": [
+    "time-review-not-string"
+   ],
+   "edits": [
+    {
+     "if_false": "manifest review.at is neither null nor a string"
+    },
+    {
+     "if_false": "manifest review.at is not an ISO instant"
+    }
+   ]
+  },
+  {
+   "id": "NAME-GATE",
+   "doc": "gate file name check off",
+   "targets": [
+    "name-gate-file-path",
+    "name-gate-file-other"
+   ],
+   "edits": [
+    {
+     "if_false": "manifest file must be"
+    }
+   ]
+  },
+  {
+   "id": "NAME-REVIEW",
+   "doc": "review file name check off",
+   "targets": [
+    "name-review-file-path"
+   ],
+   "edits": [
+    {
+     "if_false": "manifest review.file is not a bare file name"
+    }
+   ]
+  },
+  {
+   "id": "NAME-DESIGNATION",
+   "doc": "designation file name check off",
+   "targets": [
+    "name-designation-path",
+    "name-designation-dotdot",
+    "name-designation-backslash"
+   ],
+   "edits": [
+    {
+     "if_false": "manifest review.designation_file is not a bare file name"
+    }
+   ]
+  },
+  {
+   "id": "NAME-PREDICATE-SLASH",
+   "doc": "IsBareName accepts a slash",
+   "targets": [
+    "name-designation-path"
+   ],
+   "edits": [
+    {
+     "replace": {
+      "cpp": [
+       "c == '/' || ",
+       ""
+      ],
+      "js": [
+       "[/\\\\\\u0000-\\u001f]",
+       "[\\\\\\u0000-\\u001f]"
+      ]
+     }
+    }
+   ]
+  },
+  {
+   "id": "NAME-PREDICATE-BACKSLASH",
+   "doc": "IsBareName accepts a backslash",
+   "targets": [
+    "name-designation-backslash"
+   ],
+   "edits": [
+    {
+     "replace": {
+      "cpp": [
+       "c == '\\\\' || ",
+       ""
+      ],
+      "js": [
+       "[/\\\\\\u0000-\\u001f]",
+       "[/\\u0000-\\u001f]"
+      ]
+     }
+    }
+   ]
+  },
+  {
+   "id": "NAME-PREDICATE-DOTDOT",
+   "doc": "IsBareName accepts ..",
+   "targets": [
+    "name-designation-dotdot"
+   ],
+   "edits": [
+    {
+     "replace": {
+      "cpp": [
+       "|| s == \"..\")",
+       ")"
+      ],
+      "js": [
+       " && s !== '..'",
+       ""
+      ]
+     }
+    }
+   ]
+  },
+  {
+   "id": "ID-PREDICATE",
+   "doc": "IsId accepts any character after the first",
+   "targets": [
+    "args-gate-id-path",
+    "args-kind-path"
+   ],
+   "edits": [
+    {
+     "replace": {
+      "cpp": [
+       "alnum(c) || c == '_' || c == '-'",
+       "true"
+      ],
+      "js": [
+       "/^[A-Za-z0-9][A-Za-z0-9_-]{0,63}$/",
+       "/^[A-Za-z0-9][^]{0,63}$/"
+      ]
+     }
+    }
+   ]
+  },
+  {
+   "id": "TIME-CREATED-PARSE",
+   "doc": "created_at parse failure ignored",
+   "targets": [
+    "time-no-timezone",
+    "time-bad-date"
+   ],
+   "edits": [
+    {
+     "if_false": "manifest created_at is not an ISO instant"
+    }
+   ]
+  },
+  {
+   "id": "REVIEW-MISSING",
+   "doc": "null review.at accepted",
+   "targets": [
+    "time-review-null"
+   ],
+   "edits": [
+    {
+     "if_false": "REVIEW_MISSING"
+    }
+   ]
+  },
+  {
+   "id": "TIME-REVIEW-PARSE",
+   "doc": "review.at parse failure ignored",
+   "targets": [
+    "time-review-bad-format"
+   ],
+   "edits": [
+    {
+     "if_false": "manifest review.at is not an ISO instant"
+    }
+   ]
+  },
+  {
+   "id": "ALREADY-RUN",
+   "doc": "first_real_run_at already set accepted",
+   "targets": [
+    "already-run"
+   ],
+   "edits": [
+    {
+     "if_false": "ALREADY_RUN"
+    }
+   ]
+  },
+  {
+   "id": "AUDIT-NOT-RUN",
+   "doc": "audit of a manifest without a run accepted",
+   "targets": [
+    "audit-not-run"
+   ],
+   "edits": [
+    {
+     "if_false": "AUDIT_NOT_RUN"
+    }
+   ]
+  },
+  {
+   "id": "TIME-RUN-PARSE",
+   "doc": "first_real_run_at parse failure ignored",
+   "targets": [
+    "audit-run-bad-format"
+   ],
+   "edits": [
+    {
+     "if_false": "manifest first_real_run_at is not an ISO instant"
+    }
+   ]
+  },
+  {
+   "id": "ORDER-CREATED",
+   "doc": "created_at < review.at not enforced",
+   "targets": [
+    "time-review-before-created",
+    "time-review-equals-created",
+    "time-order-offset-trap"
+   ],
+   "edits": [
+    {
+     "if_false": "created_at < review.at violated"
+    }
+   ]
+  },
+  {
+   "id": "ORDER-NOW",
+   "doc": "review.at < now not enforced",
+   "targets": [
+    "time-review-future"
+   ],
+   "edits": [
+    {
+     "if_false": "review.at < now violated"
+    }
+   ]
+  },
+  {
+   "id": "ORDER-RUN",
+   "doc": "review.at < first_real_run_at not enforced",
+   "targets": [
+    "audit-run-before-review",
+    "audit-run-equals-review"
+   ],
+   "edits": [
+    {
+     "if_false": "review.at < first_real_run_at violated"
+    }
+   ]
+  },
+  {
+   "id": "TIME-LEAP",
+   "doc": "leap day not allowed",
+   "targets": [
+    "instant-*"
+   ],
+   "edits": [
+    {
+     "replace": {
+      "cpp": [
+       "(mo == 2 && leap ? 1 : 0)",
+       "0"
+      ],
+      "js": [
+       "(mo === 2 && leap ? 1 : 0)",
+       "0"
+      ]
+     }
+    }
+   ]
+  },
+  {
+   "id": "TIME-OFFSET-SIGN",
+   "doc": "negative offset read as positive",
+   "targets": [
+    "instant-*"
+   ],
+   "edits": [
+    {
+     "replace": {
+      "cpp": [
+       "* (t[i] == '-' ? -1 : 1)",
+       "* 1"
+      ],
+      "js": [
+       "(m[8][0] === '-' ? -1 : 1)",
+       "1"
+      ]
+     }
+    }
+   ]
+  },
+  {
+   "id": "TIME-OFFSET-APPLY",
+   "doc": "offset added instead of subtracted",
+   "targets": [
+    "instant-*"
+   ],
+   "edits": [
+    {
+     "replace": {
+      "cpp": [
+       "+ s - offset;",
+       "+ s + offset;"
+      ],
+      "js": [
+       "+ s - offset,",
+       "+ s + offset,"
+      ]
+     }
+    }
+   ]
+  },
+  {
+   "id": "TIME-FRACTION-SCALE",
+   "doc": "fraction digits not scaled to nanoseconds",
+   "targets": [
+    "instant-*",
+    "time-fraction-order"
+   ],
+   "edits": [
+    {
+     "replace": {
+      "cpp": [
+       "for (; digits < 9; ++digits) ns *= 10;",
+       ";"
+      ],
+      "js": [
+       "Number(m[7].padEnd(9, '0'))",
+       "Number(m[7])"
+      ]
+     }
+    }
+   ]
+  },
+  {
+   "id": "TIME-DAY-RANGE",
+   "doc": "day-of-month range check off",
+   "targets": [
+    "instant-*",
+    "time-bad-date"
+   ],
+   "edits": [
+    {
+     "replace": {
+      "cpp": [
+       "d > kDays[mo - 1] + (mo == 2 && leap ? 1 : 0)",
+       "d > 31"
+      ],
+      "js": [
+       "d > days[mo - 1] + (mo === 2 && leap ? 1 : 0)",
+       "d > 31"
+      ]
+     }
+    }
+   ]
+  },
+  {
+   "id": "TIME-OFFSET-RANGE",
+   "doc": "offset range check off",
+   "targets": [
+    "instant-*"
+   ],
+   "edits": [
+    {
+     "replace": {
+      "cpp": [
+       "oh > 23 || om > 59",
+       "false"
+      ],
+      "js": [
+       "oh > 23 || om > 59",
+       "false"
+      ]
+     }
+    }
+   ]
+  },
+  {
+   "id": "TIME-CLOCK-RANGE",
+   "doc": "clock range check off",
+   "targets": [
+    "instant-*"
+   ],
+   "edits": [
+    {
+     "replace": {
+      "cpp": [
+       "h > 23 || mi > 59 || s > 59",
+       "false"
+      ],
+      "js": [
+       "h > 23 || mi > 59 || s > 59",
+       "false"
+      ]
+     }
+    }
+   ]
+  },
+  {
+   "id": "GATE-FILE-MISSING",
+   "doc": "missing gate file ignored",
+   "targets": [
+    "gate-file-missing"
+   ],
+   "edits": [
+    {
+     "if_false": "GATE_FILE_MISSING"
+    }
+   ]
+  },
+  {
+   "id": "GATE-SHA",
+   "doc": "gate file sha256 check off",
+   "targets": [
+    "gate-file-tampered"
+   ],
+   "edits": [
+    {
+     "if_false": "GATE_SHA_MISMATCH"
+    }
+   ]
+  },
+  {
+   "id": "REVIEW-FILE-MISSING",
+   "doc": "missing review file ignored",
+   "targets": [
+    "review-file-missing"
+   ],
+   "edits": [
+    {
+     "if_false": "REVIEW_FILE_MISSING"
+    }
+   ]
+  },
+  {
+   "id": "REVIEW-FILE-SHA",
+   "doc": "review file sha256 check off",
+   "targets": [
+    "review-file-tampered"
+   ],
+   "edits": [
+    {
+     "if_false": "REVIEW_FILE_SHA"
+    }
+   ]
+  },
+  {
+   "id": "DESIGNATION-MISSING",
+   "doc": "missing designation file ignored",
+   "targets": [
+    "designation-missing"
+   ],
+   "edits": [
+    {
+     "if_false": "DESIGNATION_MISSING"
+    }
+   ]
+  },
+  {
+   "id": "DESIGNATION-SHA",
+   "doc": "designation sha256 vs manifest check off",
+   "targets": [
+    "designation-tampered"
+   ],
+   "edits": [
+    {
+     "if_false": "DESIGNATION_SHA"
+    }
+   ]
+  },
+  {
+   "id": "ENV-MISMATCH",
+   "doc": "environment value vs designation sha256 check off",
+   "targets": [
+    "env-wrong"
+   ],
+   "edits": [
+    {
+     "if_false": "ENV_MISMATCH"
+    }
+   ]
+  },
+  {
+   "id": "DESIGNATION-PARSE",
+   "doc": "designation parse failure and the pinned guard off (defense in depth)",
+   "targets": [
+    "designation-malformed",
+    "designation-duplicate-key"
+   ],
+   "edits": [
+    {
+     "if_false": "designation file is not strict JSON"
+    },
+    {
+     "if_false": "designation pinned is not an object"
+    }
+   ]
+  },
+  {
+   "id": "DESIGNATION-NOT-OBJECT",
+   "doc": "designation object check and the pinned guard off (defense in depth)",
+   "targets": [
+    "designation-not-object"
+   ],
+   "edits": [
+    {
+     "if_false": "designation file is not a JSON object"
+    },
+    {
+     "if_false": "designation pinned is not an object"
+    }
+   ]
+  },
+  {
+   "id": "DESIGNATION-PINNED",
+   "doc": "pinned object checks off",
+   "targets": [
+    "designation-no-pinned"
+   ],
+   "edits": [
+    {
+     "if_false": "designation pinned is not an object"
+    },
+    {
+     "if_false": "designation pinned lacks"
+    }
+   ]
+  },
+  {
+   "id": "DESIGNATION-PINNED-LACKS",
+   "doc": "pinned completeness check off",
+   "targets": [
+    "designation-pinned-incomplete"
+   ],
+   "edits": [
+    {
+     "if_false": "designation pinned lacks"
+    }
+   ]
+  },
+  {
+   "id": "DESIGNATION-GATE",
+   "doc": "designation gate name check off",
+   "targets": [
+    "designation-gate-other-version",
+    "designation-gate-prefix",
+    "designation-gate-first-key-trap"
+   ],
+   "edits": [
+    {
+     "if_false": "designation file does not name"
+    }
+   ]
+  },
+  {
+   "id": "DESIGNATION-PERMITTED",
+   "doc": "first_real_run_permitted check off",
+   "targets": [
+    "designation-not-permitted",
+    "designation-permitted-string",
+    "designation-permitted-trap"
+   ],
+   "edits": [
+    {
+     "if_false": "first_real_run_permitted is not true"
+    }
+   ]
+  },
+  {
+   "id": "CANON-NUMBER-ERROR",
+   "doc": "a number without canonical form accepted",
+   "targets": [
+    "manifest-number-no-canon"
+   ],
+   "edits": [
+    {
+     "if_false": "has a number that has no canonical form"
+    }
+   ]
+  },
+  {
+   "id": "PIN-GATE",
+   "doc": "designation pin of the gate file off",
+   "targets": [
+    "designation-pin-gate"
+   ],
+   "edits": [
+    {
+     "if_false": "designation pinned.gate_md_sha256 differs"
+    }
+   ]
+  },
+  {
+   "id": "PIN-GATE-AND-MANIFEST",
+   "doc": "designation pins of the gate file and of the manifest both off (a gate file edited together with the manifest sha256)",
+   "targets": [
+    "tamper-gate-and-manifest"
+   ],
+   "edits": [
+    {
+     "if_false": "designation pinned.gate_md_sha256 differs"
+    },
+    {
+     "if_false": "manifest differs from the one the designation pinned"
+    }
+   ]
+  },
+  {
+   "id": "PIN-REVIEW",
+   "doc": "designation pin of the review file off",
+   "targets": [
+    "designation-pin-review"
+   ],
+   "edits": [
+    {
+     "if_false": "designation pinned.review_file_sha256 differs"
+    }
+   ]
+  },
+  {
+   "id": "PIN-MANIFEST",
+   "doc": "designation pin of the manifest off (bypass B1 open)",
+   "targets": [
+    "designation-pin-manifest",
+    "tamper-tolerance",
+    "tamper-registered-pin",
+    "tamper-registered-inputs"
+   ],
+   "edits": [
+    {
+     "if_false": "manifest differs from the one the designation pinned"
+    }
+   ]
+  },
+  {
+   "id": "MARKER-MISSING",
+   "doc": "audit without a marker accepted",
+   "targets": [
+    "audit-marker-missing"
+   ],
+   "edits": [
+    {
+     "if_false": "MARKER_MISSING"
+    }
+   ]
+  },
+  {
+   "id": "KIND",
+   "doc": "unregistered kind accepted",
+   "targets": [
+    "kind-unregistered"
+   ],
+   "edits": [
+    {
+     "if_false": "KIND_UNREGISTERED"
+    }
+   ]
+  },
+  {
+   "id": "PIN-DUPLICATE",
+   "doc": "two pins with one base name accepted",
+   "targets": [
+    "pin-duplicate"
+   ],
+   "edits": [
+    {
+     "if_false": "PIN_DUPLICATE"
+    }
+   ]
+  },
+  {
+   "id": "PIN-UNREGISTERED",
+   "doc": "an unregistered pin file accepted",
+   "targets": [
+    "pin-unregistered"
+   ],
+   "edits": [
+    {
+     "if_false": "PIN_UNREGISTERED"
+    }
+   ]
+  },
+  {
+   "id": "PIN-UNREADABLE",
+   "doc": "an unreadable pin file ignored",
+   "targets": [
+    "pin-unreadable"
+   ],
+   "edits": [
+    {
+     "if_false": "PIN_UNREADABLE"
+    }
+   ]
+  },
+  {
+   "id": "PIN-MISMATCH",
+   "doc": "pin sha256 comparison off",
+   "targets": [
+    "pin-sha-mismatch"
+   ],
+   "edits": [
+    {
+     "if_false": "PIN_MISMATCH"
+    }
+   ]
+  },
+  {
+   "id": "PIN-NOT-PRESENTED",
+   "doc": "a registered pin that is not presented accepted",
+   "targets": [
+    "pin-not-presented"
+   ],
+   "edits": [
+    {
+     "if_false": "PIN_NOT_PRESENTED"
+    }
+   ]
+  },
+  {
+   "id": "INPUT-NOT-SUPPLIED",
+   "doc": "registered data not supplied accepted",
+   "targets": [
+    "input-not-supplied"
+   ],
+   "edits": [
+    {
+     "if_false": "INPUT_NOT_SUPPLIED"
+    }
+   ]
+  },
+  {
+   "id": "INPUT-UNREGISTERED",
+   "doc": "unregistered data directory accepted",
+   "targets": [
+    "input-unregistered"
+   ],
+   "edits": [
+    {
+     "if_false": "INPUT_UNREGISTERED"
+    }
+   ]
+  },
+  {
+   "id": "INPUT-HASH-FAILURE",
+   "doc": "a data tree that cannot be hashed ignored",
+   "targets": [
+    "input-symlink",
+    "input-directory-missing"
+   ],
+   "edits": [
+    {
+     "if_false": {
+      "cpp": "Fail(o, code.c_str()",
+      "js": "fail(o, have.code,"
+     }
+    }
+   ]
+  },
+  {
+   "id": "INPUT-MISMATCH",
+   "doc": "tree sha256 comparison off",
+   "targets": [
+    "input-file-changed",
+    "input-extra-file",
+    "input-missing-file"
+   ],
+   "edits": [
+    {
+     "if_false": "INPUT_MISMATCH"
+    }
+   ]
+  },
+  {
+   "id": "TREE-SORT",
+   "doc": "tree lines in reverse order",
+   "targets": [
+    "tree-probe",
+    "ok-release"
+   ],
+   "edits": [
+    {
+     "replace": {
+      "cpp": [
+       "std::sort(files.begin(), files.end());",
+       "std::sort(files.begin(), files.end(), std::greater<std::string>());"
+      ],
+      "js": [
+       "files.sort(byBytes);",
+       "files.sort((a, b) => byBytes(b, a));"
+      ]
+     }
+    }
+   ]
+  },
+  {
+   "id": "TREE-LSTAT",
+   "doc": "symlinks followed instead of refused",
+   "targets": [
+    "input-symlink",
+    "sealed-unhashable"
+   ],
+   "edits": [
+    {
+     "replace": {
+      "cpp": [
+       "::lstat((root + \"/\" + r).c_str(), &st)",
+       "::stat((root + \"/\" + r).c_str(), &st)"
+      ],
+      "js": [
+       "st = fs.lstatSync(`${root}/${r}`);",
+       "st = fs.statSync(`${root}/${r}`);"
+      ]
+     }
+    }
+   ]
+  },
+  {
+   "id": "TREE-LINE-FORMAT",
+   "doc": "tree line separator changed",
+   "targets": [
+    "tree-probe"
+   ],
+   "edits": [
+    {
+     "replace": {
+      "cpp": [
+       "lines += f + \"\\t\" + h + \"\\n\";",
+       "lines += f + \" \" + h + \"\\n\";"
+      ],
+      "js": [
+       "lines += `${f}\\t${h}\\n`;",
+       "lines += `${f} ${h}\\n`;"
+      ]
+     }
+    }
+   ]
+  },
+  {
+   "id": "HEX-PREDICATE",
+   "doc": "IsHex64 accepts non-hex letters",
+   "targets": [
+    "manifest-pin-bad-sha"
+   ],
+   "edits": [
+    {
+     "replace": {
+      "cpp": [
+       "|| (c >= 'a' && c <= 'f')",
+       "|| (c >= 'a' && c <= 'z')"
+      ],
+      "js": [
+       "/^[0-9a-f]{64}$/",
+       "/^[0-9a-z]{64}$/"
+      ]
+     }
+    }
+   ]
+  },
+  {
+   "id": "SEED-POLICY",
+   "doc": "seed policy mismatch accepted",
+   "targets": [
+    "seed-policy-not-wanted",
+    "seed-policy-not-registered"
+   ],
+   "edits": [
+    {
+     "if_false": "SEED_POLICY"
+    }
+   ]
+  },
+  {
+   "id": "SEED-MISSING",
+   "doc": "missing seed file ignored",
+   "targets": [
+    "seed-missing"
+   ],
+   "edits": [
+    {
+     "if_false": "SEED_MISSING"
+    }
+   ]
+  },
+  {
+   "id": "SEED-INVALID",
+   "doc": "invalid seed accepted",
+   "targets": [
+    "seed-invalid-text",
+    "seed-invalid-leading-zero",
+    "seed-invalid-too-large",
+    "seed-invalid-empty"
+   ],
+   "edits": [
+    {
+     "if_false": "SEED_INVALID"
+    }
+   ]
+  },
+  {
+   "id": "SEED-FORBIDDEN",
+   "doc": "executor dev seed accepted",
+   "targets": [
+    "seed-forbidden"
+   ],
+   "edits": [
+    {
+     "if_false": "SEED_FORBIDDEN"
+    }
+   ]
+  },
+  {
+   "id": "SEED-PIN",
+   "doc": "designation seed pin off",
+   "targets": [
+    "seed-pin-mismatch"
+   ],
+   "edits": [
+    {
+     "if_false": "SEED_PIN"
+    }
+   ]
+  },
+  {
+   "id": "DECIMAL-LEADING-ZERO",
+   "doc": "IsDecimal accepts a leading zero",
+   "targets": [
+    "seed-invalid-leading-zero"
+   ],
+   "edits": [
+    {
+     "replace": {
+      "cpp": [
+       "s.size() > 1 && s[0] == '0'",
+       "false"
+      ],
+      "js": [
+       "/^(0|[1-9][0-9]{0,19})$/",
+       "/^[0-9]{1,20}$/"
+      ]
+     }
+    }
+   ]
+  },
+  {
+   "id": "DECIMAL-MAX",
+   "doc": "IsDecimal accepts values above 2^64-1",
+   "targets": [
+    "seed-invalid-too-large"
+   ],
+   "edits": [
+    {
+     "replace": {
+      "cpp": [
+       "s.size() < 20 || s <= \"18446744073709551615\"",
+       "true"
+      ],
+      "js": [
+       " && BigInt(s) <= 18446744073709551615n",
+       ""
+      ]
+     }
+    }
+   ]
+  },
+  {
+   "id": "SEED-LOG-LEAK",
+   "doc": "the seed value is written to the log",
+   "targets": [
+    "seed-pin-mismatch",
+    "seed-not-leaked-on-rerun",
+    "seed-not-leaked-by-check"
+   ],
+   "edits": [
+    {
+     "replace": {
+      "cpp": [
+       "\" (the value is not logged)\"",
+       "\" seed=\" + token"
+      ],
+      "js": [
+       " (the value is not logged)",
+       " seed=${token}"
+      ]
+     }
+    }
+   ]
+  },
+  {
+   "id": "SEED-FROM-CHECK",
+   "doc": "CheckRelease hands out the seed",
+   "targets": [
+    "ok-seed",
+    "seed-not-leaked-by-check"
+   ],
+   "edits": [
+    {
+     "replace": {
+      "cpp": [
+       "internal::Evaluate(rq, internal::Mode::kRelease, &o, &seed);\n  return o;",
+       "internal::Evaluate(rq, internal::Mode::kRelease, &o, &seed);\n  o.seed = seed;\n  return o;"
+      ],
+      "js": [
+       "export const checkRelease = (rq) => run(rq, 'release').o;",
+       "export const checkRelease = (rq) => { const r = run(rq, 'release'); r.o.seed = r.box.seed; return r.o; };"
+      ]
+     }
+    }
+   ]
+  },
+  {
+   "id": "SEED-ON-REFUSAL",
+   "doc": "a refused second start still carries the seed",
+   "targets": [
+    "seed-not-leaked-on-rerun"
+   ],
+   "edits": [
+    {
+     "replace": {
+      "cpp": [
+       "this kind was run before\");\n    return o;",
+       "this kind was run before\");\n    o.seed = seed;\n    return o;"
+      ],
+      "js": [
+       "this kind was run before`);\n    return o;",
+       "this kind was run before`);\n    o.seed = box.seed;\n    return o;"
+      ]
+     }
+    }
+   ]
+  },
+  {
+   "id": "MARKER-EXCL",
+   "doc": "marker created without O_EXCL",
+   "targets": [
+    "rerun-refused",
+    "marker-preexisting",
+    "marker-symlink-preexisting",
+    "ok-twokinds",
+    "seed-not-leaked-on-rerun"
+   ],
+   "edits": [
+    {
+     "replace": {
+      "cpp": [
+       "O_CREAT | O_EXCL | O_CLOEXEC",
+       "O_CREAT | O_TRUNC | O_CLOEXEC"
+      ],
+      "js": [
+       "'wx'",
+       "'w'"
+      ]
+     }
+    }
+   ]
+  },
+  {
+   "id": "MARKER-NAME-KIND",
+   "doc": "one marker for all kinds",
+   "targets": [
+    "ok-twokinds"
+   ],
+   "edits": [
+    {
+     "replace": {
+      "cpp": [
+       " + \".first-run.\" + rq.kind + \".marker\"",
+       " + \".first-run.marker\""
+      ],
+      "js": [
+       ".first-run.${rq.kind ?? 'main'}.marker",
+       ".first-run.marker"
+      ]
+     }
+    }
+   ]
+  },
+  {
+   "id": "SEALED-ARGS",
+   "doc": "refuse arguments check off",
+   "targets": [
+    "sealed-args"
+   ],
+   "edits": [
+    {
+     "if_false": "gate_id / version / data_dir invalid"
+    }
+   ]
+  },
+  {
+   "id": "SEALED-MANIFEST",
+   "doc": "an unreadable or unparsable manifest treated as not sealed (the held.inputs guard off as well: defense in depth)",
+   "targets": [
+    "sealed-manifest-missing",
+    "sealed-manifest-malformed"
+   ],
+   "edits": [
+    {
+     "if_false": {
+      "cpp": "!ReadFile(rq.prereg_dir + \"/\" + ManifestName(rq), &text)",
+      "js": "the manifest cannot be read, so"
+     }
+    },
+    {
+     "if_false": "manifest held.inputs is missing"
+    }
+   ]
+  },
+  {
+   "id": "SEALED-HELD",
+   "doc": "manifest without held.inputs treated as not sealed",
+   "targets": [
+    "sealed-manifest-no-held"
+   ],
+   "edits": [
+    {
+     "if_false": "manifest held.inputs is missing"
+    }
+   ]
+  },
+  {
+   "id": "SEALED-UNHASHABLE",
+   "doc": "an unhashable directory treated as not sealed",
+   "targets": [
+    "sealed-unhashable"
+   ],
+   "edits": [
+    {
+     "if_false": "so it cannot be told from registered data (fail closed)"
+    }
+   ]
+  },
+  {
+   "id": "SEALED-TREE",
+   "doc": "tree sha256 match not refused",
+   "targets": [
+    "sealed-original",
+    "sealed-renamed-copy"
+   ],
+   "edits": [
+    {
+     "if_false": "have the tree sha256 of registered gate data"
+    }
+   ]
+  },
+  {
+   "id": "SEALED-FILE",
+   "doc": "sealed file sha256 match not refused",
+   "targets": [
+    "sealed-file-sha"
+   ],
+   "edits": [
+    {
+     "if_false": "has the sha256 of a sealed file"
+    }
+   ]
+  },
+  {
+   "id": "CANON-SORT",
+   "doc": "canonical key order reversed",
+   "targets": [
+    "canon-ordering-nesting",
+    "canon-key-order-codepoint",
+    "canon-manifest-plain"
+   ],
+   "edits": [
+    {
+     "replace": {
+      "cpp": [
+       "return v.keys[a] < v.keys[b]; });",
+       "return v.keys[a] > v.keys[b]; });"
+      ],
+      "js": [
+       "order.sort((a, b) => byBytes(v.keys[a], v.keys[b]));",
+       "order.sort((a, b) => byBytes(v.keys[b], v.keys[a]));"
+      ]
+     }
+    }
+   ]
+  },
+  {
+   "id": "CANON-BLANK-HELD-RUN",
+   "doc": "held_run not blanked",
+   "targets": [
+    "canon-blanked-top-level-only"
+   ],
+   "edits": [
+    {
+     "replace": {
+      "cpp": [
+       "{\"review\", \"first_real_run_at\", \"held_run\"}",
+       "{\"review\", \"first_real_run_at\"}"
+      ],
+      "js": [
+       "['review', 'first_real_run_at', 'held_run']",
+       "['review', 'first_real_run_at']"
+      ]
+     }
+    }
+   ]
+  },
+  {
+   "id": "CANON-BLANK-NESTED",
+   "doc": "blanked keys removed at every depth",
+   "targets": [
+    "canon-blanked-top-level-only"
+   ],
+   "edits": [
+    {
+     "replace": {
+      "cpp": [
+       "if (!CanonValue(v.values[order[k]], nullptr, out)) return false;",
+       "if (!CanonValue(v.values[order[k]], skip, out)) return false;"
+      ],
+      "js": [
+       "const c = canonValue(v.values[i], null);",
+       "const c = canonValue(v.values[i], skip);"
+      ]
+     }
+    }
+   ]
+  },
+  {
+   "id": "CANON-FLOAT-HIGH",
+   "doc": "float exponent form threshold (high) moved",
+   "targets": [
+    "canon-number-forms"
+   ],
+   "edits": [
+    {
+     "replace": {
+      "cpp": [
+       "decpt > 16",
+       "decpt > 17"
+      ],
+      "js": [
+       "decpt > 16",
+       "decpt > 17"
+      ]
+     }
+    }
+   ]
+  },
+  {
+   "id": "CANON-FLOAT-LOW",
+   "doc": "float exponent form threshold (low) moved",
+   "targets": [
+    "canon-number-forms"
+   ],
+   "edits": [
+    {
+     "replace": {
+      "cpp": [
+       "decpt <= -4 ||",
+       "decpt <= -3 ||"
+      ],
+      "js": [
+       "decpt <= -4 ||",
+       "decpt <= -3 ||"
+      ]
+     }
+    }
+   ]
+  },
+  {
+   "id": "CANON-NEG-ZERO-INT",
+   "doc": "-0 integer kept",
+   "targets": [
+    "canon-number-forms"
+   ],
+   "edits": [
+    {
+     "replace": {
+      "cpp": [
+       "tok == \"-0\" ? std::string(\"0\") : tok",
+       "tok"
+      ],
+      "js": [
+       "tok === '-0' ? '0' : tok",
+       "tok"
+      ]
+     }
+    }
+   ]
+  },
+  {
+   "id": "CANON-FLOAT-ZERO-SIGN",
+   "doc": "-0.0 printed as 0.0",
+   "targets": [
+    "canon-number-forms"
+   ],
+   "edits": [
+    {
+     "replace": {
+      "cpp": [
+       "std::signbit(d) ? \"-0.0\" : \"0.0\"",
+       "\"0.0\""
+      ],
+      "js": [
+       "Object.is(d, -0) ? '-0.0' : '0.0'",
+       "'0.0'"
+      ]
+     }
+    }
+   ]
+  },
+  {
+   "id": "CANON-ESCAPE-CONTROL",
+   "doc": "control character escape wrong",
+   "targets": [
+    "canon-string-escapes"
+   ],
+   "edits": [
+    {
+     "replace": {
+      "cpp": [
+       "*out += \"\\\\u00\";",
+       "*out += \"\\\\u01\";"
+      ],
+      "js": [
+       "`\\\\u00${c.toString(16)",
+       "`\\\\u01${c.toString(16)"
+      ]
+     }
+    }
+   ]
+  },
+  {
+   "id": "CANON-ESCAPE-NEWLINE",
+   "doc": "newline escape wrong",
+   "targets": [
+    "canon-string-escapes"
+   ],
+   "edits": [
+    {
+     "replace": {
+      "cpp": [
+       "case '\\n': *out += \"\\\\n\"; break;",
+       "case '\\n': *out += \"\\\\u000a\"; break;"
+      ],
+      "js": [
+       "else if (ch === '\\n') out += '\\\\n';",
+       "else if (ch === '\\n') out += '\\\\u000a';"
+      ]
+     }
+    }
+   ]
+  },
+  {
+   "id": "JSON-DUP-KEY",
+   "doc": "duplicate keys accepted",
+   "targets": [
+    "canon-dup-key",
+    "canon-dup-key-nested",
+    "manifest-duplicate-key",
+    "manifest-duplicate-nested-key",
+    "designation-duplicate-key"
+   ],
+   "edits": [
+    {
+     "if_false": {
+      "cpp": "std::find(out->keys.begin()",
+      "js": "o.keys.includes(key)"
+     }
+    }
+   ]
+  },
+  {
+   "id": "JSON-TRAILING",
+   "doc": "trailing characters accepted",
+   "targets": [
+    "canon-trailing-garbage"
+   ],
+   "edits": [
+    {
+     "if_false": "trailing characters"
+    }
+   ]
+  },
+  {
+   "id": "JSON-UTF8",
+   "doc": "invalid UTF-8 accepted",
+   "targets": [
+    "canon-utf8-invalid-byte",
+    "canon-utf8-overlong",
+    "canon-utf8-surrogate",
+    "canon-utf8-above-max",
+    "canon-utf8-truncated"
+   ],
+   "edits": [
+    {
+     "if_false": {
+      "cpp": "!ValidUtf8(s_)"
+     }
+    },
+    {
+     "replace": {
+      "js": [
+       "fatal: true",
+       "fatal: false"
+      ]
+     }
+    }
+   ]
+  },
+  {
+   "id": "JSON-DEPTH",
+   "doc": "unbounded nesting accepted",
+   "targets": [
+    "canon-deep-nesting-70"
+   ],
+   "edits": [
+    {
+     "if_false": "nesting too deep"
+    }
+   ]
+  },
+  {
+   "id": "JSON-CONTROL",
+   "doc": "raw control characters in strings accepted",
+   "targets": [
+    "canon-raw-tab-in-string"
+   ],
+   "edits": [
+    {
+     "if_false": "control character in string"
+    }
+   ]
+  },
+  {
+   "id": "JSON-LONE-LOW",
+   "doc": "lone low surrogate escape accepted",
+   "targets": [
+    "canon-lone-low-surrogate"
+   ],
+   "edits": [
+    {
+     "if_false": {
+      "cpp": "cp >= 0xDC00 && cp <= 0xDFFF",
+      "js": "cp >= 0xdc00 && cp <= 0xdfff"
+     }
+    }
+   ]
+  },
+  {
+   "id": "JSON-HIGH-RANGE",
+   "doc": "high surrogate followed by a non-surrogate accepted",
+   "targets": [
+    "canon-high-surrogate-then-bmp"
+   ],
+   "edits": [
+    {
+     "if_false": {
+      "cpp": "lo < 0xDC00",
+      "js": "lo < 0xdc00"
+     }
+    }
+   ]
+  },
+  {
+   "id": "JSON-LEADING-ZERO",
+   "doc": "leading zeros accepted",
+   "targets": [
+    "canon-leading-zero"
+   ],
+   "edits": [
+    {
+     "replace": {
+      "cpp": [
+       "if (s_[i_] == '0') {",
+       "if (false) {"
+      ],
+      "js": [
+       "(?:0|[1-9][0-9]*)",
+       "[0-9]+"
+      ]
+     }
+    }
+   ]
+  }
+ ]
+}

@@ -1,0 +1,85 @@
+probe: public xr_reference@4edfa484 world-SLAM closure, __cplusplus=202002
+== [A] Gr8Gl CPU half (synthetic GPU-format pyramid)
+A.level 0 r=0 c=0 w=320 h=240
+A.level 1 r=0 c=320 w=222 h=167
+A.level 2 r=0 c=542 w=154 h=116
+A.level 3 r=0 c=696 w=107 h=80
+A.retainBest kept=8: (30,30,r=200) (250,150,r=11) (150,200,r=12) (250,200,r=13) (150,150,r=10) (31,30,r=199) (32,30,r=198) (33,30,r=197)
+A.detectAndCompute n=388 per_level=[199,126,48,15] orb_desc_fnv=ab7c25b507453f8d
+A.detectAndCompute orb_set_fnv=63587ba86c134ad5
+A.kp[0] x=129.000 y=142.000 scale=0 size=31.000 angle=75.159 resp=250 desc0..7=029f3a98fbf5b8e7
+A.kp[1] x=155.000 y=51.000 scale=0 size=31.000 angle=300.553 resp=249 desc0..7=f2659aff9cc15f41
+A.kp[2] x=259.000 y=168.000 scale=0 size=31.000 angle=147.517 resp=248 desc0..7=22b0b1f965d5e917
+A.kp[3] x=285.000 y=77.000 scale=0 size=31.000 angle=11.373 resp=247 desc0..7=dd776d65b40e4fb8
+A.kp[4] x=116.000 y=168.000 scale=0 size=31.000 angle=10.273 resp=247 desc0..7=7d7d35e7bccd56b0
+== [B] ORB/GORB descriptors, Hamming, LSH
+B.gorb n=388 with_orb_and_gorb=388 identical_orb_gorb=11 gorb_desc_fnv=775c84f3936c2402
+B.gorb gorb_set_fnv=8c95557e542969ed orb_set_fnv=63587ba86c134ad5
+B.kp[0] angle=75.159 gravityAngle=273.690 hamming(orb,gorb)=72
+B.kp[1] angle=300.553 gravityAngle=270.675 hamming(orb,gorb)=73
+B.kp[2] angle=147.517 gravityAngle=258.719 hamming(orb,gorb)=138
+B.lsh dict=64 queries=10 lsh_exact=10 bruteforce_exact_d3=10
+== [C] Bundle / pose (Ceres)
+C.poseAnalytical ok=1 max_abs_err=3.551e-02 n_point_res=60
+C.poseAnalytical.est [+0.998822 -0.017664 -0.045198 +0.014495] [+0.016200 +0.999338 -0.032566 -0.030502] [+0.045743 +0.031795 +0.998447 +0.082037]
+C.poseAnalytical.true [+0.998446 -0.019255 -0.052304 +0.050000] [+0.017442 +0.999239 -0.034899 -0.020000] [+0.052936 +0.033933 +0.998021 +0.100000]
+residual_block.cc:127 
+
+Error in evaluating the ResidualBlock.
+
+There are two possible reasons. Either the CostFunction did not evaluate and fill all    
+residual and jacobians that were requested or there was a non-finite value (nan/infinite)
+generated during the or jacobian computation. 
+
+Residual Block size: 1 parameter blocks x 2 residuals
+
+For each parameter block, the value of the parameters are printed in the first column   
+and the value of the jacobian under the corresponding residual. If a ParameterBlock was 
+held constant then the corresponding jacobian is printed as 'Not Computed'. If an entry 
+of the Jacobian/residual array was requested but was not written to by user code, it is 
+indicated by 'Uninitialized'. This is an error. Residuals or Jacobian values evaluating 
+to Inf or NaN is also an error.  
+
+Residuals:      7.98523e-09        1e-10 
+
+Parameter Block 0, size: 6
+
+  -0.0344409 |   0.00508021          inf 
+   0.0526579 |     0.732638          inf 
+  -0.0183614 |   -0.0436751          inf 
+           0 |     0.119135            0 
+           0 |            0         -inf 
+           0 |    0.0222408          inf 
+
+
+
+trust_region_minimizer.cc:72 Terminating: Initial residual and Jacobian evaluation failed.
+C.poseAnalytical.initAtTruth ok=0 max_abs_err=0.000e+00
+C.param Bundle.rotationRobust=0.3
+C.param Bundle.rotationWt=0.3
+C.param Bundle.positionRobust=0.3
+C.param Bundle.positionWt=0.05
+C.param Bundle.poseEstCauchyLoss=0.01
+C.param Bundle.poseEstFunctionTolerance=1e-10
+C.param Bundle.poseEstGradientTolerance=1e-10
+C.param Bundle.poseEstParameterTolerance=1e-06
+C.param Bundle.poseEstHuberLossComposed=0.00088
+C.param Bundle.poseEstMaxNumIterations=100
+C.param Bundle.useNewPoseEstimationAnalytic=false
+block_sparse_matrix.cc:208 Allocating values array with 14016 bytes.
+detect_structure.cc:114 Schur complement static structure <2,3,6>.
+detect_structure.cc:114 Schur complement static structure <2,3,6>.
+C.bundleAdjustSchur ok=1 residual=1.886e-04 cam1_err=4.280e-04 cam2_err=8.560e-04 max_pt_err=1.154e-02
+[pose-pnp@robustPnP] got input worldPts with size: 80
+block_sparse_matrix.cc:208 Allocating values array with 3552 bytes.
+detect_structure.cc:63 Dynamic row block size because the block size changed from 6 to 2
+detect_structure.cc:114 Schur complement static structure <-1,6,0>.
+detect_structure.cc:63 Dynamic row block size because the block size changed from 6 to 2
+detect_structure.cc:114 Schur complement static structure <-1,6,0>.
+schur_eliminator.cc:155 Template specializations not found for <-1,6,0>
+C.robustPnP ok=1 inliers=34 (true_inliers_among=34 of 60) max_abs_err=8.196e-08
+== [D] Epipolar / triangulation
+D.essential max_dist_true=4.951e-08 dist_offset_0.01=9.850e-03
+D.epipolarDepth ok=10/10 max_rel_depth_err=9.314e-07 pureRotation=0
+D.groundPrework pitch-45 = (-0.000000, -0.707107, -0.707107)
+probe: done

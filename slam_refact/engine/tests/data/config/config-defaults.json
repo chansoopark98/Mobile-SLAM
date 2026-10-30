@@ -1,0 +1,3232 @@
+{
+ "segments": [
+  [
+   1024,
+   3297239,
+   526044
+  ],
+  [
+   527072,
+   3823291,
+   852
+  ],
+  [
+   527924,
+   3824151,
+   1701
+  ],
+  [
+   529625,
+   3825860,
+   235
+  ]
+ ],
+ "entries": [
+  {
+   "key": "DetectionImageLoader.minRollAngleFromXZPlaneForGorb",
+   "func": 449,
+   "addr": 44788,
+   "args": [
+    [
+     "f32",
+     2.0
+    ]
+   ],
+   "getter": 458
+  },
+  {
+   "key": "DetectionImageMatcher.lshTables",
+   "func": 500,
+   "addr": 22639,
+   "args": [
+    [
+     "i32",
+     8
+    ]
+   ],
+   "getter": 851
+  },
+  {
+   "key": "DetectionImageMatcher.lshKeys",
+   "func": 500,
+   "addr": 18766,
+   "args": [
+    [
+     "i32",
+     16
+    ]
+   ],
+   "getter": 851
+  },
+  {
+   "key": "DetectionImageMatcher.lshMultiprobe",
+   "func": 500,
+   "addr": 35814,
+   "args": [
+    [
+     "i32",
+     2
+    ]
+   ],
+   "getter": 851
+  },
+  {
+   "key": "MapTracker.inertialTracking",
+   "func": 633,
+   "addr": 30450,
+   "args": [
+    [
+     "i32",
+     1
+    ]
+   ],
+   "getter": 881
+  },
+  {
+   "key": "MapTracker.initialFrameDelay",
+   "func": 633,
+   "addr": 13495,
+   "args": [
+    [
+     "i32",
+     10
+    ]
+   ],
+   "getter": 851
+  },
+  {
+   "key": "MapTracker.maxPoints",
+   "func": 633,
+   "addr": 19866,
+   "args": [
+    [
+     "i32",
+     400
+    ]
+   ],
+   "getter": 851
+  },
+  {
+   "key": "MapTracker.minGroundPointsForScale",
+   "func": 633,
+   "addr": 34192,
+   "args": [
+    [
+     "i32",
+     8
+    ]
+   ],
+   "getter": 851
+  },
+  {
+   "key": "MapTracker.lowPassGroundHeightAlpha",
+   "func": 633,
+   "addr": 45123,
+   "args": [
+    [
+     "f32",
+     0.4000000059604645
+    ]
+   ],
+   "getter": 458
+  },
+  {
+   "key": "MapTracker.relocalizationThreshold",
+   "func": 633,
+   "addr": 37261,
+   "args": [
+    [
+     "f32",
+     0.05000000074505806
+    ]
+   ],
+   "getter": 458
+  },
+  {
+   "key": "MapTracker.cloudMapRelocTargetFps",
+   "func": 633,
+   "addr": 21382,
+   "args": [
+    [
+     "i32",
+     25
+    ]
+   ],
+   "getter": 851
+  },
+  {
+   "key": "MapTracker.cloudMapMaxRelocalizationTimeDelayNanos",
+   "func": 633,
+   "addr": 21424,
+   "args": [
+    [
+     "f32",
+     500000000.0
+    ]
+   ],
+   "getter": 458
+  },
+  {
+   "key": "MapTracker.secretRelocalizationTimeDelayNanos",
+   "func": 633,
+   "addr": 21475,
+   "args": [
+    [
+     "f32",
+     2000000000.0
+    ]
+   ],
+   "getter": 458
+  },
+  {
+   "key": "MapTracker.trackingLostThreshold",
+   "func": 633,
+   "addr": 37002,
+   "args": [
+    [
+     "f32",
+     0.004999999888241291
+    ]
+   ],
+   "getter": 458
+  },
+  {
+   "key": "MapTracker.useFFTForExtremeMovement",
+   "func": 633,
+   "addr": 17627,
+   "args": [
+    [
+     "i32",
+     1
+    ]
+   ],
+   "getter": 881
+  },
+  {
+   "key": "MapTracker.maxGyroMagnitude",
+   "func": 633,
+   "addr": 34793,
+   "args": [
+    [
+     "f32",
+     70.0
+    ]
+   ],
+   "getter": 458
+  },
+  {
+   "key": "MapTracker.maxLinearAccelerationMagnitude",
+   "func": 633,
+   "addr": 34821,
+   "args": [
+    [
+     "f32",
+     1.7000000476837158
+    ]
+   ],
+   "getter": 458
+  },
+  {
+   "key": "MapTracker.relocToDepthKfDist",
+   "func": 633,
+   "addr": 16635,
+   "args": [
+    [
+     "i32",
+     76
+    ]
+   ],
+   "getter": 851
+  },
+  {
+   "key": "MapTracker.useExternalRelocalizationExtrinsic",
+   "func": 633,
+   "addr": 41669,
+   "args": [
+    [
+     "i32",
+     0
+    ]
+   ],
+   "getter": 881
+  },
+  {
+   "key": "MapTracker.minCloudPointsForSecretRelocalization",
+   "func": 633,
+   "addr": 27110,
+   "args": [
+    [
+     "i32",
+     20
+    ]
+   ],
+   "getter": 851
+  },
+  {
+   "key": "MapTracker.samplePointsForSecondPassTracking",
+   "func": 633,
+   "addr": 30359,
+   "args": [
+    [
+     "i32",
+     1
+    ]
+   ],
+   "getter": 881
+  },
+  {
+   "key": "MapTracker.maxPointsForSecondPassTracking",
+   "func": 633,
+   "addr": 30317,
+   "args": [
+    [
+     "i32",
+     5000
+    ]
+   ],
+   "getter": 851
+  },
+  {
+   "key": "MetricScaleEstimator.estimateScaleAfterHaveEstimate",
+   "func": 637,
+   "addr": 31879,
+   "args": [
+    [
+     "i32",
+     0
+    ]
+   ],
+   "getter": 881
+  },
+  {
+   "key": "MetricScaleEstimator.maxFramesInQueue",
+   "func": 637,
+   "addr": 31557,
+   "args": [
+    [
+     "i32",
+     2000
+    ]
+   ],
+   "getter": 851
+  },
+  {
+   "key": "MetricScaleEstimator.numEndFramesToSkip",
+   "func": 637,
+   "addr": 25395,
+   "args": [
+    [
+     "i32",
+     25
+    ]
+   ],
+   "getter": 851
+  },
+  {
+   "key": "MetricScaleEstimator.scalePredictionFrameNumber",
+   "func": 637,
+   "addr": 25000,
+   "args": [
+    [
+     "i32",
+     50
+    ]
+   ],
+   "getter": 851
+  },
+  {
+   "key": "MetricScaleEstimator.temporalAlignment",
+   "func": 637,
+   "addr": 17494,
+   "args": [
+    [
+     "i32",
+     1
+    ]
+   ],
+   "getter": 881
+  },
+  {
+   "key": "MetricScaleEstimator.placeWithInteval",
+   "func": 637,
+   "addr": 28524,
+   "args": [
+    [
+     "i32",
+     1
+    ]
+   ],
+   "getter": 881
+  },
+  {
+   "key": "MetricScaleEstimator.fallbackTo60Hz",
+   "func": 637,
+   "addr": 12353,
+   "args": [
+    [
+     "i32",
+     1
+    ]
+   ],
+   "getter": 881
+  },
+  {
+   "key": "MetricScaleEstimator.maxFreqForAlignment",
+   "func": 637,
+   "addr": 17453,
+   "args": [
+    [
+     "f32",
+     5.0
+    ]
+   ],
+   "getter": 458
+  },
+  {
+   "key": "MetricScaleEstimator.scaleEstimationMethod",
+   "func": 637,
+   "addr": 36652,
+   "args": [
+    [
+     "i32",
+     1
+    ]
+   ],
+   "getter": 851
+  },
+  {
+   "key": "MetricScaleEstimator.imuGaussianSigma",
+   "func": 637,
+   "addr": 45085,
+   "args": [
+    [
+     "f32",
+     0.0
+    ]
+   ],
+   "getter": 458
+  },
+  {
+   "key": "MetricScaleEstimator.activeThresholdCheck",
+   "func": 637,
+   "addr": 28995,
+   "args": [
+    [
+     "i32",
+     0
+    ]
+   ],
+   "getter": 881
+  },
+  {
+   "key": "MetricScaleEstimator.movementCheckPeriodInSec",
+   "func": 637,
+   "addr": 41757,
+   "args": [
+    [
+     "f32",
+     1.0
+    ]
+   ],
+   "getter": 458
+  },
+  {
+   "key": "MetricScaleEstimator.activeStartThreshold",
+   "func": 637,
+   "addr": 37035,
+   "args": [
+    [
+     "f32",
+     1.0
+    ]
+   ],
+   "getter": 458
+  },
+  {
+   "key": "MetricScaleEstimator.activeEndThreshold",
+   "func": 637,
+   "addr": 37718,
+   "args": [
+    [
+     "f32",
+     0.5
+    ]
+   ],
+   "getter": 458
+  },
+  {
+   "key": "MetricScaleEstimator.sumCheck",
+   "func": 637,
+   "addr": 28965,
+   "args": [
+    [
+     "i32",
+     1
+    ]
+   ],
+   "getter": 881
+  },
+  {
+   "key": "MetricScaleEstimator.addAccelToSumThreshold",
+   "func": 637,
+   "addr": 37296,
+   "args": [
+    [
+     "f32",
+     0.800000011920929
+    ]
+   ],
+   "getter": 458
+  },
+  {
+   "key": "MetricScaleEstimator.sumCheckThreshold",
+   "func": 637,
+   "addr": 37383,
+   "args": [
+    [
+     "f32",
+     600.0
+    ]
+   ],
+   "getter": 458
+  },
+  {
+   "key": "MetricScaleEstimator.imuHighAccelThreshold",
+   "func": 637,
+   "addr": 37340,
+   "args": [
+    [
+     "f32",
+     0.800000011920929
+    ]
+   ],
+   "getter": 458
+  },
+  {
+   "key": "MetricScaleEstimator.imuRemoveBias",
+   "func": 637,
+   "addr": 23276,
+   "args": [
+    [
+     "i32",
+     0
+    ]
+   ],
+   "getter": 881
+  },
+  {
+   "key": "MetricScaleEstimator.gyroResetThreshold",
+   "func": 637,
+   "addr": 37077,
+   "args": [
+    [
+     "f32",
+     0.0
+    ]
+   ],
+   "getter": 458
+  },
+  {
+   "key": "MetricScaleEstimator.minScaleAllowed",
+   "func": 637,
+   "addr": 38011,
+   "args": [
+    [
+     "f32",
+     0.05000000074505806
+    ]
+   ],
+   "getter": 458
+  },
+  {
+   "key": "MetricScaleEstimator.maxScaleAllowed",
+   "func": 637,
+   "addr": 37974,
+   "args": [
+    [
+     "f32",
+     2.25
+    ]
+   ],
+   "getter": 458
+  },
+  {
+   "key": "MetricScaleEstimator.outOfBoundReset",
+   "func": 637,
+   "addr": 18255,
+   "args": [
+    [
+     "i32",
+     1
+    ]
+   ],
+   "getter": 881
+  },
+  {
+   "key": "MetricScaleEstimator.useFpsScalingIfIos",
+   "func": 637,
+   "addr": 21640,
+   "args": [
+    [
+     "i32",
+     1
+    ]
+   ],
+   "getter": 881
+  },
+  {
+   "key": "MapBuilder.noKfInExtremeGyro",
+   "func": 651,
+   "addr": 25872,
+   "args": [
+    [
+     "i32",
+     1
+    ]
+   ],
+   "getter": 881
+  },
+  {
+   "key": "MapBuilder.mapGoodKeyFrameCount",
+   "func": 651,
+   "addr": 16982,
+   "args": [
+    [
+     "i32",
+     5
+    ]
+   ],
+   "getter": 851
+  },
+  {
+   "key": "MapBuilder.numFramesToResetNonEmptyMap",
+   "func": 651,
+   "addr": 25491,
+   "args": [
+    [
+     "i32",
+     5
+    ]
+   ],
+   "getter": 851
+  },
+  {
+   "key": "MapBuilder.numConsecutiveFrameTrackingSuccessesToResetGoodMap",
+   "func": 651,
+   "addr": 25599,
+   "args": [
+    [
+     "i32",
+     20
+    ]
+   ],
+   "getter": 851
+  },
+  {
+   "key": "MapBuilder.numConsecutiveFrameTrackingSuccessesToResetBadMap",
+   "func": 651,
+   "addr": 25661,
+   "args": [
+    [
+     "i32",
+     7
+    ]
+   ],
+   "getter": 851
+  },
+  {
+   "key": "MapBuilder.minParallaxThreshold",
+   "func": 651,
+   "addr": 36970,
+   "args": [
+    [
+     "f32",
+     0.019999999552965164
+    ]
+   ],
+   "getter": 458
+  },
+  {
+   "key": "MapBuilder.existingToTriangulatedPointMaxDistance",
+   "func": 651,
+   "addr": 35303,
+   "args": [
+    [
+     "f32",
+     0.10000000149011612
+    ]
+   ],
+   "getter": 458
+  },
+  {
+   "key": "MapBuilder.bundleAdjustmentIterativeEnabled",
+   "func": 651,
+   "addr": 38883,
+   "args": [
+    [
+     "i32",
+     0
+    ]
+   ],
+   "getter": 881
+  },
+  {
+   "key": "MapBuilder.keyframeCooldown",
+   "func": 651,
+   "addr": 26110,
+   "args": [
+    [
+     "i32",
+     5
+    ]
+   ],
+   "getter": 851
+  },
+  {
+   "key": "MapBuilder.cloudMapKeyframeCooldown",
+   "func": 651,
+   "addr": 26138,
+   "args": [
+    [
+     "i32",
+     3
+    ]
+   ],
+   "getter": 851
+  },
+  {
+   "key": "MapBuilder.keyframeCountVariability",
+   "func": 651,
+   "addr": 12722,
+   "args": [
+    [
+     "f32",
+     0.30000001192092896
+    ]
+   ],
+   "getter": 458
+  },
+  {
+   "key": "MapBuilder.keyframeDelay",
+   "func": 651,
+   "addr": 13470,
+   "args": [
+    [
+     "i32",
+     3
+    ]
+   ],
+   "getter": 851
+  },
+  {
+   "key": "MapBuilder.keyframeLowMapPointCount",
+   "func": 651,
+   "addr": 16805,
+   "args": [
+    [
+     "i32",
+     120
+    ]
+   ],
+   "getter": 851
+  },
+  {
+   "key": "MapBuilder.keyframeMinimumNewPoints",
+   "func": 651,
+   "addr": 19887,
+   "args": [
+    [
+     "i32",
+     20
+    ]
+   ],
+   "getter": 851
+  },
+  {
+   "key": "MapBuilder.keyframePairProcessCount",
+   "func": 651,
+   "addr": 16841,
+   "args": [
+    [
+     "i32",
+     3
+    ]
+   ],
+   "getter": 851
+  },
+  {
+   "key": "MapBuilder.keyframeVariabilityCriterion",
+   "func": 651,
+   "addr": 27705,
+   "args": [
+    [
+     "f32",
+     0.8999999761581421
+    ]
+   ],
+   "getter": 458
+  },
+  {
+   "key": "MapBuilder.isPruningGroundPointsInMapTracking",
+   "func": 651,
+   "addr": 30404,
+   "args": [
+    [
+     "i32",
+     1
+    ]
+   ],
+   "getter": 881
+  },
+  {
+   "key": "MapBuilder.pruningGroundPointsEpsilon",
+   "func": 651,
+   "addr": 26199,
+   "args": [
+    [
+     "f32",
+     0.05000000074505806
+    ]
+   ],
+   "getter": 458
+  },
+  {
+   "key": "MapBuilder.pruningGroundPointsTriangulatedCertaintyThreshold",
+   "func": 651,
+   "addr": 36909,
+   "args": [
+    [
+     "f64",
+     0.0001
+    ]
+   ],
+   "getter": 1131
+  },
+  {
+   "key": "MapBuilder.maxPairSize",
+   "func": 651,
+   "addr": 31286,
+   "args": [
+    [
+     "i32",
+     100
+    ]
+   ],
+   "getter": 851
+  },
+  {
+   "key": "MapBuilder.relocalizationDelay",
+   "func": 651,
+   "addr": 13439,
+   "args": [
+    [
+     "i32",
+     30
+    ]
+   ],
+   "getter": 851
+  },
+  {
+   "key": "MapBuilder.requireMinimumForSkypoints",
+   "func": 651,
+   "addr": 19299,
+   "args": [
+    [
+     "i32",
+     1
+    ]
+   ],
+   "getter": 881
+  },
+  {
+   "key": "MapBuilder.minWorldPointMatchesForSkypoints",
+   "func": 651,
+   "addr": 19255,
+   "args": [
+    [
+     "i32",
+     30
+    ]
+   ],
+   "getter": 851
+  },
+  {
+   "key": "MapBuilder.considerSkyPtsInKeyframeCreationCheck",
+   "func": 651,
+   "addr": 28916,
+   "args": [
+    [
+     "i32",
+     1
+    ]
+   ],
+   "getter": 881
+  },
+  {
+   "key": "MapBuilder.maxNewSkypoints",
+   "func": 651,
+   "addr": 19228,
+   "args": [
+    [
+     "i32",
+     30
+    ]
+   ],
+   "getter": 851
+  },
+  {
+   "key": "MapBuilder.loopCloseEnabled",
+   "func": 651,
+   "addr": 38927,
+   "args": [
+    [
+     "i32",
+     0
+    ]
+   ],
+   "getter": 881
+  },
+  {
+   "key": "MapBuilder.skypointsDistance",
+   "func": 651,
+   "addr": 35382,
+   "args": [
+    [
+     "f32",
+     1000.0
+    ]
+   ],
+   "getter": 458
+  },
+  {
+   "key": "MapBuilder.maybeCorrectLocalizedExtrinsic",
+   "func": 651,
+   "addr": 41715,
+   "args": [
+    [
+     "i32",
+     1
+    ]
+   ],
+   "getter": 881
+  },
+  {
+   "key": "MapBuilder.minBaselineForVpsCorrection",
+   "func": 651,
+   "addr": 26786,
+   "args": [
+    [
+     "f32",
+     0.30000001192092896
+    ]
+   ],
+   "getter": 458
+  },
+  {
+   "key": "MapBuilder.vpsCorrectionConfidenceThreshold",
+   "func": 651,
+   "addr": 37455,
+   "args": [
+    [
+     "f32",
+     0.6000000238418579
+    ]
+   ],
+   "getter": 458
+  },
+  {
+   "key": "MapBuilder.useGraphToAnchorNodes",
+   "func": 651,
+   "addr": 23042,
+   "args": [
+    [
+     "i32",
+     1
+    ]
+   ],
+   "getter": 881
+  },
+  {
+   "key": "MapBuilder.relocToKfWithDepthPoints",
+   "func": 651,
+   "addr": 20039,
+   "args": [
+    [
+     "i32",
+     0
+    ]
+   ],
+   "getter": 881
+  },
+  {
+   "key": "MapBuilder.useTwoVpsLocalizationsForMapScaling",
+   "func": 651,
+   "addr": 30176,
+   "args": [
+    [
+     "i32",
+     1
+    ]
+   ],
+   "getter": 881
+  },
+  {
+   "key": "MapBuilder.minBaselineForTwoVpsLocalizationScaling",
+   "func": 651,
+   "addr": 30223,
+   "args": [
+    [
+     "f32",
+     0.009999999776482582
+    ]
+   ],
+   "getter": 458
+  },
+  {
+   "key": "MapBuilder.pairAllKeyframes",
+   "func": 651,
+   "addr": 22532,
+   "args": [
+    [
+     "i32",
+     0
+    ]
+   ],
+   "getter": 881
+  },
+  {
+   "key": "MapBuilder.redundancyPointCount",
+   "func": 651,
+   "addr": 16773,
+   "args": [
+    [
+     "i32",
+     3
+    ]
+   ],
+   "getter": 851
+  },
+  {
+   "key": "MapBuilder.redundancyPointPercentage",
+   "func": 651,
+   "addr": 34390,
+   "args": [
+    [
+     "f32",
+     0.699999988079071
+    ]
+   ],
+   "getter": 458
+  },
+  {
+   "key": "MapBuilder.enableGroundPointsForCloudMap",
+   "func": 651,
+   "addr": 25558,
+   "args": [
+    [
+     "i32",
+     0
+    ]
+   ],
+   "getter": 881
+  },
+  {
+   "key": "DepthRenderer.storeLatestNMeshes",
+   "func": 671,
+   "addr": 22829,
+   "args": [
+    [
+     "i32",
+     0
+    ]
+   ],
+   "getter": 851
+  },
+  {
+   "key": "DepthRenderer.onlyRenderFrontFace",
+   "func": 671,
+   "addr": 35729,
+   "args": [
+    [
+     "i32",
+     0
+    ]
+   ],
+   "getter": 881
+  },
+  {
+   "key": "DepthRenderer.storeLatestNMeshes",
+   "func": 671,
+   "addr": 22829,
+   "args": [
+    [
+     "i32",
+     0
+    ]
+   ],
+   "getter": 851
+  },
+  {
+   "key": "DepthRenderer.onlyRenderFrontFace",
+   "func": 671,
+   "addr": 35729,
+   "args": [
+    [
+     "i32",
+     0
+    ]
+   ],
+   "getter": 881
+  },
+  {
+   "key": "DepthRenderer.storeLatestNMeshes",
+   "func": 671,
+   "addr": 22829,
+   "args": [
+    [
+     "i32",
+     0
+    ]
+   ],
+   "getter": 851
+  },
+  {
+   "key": "DepthRenderer.onlyRenderFrontFace",
+   "func": 671,
+   "addr": 35729,
+   "args": [
+    [
+     "i32",
+     0
+    ]
+   ],
+   "getter": 881
+  },
+  {
+   "key": "MotionPrediction.gravityCorrectedInterpolation",
+   "func": 784,
+   "addr": 27401,
+   "args": [
+    [
+     "f32",
+     0.0
+    ]
+   ],
+   "getter": 458
+  },
+  {
+   "key": "MotionPrediction.aboveHorizonDrag",
+   "func": 784,
+   "addr": 30496,
+   "args": [
+    [
+     "f32",
+     1.0
+    ]
+   ],
+   "getter": 458
+  },
+  {
+   "key": "RequestManager.usePreviouslyLocalizedNode",
+   "func": 852,
+   "addr": 35044,
+   "args": [],
+   "getter": 1344
+  },
+  {
+   "key": "RequestManager.usePreviouslyLocalizedNode",
+   "func": 852,
+   "addr": 35044,
+   "args": [],
+   "getter": 1344
+  },
+  {
+   "key": "VpsRequestManager.numFramesForDelay",
+   "func": 877,
+   "addr": 13403,
+   "args": [
+    [
+     "i32",
+     40
+    ]
+   ],
+   "getter": 851
+  },
+  {
+   "key": "VpsRequestManager.debugSpecifiedNodeId",
+   "func": 877,
+   "addr": 39136,
+   "args": [
+    [
+     "op",
+     "local.get 0"
+    ]
+   ],
+   "getter": 1438
+  },
+  {
+   "key": "VpsRequestManager.usePreviouslyLocalizedNode",
+   "func": 877,
+   "addr": 35041,
+   "args": [
+    [
+     "i32",
+     0
+    ]
+   ],
+   "getter": 881
+  },
+  {
+   "key": "VpsRequestManager.delayBetweenRequestsInFrames",
+   "func": 877,
+   "addr": 22560,
+   "args": [
+    [
+     "i32",
+     7
+    ]
+   ],
+   "getter": 851
+  },
+  {
+   "key": "VpsRequestManager.debugMaxNumSuccessfulLocalizations",
+   "func": 877,
+   "addr": 21782,
+   "args": [
+    [
+     "i32",
+     4294967295
+    ]
+   ],
+   "getter": 851
+  },
+  {
+   "key": "VpsRequestManager.maxNumVpsSpaceLoops",
+   "func": 877,
+   "addr": 21313,
+   "args": [
+    [
+     "i32",
+     10
+    ]
+   ],
+   "getter": 851
+  },
+  {
+   "key": "VioTracker.disableMapBuilder",
+   "func": 900,
+   "addr": 24709,
+   "args": [
+    [
+     "i32",
+     0
+    ]
+   ],
+   "getter": 881
+  },
+  {
+   "key": "VioTracker.numIncreasedFramePoints",
+   "func": 900,
+   "addr": 20112,
+   "args": [
+    [
+     "i32",
+     1000
+    ]
+   ],
+   "getter": 851
+  },
+  {
+   "key": "VioTracker.cloudMapRelocNumPoints",
+   "func": 900,
+   "addr": 20005,
+   "args": [
+    [
+     "i32",
+     500
+    ]
+   ],
+   "getter": 851
+  },
+  {
+   "key": "VioTracker.maxFirstSuccessfulDeviceVpsWaitTimeNanos",
+   "func": 900,
+   "addr": 21521,
+   "args": [
+    [
+     "f32",
+     10000000000.0
+    ]
+   ],
+   "getter": 458
+  },
+  {
+   "key": "VioTracker.trackingDescriptorType",
+   "func": 900,
+   "addr": 33330,
+   "args": [
+    [
+     "i32",
+     2
+    ]
+   ],
+   "getter": 851
+  },
+  {
+   "key": "EpipolarMatcher.radius",
+   "func": 1112,
+   "addr": 18996,
+   "args": [
+    [
+     "f32",
+     0.009999999776482582
+    ]
+   ],
+   "getter": 458
+  },
+  {
+   "key": "EpipolarMatcher.descriptorDistance",
+   "func": 1112,
+   "addr": 35411,
+   "args": [
+    [
+     "i32",
+     32
+    ]
+   ],
+   "getter": 851
+  },
+  {
+   "key": "EpipolarMatcher.radius",
+   "func": 1112,
+   "addr": 18996,
+   "args": [
+    [
+     "f32",
+     0.009999999776482582
+    ]
+   ],
+   "getter": 458
+  },
+  {
+   "key": "EpipolarMatcher.descriptorDistance",
+   "func": 1112,
+   "addr": 35411,
+   "args": [
+    [
+     "i32",
+     32
+    ]
+   ],
+   "getter": 851
+  },
+  {
+   "key": "EpipolarMatcher.radius",
+   "func": 1112,
+   "addr": 18996,
+   "args": [
+    [
+     "f32",
+     0.009999999776482582
+    ]
+   ],
+   "getter": 458
+  },
+  {
+   "key": "EpipolarMatcher.descriptorDistance",
+   "func": 1112,
+   "addr": 35411,
+   "args": [
+    [
+     "i32",
+     32
+    ]
+   ],
+   "getter": 851
+  },
+  {
+   "key": "EpipolarMatcher.radius",
+   "func": 1112,
+   "addr": 18996,
+   "args": [
+    [
+     "f32",
+     0.009999999776482582
+    ]
+   ],
+   "getter": 458
+  },
+  {
+   "key": "EpipolarMatcher.descriptorDistance",
+   "func": 1112,
+   "addr": 35411,
+   "args": [
+    [
+     "i32",
+     32
+    ]
+   ],
+   "getter": 851
+  },
+  {
+   "key": "WorldMaps.maxGyroMagnitudeKeyframe",
+   "func": 1113,
+   "addr": 33541,
+   "args": [
+    [
+     "f32",
+     80.0
+    ]
+   ],
+   "getter": 458
+  },
+  {
+   "key": "WorldMaps.maxViewingAngleKfToCam",
+   "func": 1113,
+   "addr": 28307,
+   "args": [
+    [
+     "f32",
+     0.5
+    ]
+   ],
+   "getter": 458
+  },
+  {
+   "key": "WorldMaps.lostMatcherRadius",
+   "func": 1113,
+   "addr": 19019,
+   "args": [
+    [
+     "f32",
+     0.10000000149011612
+    ]
+   ],
+   "getter": 458
+  },
+  {
+   "key": "WorldMaps.matchMinimum",
+   "func": 1113,
+   "addr": 28052,
+   "args": [
+    [
+     "i32",
+     5
+    ]
+   ],
+   "getter": 851
+  },
+  {
+   "key": "WorldMaps.matchRadiusMax",
+   "func": 1113,
+   "addr": 13721,
+   "args": [
+    [
+     "f32",
+     0.05000000074505806
+    ]
+   ],
+   "getter": 458
+  },
+  {
+   "key": "WorldMaps.cloudMapMatchRadiusMax",
+   "func": 1113,
+   "addr": 13746,
+   "args": [
+    [
+     "f32",
+     0.029999999329447746
+    ]
+   ],
+   "getter": 458
+  },
+  {
+   "key": "WorldMaps.findOrbMatchesThreshold",
+   "func": 1113,
+   "addr": 37117,
+   "args": [
+    [
+     "i32",
+     200
+    ]
+   ],
+   "getter": 851
+  },
+  {
+   "key": "WorldMaps.minKeyframePairBaselineForVpsTriangulation",
+   "func": 1113,
+   "addr": 27336,
+   "args": [
+    [
+     "f32",
+     0.15000000596046448
+    ]
+   ],
+   "getter": 458
+  },
+  {
+   "key": "WorldMaps.loopClosingDistanceThreshold",
+   "func": 1113,
+   "addr": 37679,
+   "args": [
+    [
+     "f32",
+     80.0
+    ]
+   ],
+   "getter": 458
+  },
+  {
+   "key": "WorldMaps.loopClosingMatchesRequired",
+   "func": 1113,
+   "addr": 38514,
+   "args": [
+    [
+     "i32",
+     75
+    ]
+   ],
+   "getter": 851
+  },
+  {
+   "key": "WorldMaps.loopClosingPoseEstimationPointsRequired",
+   "func": 1113,
+   "addr": 38464,
+   "args": [
+    [
+     "i32",
+     35
+    ]
+   ],
+   "getter": 851
+  },
+  {
+   "key": "WorldMaps.skypointWeightCoef",
+   "func": 1113,
+   "addr": 30697,
+   "args": [
+    [
+     "f32",
+     0.009999999776482582
+    ]
+   ],
+   "getter": 458
+  },
+  {
+   "key": "WorldMaps.weightByDepthConfidence",
+   "func": 1113,
+   "addr": 35269,
+   "args": [
+    [
+     "i32",
+     1
+    ]
+   ],
+   "getter": 881
+  },
+  {
+   "key": "WorldMaps.untrustedDepthCertainty",
+   "func": 1113,
+   "addr": 12574,
+   "args": [
+    [
+     "f32",
+     -7.0
+    ]
+   ],
+   "getter": 458
+  },
+  {
+   "key": "WorldMaps.trustedDepthCertainty",
+   "func": 1113,
+   "addr": 12608,
+   "args": [
+    [
+     "f32",
+     -4.0
+    ]
+   ],
+   "getter": 458
+  },
+  {
+   "key": "WorldMaps.minWeightForDepthCertainty",
+   "func": 1113,
+   "addr": 12506,
+   "args": [
+    [
+     "f32",
+     0.0
+    ]
+   ],
+   "getter": 458
+  },
+  {
+   "key": "WorldMaps.depthWeightCoef",
+   "func": 1113,
+   "addr": 30726,
+   "args": [
+    [
+     "f32",
+     1.0
+    ]
+   ],
+   "getter": 458
+  },
+  {
+   "key": "WorldMaps.maxSubsetPoints",
+   "func": 1113,
+   "addr": 19945,
+   "args": [
+    [
+     "i32",
+     75
+    ]
+   ],
+   "getter": 851
+  },
+  {
+   "key": "WorldMaps.cloudMapMaxSubsetPoints",
+   "func": 1113,
+   "addr": 19971,
+   "args": [
+    [
+     "i32",
+     100
+    ]
+   ],
+   "getter": 851
+  },
+  {
+   "key": "WorldMaps.subsetIsTriangulatedWeight",
+   "func": 1113,
+   "addr": 18051,
+   "args": [
+    [
+     "f32",
+     0.10000000149011612
+    ]
+   ],
+   "getter": 458
+  },
+  {
+   "key": "WorldMaps.subsetIsDepthPointWeight",
+   "func": 1113,
+   "addr": 17838,
+   "args": [
+    [
+     "f32",
+     2.0
+    ]
+   ],
+   "getter": 458
+  },
+  {
+   "key": "WorldMaps.subsetIsCloudPointWeight",
+   "func": 1113,
+   "addr": 17873,
+   "args": [
+    [
+     "f32",
+     1.0
+    ]
+   ],
+   "getter": 458
+  },
+  {
+   "key": "WorldMaps.subsetIsNonSkypointWeight",
+   "func": 1113,
+   "addr": 17802,
+   "args": [
+    [
+     "f32",
+     0.15000000596046448
+    ]
+   ],
+   "getter": 458
+  },
+  {
+   "key": "WorldMaps.subsetLowerResidualWeight",
+   "func": 1113,
+   "addr": 17982,
+   "args": [
+    [
+     "f32",
+     0.75
+    ]
+   ],
+   "getter": 458
+  },
+  {
+   "key": "WorldMaps.subsetIsTenuredWeight",
+   "func": 1113,
+   "addr": 18088,
+   "args": [
+    [
+     "f32",
+     0.20000000298023224
+    ]
+   ],
+   "getter": 458
+  },
+  {
+   "key": "WorldMaps.subsetConfidenceWeight",
+   "func": 1113,
+   "addr": 18018,
+   "args": [
+    [
+     "f32",
+     0.550000011920929
+    ]
+   ],
+   "getter": 458
+  },
+  {
+   "key": "WorldMaps.encouragedNGroundPoints",
+   "func": 1113,
+   "addr": 20147,
+   "args": [
+    [
+     "i32",
+     52
+    ]
+   ],
+   "getter": 851
+  },
+  {
+   "key": "WorldMaps.encouragedGroundPointWeight",
+   "func": 1113,
+   "addr": 17908,
+   "args": [
+    [
+     "f32",
+     0.550000011920929
+    ]
+   ],
+   "getter": 458
+  },
+  {
+   "key": "WorldMaps.requiredTenuredTrackingHitRatio",
+   "func": 1113,
+   "addr": 25945,
+   "args": [
+    [
+     "f32",
+     0.10000000149011612
+    ]
+   ],
+   "getter": 458
+  },
+  {
+   "key": "WorldMaps.requiredTrackingCount",
+   "func": 1113,
+   "addr": 16920,
+   "args": [
+    [
+     "i32",
+     8
+    ]
+   ],
+   "getter": 851
+  },
+  {
+   "key": "WorldMaps.requiredTrackingHitRatio",
+   "func": 1113,
+   "addr": 25987,
+   "args": [
+    [
+     "f32",
+     0.25
+    ]
+   ],
+   "getter": 458
+  },
+  {
+   "key": "WorldMaps.tenureKeyframeCount",
+   "func": 1113,
+   "addr": 16952,
+   "args": [
+    [
+     "i32",
+     5
+    ]
+   ],
+   "getter": 851
+  },
+  {
+   "key": "WorldMaps.maxKeyframesInMap",
+   "func": 1113,
+   "addr": 25530,
+   "args": [
+    [
+     "i32",
+     64
+    ]
+   ],
+   "getter": 851
+  },
+  {
+   "key": "WorldMaps.preventPruning",
+   "func": 1113,
+   "addr": 30143,
+   "args": [
+    [
+     "i32",
+     0
+    ]
+   ],
+   "getter": 881
+  },
+  {
+   "key": "WorldMaps.allowTenuredSkypoints",
+   "func": 1113,
+   "addr": 19337,
+   "args": [
+    [
+     "i32",
+     1
+    ]
+   ],
+   "getter": 881
+  },
+  {
+   "key": "WorldMaps.enableUntenureInsteadOfPrune",
+   "func": 1113,
+   "addr": 33415,
+   "args": [
+    [
+     "i32",
+     0
+    ]
+   ],
+   "getter": 881
+  },
+  {
+   "key": "WorldMaps.enableLostLocalMatcher",
+   "func": 1113,
+   "addr": 24528,
+   "args": [
+    [
+     "i32",
+     1
+    ]
+   ],
+   "getter": 881
+  },
+  {
+   "key": "WorldMaps.cloudMapGlobalMatcherDistanceThreshold",
+   "func": 1113,
+   "addr": 37630,
+   "args": [
+    [
+     "i32",
+     64
+    ]
+   ],
+   "getter": 851
+  },
+  {
+   "key": "WorldMaps.ransacInitialInlierGuess",
+   "func": 1113,
+   "addr": 20579,
+   "args": [
+    [
+     "f32",
+     0.009999999776482582
+    ]
+   ],
+   "getter": 458
+  },
+  {
+   "key": "WorldMaps.ransacInlierThreshold",
+   "func": 1113,
+   "addr": 37151,
+   "args": [
+    [
+     "f32",
+     9.999999747378752e-05
+    ]
+   ],
+   "getter": 458
+  },
+  {
+   "key": "WorldMaps.ransacMinInlierRequired",
+   "func": 1113,
+   "addr": 38551,
+   "args": [
+    [
+     "i32",
+     14
+    ]
+   ],
+   "getter": 851
+  },
+  {
+   "key": "WorldMaps.ransacCountFailure",
+   "func": 1113,
+   "addr": 33037,
+   "args": [
+    [
+     "i32",
+     1
+    ]
+   ],
+   "getter": 881
+  },
+  {
+   "key": "WorldMaps.ransacMaxNumIteration",
+   "func": 1113,
+   "addr": 27272,
+   "args": [
+    [
+     "i32",
+     2500
+    ]
+   ],
+   "getter": 851
+  },
+  {
+   "key": "WorldMaps.fullMapGlobalMatcherDistanceThreshold",
+   "func": 1113,
+   "addr": 37582,
+   "args": [
+    [
+     "i32",
+     64
+    ]
+   ],
+   "getter": 851
+  },
+  {
+   "key": "WorldMaps.dedupDictionaryMatches",
+   "func": 1113,
+   "addr": 22903,
+   "args": [
+    [
+     "i32",
+     1
+    ]
+   ],
+   "getter": 881
+  },
+  {
+   "key": "WorldMaps.alwaysProjectCloudPointDescriptor",
+   "func": 1113,
+   "addr": 23928,
+   "args": [
+    [
+     "i32",
+     1
+    ]
+   ],
+   "getter": 881
+  },
+  {
+   "key": "WorldMaps.popCountMatchThreshold",
+   "func": 1113,
+   "addr": 37422,
+   "args": [
+    [
+     "i32",
+     16
+    ]
+   ],
+   "getter": 851
+  },
+  {
+   "key": "BundleAdjustment.cameraMotionWeight",
+   "func": 1145,
+   "addr": 17946,
+   "args": [
+    [
+     "f32",
+     10.0
+    ]
+   ],
+   "getter": 458
+  },
+  {
+   "key": "BundleAdjustment.numPreviousKeyframesToAdjust",
+   "func": 1145,
+   "addr": 16420,
+   "args": [
+    [
+     "i32",
+     4
+    ]
+   ],
+   "getter": 851
+  },
+  {
+   "key": "BundleAdjustment.minNumPointsForKeyframeToAdjust",
+   "func": 1145,
+   "addr": 16466,
+   "args": [
+    [
+     "i32",
+     5
+    ]
+   ],
+   "getter": 851
+  },
+  {
+   "key": "BundleAdjustment.minNumKeyframesForPointToAdjust",
+   "func": 1145,
+   "addr": 16371,
+   "args": [
+    [
+     "i32",
+     2
+    ]
+   ],
+   "getter": 851
+  },
+  {
+   "key": "BundleAdjustment.numGlobalIterativeIterations",
+   "func": 1145,
+   "addr": 21912,
+   "args": [
+    [
+     "i32",
+     10
+    ]
+   ],
+   "getter": 851
+  },
+  {
+   "key": "BundleAdjustment.useFastPointAdjustmentInGlobalIterative",
+   "func": 1145,
+   "addr": 31395,
+   "args": [
+    [
+     "i32",
+     0
+    ]
+   ],
+   "getter": 881
+  },
+  {
+   "key": "Alignment.kalmanPositionProcessNoisePosStdDev",
+   "func": 1184,
+   "addr": 14804,
+   "args": [
+    [
+     "f32",
+     0.0
+    ]
+   ],
+   "getter": 458
+  },
+  {
+   "key": "Alignment.kalmanPositionProcessNoiseVelStdDev",
+   "func": 1184,
+   "addr": 14990,
+   "args": [
+    [
+     "f32",
+     0.0
+    ]
+   ],
+   "getter": 458
+  },
+  {
+   "key": "Alignment.kalmanPositionProcessNoiseAccelStdDev",
+   "func": 1184,
+   "addr": 14897,
+   "args": [
+    [
+     "f32",
+     0.8999999761581421
+    ]
+   ],
+   "getter": 458
+  },
+  {
+   "key": "Alignment.kalmanPositionMeasurementNoiseStdDev",
+   "func": 1184,
+   "addr": 15082,
+   "args": [
+    [
+     "f32",
+     0.10000000149011612
+    ]
+   ],
+   "getter": 458
+  },
+  {
+   "key": "Alignment.kalmanPositionAccelTransition",
+   "func": 1184,
+   "addr": 26657,
+   "args": [
+    [
+     "f32",
+     0.8999999761581421
+    ]
+   ],
+   "getter": 458
+  },
+  {
+   "key": "Alignment.kalmanAngularProcessNoiseVelStdDev",
+   "func": 1184,
+   "addr": 14945,
+   "args": [
+    [
+     "f32",
+     0.20000000298023224
+    ]
+   ],
+   "getter": 458
+  },
+  {
+   "key": "Alignment.kalmanAngularProcessNoiseAccelStdDev",
+   "func": 1184,
+   "addr": 14850,
+   "args": [
+    [
+     "f32",
+     0.5
+    ]
+   ],
+   "getter": 458
+  },
+  {
+   "key": "Alignment.kalmanAngularMeasurementNoiseStdDev",
+   "func": 1184,
+   "addr": 15036,
+   "args": [
+    [
+     "f32",
+     0.5
+    ]
+   ],
+   "getter": 458
+  },
+  {
+   "key": "Alignment.kalmanAngularAccelTransition",
+   "func": 1184,
+   "addr": 26618,
+   "args": [
+    [
+     "f32",
+     0.8999999761581421
+    ]
+   ],
+   "getter": 458
+  },
+  {
+   "key": "Alignment.crossCorrelationTimeoffsetCutoff",
+   "func": 1184,
+   "addr": 30654,
+   "args": [
+    [
+     "f32",
+     0.5
+    ]
+   ],
+   "getter": 458
+  },
+  {
+   "key": "Alignment.favorCrossCorrelationPeakNearZero",
+   "func": 1184,
+   "addr": 25901,
+   "args": [
+    [
+     "i32",
+     1
+    ]
+   ],
+   "getter": 881
+  },
+  {
+   "key": "Alignment.placeSensorEventsStartAtEnd",
+   "func": 1184,
+   "addr": 36829,
+   "args": [
+    [
+     "i32",
+     1
+    ]
+   ],
+   "getter": 881
+  },
+  {
+   "key": "Alignment.fpsAlpha",
+   "func": 1184,
+   "addr": 45159,
+   "args": [
+    [
+     "f32",
+     489.0
+    ]
+   ],
+   "getter": 458
+  },
+  {
+   "key": "GlobalMatcher.lshTables",
+   "func": 1264,
+   "addr": 22615,
+   "args": [
+    [
+     "i32",
+     8
+    ]
+   ],
+   "getter": 851
+  },
+  {
+   "key": "GlobalMatcher.lshKeys",
+   "func": 1264,
+   "addr": 18744,
+   "args": [
+    [
+     "i32",
+     16
+    ]
+   ],
+   "getter": 851
+  },
+  {
+   "key": "GlobalMatcher.lshMultiprobe",
+   "func": 1264,
+   "addr": 35786,
+   "args": [
+    [
+     "i32",
+     2
+    ]
+   ],
+   "getter": 851
+  },
+  {
+   "key": "GlobalMatcher.maxNumPointsToConsiderMapMatch",
+   "func": 1264,
+   "addr": 29484,
+   "args": [
+    [
+     "i32",
+     3000
+    ]
+   ],
+   "getter": 851
+  },
+  {
+   "key": "FrameFrameTracker.inertialTrackingGroundPointsFraction",
+   "func": 1268,
+   "addr": 26965,
+   "args": [
+    [
+     "i32",
+     6
+    ]
+   ],
+   "getter": 851
+  },
+  {
+   "key": "FrameFrameTracker.inertialTrackingSkyPointsFraction",
+   "func": 1268,
+   "addr": 26875,
+   "args": [
+    [
+     "i32",
+     6
+    ]
+   ],
+   "getter": 851
+  },
+  {
+   "key": "FrameFrameTracker.depthPointsFraction",
+   "func": 1268,
+   "addr": 26927,
+   "args": [
+    [
+     "i32",
+     2
+    ]
+   ],
+   "getter": 851
+  },
+  {
+   "key": "FrameFrameTracker.includeDepthPoints",
+   "func": 1268,
+   "addr": 20075,
+   "args": [
+    [
+     "i32",
+     1
+    ]
+   ],
+   "getter": 881
+  },
+  {
+   "key": "FrameFrameTracker.includeSkyPoints",
+   "func": 1268,
+   "addr": 19831,
+   "args": [
+    [
+     "i32",
+     1
+    ]
+   ],
+   "getter": 881
+  },
+  {
+   "key": "FrameFrameTracker.maxMotionThreshold",
+   "func": 1268,
+   "addr": 37224,
+   "args": [
+    [
+     "f32",
+     0.5
+    ]
+   ],
+   "getter": 458
+  },
+  {
+   "key": "FrameFrameTracker.minDepthsForDepthEgomotion",
+   "func": 1268,
+   "addr": 26500,
+   "args": [
+    [
+     "i32",
+     10
+    ]
+   ],
+   "getter": 851
+  },
+  {
+   "key": "FrameFrameTracker.min3dInlierSqThreshold",
+   "func": 1268,
+   "addr": 37183,
+   "args": [
+    [
+     "f32",
+     9.999999747378752e-05
+    ]
+   ],
+   "getter": 458
+  },
+  {
+   "key": "FrameFrameTracker.min2dInliersForDepthEgomotion",
+   "func": 1268,
+   "addr": 26452,
+   "args": [
+    [
+     "i32",
+     80
+    ]
+   ],
+   "getter": 851
+  },
+  {
+   "key": "FrameFrameTracker.min2dInliersPercentForDepthEgomotion",
+   "func": 1268,
+   "addr": 26397,
+   "args": [
+    [
+     "f32",
+     0.6000000238418579
+    ]
+   ],
+   "getter": 458
+  },
+  {
+   "key": "FrameFrameTracker.min2dInliersResidualForDepthEgomotion",
+   "func": 1268,
+   "addr": 26545,
+   "args": [
+    [
+     "f32",
+     0.003000000026077032
+    ]
+   ],
+   "getter": 458
+  },
+  {
+   "key": "FrameFrameTracker.maxTranslationForHomographyDepthEgomotion",
+   "func": 1268,
+   "addr": 26337,
+   "args": [
+    [
+     "f32",
+     0.009999999776482582
+    ]
+   ],
+   "getter": 458
+  },
+  {
+   "key": "MapTracker.maxPointsForSecondPassTracking",
+   "func": 1308,
+   "addr": 30317,
+   "args": [
+    [
+     "op",
+     "i32.store16 1 100"
+    ],
+    [
+     "op",
+     "local.get 1"
+    ],
+    [
+     "i32",
+     3
+    ],
+    [
+     "op",
+     "i32.store8 0 139"
+    ],
+    [
+     "op",
+     "local.get 1"
+    ],
+    [
+     "i32",
+     0
+    ],
+    [
+     "op",
+     "i32.load16_u 0 25300"
+    ]
+   ],
+   "getter": null
+  },
+  {
+   "key": "MapTracker.maxPointsForSecondPassTracking",
+   "func": 1308,
+   "addr": 30317,
+   "args": [
+    [
+     "op",
+     "i32.store16 1 72"
+    ],
+    [
+     "op",
+     "local.get 1"
+    ],
+    [
+     "i32",
+     2
+    ],
+    [
+     "op",
+     "i32.store8 0 83"
+    ],
+    [
+     "op",
+     "local.get 1"
+    ],
+    [
+     "op",
+     "local.get 14"
+    ],
+    [
+     "op",
+     "v128.store 2 84"
+    ]
+   ],
+   "getter": null
+  },
+  {
+   "key": "MapTracker.maxPointsForSecondPassTracking",
+   "func": 1308,
+   "addr": 30317,
+   "args": [
+    [
+     "op",
+     "i32.store16 1 72"
+    ],
+    [
+     "op",
+     "local.get 1"
+    ],
+    [
+     "i32",
+     2
+    ],
+    [
+     "op",
+     "i32.store8 0 83"
+    ],
+    [
+     "op",
+     "local.get 1"
+    ],
+    [
+     "op",
+     "local.get 14"
+    ],
+    [
+     "op",
+     "v128.store 2 84"
+    ]
+   ],
+   "getter": null
+  },
+  {
+   "key": "MapTracker.maxPointsForSecondPassTracking",
+   "func": 1308,
+   "addr": 30317,
+   "args": [
+    [
+     "op",
+     "i32.store16 1 72"
+    ],
+    [
+     "op",
+     "local.get 1"
+    ],
+    [
+     "i32",
+     2
+    ],
+    [
+     "op",
+     "i32.store8 0 83"
+    ],
+    [
+     "op",
+     "local.get 1"
+    ],
+    [
+     "op",
+     "local.get 14"
+    ],
+    [
+     "op",
+     "v128.store 2 84"
+    ]
+   ],
+   "getter": null
+  },
+  {
+   "key": "MapTracker.maxPointsForSecondPassTracking",
+   "func": 1308,
+   "addr": 30317,
+   "args": [
+    [
+     "op",
+     "i32.store16 1 72"
+    ],
+    [
+     "op",
+     "local.get 1"
+    ],
+    [
+     "i32",
+     2
+    ],
+    [
+     "op",
+     "i32.store8 0 83"
+    ],
+    [
+     "op",
+     "local.get 1"
+    ],
+    [
+     "op",
+     "local.get 14"
+    ],
+    [
+     "op",
+     "v128.store 2 84"
+    ]
+   ],
+   "getter": null
+  },
+  {
+   "key": "MapTracker.maxPointsForSecondPassTracking",
+   "func": 1308,
+   "addr": 30317,
+   "args": [
+    [
+     "op",
+     "i32.store16 1 128"
+    ],
+    [
+     "op",
+     "local.get 1"
+    ],
+    [
+     "i32",
+     1
+    ],
+    [
+     "op",
+     "i32.store8 0 167"
+    ],
+    [
+     "op",
+     "local.get 1"
+    ],
+    [
+     "i32",
+     9
+    ],
+    [
+     "op",
+     "i32.store8 0 195"
+    ]
+   ],
+   "getter": null
+  },
+  {
+   "key": "MapTracker.maxPointsForSecondPassTracking",
+   "func": 1308,
+   "addr": 30317,
+   "args": [
+    [
+     "op",
+     "i32.store16 1 72"
+    ],
+    [
+     "op",
+     "local.get 1"
+    ],
+    [
+     "i32",
+     2
+    ],
+    [
+     "op",
+     "i32.store8 0 83"
+    ],
+    [
+     "op",
+     "local.get 1"
+    ],
+    [
+     "op",
+     "local.get 14"
+    ],
+    [
+     "op",
+     "v128.store 2 84"
+    ]
+   ],
+   "getter": null
+  },
+  {
+   "key": "MapTracker.maxPointsForSecondPassTracking",
+   "func": 1308,
+   "addr": 30317,
+   "args": [
+    [
+     "op",
+     "i32.store16 1 184"
+    ],
+    [
+     "op",
+     "local.get 1"
+    ],
+    [
+     "i32",
+     1
+    ],
+    [
+     "op",
+     "i32.store8 0 223"
+    ],
+    [
+     "op",
+     "local.get 1"
+    ],
+    [
+     "i32",
+     9
+    ],
+    [
+     "op",
+     "i32.store8 0 251"
+    ]
+   ],
+   "getter": null
+  },
+  {
+   "key": "MapTracker.maxPointsForSecondPassTracking",
+   "func": 1308,
+   "addr": 30317,
+   "args": [
+    [
+     "op",
+     "i32.store16 1 72"
+    ],
+    [
+     "op",
+     "local.get 1"
+    ],
+    [
+     "i32",
+     2
+    ],
+    [
+     "op",
+     "i32.store8 0 83"
+    ],
+    [
+     "op",
+     "local.get 1"
+    ],
+    [
+     "op",
+     "local.get 14"
+    ],
+    [
+     "op",
+     "v128.store 2 84"
+    ]
+   ],
+   "getter": null
+  },
+  {
+   "key": "RequestManager.usePreviouslyLocalizedNode",
+   "func": 1337,
+   "addr": 35044,
+   "args": [],
+   "getter": 1344
+  },
+  {
+   "key": "RequestManager.usePreviouslyLocalizedNode",
+   "func": 1337,
+   "addr": 35044,
+   "args": [],
+   "getter": 1344
+  },
+  {
+   "key": "RequestManager.usePreviouslyLocalizedNode",
+   "func": 1337,
+   "addr": 35044,
+   "args": [],
+   "getter": 1344
+  },
+  {
+   "key": "RequestManager.usePreviouslyLocalizedNode",
+   "func": 1337,
+   "addr": 35044,
+   "args": [],
+   "getter": 1344
+  },
+  {
+   "key": "RequestManager.usePreviouslyLocalizedNode",
+   "func": 1337,
+   "addr": 35044,
+   "args": [],
+   "getter": 1344
+  },
+  {
+   "key": "RequestManager.usePreviouslyLocalizedNode",
+   "func": 1337,
+   "addr": 35044,
+   "args": [],
+   "getter": 1344
+  },
+  {
+   "key": "RequestManager.usePreviouslyLocalizedNode",
+   "func": 1337,
+   "addr": 35044,
+   "args": [],
+   "getter": 1344
+  },
+  {
+   "key": "RequestManager.usePreviouslyLocalizedNode",
+   "func": 1337,
+   "addr": 35044,
+   "args": [],
+   "getter": 1344
+  },
+  {
+   "key": "RequestManager.usePreviouslyLocalizedNode",
+   "func": 1346,
+   "addr": 35044,
+   "args": [
+    [
+     "op",
+     "i32.store 2 0"
+    ],
+    [
+     "i32",
+     34963
+    ],
+    [
+     "op",
+     "local.get 0"
+    ],
+    [
+     "op",
+     "i32.load 2 4"
+    ]
+   ],
+   "getter": 15
+  },
+  {
+   "key": "RequestManager.usePreviouslyLocalizedNode",
+   "func": 1346,
+   "addr": 35044,
+   "args": [
+    [
+     "op",
+     "i32.eq"
+    ],
+    [
+     "op",
+     "br_if 1"
+    ],
+    [
+     "op",
+     "end"
+    ],
+    [
+     "op",
+     "local.get 0"
+    ],
+    [
+     "op",
+     "local.get 2"
+    ],
+    [
+     "op",
+     "i32.store 2 16"
+    ],
+    [
+     "op",
+     "local.get 0"
+    ]
+   ],
+   "getter": null
+  },
+  {
+   "key": "RequestManager.usePreviouslyLocalizedNode",
+   "func": 1347,
+   "addr": 35044,
+   "args": [
+    [
+     "op",
+     "i32.store 2 0"
+    ],
+    [
+     "op",
+     "local.get 7"
+    ],
+    [
+     "i32",
+     24
+    ],
+    [
+     "op",
+     "i32.add"
+    ],
+    [
+     "op",
+     "local.tee 1"
+    ],
+    [
+     "op",
+     "i32.load 2 0"
+    ],
+    [
+     "op",
+     "local.set 5"
+    ]
+   ],
+   "getter": null
+  },
+  {
+   "key": "RequestManager.usePreviouslyLocalizedNode",
+   "func": 1347,
+   "addr": 35044,
+   "args": [
+    [
+     "op",
+     "i32.eq"
+    ],
+    [
+     "op",
+     "br_if 1"
+    ],
+    [
+     "op",
+     "end"
+    ],
+    [
+     "op",
+     "local.get 7"
+    ],
+    [
+     "op",
+     "local.get 6"
+    ],
+    [
+     "op",
+     "i32.store 2 32"
+    ],
+    [
+     "op",
+     "local.get 7"
+    ]
+   ],
+   "getter": null
+  },
+  {
+   "key": "MapTracker.maxPointsForSecondPassTracking",
+   "func": 1353,
+   "addr": 30317,
+   "args": [
+    [
+     "op",
+     "i32.store16 1 56"
+    ],
+    [
+     "op",
+     "local.get 1"
+    ],
+    [
+     "i32",
+     2
+    ],
+    [
+     "op",
+     "i32.store8 0 67"
+    ],
+    [
+     "op",
+     "block"
+    ],
+    [
+     "op",
+     "local.get 3"
+    ],
+    [
+     "i32",
+     4
+    ]
+   ],
+   "getter": null
+  },
+  {
+   "key": "PosePnP.solveOptimalPoseUseAnalytical",
+   "func": 1563,
+   "addr": 28794,
+   "args": [
+    [
+     "i32",
+     0
+    ]
+   ],
+   "getter": 881
+  },
+  {
+   "key": "PosePnP.relocalizationConfidenceThreshold",
+   "func": 1563,
+   "addr": 37499,
+   "args": [
+    [
+     "f32",
+     0.30000001192092896
+    ]
+   ],
+   "getter": 458
+  },
+  {
+   "key": "PosePnP.imageTrackingConfidenceThreshold",
+   "func": 1563,
+   "addr": 37541,
+   "args": [
+    [
+     "f32",
+     0.15000000596046448
+    ]
+   ],
+   "getter": 458
+  },
+  {
+   "key": "PosePnP.confidenceAreaRadius",
+   "func": 1563,
+   "addr": 19080,
+   "args": [
+    [
+     "f32",
+     0.15000000596046448
+    ]
+   ],
+   "getter": 458
+  },
+  {
+   "key": "Bundle.rotationRobust",
+   "func": 1595,
+   "addr": 16544,
+   "args": [
+    [
+     "f64",
+     0.3
+    ]
+   ],
+   "getter": 1131
+  },
+  {
+   "key": "Bundle.rotationWt",
+   "func": 1595,
+   "addr": 18726,
+   "args": [
+    [
+     "f64",
+     0.3
+    ]
+   ],
+   "getter": 1131
+  },
+  {
+   "key": "Bundle.positionRobust",
+   "func": 1595,
+   "addr": 16522,
+   "args": [
+    [
+     "f64",
+     0.3
+    ]
+   ],
+   "getter": 1131
+  },
+  {
+   "key": "Bundle.positionWt",
+   "func": 1595,
+   "addr": 18708,
+   "args": [
+    [
+     "f64",
+     0.05
+    ]
+   ],
+   "getter": 1131
+  },
+  {
+   "key": "Bundle.poseEstCauchyLoss",
+   "func": 1595,
+   "addr": 20554,
+   "args": [
+    [
+     "f64",
+     0.01
+    ]
+   ],
+   "getter": 1131
+  },
+  {
+   "key": "Bundle.poseEstMaxNumIterations",
+   "func": 1595,
+   "addr": 21881,
+   "args": [
+    [
+     "i32",
+     100
+    ]
+   ],
+   "getter": 851
+  },
+  {
+   "key": "Bundle.poseEstFunctionTolerance",
+   "func": 1595,
+   "addr": 35524,
+   "args": [
+    [
+     "f64",
+     1e-10
+    ]
+   ],
+   "getter": 1131
+  },
+  {
+   "key": "Bundle.poseEstGradientTolerance",
+   "func": 1595,
+   "addr": 35446,
+   "args": [
+    [
+     "f64",
+     1e-10
+    ]
+   ],
+   "getter": 1131
+  },
+  {
+   "key": "Bundle.poseEstParameterTolerance",
+   "func": 1595,
+   "addr": 35491,
+   "args": [
+    [
+     "f64",
+     1e-06
+    ]
+   ],
+   "getter": 1131
+  },
+  {
+   "key": "Bundle.useNewPoseEstimationAnalytic",
+   "func": 1595,
+   "addr": 41633,
+   "args": [
+    [
+     "i32",
+     0
+    ]
+   ],
+   "getter": 881
+  },
+  {
+   "key": "Bundle.poseEstHuberLossComposed",
+   "func": 1595,
+   "addr": 38415,
+   "args": [
+    [
+     "f64",
+     0.00088
+    ]
+   ],
+   "getter": 1131
+  },
+  {
+   "key": "VpsMeshManager.debugDracoFile",
+   "func": 3579,
+   "addr": 33969,
+   "args": [
+    [
+     "op",
+     "local.get 3"
+    ],
+    [
+     "i32",
+     519025
+    ]
+   ],
+   "getter": 555
+  },
+  {
+   "key": "VpsRequestManager.getGraphRadius",
+   "func": 3658,
+   "addr": 19047,
+   "args": [
+    [
+     "i32",
+     20
+    ]
+   ],
+   "getter": 851
+  },
+  {
+   "key": "VpsRequestManager.getGraphMaxNodes",
+   "func": 3658,
+   "addr": 23007,
+   "args": [
+    [
+     "i32",
+     0
+    ]
+   ],
+   "getter": 851
+  },
+  {
+   "key": "WorldMap.maxInternalSquaredResidualForTriangulatedPts",
+   "func": 4050,
+   "addr": 20466,
+   "args": [
+    [
+     "f32",
+     0.010000000707805157
+    ]
+   ],
+   "getter": 458
+  },
+  {
+   "key": "WorldMap.requiredPointsForCovisibility",
+   "func": 4050,
+   "addr": 12659,
+   "args": [
+    [
+     "i32",
+     10
+    ]
+   ],
+   "getter": 851
+  },
+  {
+   "key": "WorldMap.adjustUntriangulatedPoints",
+   "func": 4050,
+   "addr": 20181,
+   "args": [
+    [
+     "i32",
+     1
+    ]
+   ],
+   "getter": 881
+  },
+  {
+   "key": "WorldMap.adjustPoints",
+   "func": 4050,
+   "addr": 19923,
+   "args": [
+    [
+     "i32",
+     1
+    ]
+   ],
+   "getter": 881
+  },
+  {
+   "key": "WorldMap.maxCloudPointAdjustmentSqDistanceM",
+   "func": 4050,
+   "addr": 47223,
+   "args": [
+    [
+     "f32",
+     0.004900000058114529
+    ]
+   ],
+   "getter": 458
+  },
+  {
+   "key": "FramePoint.useInitialDepth",
+   "func": 4073,
+   "addr": 29140,
+   "args": [
+    [
+     "i32",
+     1
+    ]
+   ],
+   "getter": 881
+  },
+  {
+   "key": "FramePoint.initialDepthCertaintyThreshold",
+   "func": 4073,
+   "addr": 36867,
+   "args": [
+    [
+     "f32",
+     4.000000053405728e-10
+    ]
+   ],
+   "getter": 458
+  },
+  {
+   "key": "FramePoint.skypointsDistance",
+   "func": 4073,
+   "addr": 35353,
+   "args": [
+    [
+     "f32",
+     100.0
+    ]
+   ],
+   "getter": 458
+  },
+  {
+   "key": "FramePoint.knownDepthCertainty",
+   "func": 4073,
+   "addr": 12543,
+   "args": [
+    [
+     "f32",
+     0.949999988079071
+    ]
+   ],
+   "getter": 458
+  }
+ ]
+}

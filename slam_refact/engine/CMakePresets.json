@@ -1,0 +1,60 @@
+{
+  "version": 3,
+  "cmakeMinimumRequired": {
+    "major": 3,
+    "minor": 21,
+    "patch": 0
+  },
+  "configurePresets": [
+    {
+      "name": "slam-refact-native",
+      "displayName": "slam_refact native (Ninja, Release)",
+      "generator": "Ninja",
+      "binaryDir": "${sourceDir}/../../build/slam-refact-native",
+      "cacheVariables": {
+        "CMAKE_BUILD_TYPE": "Release",
+        "FETCHCONTENT_FULLY_DISCONNECTED": "ON",
+        "SLAM_REFACT_BUILD_TESTS": "ON",
+        "SLAM_REFACT_BUILD_HARNESS": "ON"
+      }
+    },
+    {
+      "name": "slam-refact-wasm",
+      "displayName": "slam_refact WASM (em++, Release); source ~/emsdk/emsdk_env.sh first",
+      "generator": "Ninja",
+      "binaryDir": "${sourceDir}/../../build/slam-refact-wasm",
+      "toolchainFile": "$env{EMSDK}/upstream/emscripten/cmake/Modules/Platform/Emscripten.cmake",
+      "cacheVariables": {
+        "CMAKE_BUILD_TYPE": "Release",
+        "SLAM_REFACT_BUILD_TESTS": "OFF",
+        "SLAM_REFACT_BUILD_HARNESS": "OFF"
+      }
+    }
+  ],
+  "buildPresets": [
+    {
+      "name": "slam-refact-native",
+      "configurePreset": "slam-refact-native",
+      "jobs": 2
+    },
+    {
+      "name": "slam-refact-wasm",
+      "configurePreset": "slam-refact-wasm",
+      "jobs": 2
+    }
+  ],
+  "testPresets": [
+    {
+      "name": "slam-refact-native",
+      "configurePreset": "slam-refact-native",
+      "output": {
+        "outputOnFailure": true
+      },
+      "execution": {
+        "jobs": 2,
+        "timeout": 300,
+        "noTestsAction": "error"
+      }
+    }
+  ]
+}

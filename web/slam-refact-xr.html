@@ -1,0 +1,71 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+  <meta charset="utf-8">
+  <base href="slam-refact-xr/samples/phone/">
+  <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover">
+  <title>slam_refact 폰 시험</title>
+  <link rel="stylesheet" href="./style.css">
+  <!-- No script from the engine is loaded here: xr.js (and the chunk) registers DeviceMotion/DeviceOrientation listeners as soon as it loads, so app.js
+       loads it only after the Start click (XR_SRC). Every path is relative to this page, nothing comes from a CDN. Served by web-chunk/samples/serve.mjs
+       this page is /samples/phone/index.html, so ../../engine/ is /engine/ and ../../three/ is /three/. Package W: when this page moves next to web/,
+       change only XR_SRC and the THREE import in app.js (and the targets/ base if needed). -->
+</head>
+<body>
+  <canvas id="camerafeed"></canvas>
+
+  <section id="start-screen">
+    <h1>slam_refact 폰 시험</h1>
+    <p><b>시작</b>을 누르기 전에는 카메라와 모션 센서를 사용하지 않습니다. 시작을 누르면 브라우저가 카메라(기기에 따라 모션 센서도) 권한을 물어볼 수 있습니다.</p>
+    <ul>
+      <li>이 페이지는 영상·센서 값을 저장하거나 서버로 보내지 않습니다.</li>
+      <li>이 페이지는 외부 서버에 요청하지 않습니다(이 서버의 파일만 읽습니다).</li>
+      <li>지표 JSON은 아래 <b>지표 JSON 받기</b>를 누를 때만 내려받아집니다. 영상과 센서 원본은 들어 있지 않고, 브라우저 정보(user agent)와 화면 방향은 들어 있습니다.</li>
+      <li><b>세로</b> 화면을 권장합니다. 가로 화면은 실기기 검증 전입니다.</li>
+    </ul>
+    <button id="start" type="button">시작</button>
+    <p id="start-note" class="note"></p>
+    <section id="xr-links" class="note">
+      <h2>다른 샘플과 자료</h2>
+      <ul>
+        <li><a href="../threejs/index.html">three.js 샘플</a> · <a href="../aframe/index.html">A-Frame 샘플</a> (탭하면 큐브를 놓음. 열면 시작 버튼이 먼저 나오고, 누르기 전에는 카메라·모션 센서를 사용하지 않습니다)</li>
+        <li>이미지 타깃 인쇄용 시트: <a href="targets/print/demo-flat-sheet.pdf">평면 카드(PDF)</a> · <a href="targets/print/demo-cylinder-sheet.pdf">원통 라벨 곡면 데모(PDF)</a>. 인쇄한 뒤 <b>시작</b>하고, 메뉴의 이미지 타깃에서 해당 타깃을 체크하세요.</li>
+        <li>배포 기록: <a href="../../deploy.json">deploy.json</a> · <a href="../../engine/slam-refact-engine/manifest.json">엔진 manifest</a></li>
+      </ul>
+    </section>
+  </section>
+
+  <section id="hud" hidden>
+    <div class="row"><span>추적</span><b id="h-status" aria-live="polite">-</b> <span id="h-reason" class="dim"></span></div>
+    <div class="row"><span>월드 포인트</span><b id="h-points">0</b><span class="dim"> · 갱신 </span><b id="h-ups">0</b><span class="dim">/s</span></div>
+    <div class="row"><span>방향</span><b id="h-orient">-</b></div>
+    <div class="row dim" id="h-video"></div>
+    <div class="row"><span>이미지 타깃</span><b id="h-targets">없음</b></div>
+    <div class="row dim" id="h-msg">화면을 탭하면 물체를 놓습니다.</div>
+  </section>
+
+  <div id="errors" hidden role="alert"></div>
+
+  <details id="panel">
+    <summary>메뉴</summary>
+    <div class="panel-body">
+      <div class="buttons">
+        <button id="b-clear" type="button" disabled>물체 지우기</button>
+        <button id="b-recenter" type="button" disabled>원점 다시 잡기</button>
+        <button id="b-stop" type="button" disabled>정지</button>
+        <button id="b-metrics" type="button" disabled>지표 JSON 받기</button>
+      </div>
+      <fieldset>
+        <legend>이미지 타깃 (평면)</legend>
+        <div id="demo-targets" class="dim">번들 타깃을 확인하는 중…</div>
+        <label>타깃 JSON <input id="f-json" type="file" accept="application/json,.json"></label>
+        <label>타깃 이미지 <input id="f-image" type="file" accept="image/*"></label>
+        <button id="b-add-target" type="button">선택한 파일로 추가</button>
+        <ul id="target-list"></ul>
+      </fieldset>
+    </div>
+  </details>
+
+  <script type="module" src="./app.js"></script>
+</body>
+</html>

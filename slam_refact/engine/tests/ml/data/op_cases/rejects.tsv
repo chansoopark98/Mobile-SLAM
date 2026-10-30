@@ -1,0 +1,20 @@
+# model	expected substring of the error  (gen_op_cases.py; review M4)
+reject_pad_int64_wraps_to_small	padding out of the int32 range
+reject_pad_int64_huge	padding out of the int32 range
+reject_pad_negative	negative padding
+reject_slice_stride_2pow32_is_zero_as_int32	out of the int32 range
+reject_slice_begin_2pow32	out of the int32 range
+reject_tensor_count_2pow32_wraps_on_wasm32	has more than
+reject_tensor_count_9266_after_wrap	has more than
+reject_reshape_target_overflows	target shape has too many elements
+reject_conv_dilation_2pow30	out of range
+reject_conv_stride_2pow30	out of range
+reject_conv_im2col_too_large	im2col buffer too large
+reject_maxpool_window_2pow30	out of range
+reject_tconv_stride_2pow30	stride out of range
+reject_resize_size_int32_max	size out of range
+reject_transform_tensor_bilinear_height_zero	invalid output size
+reject_arena_exceeds_limit	exceeds the limit
+reject_resize_legacy_2pow25_outputs	exceeds the limit
+reject_total_memory_arena_plus_im2col	exceeds the limit
+reject_shared_buffer_constants_total_memory	exceeds the limit

@@ -1,0 +1,17 @@
+{
+  "schema": "slam-refact-web-deploy-v1",
+  "record_kind": "source-artifact-index",
+  "engine": "slam_refact",
+  "artifacts": {
+    "js": {
+      "file": "slam_refact_engine.js",
+      "sha256": "491b8974faa8f6f59f36095581c7b0039f1cb7c05d8f66ed0d018afe76a080c8",
+      "bytes": 99484
+    },
+    "wasm": {
+      "file": "slam_refact_engine.wasm",
+      "sha256": "3fdd1a79c3fd9ee0631e8bce484cd1e5b9ce9f680874870a8fce532634e19ffa",
+      "bytes": 3490251
+    }
+  }
+}

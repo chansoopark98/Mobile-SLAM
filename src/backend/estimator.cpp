@@ -1,0 +1,520 @@
+#include <fstream>
+#include <iostream>
+#ifndef __EMSCRIPTEN__
+#include <mutex>
+#endif
+
+#include "backend/estimator.h"
+#include "utility/config.h"
+
+namespace backend {
+
+Estimator::Estimator()
+    : feature_manager_(),
+      optimizer_(&sliding_window_, &feature_manager_),
+      failure_detector_(&sliding_window_, &feature_manager_),
+      initializer_(&sliding_window_, &feature_manager_, &motion_estimator_, &all_image_frame_, &frame_count_,
+                   &marginalization_flag_, &g_, &r_ic_, &t_ic_) {
+    clearState();
+}
+
+void Estimator::setParameter() {
+    t_ic_ = utility::g_config.camera.t_ic;
+    r_ic_ = utility::g_config.camera.r_ic;
+    // sqrt_info = focal_length / 1.5: weights reprojection residual (in normalized coords)
+    // by the actual camera focal length. This correctly maps ~1.5 pixel noise to
+    // normalized coordinate noise regardless of camera/resolution.
+    // VINS-Mono hardcodes FOCAL_LENGTH=460 because EuRoC focal≈460.
+    // For other cameras (TUM-VI focal≈191, mobile focal≈232), use actual value.
+    backend::factor::ProjectionFactor::sqrt_info =
+        (utility::g_config.camera.focal_length / 1.5) * Eigen::Matrix2d::Identity();
+
+    // Set extrinsic parameters in optimizer
+    optimizer_.setExtrinsicParameters(t_ic_, r_ic_);
+}
+
+void Estimator::clearState() {
+    optimizer_.reset();
+    sliding_window_.clearSlidingWindow();
+    latest_image_update_usable_ = false;
+    last_solver_diagnostics_ = SolverDiagnostics{};
+    ++reset_generation_;
+
+    t_ic_ = Eigen::Vector3d::Zero();
+    r_ic_ = Eigen::Matrix3d::Identity();
+    g_ = Eigen::Vector3d::Zero();
+
+    all_image_frame_.clear();
+
+    solver_flag_ = common::SolverFlag::INITIAL;
+    first_imu_ = false;
+    frame_count_ = 0;
+    initial_timestamp_ = 0;
+
+    prev_acc_ = Eigen::Vector3d::Zero();
+    prev_gyro_ = Eigen::Vector3d::Zero();
+
+    tmp_pre_integration_.reset();
+
+    feature_manager_.clearState();
+
+    last_R_end_ = Eigen::Matrix3d::Identity();
+    last_P_end_ = Eigen::Vector3d::Zero();
+
+    failure_occur_ = 0;
+    marginalization_flag_ = common::MarginalizationFlag::MARGIN_OLD_KEYFRAME;
+}
+
+void Estimator::reset() {
+#ifndef __EMSCRIPTEN__
+    std::lock_guard<std::mutex> lock(estimator_mutex_);
+#endif
+    clearState();
+    setParameter();
+}
+
+void Estimator::propagateIMUState(int frame_index, double dt, const Eigen::Vector3d& linear_acceleration,
+                                  const Eigen::Vector3d& angular_velocity) {
+    // Store IMU data in buffers
+    sliding_window_.pushBackBuffer(frame_index, dt, linear_acceleration, angular_velocity);
+
+    // Save state for NaN recovery
+    Eigen::Vector3d saved_P = sliding_window_[frame_index].P;
+    Eigen::Vector3d saved_V = sliding_window_[frame_index].V;
+    Eigen::Matrix3d saved_R = sliding_window_[frame_index].R;
+
+    // Bias-corrected measurements
+    Eigen::Vector3d bias_corrected_prev_acc =
+        sliding_window_[frame_index].R * (prev_acc_ - sliding_window_[frame_index].Ba) - g_;
+    Eigen::Vector3d bias_corrected_gyro = 0.5 * (prev_gyro_ + angular_velocity) - sliding_window_[frame_index].Bg;
+
+    // update rotation: R = R * exp(gyro*dt)
+    sliding_window_[frame_index].R *= Utility::deltaQ(bias_corrected_gyro * dt).normalized().toRotationMatrix();
+
+    // Match preintegration's exact time moments of affine world acceleration.
+    Eigen::Vector3d bias_corrected_curr_acc =
+        sliding_window_[frame_index].R * (linear_acceleration - sliding_window_[frame_index].Ba) - g_;
+    Eigen::Vector3d bias_corrected_acc = 0.5 * (bias_corrected_prev_acc + bias_corrected_curr_acc);
+
+    sliding_window_[frame_index].P += dt * sliding_window_[frame_index].V + dt * dt *
+        (bias_corrected_prev_acc / 3.0 + bias_corrected_curr_acc / 6.0);
+    sliding_window_[frame_index].V += dt * bias_corrected_acc;
+
+    // NaN guard: restore previous state if propagation produced NaN
+    if (!sliding_window_[frame_index].P.allFinite() ||
+        !sliding_window_[frame_index].V.allFinite() ||
+        !sliding_window_[frame_index].R.allFinite()) {
+#ifndef NDEBUG
+        std::cout << "NaN detected in IMU propagation at frame " << frame_index << ", reverting" << std::endl;
+#endif
+        sliding_window_[frame_index].P = saved_P;
+        sliding_window_[frame_index].V = saved_V;
+        sliding_window_[frame_index].R = saved_R;
+        return;
+    }
+}
+
+void Estimator::processIMU(double dt, const Eigen::Vector3d& linear_acceleration,
+                           const Eigen::Vector3d& angular_velocity) {
+#ifndef __EMSCRIPTEN__
+    std::lock_guard<std::mutex> lock(estimator_mutex_);
+#endif
+    if (!std::isfinite(dt) || dt < 0 || !linear_acceleration.allFinite() || !angular_velocity.allFinite()) {
+        latest_image_update_usable_ = false;
+        last_solver_diagnostics_.usable = false;
+        last_solver_diagnostics_.reason = "invalid_imu_input";
+        return;
+    }
+    // check initial IMU data
+    if (!first_imu_) {
+        first_imu_ = true;
+        prev_acc_ = linear_acceleration;
+        prev_gyro_ = angular_velocity;
+    }
+    // if pre_integrations[frame_count_] is not initialized, initialize it
+    // this is generated at every new image frame
+    if (!sliding_window_[frame_count_].pre_integration) {
+        sliding_window_[frame_count_].pre_integration = std::make_unique<backend::factor::IntegrationBase>(
+            prev_acc_, prev_gyro_, sliding_window_[frame_count_].Ba, sliding_window_[frame_count_].Bg);
+    }
+    if (dt == 0) {
+        prev_acc_ = linear_acceleration;
+        prev_gyro_ = angular_velocity;
+        return;
+    }
+
+    if (frame_count_ != 0) {
+        if (sliding_window_[frame_count_].dt_buf.size() >= 4096) {
+            clearState();
+            setParameter();
+            last_solver_diagnostics_.reason = "estimator_history_overflow";
+            return;
+        }
+        if (!tmp_pre_integration_) {
+            tmp_pre_integration_ = std::make_unique<backend::factor::IntegrationBase>(
+                prev_acc_, prev_gyro_, sliding_window_[frame_count_].Ba, sliding_window_[frame_count_].Bg);
+        }
+        sliding_window_.pushBackPreintegration(frame_count_, dt, linear_acceleration, angular_velocity);
+        tmp_pre_integration_->push_back(dt, linear_acceleration, angular_velocity);
+        propagateIMUState(frame_count_, dt, linear_acceleration, angular_velocity);
+    }
+
+    prev_acc_ = linear_acceleration;
+    prev_gyro_ = angular_velocity;
+}
+
+void Estimator::processImage(const common::ImageData& image, double timestamp) {
+#ifndef __EMSCRIPTEN__
+    std::lock_guard<std::mutex> lock(estimator_mutex_);
+#endif
+    latest_image_update_usable_ = false;
+    last_solver_diagnostics_ = SolverDiagnostics{};
+    last_solver_diagnostics_.reason = "initializing";
+    if (!std::isfinite(timestamp)) {
+        last_solver_diagnostics_.reason = "invalid_image_timestamp";
+        return;
+    }
+    if (feature_manager_.addFeatureAndCheckParallax(frame_count_, image)) {
+        marginalization_flag_ = common::MarginalizationFlag::MARGIN_OLD_KEYFRAME;
+    } else {
+        marginalization_flag_ = common::MarginalizationFlag::MARGIN_NEW_GENERAL_FRAME;
+    }
+    if (frame_count_ == WINDOW_SIZE &&
+        marginalization_flag_ == common::MarginalizationFlag::MARGIN_NEW_GENERAL_FRAME) {
+        const auto& previous = sliding_window_[WINDOW_SIZE - 1];
+        const auto& current = sliding_window_[WINDOW_SIZE];
+        if ((previous.pre_integration && current.pre_integration &&
+             previous.pre_integration->sum_dt + current.pre_integration->sum_dt > 10) ||
+            previous.dt_buf.size() + current.dt_buf.size() > 4096) {
+            // Retire the oldest keyframe before merging would exceed the
+            // existing usable IMU interval or the bounded history budget.
+            marginalization_flag_ = common::MarginalizationFlag::MARGIN_OLD_KEYFRAME;
+        }
+    }
+
+    sliding_window_[frame_count_].timestamp = timestamp;
+
+    common::ImageFrame imageframe(image, timestamp);
+    for (auto it = imageframe.points.begin(); it != imageframe.points.end();) {
+        const frontend::FeaturePerFrame observation(it->second);
+        if (!it->second.allFinite() || !observation.ray_vector.allFinite()) it = imageframe.points.erase(it);
+        else { it->second.head<3>() = observation.ray_vector; ++it; }
+    }
+    imageframe.pre_integration = std::move(tmp_pre_integration_);
+    all_image_frame_.insert(std::make_pair(timestamp, std::move(imageframe)));
+    if (all_image_frame_.size() > 4096) {
+        clearState();
+        setParameter();
+        last_solver_diagnostics_.reason = "estimator_history_overflow";
+        return;
+    }
+    tmp_pre_integration_ = std::make_unique<backend::factor::IntegrationBase>(prev_acc_, prev_gyro_, sliding_window_[frame_count_].Ba,
+                                                                sliding_window_[frame_count_].Bg);
+
+    if (solver_flag_ == common::SolverFlag::INITIAL) {
+        if (frame_count_ == WINDOW_SIZE) {
+            bool visual_map_init_result = false;
+            if (timestamp - initial_timestamp_ > 0.1) {
+                visual_map_init_result = initializer_.initialize();
+                initial_timestamp_ = timestamp;
+            }
+
+            if (visual_map_init_result) {
+                // Validate state before entering optimization
+                bool state_valid = true;
+                for (int i = 0; i <= WINDOW_SIZE; i++) {
+                    if (!sliding_window_[i].P.allFinite() || !sliding_window_[i].R.allFinite() ||
+                        !sliding_window_[i].V.allFinite()) {
+#ifndef NDEBUG
+                        std::cout << "Invalid state at sliding window index " << i << " after initialization" << std::endl;
+#endif
+                        state_valid = false;
+                        break;
+                    }
+                    if (!sliding_window_[i].pre_integration) {
+#ifndef NDEBUG
+                        std::cout << "Null pre_integration at index " << i << " after initialization" << std::endl;
+#endif
+                        state_valid = false;
+                        break;
+                    }
+                }
+                if (!g_.allFinite() || g_.norm() < 1.0) {
+#ifndef NDEBUG
+                    std::cout << "Invalid gravity vector after initialization: " << g_.transpose()
+                              << " (norm=" << g_.norm() << ")" << std::endl;
+#endif
+                    state_valid = false;
+                }
+
+                if (state_valid) {
+                    solver_flag_ = common::SolverFlag::NON_LINEAR;
+                    std::cout << "[VIO] Initialization SUCCESS" << std::endl;
+                    std::cout << "[VIO]   gravity: " << g_.transpose()
+                              << " (norm=" << g_.norm() << ")" << std::endl;
+                    std::cout << "[VIO]   V[0]: " << sliding_window_[0].V.transpose()
+                              << " (norm=" << sliding_window_[0].V.norm() << ")" << std::endl;
+                    std::cout << "[VIO]   Ba[0]: " << sliding_window_[0].Ba.transpose() << std::endl;
+                    std::cout << "[VIO]   Bg[0]: " << sliding_window_[0].Bg.transpose() << std::endl;
+                    solveOdometry();
+                } else {
+#ifndef NDEBUG
+                    std::cout << "Post-initialization validation failed, will retry on next frame" << std::endl;
+#endif
+                }
+                slideWindow();
+                feature_manager_.removeFailures();
+
+                storeLastPoseInSlidingWindow();
+            } else {
+                slideWindow();
+            }
+        } else {
+            frame_count_++;
+        }
+    } else if (solver_flag_ == common::SolverFlag::NON_LINEAR) {
+        solveOdometry();
+
+        // Post-optimization NaN check: full reset if state is corrupted
+        bool state_corrupted = false;
+        for (int i = 0; i <= WINDOW_SIZE; i++) {
+            if (!sliding_window_[i].P.allFinite() || !sliding_window_[i].V.allFinite() ||
+                !sliding_window_[i].R.allFinite()) {
+                state_corrupted = true;
+                break;
+            }
+        }
+        if (state_corrupted) {
+            std::cout << "[VIO] Post-optimization NaN detected, performing full reset" << std::endl;
+            clearState();
+            setParameter();
+            last_solver_diagnostics_.reason = "nonfinite_state_reset";
+            return;
+        }
+
+        slideWindow();
+        feature_manager_.removeFailures();
+
+        storeLastPoseInSlidingWindow();
+    }
+}
+
+void Estimator::storeLastPoseInSlidingWindow() {
+    last_R_end_ = sliding_window_.back().R;
+    last_P_end_ = sliding_window_.back().P;
+}
+
+void Estimator::cleanupOldImageFrames(double timestamp) {
+    auto it_0 = all_image_frame_.find(timestamp);
+    if (it_0 == all_image_frame_.end()) {
+        return;
+    }
+
+    // 1. Cleanup pre_integration of current frame
+    cleanupPreIntegration(it_0->second);
+
+    // 2. Cleanup pre_integration of previous frames
+    for (auto it = all_image_frame_.begin(); it != it_0; ++it) {
+        cleanupPreIntegration(it->second);
+    }
+
+    // 3. Remove frames
+    all_image_frame_.erase(all_image_frame_.begin(), it_0);
+    all_image_frame_.erase(timestamp);
+}
+
+void Estimator::cleanupPreIntegration(common::ImageFrame& frame) {
+    frame.pre_integration.reset();
+}
+
+void Estimator::slideWindow() {
+    if (frame_count_ == WINDOW_SIZE) {
+        if (marginalization_flag_ == common::MarginalizationFlag::MARGIN_OLD_KEYFRAME) {
+            slideWindowOldKeyframe();
+        } else if (marginalization_flag_ == common::MarginalizationFlag::MARGIN_NEW_GENERAL_FRAME) {
+            slideWindowNewGeneralFrame();
+        }
+    }
+}
+
+void Estimator::slideWindowNewGeneralFrame() {
+    const Matrix3d old_R = sliding_window_[WINDOW_SIZE - 1].R * r_ic_;
+    const Vector3d old_P = sliding_window_[WINDOW_SIZE - 1].P + sliding_window_[WINDOW_SIZE - 1].R * t_ic_;
+    const Matrix3d new_R = sliding_window_[WINDOW_SIZE].R * r_ic_;
+    const Vector3d new_P = sliding_window_[WINDOW_SIZE].P + sliding_window_[WINDOW_SIZE].R * t_ic_;
+    // preintegrate new general frame onto the last keyframe
+    for (unsigned int i = 0; i < sliding_window_[WINDOW_SIZE].dt_buf.size(); i++) {
+        double tmp_dt = sliding_window_[WINDOW_SIZE].dt_buf[i];
+        Vector3d tmp_linear_acceleration = sliding_window_[WINDOW_SIZE].linear_acceleration_buf[i];
+        Vector3d tmp_angular_velocity = sliding_window_[WINDOW_SIZE].angular_velocity_buf[i];
+
+        sliding_window_.pushBackPreintegration(WINDOW_SIZE - 1, tmp_dt, tmp_linear_acceleration, tmp_angular_velocity);
+        sliding_window_.pushBackBuffer(WINDOW_SIZE - 1, tmp_dt, tmp_linear_acceleration, tmp_angular_velocity);
+    }
+    sliding_window_.copyFrame(WINDOW_SIZE - 1, WINDOW_SIZE);
+    sliding_window_.createNewPreintegration(WINDOW_SIZE, prev_acc_, prev_gyro_);
+    sliding_window_.clearBuffer(WINDOW_SIZE);
+    feature_manager_.removeFront(frame_count_, old_R, old_P, new_R, new_P);
+}
+
+void Estimator::slideWindowOldKeyframe() {
+    Matrix3d back_R0 = sliding_window_.front().R;
+    Vector3d back_P0 = sliding_window_.front().P;
+
+    double t_0 = sliding_window_.front().timestamp;
+    for (int i = 0; i < WINDOW_SIZE; i++) {
+        sliding_window_.swapBuffer(i, i + 1);
+        sliding_window_.swapFrame(i, i + 1);
+    }
+    sliding_window_.copyFrame(WINDOW_SIZE, WINDOW_SIZE - 1);
+    sliding_window_.createNewPreintegration(WINDOW_SIZE, prev_acc_, prev_gyro_);
+    sliding_window_.clearBuffer(WINDOW_SIZE);
+
+    cleanupOldImageFrames(t_0);
+
+    bool shift_depth = (solver_flag_ == common::SolverFlag::NON_LINEAR) ? true : false;
+    if (shift_depth) {
+        Matrix3d R0, R1;
+        Vector3d P0, P1;
+        R0 = back_R0 * r_ic_;
+        R1 = sliding_window_.front().R * r_ic_;
+        P0 = back_P0 + back_R0 * t_ic_;
+        P1 = sliding_window_.front().P + sliding_window_.front().R * t_ic_;
+        feature_manager_.removeBackShiftDepth(R0, P0, R1, P1);
+    } else
+        feature_manager_.removeBack();
+}
+
+void Estimator::solveOdometry() {
+    if (frame_count_ < WINDOW_SIZE)
+        return;
+
+    if (solver_flag_ == common::SolverFlag::NON_LINEAR) {
+        feature_manager_.triangulateAcrossAllViews(sliding_window_, t_ic_, r_ic_);
+        feature_manager_.removeFailures();
+        latest_image_update_usable_ = optimizer_.optimize(marginalization_flag_);
+        last_solver_diagnostics_ = optimizer_.getLastSolverDiagnostics();
+        const std::string measured_reason = failure_detector_.getMeasuredFailureReason(last_P_end_, last_R_end_);
+        if (!measured_reason.empty() && measured_reason != last_solver_diagnostics_.qualityReason) {
+            if (!last_solver_diagnostics_.qualityReason.empty()) last_solver_diagnostics_.qualityReason += ";";
+            last_solver_diagnostics_.qualityReason += measured_reason;
+        }
+        if (!latest_image_update_usable_) return;
+
+        // Update extrinsic parameters from optimizer
+        t_ic_ = optimizer_.getTic();
+        r_ic_ = optimizer_.getRic();
+    }
+}
+
+std::vector<Eigen::Vector3d> Estimator::getSlidingWindowMapPoints() const {
+#ifndef __EMSCRIPTEN__
+    std::lock_guard<std::mutex> lock(estimator_mutex_);
+#endif
+    std::vector<Eigen::Vector3d> new_points;
+    if (solver_flag_ == common::SolverFlag::NON_LINEAR) {
+        int slot = 0;
+        for (const auto& it_per_id : feature_manager_.feature_bank_) {
+            if (!it_per_id.isParameterCandidate()) continue;
+            if (slot++ >= NUM_OF_FEATURES) break;
+            if (!it_per_id.isDepthAdmitted() || it_per_id.geometry_pending) continue;
+            if (it_per_id.estimated_depth > 0 && it_per_id.solve_flag == 1) {
+                Eigen::Vector3d point_normalized = it_per_id.feature_per_frame[0].ray_vector;
+                Eigen::Vector3d point_3d = point_normalized * it_per_id.estimated_depth;
+                int frame_idx = it_per_id.start_frame;
+                if (frame_idx < WINDOW_SIZE) {
+                    Eigen::Matrix3d R_wc = sliding_window_[frame_idx].R * r_ic_;
+                    Eigen::Vector3d t_wc = sliding_window_[frame_idx].P + sliding_window_[frame_idx].R * t_ic_;
+                    Eigen::Vector3d point_world = R_wc * point_3d + t_wc;
+                    if (point_world.allFinite()) {
+                        new_points.push_back(point_world);
+                    }
+                }
+            }
+        }
+    }
+    return new_points;
+}
+
+void Estimator::logTriangulationDiag(int frame_num) const {
+    int n_unsolved = 0, n_solved = 0, n_failed = 0, n_init_depth = 0;
+    double depth_sum = 0, depth_min = 1e9, depth_max = 0;
+    double init_d = utility::g_config.estimator.init_depth;
+    int slot = 0;
+    for (const auto& feat : feature_manager_.feature_bank_) {
+        if (!feat.isParameterCandidate()) continue;
+        if (slot++ >= NUM_OF_FEATURES) break;
+        if (feat.solve_flag == 0) { n_unsolved++; }
+        else if (feat.solve_flag == 1) {
+            n_solved++;
+            double d = feat.estimated_depth;
+            depth_sum += d;
+            if (d < depth_min) depth_min = d;
+            if (d > depth_max) depth_max = d;
+            if (std::abs(d - init_d) < 0.01) n_init_depth++;
+        } else {
+            n_failed++;
+        }
+    }
+    Eigen::Vector3d vel = sliding_window_[WINDOW_SIZE].V;
+    Eigen::Vector3d pos = sliding_window_[WINDOW_SIZE].P;
+    Eigen::Vector3d ba = sliding_window_[WINDOW_SIZE].Ba;
+    Eigen::Vector3d bg = sliding_window_[WINDOW_SIZE].Bg;
+    double avg_depth = n_solved > 0 ? depth_sum / n_solved : 0;
+    std::cout << "[VIO DIAG] f=" << frame_num
+              << " tri: ok=" << n_solved << " wait=" << n_unsolved
+              << " fail=" << n_failed << " default=" << n_init_depth
+              << " depth: avg=" << avg_depth
+              << " min=" << (n_solved > 0 ? depth_min : 0)
+              << " max=" << (n_solved > 0 ? depth_max : 0)
+              << " |vel|=" << vel.norm()
+              << " vel=(" << vel.x() << "," << vel.y() << "," << vel.z() << ")"
+              << " ba=(" << ba.x() << "," << ba.y() << "," << ba.z() << ")"
+              << " bg=(" << bg.x() << "," << bg.y() << "," << bg.z() << ")"
+              << std::endl;
+}
+
+std::vector<common::SolvedFeature> Estimator::getSolvedFeatures() const {
+    std::vector<common::SolvedFeature> result;
+    int slot = 0;
+    for (const auto& it_per_id : feature_manager_.feature_bank_) {
+        if (!it_per_id.isParameterCandidate()) continue;
+        if (slot++ >= NUM_OF_FEATURES) break;
+        if (!it_per_id.isDepthAdmitted() || it_per_id.geometry_pending) continue;
+        if (it_per_id.feature_per_frame.back().projection_outlier) continue;
+        if (it_per_id.solve_flag != 1 || !std::isfinite(it_per_id.estimated_depth) ||
+            it_per_id.estimated_depth <= 1e-10)
+            continue;
+        int imu_i = it_per_id.start_frame;
+        Eigen::Vector3d pts_i = it_per_id.feature_per_frame[0].ray_vector * it_per_id.estimated_depth;
+        Eigen::Vector3d world_pos = sliding_window_[imu_i].R * (r_ic_ * pts_i + t_ic_) + sliding_window_[imu_i].P;
+        if (!world_pos.allFinite()) continue;
+
+        common::SolvedFeature sf;
+        sf.id = it_per_id.feature_id;
+        sf.position = world_pos;
+        sf.track_num = static_cast<int>(it_per_id.feature_per_frame.size());
+        sf.observation = Eigen::Vector2d::Zero();  // filled by caller with current frame observation
+        result.push_back(sf);
+    }
+    return result;
+}
+
+common::VINSResult Estimator::getLatestVINSResult() const {
+    common::VINSResult vr;
+    // Use WINDOW_SIZE - 1 to match VINS-Mobile convention:
+    //   solved_vins.header = vins.Headers[WINDOW_SIZE - 1]
+    // After slideWindow, slots WINDOW_SIZE-1 and WINDOW_SIZE have the same
+    // P/R/V values (copyFrame), but using WINDOW_SIZE-1 ensures the timestamp
+    // matches what the PnP frontend stores in headers_[] via processImage.
+    const auto& latest = sliding_window_[WINDOW_SIZE - 1];
+    vr.timestamp = latest.timestamp;
+    vr.P = latest.P;
+    vr.R = latest.R;
+    vr.V = latest.V;
+    vr.Ba = latest.Ba;
+    vr.Bg = latest.Bg;
+    return vr;
+}
+
+}  // namespace backend

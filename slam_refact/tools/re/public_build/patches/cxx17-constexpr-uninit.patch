@@ -1,0 +1,24 @@
+diff -ruN a/c8/hmatrix.h b/c8/hmatrix.h
+--- a/c8/hmatrix.h	2026-10-15 18:46:28.401355526 +0900
++++ b/c8/hmatrix.h	2026-10-15 18:46:28.443356635 +0900
+@@ -102,7 +102,7 @@
+ 
+   // Return the matrix inverse. Cheap to call, as HMatrix internally stores its inverse. Throws
+   // a RuntimeException if the matrix is not invertable.
+-  constexpr HMatrix inv() const {
++  HMatrix inv() const {
+     if (invertFailed_) {
+       C8_THROW("Matrix is not invertible, LU factorization factor U is exactly singular");
+     }
+diff -ruN a/reality/engine/features/gr8gl.h b/reality/engine/features/gr8gl.h
+--- a/reality/engine/features/gr8gl.h	2026-10-15 18:46:28.403355579 +0900
++++ b/reality/engine/features/gr8gl.h	2026-10-15 18:46:28.443356635 +0900
+@@ -63,7 +63,7 @@
+ constexpr float fastAtan2(float y, float x) {
+   float ax = std::abs(x);
+   float ay = std::abs(y);
+-  float a;
++  float a = 0.0f;
+   if (ax >= ay) {
+     float c = ay / (ax + static_cast<float>(DBL_EPSILON));
+     float c2 = c * c;

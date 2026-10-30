@@ -1,0 +1,21 @@
+{
+ "schema": "or1-v4-scenarios-v1",
+ "gate_id": "or1-chunk-replay-gate",
+ "gate_version": 4,
+ "note": "The registered scenarios of or1-chunk-replay-gate.v4 (registration document section 3). kind 'bundle' = an existing replay source bundle (the four v3 portrait bundles, same sources); kind 'orient' = a run-orient.mjs recording of the original SDK converted by prepare-orient-bundle.mjs. The expected call / frame counts, the capture size and the rotation are NOT written here: make-manifest.mjs reads them from the derived bundle and the judge compares the runs with those registered numbers.",
+ "floors": {
+  "portrait": { "c4": { "r_min": 0.1, "k_min": 2 }, "min_fresh_nonrepeated_fraction": 0.9, "min_distinct_rotations": null },
+  "rotation": { "c4": null, "min_fresh_nonrepeated": 48, "min_distinct_rotations": 36 }
+ },
+ "k_min": { "rotationScenarios": 4, "portraitRecords": 2 },
+ "scenarios": [
+  { "name": "G1-flip6-s3-lowtex-pmr3a", "family": "portrait", "record": "flip6-s3-lowtex", "kind": "bundle", "src": "build/slam-refact-20261016/fix/round2/bundles-seed/flip6-s3-lowtex/pmr3a" },
+  { "name": "G2-flip6-s3-lowtex-pmr4a", "family": "portrait", "record": "flip6-s3-lowtex", "kind": "bundle", "src": "build/slam-refact-20261016/fix/round2/bundles-seed/flip6-s3-lowtex/pmr4a" },
+  { "name": "G3-tum-room1-lowtex-pmr3b", "family": "portrait", "record": "tum-room1-lowtex", "kind": "bundle", "src": "build/slam-refact-20261016/fix/round2/bundles-seed/tum-room1-lowtex/pmr3b" },
+  { "name": "G4-tum-room1-lowtex-pmr4a", "family": "portrait", "record": "tum-room1-lowtex", "kind": "bundle", "src": "build/slam-refact-20261016/fix/round2/bundles-seed/tum-room1-lowtex/pmr4a" },
+  { "name": "O0-flip6-s2-orient-o0", "family": "rotation", "record": "flip6-s2-orient", "kind": "orient", "src": "build/slam-refact-full-20261019/orient/original/flip6-s2/v2-b-o0" },
+  { "name": "O90-flip6-s2-orient-o90", "family": "rotation", "record": "flip6-s2-orient", "kind": "orient", "src": "build/slam-refact-full-20261019/orient/original/flip6-s2/v2-b-o90" },
+  { "name": "O180-flip6-s2-orient-o180", "family": "rotation", "record": "flip6-s2-orient", "kind": "orient", "src": "build/slam-refact-full-20261019/orient/original/flip6-s2/v2-b-o180" },
+  { "name": "O270-flip6-s2-orient-o270", "family": "rotation", "record": "flip6-s2-orient", "kind": "orient", "src": "build/slam-refact-full-20261019/orient/original/flip6-s2/v2-b-o270" }
+ ]
+}

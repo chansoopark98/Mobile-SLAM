@@ -1,0 +1,6 @@
+n=8 bins=4 bitwise_equal=4 max_abs_diff=0 tol=6.93e-06 PASS
+n=64 bins=32 bitwise_equal=32 max_abs_diff=0 tol=4.68e-06 PASS
+n=100 bins=50 bitwise_equal=9 max_abs_diff=7.45e-09 tol=5.03e-06 PASS
+n=97 bins=48 bitwise_equal=48 max_abs_diff=0 tol=4.92e-06 PASS
+n=2000 bins=1000 bitwise_equal=66 max_abs_diff=1.53e-08 tol=5.1e-06 PASS
+worst_rel=3.06e-08 PASS

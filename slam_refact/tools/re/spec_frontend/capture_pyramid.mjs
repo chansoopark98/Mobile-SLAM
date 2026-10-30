@@ -1,0 +1,308 @@
+// Spec lane S1: capture the GPU pyramid readback of the ORIGINAL reference runtime engine (xr.js + xr-slam.js,
+// bytes unmodified) running headless (Chrome + SwiftShader), with the same input path as lane C
+// (slam_refact/tools/re/runtime/page-runtime.js is served as-is, not modified).
+//
+// Instrumentation (init script, page side only):
+//  - WebAssembly.instantiate(Streaming) wrapper (same technique as lane C wasm-wrap.js) that wraps the
+//    xr-slam exports c8EmAsm_stageFrame / c8EmAsm_processStagedFrame / c8EmAsm_engineInit to record their
+//    arguments and call order.
+//  - WebGL2RenderingContext.getBufferSubData / readPixels wrappers that record every pyramid readback
+//    (which export call it happens in) and copy the first <rows> rows of up to <max-captures> readbacks.
+//
+//   node slam_refact/tools/re/spec_frontend/capture_pyramid.mjs --scenario tum-room1-full --label c1 \
+//        --max-frames 40 --max-captures 24 --rows 660
+//
+// Output: build/slam-refact-20261015/spec/frontend/capture/<scenario>/<label>/
+//   meta.json  (environment, stageFrame args per call, readback events, capture -> input frame map)
+//   cap-<k>.rgba.gz (raw RGBA, 1024 x rows, row 0 = GL row 0)
+import fs from 'node:fs/promises';
+import path from 'node:path';
+import http from 'node:http';
+import zlib from 'node:zlib';
+import os from 'node:os';
+import {createHash} from 'node:crypto';
+import {fileURLToPath} from 'node:url';
+import {parseArgs} from 'node:util';
+import {chromium} from '../../../../scripts/dev/node_modules/playwright/index.mjs';
+import {parsePGM} from '../../../../scripts/dev/replay-android-input.mjs';
+import {buildSensorPackets} from '../../../../scripts/dev/references/xr_reference/sensor_adapter.mjs';
+
+const here = path.dirname(fileURLToPath(import.meta.url));
+const root = path.resolve(here, '../../../..');
+const laneC = path.join(root, 'slam_refact/tools/re/runtime');
+const engineDir = path.join(root, 'assets/references/xr_reference/analysis-runtime/standalone');
+const XR_SLAM_WASM_SHA256 = '780731fe294a725acf1b7717ed5ffb07ad9f0929e408a1d74f47450c291ec422';
+const UA = {
+  pixel7: 'Mozilla/5.0 (Linux; Android 13; Pixel 7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/140.0.0.0 Mobile Safari/537.36',
+  reduced: 'Mozilla/5.0 (Linux; Android 10; K) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/140.0.0.0 Mobile Safari/537.36',
+};
+const {values} = parseArgs({options: {
+  scenario: {type: 'string'}, label: {type: 'string'},
+  'max-frames': {type: 'string', default: '40'}, 'max-captures': {type: 'string', default: '24'},
+  rows: {type: 'string', default: '660'},
+}});
+const scenarios = JSON.parse(await fs.readFile(path.join(laneC, 'scenarios.json'), 'utf8'));
+const scenario = scenarios[values.scenario];
+if (!scenario) throw new Error('--scenario one of ' + Object.keys(scenarios).join('|'));
+if (!/^[a-z0-9-]+$/.test(values.label || '')) throw new Error('--label [a-z0-9-]+ required (new label per attempt)');
+const out = path.join(root, 'build/slam-refact-20261015/spec/frontend/capture', values.scenario, values.label);
+await fs.mkdir(path.dirname(out), {recursive: true});
+await fs.mkdir(out, {recursive: false});
+const sha = bytes => createHash('sha256').update(bytes).digest('hex');
+
+async function loadDataset() {  // same rules as lane C run-reference.mjs loadDataset()
+  const dir = path.resolve(root, scenario.dataset);
+  if (scenario.kind === 'tum') {
+    const input = JSON.parse(await fs.readFile(path.join(dir, 'input.json')));
+    return {dir, width: input.config.width, height: input.config.height,
+      frames: input.frames.map(f => ({index: f.index, t: f.physicalTimestamp, file: path.join(dir, 'mav0/cam0/data', f.file), sha256: f.sha256})),
+      imu: input.imu};
+  }
+  const record = JSON.parse(await fs.readFile(path.join(dir, 'record.json')));
+  const rec = record.recording;
+  const firstFrame = rec.frames[0].timestamp;
+  const t0 = Math.max(...rec.imu.filter(r => r[0] <= firstFrame).map(r => r[0]));
+  const lastFrame = rec.frames.at(-1).timestamp;
+  return {dir, width: rec.width, height: rec.height,
+    frames: rec.frames.map((f, i) => ({index: i, t: +(f.timestamp - t0).toFixed(9), file: path.join(dir, 'mav0/cam0/data', f.file), sha256: f.sha256})),
+    imu: rec.imu.filter(r => r[0] >= t0 && r[0] <= lastFrame + 0.1).map(r => [+(r[0] - t0).toFixed(9), ...r.slice(1)])};
+}
+
+const initScript = ({targetSha256, maxCaptures, rows}) => {
+  const C = window.__pyrCap = {target: targetSha256, calls: [], reads: [], captures: [], seq: 0, current: null, error: null,
+    wrapped: false, glInfo: null};
+  const nativeInstantiate = WebAssembly.instantiate.bind(WebAssembly);
+  const nativeCompile = WebAssembly.compile.bind(WebAssembly);
+  const hex = b => [...new Uint8Array(b)].map(x => x.toString(16).padStart(2, '0')).join('');
+  const wrapExports = exports => {
+    const o = {};
+    for (const [name, fn] of Object.entries(exports)) {
+      if (typeof fn !== 'function' || !['c8EmAsm_stageFrame', 'c8EmAsm_processStagedFrame', 'c8EmAsm_engineInit',
+        'c8EmAsm_setEventQueue'].includes(name)) { o[name] = fn; continue; }
+      o[name] = function (...args) {
+        const seq = ++C.seq;
+        const rec = [seq, name, performance.now(), name === 'c8EmAsm_setEventQueue' ? [args[1]] : args];
+        C.calls.push(rec);
+        const saved = C.current; C.current = {seq, name};
+        try { return fn.apply(this, args); } finally { C.current = saved; }
+      };
+    }
+    return o;
+  };
+  const handle = async (bytes, imports) => {
+    const digest = hex(await crypto.subtle.digest('SHA-256', bytes));
+    const module = await nativeCompile(bytes);
+    if (digest !== targetSha256) return {module, instance: await nativeInstantiate(module, imports)};
+    C.wrapped = true;
+    const instance = await nativeInstantiate(module, imports);
+    return {module, instance: {exports: wrapExports(instance.exports)}};
+  };
+  WebAssembly.instantiate = async (input, imports) => {
+    if (input instanceof WebAssembly.Module) return nativeInstantiate(input, imports);
+    const bytes = ArrayBuffer.isView(input) ? input.buffer.slice(input.byteOffset, input.byteOffset + input.byteLength) : input;
+    try { return await handle(bytes, imports); } catch (e) { C.error = String(e); throw e; }
+  };
+  WebAssembly.instantiateStreaming = async (response, imports) => {
+    const bytes = await (await response).arrayBuffer();
+    try { return await handle(bytes, imports); } catch (e) { C.error = String(e); throw e; }
+  };
+  const proto = WebGL2RenderingContext.prototype;
+  const origGet = proto.getBufferSubData;
+  proto.getBufferSubData = function (target, srcOffset, dst, ...rest) {
+    const r = origGet.call(this, target, srcOffset, dst, ...rest);
+    if (dst && dst.length >= 1024 * 1024 * 4) {
+      const ev = {kind: 'getBufferSubData', length: dst.length, call: C.current ? C.current.seq : null,
+        callName: C.current ? C.current.name : null, at: performance.now(), capture: null};
+      if (window.__probe?.started && C.captures.length < maxCaptures) {
+        ev.capture = C.captures.length;
+        C.captures.push(dst.slice(0, rows * 1024 * 4));
+      }
+      C.reads.push(ev);
+    }
+    return r;
+  };
+  // Camera texture uploads (texImage2D from a video element / VideoFrame). The uploaded texture is read
+  // back through a temporary framebuffer; all touched bindings are restored.
+  C.cameraUploads = [];
+  C.cameraCaptures = [];
+  const origTexImage2D = proto.texImage2D;
+  const origReadPixels = proto.readPixels;
+  proto.texImage2D = function (...a) {
+    const r = origTexImage2D.apply(this, a);
+    const src = a.length === 6 ? a[5] : null;
+    const isVideo = src && (src instanceof HTMLVideoElement || (typeof VideoFrame !== 'undefined' && src instanceof VideoFrame));
+    if (isVideo) {
+      const w = src.videoWidth || src.displayWidth, h = src.videoHeight || src.displayHeight;
+      const ev = {afterCall: C.seq, at: performance.now(), w, h, capture: null};
+      if (window.__probe?.started && C.cameraCaptures.length < maxCaptures + 4) {
+        const gl = this;
+        const tex = gl.getParameter(gl.TEXTURE_BINDING_2D);
+        const prevFb = gl.getParameter(gl.FRAMEBUFFER_BINDING);
+        const prevPack = gl.getParameter(gl.PIXEL_PACK_BUFFER_BINDING);
+        const prevAlign = gl.getParameter(gl.PACK_ALIGNMENT);
+        const fb = gl.createFramebuffer();
+        gl.bindFramebuffer(gl.FRAMEBUFFER, fb);
+        gl.framebufferTexture2D(gl.FRAMEBUFFER, gl.COLOR_ATTACHMENT0, gl.TEXTURE_2D, tex, 0);
+        gl.bindBuffer(gl.PIXEL_PACK_BUFFER, null);
+        gl.pixelStorei(gl.PACK_ALIGNMENT, 4);
+        const arr = new Uint8Array(w * h * 4);
+        origReadPixels.call(gl, 0, 0, w, h, gl.RGBA, gl.UNSIGNED_BYTE, arr);
+        gl.pixelStorei(gl.PACK_ALIGNMENT, prevAlign);
+        gl.bindBuffer(gl.PIXEL_PACK_BUFFER, prevPack);
+        gl.bindFramebuffer(gl.FRAMEBUFFER, prevFb);
+        gl.deleteFramebuffer(fb);
+        ev.capture = C.cameraCaptures.length;
+        C.cameraCaptures.push(arr);
+      }
+      C.cameraUploads.push(ev);
+    }
+    return r;
+  };
+  const origRead = proto.readPixels;
+  proto.readPixels = function (x, y, w, h, format, type, dst, ...rest) {
+    const r = origRead.call(this, x, y, w, h, format, type, dst, ...rest);
+    if (w === 1024 && h === 1024) {
+      C.reads.push({kind: typeof dst === 'number' ? 'readPixelsToPackBuffer' : 'readPixels', call: C.current ? C.current.seq : null,
+        callName: C.current ? C.current.name : null, at: performance.now()});
+      if (!C.glInfo) {
+        const ext = this.getExtension('WEBGL_debug_renderer_info');
+        C.glInfo = {version: this.getParameter(this.VERSION), renderer: ext ? this.getParameter(ext.UNMASKED_RENDERER_WEBGL) : null,
+          shadingLanguage: this.getParameter(this.SHADING_LANGUAGE_VERSION),
+          highpFloatFragment: (() => { const p = this.getShaderPrecisionFormat(this.FRAGMENT_SHADER, this.HIGH_FLOAT); return p && [p.rangeMin, p.rangeMax, p.precision]; })(),
+          mediumpFloatFragment: (() => { const p = this.getShaderPrecisionFormat(this.FRAGMENT_SHADER, this.MEDIUM_FLOAT); return p && [p.rangeMin, p.rangeMax, p.precision]; })()};
+      }
+    }
+    return r;
+  };
+};
+
+const report = {schema: 'slam-refact-spec-frontend-pyramid-capture-v1', scenario: values.scenario, label: values.label, argv: process.argv,
+  startedAt: new Date().toISOString(), node: process.version, loadAvgAtStart: os.loadavg(), blockedExternal: [], pageErrors: []};
+let server, browser;
+try {
+  const data = await loadDataset();
+  const frames = data.frames.slice(0, Number(values['max-frames']));
+  const imu = data.imu.filter(r => r[0] <= frames.at(-1).t + 0.05);
+  const sensors = buildSensorPackets(imu);
+  const dts = imu.slice(1).map((r, i) => r[0] - imu[i][0]).sort((a, b) => a - b);
+  const intervalMs = +(dts[Math.floor(dts.length / 2)] * 1000).toFixed(3);
+  const frameDts = frames.slice(1).map((f, i) => f.t - frames[i].t).sort((a, b) => a - b);
+  const fixture = {config: {width: data.width, height: data.height}, nominalFps: Math.round(1 / frameDts[Math.floor(frameDts.length / 2)]),
+    scale: scenario.scale || 'responsive', worldPointSampleEvery: 0,
+    frames: frames.map(f => ({index: f.index, physicalTimestamp: f.t})), sensorPackets: sensors.packets.map(p => ({...p, intervalMs}))};
+  const stateScript = `window.__probe={ready:false,started:false,done:false,errors:[],events:[],rows:[],frames:[],imuDispatched:0,cameraRequests:[],intrinsicsChanges:[],worldPointSamples:[]};`;
+  const html = `<!doctype html><html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>pyramid capture</title><script src="/state.js"></script><script src="/page-runtime.js" defer></script><script src="/engine/xr.js" async data-preload-chunks="slam"></script></head><body style="margin:0"><button id="start" style="position:absolute">start</button><canvas id="view" width="${data.width}" height="${data.height}"></canvas></body></html>`;
+  const runtimeBytes = await fs.readFile(path.join(laneC, 'page-runtime.js'));
+  report.sourceHashes = {'page-runtime.js(laneC)': sha(runtimeBytes), 'capture_pyramid.mjs': sha(await fs.readFile(fileURLToPath(import.meta.url)))};
+  const served = {'index.html': Buffer.from(html), 'state.js': Buffer.from(stateScript), 'page-runtime.js': runtimeBytes};
+  report.pixelHashMismatches = [];
+  server = http.createServer(async (req, res) => {
+    try {
+      const pathname = new URL(req.url, 'http://localhost').pathname;
+      let bytes, type = 'application/octet-stream';
+      if (pathname === '/fixture.json') { bytes = Buffer.from(JSON.stringify(fixture)); type = 'application/json'; }
+      else if (/^\/gray\/\d+$/.test(pathname)) {
+        const f = frames[Number(pathname.split('/').at(-1))];
+        bytes = parsePGM(await fs.readFile(f.file), data.width, data.height);
+        if (sha(bytes) !== f.sha256) report.pixelHashMismatches.push(f.index);
+      } else if (pathname === '/' || Object.hasOwn(served, pathname.slice(1))) {
+        const name = pathname === '/' ? 'index.html' : pathname.slice(1);
+        bytes = served[name]; type = name.endsWith('.html') ? 'text/html' : 'text/javascript';
+      } else if (pathname.startsWith('/engine/')) {
+        const file = path.resolve(engineDir, pathname.slice(8));
+        if (!file.startsWith(engineDir + path.sep)) throw new Error('unserved path');
+        bytes = await fs.readFile(file); type = file.endsWith('.js') ? 'text/javascript' : 'application/octet-stream';
+      } else throw new Error('unserved path');
+      res.writeHead(200, {'Content-Type': type, 'Cache-Control': 'no-store'}); res.end(bytes);
+    } catch (error) { res.writeHead(404); res.end(String(error)); }
+  });
+  await new Promise(resolve => server.listen(0, '127.0.0.1', resolve));
+  const origin = `http://127.0.0.1:${server.address().port}`;
+  const args = ['--enable-unsafe-swiftshader', '--autoplay-policy=no-user-gesture-required', '--use-fake-ui-for-media-stream', '--use-fake-device-for-media-stream'];
+  browser = await chromium.launch({executablePath: process.env.BROWSER_EXECUTABLE || '/usr/bin/google-chrome', headless: true, args});
+  report.browserVersion = browser.version();
+  const context = await browser.newContext({viewport: {width: data.width, height: data.height}, permissions: ['camera', 'microphone'],
+    isMobile: true, hasTouch: true, deviceScaleFactor: 1, userAgent: UA[scenario.ua || 'pixel7']});
+  const page = await context.newPage();
+  await page.addInitScript(initScript, {targetSha256: XR_SLAM_WASM_SHA256, maxCaptures: Number(values['max-captures']), rows: Number(values.rows)});
+  await page.route('**/*', route => {
+    const url = route.request().url();
+    if (!url.startsWith(origin + '/') && !url.startsWith('data:') && !url.startsWith('blob:')) { report.blockedExternal.push(url); return route.abort('blockedbyclient'); }
+    return route.continue();
+  });
+  page.on('pageerror', e => report.pageErrors.push({message: e.message}));
+  await page.goto(origin + '/index.html');
+  await page.waitForFunction(() => window.__probe?.ready, null, {timeout: 60000});
+  await page.locator('#start').click();
+  try { await page.waitForFunction(() => window.__probe?.done, null, {timeout: Math.round(frames.at(-1).t * 1000) + 120000, polling: 500}); }
+  catch (error) { report.waitError = String(error); }
+  const probe = await page.evaluate(() => ({frames: window.__probe.frames, epochWallMs: window.__probe.epochWallMs, events: window.__probe.events.filter(e => e.name === 'onStart'),
+    deviceEstimate: window.__probe.deviceEstimate, intrinsicsChanges: window.__probe.intrinsicsChanges, errors: window.__probe.errors}));
+  const cap = await page.evaluate(() => {
+    const C = window.__pyrCap;
+    return {wrapped: C.wrapped, error: C.error, glInfo: C.glInfo, calls: C.calls, reads: C.reads, ncaptures: C.captures.length,
+      cameraUploads: C.cameraUploads, ncamera: C.cameraCaptures.length};
+  });
+  // Map: captured readback inside stageFrame call S reads the pyramid drawn by the previous stageFrame call.
+  const byUs = new Map(probe.frames.map(([index, us]) => [us, index]));
+  const stageCalls = cap.calls.filter(c => c[1] === 'c8EmAsm_stageFrame');
+  const frameOfStage = s => {
+    const us = Math.round(s[3][11] * 1e6);
+    const idx = byUs.get(us) ?? byUs.get(us - 1) ?? byUs.get(us + 1);
+    return idx === undefined ? null : idx;
+  };
+  const captures = [];
+  for (const ev of cap.reads.filter(r => r.capture !== null && r.capture !== undefined)) {
+    const k = stageCalls.findIndex(s => s[0] === ev.call);
+    const prev = k > 0 ? stageCalls[k - 1] : null;
+    captures.push({capture: ev.capture, readInCall: ev.call, readInCallName: ev.callName,
+      pyramidDrawnInStageCall: prev ? prev[0] : null, inputFrame: prev ? frameOfStage(prev) : null,
+      stageArgs: prev ? {texture: prev[3][0], width: prev[3][1], height: prev[3][2], rotation: prev[3][3],
+        alphaBetaGamma: prev[3].slice(4, 7), qwxyz: prev[3].slice(7, 11), videoTimeSeconds: prev[3][11],
+        frameTimeSeconds: prev[3][12], timeNanos: prev[3][13]} : null});
+  }
+  for (let i = 0; i < cap.ncaptures; i++) {
+    const b64 = await page.evaluate(i => {
+      const a = window.__pyrCap.captures[i];
+      let s = '';
+      for (let o = 0; o < a.length; o += 0x8000) s += String.fromCharCode.apply(null, a.subarray(o, o + 0x8000));
+      return btoa(s);
+    }, i);
+    const raw = Buffer.from(b64, 'base64');
+    await fs.writeFile(path.join(out, `cap-${String(i).padStart(3, '0')}.rgba.gz`), zlib.gzipSync(raw, {level: 6, mtime: 0}));
+    captures[i].rawSha256 = sha(raw);
+    captures[i].rawBytes = raw.length;
+  }
+  const cameraCaptures = [];
+  for (const up of cap.cameraUploads.filter(u => u.capture !== null)) {
+    const stage = stageCalls.find(s => s[0] > up.afterCall) || null;
+    const b64 = await page.evaluate(i => {
+      const a = window.__pyrCap.cameraCaptures[i];
+      let s = '';
+      for (let o = 0; o < a.length; o += 0x8000) s += String.fromCharCode.apply(null, a.subarray(o, o + 0x8000));
+      return btoa(s);
+    }, up.capture);
+    const raw = Buffer.from(b64, 'base64');
+    await fs.writeFile(path.join(out, `cam-${String(up.capture).padStart(3, '0')}.rgba.gz`), zlib.gzipSync(raw, {level: 6, mtime: 0}));
+    cameraCaptures.push({capture: up.capture, w: up.w, h: up.h, uploadAfterCall: up.afterCall, usedByStageCall: stage ? stage[0] : null,
+      inputFrame: stage ? frameOfStage(stage) : null, rawSha256: sha(raw)});
+  }
+  try { await page.evaluate(() => window.__finishProbe?.()); } catch (error) { report.cleanupError = String(error); }
+  Object.assign(report, {cameraUploads: cap.cameraUploads.length, cameraCaptures,input: {dataset: data.dir, width: data.width, height: data.height, frames: frames.length}, probe, wrapped: cap.wrapped,
+    wrapError: cap.error, glInfo: cap.glInfo, rows: Number(values.rows),
+    callOrder: cap.calls.map(c => [c[0], c[1], +c[2].toFixed(3), c[1] === 'c8EmAsm_stageFrame' ? null : c[3]]),
+    stageCalls: stageCalls.map(s => ({call: s[0], at: +s[2].toFixed(3), args: s[3], inputFrame: frameOfStage(s)})),
+    reads: cap.reads, captures});
+  report.status = cap.wrapped && captures.length ? 'COMPLETED' : 'INCOMPLETE';
+} catch (error) {
+  report.status = 'FAILED'; report.error = {message: error.message, stack: error.stack};
+} finally {
+  if (browser) await browser.close();
+  if (server) await new Promise(resolve => server.close(resolve));
+  report.finishedAt = new Date().toISOString();
+  report.loadAvgAtEnd = os.loadavg();
+  await fs.writeFile(path.join(out, 'meta.json'), JSON.stringify(report, null, 1) + '\n');
+  console.log(JSON.stringify({status: report.status, out: path.relative(root, out), captures: report.captures?.length, error: report.error?.message,
+    waitError: report.waitError, glInfo: report.glInfo}, null, 1));
+  process.exitCode = report.status === 'COMPLETED' ? 0 : 1;
+}

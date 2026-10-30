@@ -1,0 +1,31 @@
+{
+  "type": "CYLINDER",
+  "properties": {
+    "left": 0,
+    "top": 334,
+    "width": 1000,
+    "height": 1333,
+    "isRotated": true,
+    "originalWidth": 1000,
+    "originalHeight": 2000,
+    "targetCircumferenceTop": 160,
+    "cylinderCircumferenceTop": 220,
+    "cylinderCircumferenceBottom": 220,
+    "cylinderSideLength": 80,
+    "arcAngle": 261.8181818181818,
+    "coniness": 0,
+    "inputMode": "ADVANCED",
+    "unit": "mm"
+  },
+  "imagePath": "image-targets/demo-cylinder_luminance.png",
+  "metadata": null,
+  "name": "demo-cylinder",
+  "resources": {
+    "originalImage": "demo-cylinder_original.png",
+    "croppedImage": "demo-cylinder_cropped.png",
+    "thumbnailImage": "demo-cylinder_thumbnail.png",
+    "luminanceImage": "demo-cylinder_luminance.png"
+  },
+  "created": 1792680876676,
+  "updated": 1792680876676
+}

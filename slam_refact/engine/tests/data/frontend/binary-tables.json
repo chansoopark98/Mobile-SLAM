@@ -1,0 +1,49 @@
+{
+ "wasm_sha256": "780731fe294a725acf1b7717ed5ffb07ad9f0929e408a1d74f47450c291ec422",
+ "feature_lut": {
+  "bytes": 36864,
+  "sha256": "b29169a8a59a86dc74c0c3f75d04457332f6c7e017e0bc5fa1e0bb3cfad285ae",
+  "addresses": [
+   151808
+  ]
+ },
+ "focal_table": {
+  "address": 296576,
+  "entries": 111,
+  "enum_range": [
+   2,
+   112
+  ],
+  "mismatches": [],
+  "GOOGLE_PIXEL7": [
+   62,
+   521.822509765625
+  ],
+  "APPLE_IPHONE_X(default)": [
+   24,
+   506.410400390625
+  ],
+  "public_cases": 99
+ },
+ "subpixel_q": {
+  "floats": [
+   0.003139157546684146,
+   0.49372169375419617,
+   0.4937208294868469,
+   0.0031395910773426294,
+   3.898907016264275e-05,
+   0.9998440146446228
+  ],
+  "addresses": [
+   92068
+  ]
+ },
+ "config_key_strings": {
+  "31309": "GlRealityFrame.PyramidSize",
+  "20112": "VioTracker.numIncreasedFramePoints",
+  "20005": "VioTracker.cloudMapRelocNumPoints",
+  "33330": "VioTracker.trackingDescriptorType",
+  "24709": "VioTracker.disableMapBuilder",
+  "21521": "VioTracker.maxFirstSuccessfulDeviceVpsWaitTimeNanos"
+ }
+}

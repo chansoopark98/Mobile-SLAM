@@ -1,0 +1,7 @@
+model version=3 subgraphs=1 name=main
+tensor 0 a FLOAT32 [2,3,4] bytes=0 quant=0 var=0 sparse=0
+tensor 1 b FLOAT32 [2,3,4] bytes=0 quant=0 var=0 sparse=0
+tensor 2 y FLOAT32 [2,3,4] bytes=0 quant=0 var=0 sparse=0
+op 0 MINIMUM v1 in=[0,1] out=[2] opts={} custom=
+inputs [0,1]
+outputs [2]

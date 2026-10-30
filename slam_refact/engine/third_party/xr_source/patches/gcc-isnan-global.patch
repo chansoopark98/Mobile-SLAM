@@ -1,0 +1,12 @@
+diff -ruN a/reality/engine/imagedetection/image-targets-rigid-assembly.cc b/reality/engine/imagedetection/image-targets-rigid-assembly.cc
+--- a/reality/engine/imagedetection/image-targets-rigid-assembly.cc	2026-10-19 19:29:37.437615068 +0900
++++ b/reality/engine/imagedetection/image-targets-rigid-assembly.cc	2026-10-19 19:29:37.449615543 +0900
+@@ -18,6 +18,8 @@
+ }
+ cc_end(0xe1787712);
+ 
++#include <math.h>
++
+ #include "reality/engine/imagedetection/image-targets-rigid-assembly.h"
+ 
+ namespace c8 {

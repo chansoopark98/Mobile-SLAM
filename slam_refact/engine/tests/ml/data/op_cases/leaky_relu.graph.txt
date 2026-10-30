@@ -1,0 +1,6 @@
+model version=3 subgraphs=1 name=main
+tensor 0 x FLOAT32 [2,5,4,3] bytes=0 quant=0 var=0 sparse=0
+tensor 1 y FLOAT32 [2,5,4,3] bytes=0 quant=0 var=0 sparse=0
+op 0 LEAKY_RELU v1 in=[0] out=[1] opts={alpha=0x3c23d70a} custom=
+inputs [0]
+outputs [1]

@@ -1,0 +1,18 @@
+{
+  "schema": "phone-targets-v1",
+  "note": "Written by tools/image_target/make_demo_targets.py.",
+  "targets": [
+    {
+      "name": "demo-flat",
+      "label": "Flat card 150x200 mm",
+      "json": "demo-flat.json",
+      "image": "demo-flat_luminance.png"
+    },
+    {
+      "name": "demo-cylinder",
+      "label": "Cylinder label 160x80 mm on a 70 mm can",
+      "json": "demo-cylinder.json",
+      "image": "demo-cylinder_luminance.png"
+    }
+  ]
+}

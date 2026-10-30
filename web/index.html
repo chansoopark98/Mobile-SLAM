@@ -1,0 +1,292 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
+    <title>Mobile VIO - Visual-Inertial Odometry</title>
+    <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+            background: #0f0f1a;
+            color: #e0e0e0;
+            overflow: hidden;
+            height: 100vh;
+            height: 100dvh;
+            display: flex;
+            flex-direction: column;
+        }
+        .header {
+            flex-shrink: 0;
+            background: #1a1a2e;
+            padding: 8px 16px;
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            border-bottom: 1px solid #333;
+        }
+        .header h1 {
+            font-size: 16px;
+            color: #00ff88;
+        }
+        .controls {
+            display: flex;
+            gap: 8px;
+        }
+        .controls button {
+            padding: 6px 16px;
+            border: 1px solid #555;
+            border-radius: 4px;
+            background: #2a2a3e;
+            color: #e0e0e0;
+            font-size: 14px;
+            cursor: pointer;
+        }
+        .controls button:disabled {
+            opacity: 0.4;
+            cursor: not-allowed;
+        }
+        .controls button:hover:not(:disabled) {
+            background: #3a3a5e;
+        }
+        .main {
+            display: flex;
+            flex-direction: column;
+            flex: 1;
+            min-height: 0;
+        }
+        .video-section {
+            position: relative;
+            flex: 0 0 40%;
+            background: #000;
+            overflow: hidden;
+        }
+        #video-container {
+            width: 100%;
+            height: 100%;
+        }
+        #video-container video {
+            width: 100%;
+            height: 100%;
+            object-fit: cover;
+        }
+        .render-section {
+            flex: 1;
+            position: relative;
+            min-height: 0;
+            min-width: 0;
+            overflow: hidden;
+        }
+        #canvas-3d {
+            width: 100%;
+            height: 100%;
+            display: block;
+        }
+        .stats {
+            position: absolute;
+            bottom: 0;
+            left: 0;
+            right: 0;
+            background: rgba(0, 0, 0, 0.8);
+            padding: 8px 12px;
+            display: flex;
+            flex-wrap: wrap;
+            gap: 6px 12px;
+            font-size: 12px;
+            font-family: monospace;
+        }
+        .stat-item { display: flex; gap: 4px; }
+        .stat-label { color: #888; }
+        .stat-value { color: #00ff88; }
+        #status {
+            flex-shrink: 0;
+            overflow-wrap: anywhere;
+            padding: 4px 12px;
+            background: #1a1a2e;
+            font-size: 12px;
+            color: #aaa;
+            border-top: 1px solid #333;
+        }
+        .imu-overlay {
+            position: absolute;
+            top: 8px;
+            right: 8px;
+            background: rgba(0, 0, 0, 0.75);
+            padding: 6px 10px;
+            border-radius: 6px;
+            font-family: monospace;
+            font-size: 11px;
+            line-height: 1.5;
+            z-index: 10;
+            pointer-events: none;
+        }
+        .imu-overlay .imu-title {
+            color: #00ff88;
+            font-weight: bold;
+            margin-bottom: 2px;
+        }
+        .imu-overlay .imu-row {
+            display: flex;
+            gap: 6px;
+        }
+        .imu-overlay .imu-axis { color: #888; width: 16px; display: inline-block; }
+        .imu-overlay .imu-val { color: #e0e0e0; width: 64px; display: inline-block; text-align: right; }
+    </style>
+</head>
+<body>
+    <div class="header">
+        <h1>Mobile VIO</h1>
+        <div class="controls">
+            <button id="btn-start" disabled>Start</button>
+            <button id="btn-reset" disabled>Reset</button>
+            <button id="btn-log" style="display:none" onclick="
+    var d = document.getElementById('debug-log');
+    d.style.display = d.style.display === 'none' ? 'block' : 'none';
+">Log</button>
+        </div>
+    </div>
+    <div class="main">
+        <div class="video-section">
+            <div id="video-container"></div>
+            <canvas id="gray-preview" style="
+                position: absolute;
+                bottom: 8px;
+                right: 8px;
+                width: 120px;
+                height: auto;
+                border: 1px solid #00ff88;
+                border-radius: 4px;
+                z-index: 10;
+                image-rendering: pixelated;
+                display: none;
+            "></canvas>
+            <div class="imu-overlay" id="imu-overlay">
+                <div class="imu-title">Accel (m/s²)</div>
+                <div class="imu-row"><span class="imu-axis">X:</span><span class="imu-val" id="acc-x">-</span></div>
+                <div class="imu-row"><span class="imu-axis">Y:</span><span class="imu-val" id="acc-y">-</span></div>
+                <div class="imu-row"><span class="imu-axis">Z:</span><span class="imu-val" id="acc-z">-</span></div>
+                <div class="imu-title" style="margin-top:4px">Gyro (rad/s)</div>
+                <div class="imu-row"><span class="imu-axis">X:</span><span class="imu-val" id="gyro-x">-</span></div>
+                <div class="imu-row"><span class="imu-axis">Y:</span><span class="imu-val" id="gyro-y">-</span></div>
+                <div class="imu-row"><span class="imu-axis">Z:</span><span class="imu-val" id="gyro-z">-</span></div>
+            </div>
+        </div>
+        <div class="render-section">
+            <canvas id="canvas-3d"></canvas>
+            <div class="stats">
+                <div class="stat-item">
+                    <span class="stat-label">Accepted/s:</span>
+                    <span class="stat-value" id="fps">0</span>
+                </div>
+                <div class="stat-item">
+                    <span class="stat-label" title="Accepted / completed / dropped">A/C/D:</span>
+                    <span class="stat-value" id="frame-count">0</span>
+                </div>
+                <div class="stat-item">
+                    <span class="stat-label">Features:</span>
+                    <span class="stat-value" id="features">0</span>
+                </div>
+                <div class="stat-item">
+                    <span class="stat-label">IMU:</span>
+                    <span class="stat-value" id="imu-rate">0</span>
+                    <span class="stat-label">Hz</span>
+                </div>
+            </div>
+        </div>
+    </div>
+    <div id="status">Loading...</div>
+
+    <!-- On-screen debug log (reference runtime pattern: debug-web-views.js) -->
+    <div id="debug-log" style="
+        display: none;
+        position: fixed;
+        bottom: 0;
+        left: 0;
+        right: 0;
+        height: 30vh;
+        background: rgba(0, 0, 0, 0.9);
+        color: #00ff88;
+        font-family: monospace;
+        font-size: 10px;
+        line-height: 1.4;
+        overflow-y: auto;
+        z-index: 9999;
+        padding: 4px 8px;
+        border-top: 1px solid #00ff88;
+        pointer-events: auto;
+        -webkit-overflow-scrolling: touch;
+    "></div>
+
+    <script>
+        // On-screen debug log (reference runtime debug-web-views.js pattern)
+        // Activate with ?debug=1 URL parameter
+        if (new URLSearchParams(window.location.search).has('debug')) {
+            const logDiv = document.getElementById('debug-log');
+            logDiv.style.display = 'block';
+            const MAX_LINES = 200;
+            let lineCount = 0;
+
+            const origLog = console.log;
+            const origWarn = console.warn;
+            const origError = console.error;
+
+            function appendLog(msg, color) {
+                const line = document.createElement('div');
+                line.style.color = color;
+                line.textContent = msg;
+                logDiv.appendChild(line);
+                lineCount++;
+                while (lineCount > MAX_LINES && logDiv.firstChild) {
+                    logDiv.removeChild(logDiv.firstChild);
+                    lineCount--;
+                }
+                logDiv.scrollTop = logDiv.scrollHeight;
+            }
+
+            function argsToString(args) {
+                return args.map(a => typeof a === 'string' ? a : JSON.stringify(a)).join(' ');
+            }
+
+            console.log = function(...args) {
+                origLog.apply(console, args);
+                appendLog(argsToString(args), '#00ff88');
+            };
+            console.warn = function(...args) {
+                origWarn.apply(console, args);
+                appendLog(argsToString(args), '#ffaa00');
+            };
+            console.error = function(...args) {
+                origError.apply(console, args);
+                appendLog(argsToString(args), '#ff4444');
+            };
+
+            window.addEventListener('error', (e) => {
+                appendLog('UNCAUGHT: ' + e.message + ' at ' + e.filename + ':' + e.lineno, '#ff4444');
+            });
+
+            // Show Log toggle button
+            const logBtn = document.getElementById('btn-log');
+            if (logBtn) logBtn.style.display = 'inline-block';
+
+            console.log('[Debug] On-screen log enabled (?debug=1)');
+        }
+    </script>
+
+    <script>
+        // Set canvas size before loading modules
+        const canvas = document.getElementById('canvas-3d');
+        const container = canvas.parentElement;
+        canvas.width = container.clientWidth || window.innerWidth;
+        canvas.height = container.clientHeight || (window.innerHeight * 0.55);
+    </script>
+    <script type="importmap">
+    {
+        "imports": {
+            "three": "https://cdn.jsdelivr.net/npm/three@0.170.0/build/three.module.js",
+            "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.170.0/examples/jsm/"
+        }
+    }
+    </script>
+    <script type="module" src="./js/app.js?v=14"></script>
+</body>
+</html>

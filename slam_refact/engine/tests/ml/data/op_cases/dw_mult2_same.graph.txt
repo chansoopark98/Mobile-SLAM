@@ -1,0 +1,8 @@
+model version=3 subgraphs=1 name=main
+tensor 0 x FLOAT32 [1,5,5,3] bytes=0 quant=0 var=0 sparse=0
+tensor 1 w FLOAT32 [1,3,3,6] bytes=216 quant=0 var=0 sparse=0
+tensor 2 b FLOAT32 [6] bytes=24 quant=0 var=0 sparse=0
+tensor 3 y FLOAT32 [1,5,5,6] bytes=0 quant=0 var=0 sparse=0
+op 0 DEPTHWISE_CONV_2D v1 in=[0,1,2] out=[3] opts={pad=SAME sw=1 sh=1 dm=2 dw=1 dh=1 act=NONE} custom=
+inputs [0]
+outputs [3]

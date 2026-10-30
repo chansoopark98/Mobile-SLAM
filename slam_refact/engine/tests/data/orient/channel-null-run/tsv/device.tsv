@@ -1,0 +1,13 @@
+scenario	channel-null-run
+label	channel-null-run
+ua	none
+orientation	0
+manufacturer	
+model	K
+os	Android
+osVersion	10
+deviceinfo_strings	
+engine_init	480 640 0
+served_width	480
+served_height	640
+probe_wasm_sha256	

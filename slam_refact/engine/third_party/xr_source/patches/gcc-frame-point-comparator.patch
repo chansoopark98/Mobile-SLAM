@@ -1,0 +1,12 @@
+diff -ruN a/reality/engine/features/frame-point.h b/reality/engine/features/frame-point.h
+--- a/reality/engine/features/frame-point.h	2026-10-15 18:44:49.668720115 +0900
++++ b/reality/engine/features/frame-point.h	2026-10-15 18:44:49.668720115 +0900
+@@ -86,7 +86,7 @@
+     bool operator()(const PointMatch &lhs, const PointMatch &rhs) const {
+       return lhs.descriptorDist < rhs.descriptorDist;
+     }
+-  } comparator_;
++  } comparator_{};
+ };
+ 
+ ////////////////////////////////////////////////////////////////////////////////////////////////////

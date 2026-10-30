@@ -1,0 +1,12 @@
+model version=3 subgraphs=1 name=main
+tensor 0 x FLOAT32 [1,6] bytes=0 quant=0 var=0 sparse=0
+tensor 1 begin INT32 [2] bytes=8 quant=0 var=0 sparse=0
+tensor 2 end INT32 [2] bytes=8 quant=0 var=0 sparse=0
+tensor 3 strides INT32 [2] bytes=8 quant=0 var=0 sparse=0
+tensor 4 empty FLOAT32 [1,0] bytes=0 quant=0 var=0 sparse=0
+tensor 5 tail FLOAT32 [1,2] bytes=0 quant=0 var=0 sparse=0
+tensor 6 y FLOAT32 [1,2] bytes=0 quant=0 var=0 sparse=0
+op 0 STRIDED_SLICE v1 in=[0,1,2,3] out=[4] opts={bm=0 em=0 elm=0 nam=0 sam=0} custom=
+op 1 CONCATENATION v1 in=[4,5] out=[6] opts={axis=1 act=NONE} custom=
+inputs [0,5]
+outputs [6,4]

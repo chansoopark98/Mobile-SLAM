@@ -1,0 +1,29 @@
+{
+  "schema": "slam-refact-spec-frontend-tolerances-v1",
+  "fixed_at": "2026-10-15, before the first CPU-port vs captured-pyramid comparison was run",
+  "rule": "Do not edit after results are seen. A new tolerance needs a new file name and a reason recorded in 01-frontend.md.",
+  "pyramid_atlas": {
+    "scope": "4 level regions of the 1024x1024 readback (LevelLayout r,c,w,h); gutters and ROI slots excluded",
+    "BIT_EXACT": "all 4 channels identical in every level pixel",
+    "NEAR": {
+      "R_identical_min_fraction": 0.99,
+      "R_max_abs_diff": 1,
+      "G_identical_min_fraction": 0.98,
+      "G_max_abs_diff": 2,
+      "B_candidates_jaccard_min": 0.95,
+      "A_identical_min_fraction_over_all_pixels": 0.99
+    },
+    "otherwise": "FAIL"
+  },
+  "keypoints": {
+    "comparison": "unordered sets keyed by (level, x, y rounded to 1e-3 px) after Gr8Gl::detectAndCompute with the VioTracker DetectionConfig (500, ORB portions 192, allGorb)",
+    "BIT_EXACT": "identical sets, identical response, identical ORB/GORB descriptors",
+    "NEAR": {
+      "jaccard_min": 0.95,
+      "same_response_min_fraction_of_intersection": 0.95,
+      "descriptor_identical_min_fraction": 0.9,
+      "descriptor_mean_hamming_max_bits": 1.0
+    },
+    "otherwise": "FAIL"
+  }
+}

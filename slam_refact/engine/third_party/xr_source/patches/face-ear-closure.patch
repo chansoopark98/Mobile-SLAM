@@ -1,0 +1,20 @@
+--- a/reality/engine/ears/ear-types.cc
++++ b/reality/engine/ears/ear-types.cc
+@@ -28,6 +28,7 @@
+ #include "c8/geometry/egomotion.h"
+ #include "c8/geometry/facemesh-data.h"
+ #include "c8/geometry/intrinsics.h"
++#include "c8/geometry/intrinsics-clip.h"
+ #include "c8/geometry/two-d.h"
+ #include "c8/parameter-data.h"
+ #include "c8/pixels/render/object8.h"
+--- a/reality/engine/faces/tracked-face-state.h
++++ b/reality/engine/faces/tracked-face-state.h
+@@ -4,6 +4,7 @@
+ 
+ #include "c8/geometry/face-types.h"
+ #include "c8/hmatrix.h"
++#include "c8/map.h"
+ #include "reality/engine/tracking/ray-point-filter.h"
+ 
+ namespace c8 {

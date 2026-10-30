@@ -1,0 +1,2215 @@
+{
+ "schema": "slam-refact-thresholds-v1",
+ "title": "Pre-registered parity gates (architecture.md v2.1 \u00a76.6), machine-readable copy",
+ "registered_by": "WP5a",
+ "registered_on": "2026-10-15",
+ "engine_results_at_registration": "none (engine module .cc files absent; no engine trace exists)",
+ "rules": [
+  "Values are copied from architecture.md v2.1 \u00a76.6 and the spec section each gate cites; only the evaluation mechanics (percentile convention, frame-index windows, proxies) are made explicit here, before any engine or absolute-scale result.",
+  "Tolerances and classes are never changed after results are seen (repo CLAUDE.md \u00a72-3, architecture.md P-5). A failing gate is reported as FAIL; BLOCKED never replaces FAIL; BLOCKED reasons are only the ones written here.",
+  "Trace gates evaluate GlueRunner output written by tools/harness/replay in the schema of the original trace; module gates (evaluator module-report) take their verdict from the owning WP GTest run (command + output), not from this harness.",
+  "Parity runs: drop-mask = reference r1 (frames with fresh == false in r1 are skipped, their sensor events go to the next processed frame), pyramid model kSwiftShaderApprox (D-9); ideal-mode and IEEE runs are reported only (\u00a76.2).",
+  "Reference runs are r1 and r2 of build/slam-refact-20261015/reference/runs/<scenario>; wrap1 is excluded everywhere; profile1 only where the design numbers include it (A-*)."
+ ],
+ "classes": {
+  "MUST-PASS": "deterministic oracle or invariant; all must PASS for completion",
+  "REPORT": "statistic / event / similarity; evaluate all and record PASS/FAIL as is",
+  "BLOCKED-ALLOWED->MUST-PASS": "may be BLOCKED for lack of an execution means (reason recorded); when executed it is MUST-PASS",
+  "BLOCKED-ALLOWED->REPORT": "may be BLOCKED (reason recorded); when executed it is REPORT"
+ },
+ "percentile_methods": {
+  "nearest_rank": "sorted[ceil(p/100*n) - 1] (spec_vio_tracker/reference_variability.py)",
+  "floor_index": "sorted[floor((n-1)*p/100)] (runtime/run-reference.mjs summary)",
+  "linear": "numpy.percentile default (runtime/analyze_reference.py)"
+ },
+ "trace_schema": {
+  "reference_fields": [
+   "i",
+   "t",
+   "videoTimeUs",
+   "publishMs",
+   "acceptedMs",
+   "fresh",
+   "callbackMs",
+   "latencyMs",
+   "status",
+   "reason",
+   "p",
+   "q_wxyz",
+   "worldPoints",
+   "wpAdded",
+   "wpRemoved",
+   "wpMeanConfidence",
+   "xrGpuStageMs",
+   "xrCpuStageMs"
+  ],
+  "engine_rules": "same keys in the same order; browser-only keys (publishMs, acceptedMs, callbackMs, latencyMs, xrGpuStageMs, xrCpuStageMs) null; extra keys prefixed \"sr\"; fresh = the input frame was processed (not drop-masked), so the startup re-publication of frame 5 is fresh like in the original trace (PublishedFrame.repeated is srRepeated)"
+ },
+ "gates": [
+  {
+   "id": "F-H2",
+   "class": "MUST-PASS",
+   "owner": "WP1",
+   "level": "unit+evidence",
+   "evaluator": "module-report",
+   "metric": "binary func917+918 vs engine CPU half on injected pyramids, per level: keypoint set AND order",
+   "tolerance": {
+    "rule": "BIT_EXACT",
+    "cases": "TUM c2 92 levels + Flip6 c1 92 levels"
+   },
+   "source": [
+    "slam_refact/docs/design/architecture.md v2.1 \u00a76.6.1",
+    "slam_refact/docs/spec/01-frontend.md \u00a78.3 H2"
+   ]
+  },
+  {
+   "id": "F-H3",
+   "class": "MUST-PASS",
+   "owner": "WP1",
+   "level": "unit+evidence",
+   "evaluator": "module-report",
+   "metric": "captured gray -> CPU stage2+3 (SwiftShader approx model) vs captured G/B/A",
+   "tolerance": {
+    "rule": "BIT_EXACT",
+    "frames": "46/46"
+   },
+   "source": [
+    "slam_refact/docs/design/architecture.md v2.1 \u00a76.6.1",
+    "slam_refact/docs/spec/01-frontend.md \u00a78.3 H3"
+   ]
+  },
+  {
+   "id": "F-H4",
+   "class": "MUST-PASS",
+   "owner": "WP1",
+   "level": "unit+evidence",
+   "evaluator": "module-report",
+   "metric": "captured L0 -> blur/decimate/stage2/stage3 vs capture",
+   "tolerance": {
+    "R_G_equal_fraction_min": 0.9999,
+    "R_G_abs_diff_max": 1,
+    "B_A_equal_fraction_min": 0.9999
+   },
+   "source": [
+    "slam_refact/docs/design/architecture.md v2.1 \u00a76.6.1",
+    "slam_refact/docs/spec/01-frontend.md \u00a78.3 H4"
+   ]
+  },
+  {
+   "id": "F-H5",
+   "class": "REPORT",
+   "owner": "WP1",
+   "level": "evidence",
+   "evaluator": "module-report",
+   "metric": "image -> full CPU pyramid vs capture (tolerances v2)",
+   "tolerance": {
+    "R_G_equal_fraction_min": 0.985,
+    "abs_diff_max": 2,
+    "candidate_jaccard_min": 0.75,
+    "count_rel_max": 0.1,
+    "note": "reference implementation also FAILs on Flip6"
+   },
+   "source": [
+    "slam_refact/docs/design/architecture.md v2.1 \u00a76.6.1",
+    "slam_refact/docs/spec/01-frontend.md \u00a78.2-8.3 H5",
+    "slam_refact/tools/re/spec_frontend/tolerances-v2.json"
+   ]
+  },
+  {
+   "id": "F-H6",
+   "class": "REPORT",
+   "owner": "WP1",
+   "level": "evidence",
+   "evaluator": "module-report",
+   "metric": "full CPU pyramid keypoints vs capture keypoints",
+   "tolerance": {
+    "rule": "report only"
+   },
+   "source": [
+    "slam_refact/docs/design/architecture.md v2.1 \u00a76.6.1",
+    "slam_refact/docs/spec/01-frontend.md \u00a78.3 H6"
+   ]
+  },
+  {
+   "id": "F-H7",
+   "class": "MUST-PASS",
+   "owner": "WP1",
+   "level": "unit+evidence",
+   "evaluator": "module-report",
+   "metric": "injected pyramid -> detection path",
+   "tolerance": {
+    "rule": "same as F-H2 (BIT_EXACT)"
+   },
+   "source": [
+    "slam_refact/docs/design/architecture.md v2.1 \u00a76.6.1",
+    "slam_refact/docs/spec/01-frontend.md \u00a78.3 H7, \u00a77"
+   ]
+  },
+  {
+   "id": "F-H8",
+   "class": "MUST-PASS",
+   "owner": "WP1",
+   "level": "unit",
+   "evaluator": "module-report",
+   "metric": "GetQuaternion(alpha,beta,gamma) vs captured stageFrame q",
+   "tolerance": {
+    "rule": "identical",
+    "cases": "41/41"
+   },
+   "source": [
+    "slam_refact/docs/design/architecture.md v2.1 \u00a76.6.1",
+    "slam_refact/docs/spec/01-frontend.md \u00a78.3 H8"
+   ]
+  },
+  {
+   "id": "F-H9",
+   "class": "MUST-PASS",
+   "owner": "WP1",
+   "level": "unit",
+   "evaluator": "module-report",
+   "metric": "FEATURE_LUT, subpixelQ, focal table (111), config keys",
+   "tolerance": {
+    "rule": "identical"
+   },
+   "source": [
+    "slam_refact/docs/design/architecture.md v2.1 \u00a76.6.1",
+    "slam_refact/docs/spec/01-frontend.md \u00a78.3 H9"
+   ]
+  },
+  {
+   "id": "F-LAY",
+   "class": "MUST-PASS",
+   "owner": "WP1",
+   "level": "unit",
+   "evaluator": "module-report",
+   "metric": "ComputePyramidLayout vs layouts.jsonl",
+   "tolerance": {
+    "rule": "identical",
+    "cases": 6
+   },
+   "source": [
+    "slam_refact/docs/design/architecture.md v2.1 \u00a76.6.1",
+    "slam_refact/docs/spec/01-frontend.md \u00a78.1 V-syn-layout"
+   ]
+  },
+  {
+   "id": "F-FAST",
+   "class": "MUST-PASS",
+   "owner": "WP1",
+   "level": "unit",
+   "evaluator": "module-report",
+   "metric": "shader max9Full = textbook FAST-9",
+   "tolerance": {
+    "rule": "0 mismatches",
+    "inputs": 2000000
+   },
+   "source": [
+    "slam_refact/docs/design/architecture.md v2.1 \u00a76.6.1",
+    "slam_refact/docs/spec/01-frontend.md \u00a78.1 V-syn-FAST"
+   ]
+  },
+  {
+   "id": "F-K",
+   "class": "MUST-PASS",
+   "owner": "WP1",
+   "level": "unit",
+   "evaluator": "module-report",
+   "metric": "K rule",
+   "tolerance": {
+    "TUM_capture_fx": 260.91125,
+    "TUM_level0_fx": 521.8225,
+    "TUM_level0_c": [
+     239.5,
+     319.5
+    ],
+    "Flip6_fx": 506.4104,
+    "rule": "exact"
+   },
+   "source": [
+    "slam_refact/docs/design/architecture.md v2.1 \u00a76.6.1",
+    "slam_refact/docs/spec/01-frontend.md \u00a75.12"
+   ]
+  },
+  {
+   "id": "MT-P1",
+   "class": "MUST-PASS",
+   "owner": "WP2",
+   "level": "unit",
+   "evaluator": "module-report",
+   "metric": "ReplaceYaw/YawOf/fromHMatrix on probe-yaw-replace-r1 cases.json (205)",
+   "tolerance": {
+    "yaw_rad": 1e-05,
+    "quat": 1e-06,
+    "rot_and_inverse_rot": 1e-05,
+    "inverse_t": "1e-5*(1+|t|)",
+    "t": "bit-exact",
+    "last_row_and_flags": "exact"
+   },
+   "source": [
+    "slam_refact/docs/design/architecture.md v2.1 \u00a76.6.2",
+    "slam_refact/docs/spec/02-map-tracker.md \u00a78.1, \u00a78.3 P1"
+   ]
+  },
+  {
+   "id": "MT-P2u",
+   "class": "MUST-PASS",
+   "owner": "WP2",
+   "level": "unit",
+   "evaluator": "module-report",
+   "metric": "status state machine on synthetic ok sequences vs original formula table",
+   "tolerance": {
+    "rule": "exact"
+   },
+   "source": [
+    "slam_refact/docs/design/architecture.md v2.1 \u00a76.6.2",
+    "slam_refact/docs/spec/02-map-tracker.md \u00a78.3 P2"
+   ]
+  },
+  {
+   "id": "MT-P2t",
+   "class": "MUST-PASS",
+   "owner": "WP5",
+   "level": "trace",
+   "evaluator": "trace_metrics.status_hysteresis",
+   "metric": "slam_refact/tools/re/spec_map_tracker/status_hysteresis_check.py check_run on the engine trace (fresh rows): every interior status run >= MIN_RUN_S and first LIMITED t - t_first >= MIN_RUN_S",
+   "tolerance": {
+    "min_run_s": 1.9,
+    "frame_slack_s": 0.1,
+    "pass": "check_run(...)[\"pass\"] is true"
+   },
+   "source": [
+    "slam_refact/docs/design/architecture.md v2.1 \u00a76.6.2 (NI-5)",
+    "slam_refact/docs/spec/02-map-tracker.md \u00a78.2, \u00a78.3 P2"
+   ],
+   "scenarios": [
+    "tum-room1-full",
+    "tum-room1-lowtex",
+    "flip6-s2",
+    "flip6-n1",
+    "flip6-s3-lowtex"
+   ]
+  },
+  {
+   "id": "MT-P3",
+   "class": "BLOCKED-ALLOWED->MUST-PASS",
+   "owner": "WP2",
+   "level": "isolation",
+   "evaluator": "module-report",
+   "metric": "robustP2P RANSAC in isolation vs original export",
+   "tolerance": {
+    "inlier_mask": "identical",
+    "trials": "identical",
+    "confidence_abs": 1e-06,
+    "pose_elem_abs": 1e-05
+   },
+   "source": [
+    "slam_refact/docs/design/architecture.md v2.1 \u00a76.6.2",
+    "slam_refact/docs/spec/02-map-tracker.md \u00a78.3 P3"
+   ]
+  },
+  {
+   "id": "MT-P4",
+   "class": "BLOCKED-ALLOWED->MUST-PASS",
+   "owner": "WP2",
+   "level": "isolation",
+   "evaluator": "module-report",
+   "metric": "verifyPointVisibility (1549)",
+   "tolerance": {
+    "status_scale_views": "exact"
+   },
+   "source": [
+    "slam_refact/docs/design/architecture.md v2.1 \u00a76.6.2",
+    "slam_refact/docs/spec/02-map-tracker.md \u00a78.3 P4"
+   ]
+  },
+  {
+   "id": "MT-P5a",
+   "class": "BLOCKED-ALLOWED->MUST-PASS",
+   "owner": "WP2",
+   "level": "isolation",
+   "evaluator": "module-report",
+   "metric": "trackPoints before optimisation",
+   "tolerance": {
+    "match_set": "identical",
+    "subset_id_set": "identical",
+    "weight_rel": 1e-06,
+    "r0_rel": 1e-05
+   },
+   "source": [
+    "slam_refact/docs/design/architecture.md v2.1 \u00a76.6.2",
+    "slam_refact/docs/spec/02-map-tracker.md \u00a78.3 P5"
+   ]
+  },
+  {
+   "id": "MT-P5b",
+   "class": "BLOCKED-ALLOWED->REPORT",
+   "owner": "WP2",
+   "level": "isolation",
+   "evaluator": "module-report",
+   "metric": "trackPoints after optimisation (Ceres 2.0-dev vs 2.2, R11)",
+   "tolerance": {
+    "pose_elem_abs": 0.0001,
+    "r1_rel": 0.001
+   },
+   "source": [
+    "slam_refact/docs/design/architecture.md v2.1 \u00a76.6.2",
+    "slam_refact/docs/spec/02-map-tracker.md \u00a78.3 P5"
+   ]
+  },
+  {
+   "id": "MT-P6",
+   "class": "MUST-PASS",
+   "owner": "WP2",
+   "level": "unit",
+   "evaluator": "module-report",
+   "metric": "ground height window vs hand computation",
+   "tolerance": {
+    "rule": "exact"
+   },
+   "source": [
+    "slam_refact/docs/design/architecture.md v2.1 \u00a76.6.2",
+    "slam_refact/docs/spec/02-map-tracker.md \u00a78.3 P6"
+   ]
+  },
+  {
+   "id": "MT-P7-1",
+   "class": "MUST-PASS",
+   "owner": "WP5",
+   "level": "trace",
+   "evaluator": "trace_metrics.status_hysteresis",
+   "metric": "MT-P7 \u2460: same check as MT-P2t",
+   "tolerance": {
+    "same_as": "MT-P2t"
+   },
+   "source": [
+    "slam_refact/docs/design/architecture.md v2.1 \u00a76.6.2 (NI-5)",
+    "slam_refact/docs/spec/02-map-tracker.md \u00a78.3 P7 \u2460"
+   ],
+   "scenarios": [
+    "tum-room1-full",
+    "tum-room1-lowtex",
+    "flip6-s2",
+    "flip6-n1",
+    "flip6-s3-lowtex"
+   ]
+  },
+  {
+   "id": "MT-P7-2",
+   "class": "REPORT",
+   "owner": "WP5",
+   "level": "trace",
+   "evaluator": "trace_metrics.limited_ratio",
+   "metric": "rows with status LIMITED / input frames (trace rows); D-1 denominator",
+   "tolerance": {
+    "rule": "[min over reference runs - 0.05, max + 0.05]",
+    "margin_abs": 0.05,
+    "design_example": {
+     "tum-room1-full": [
+      0.653,
+      0.785
+     ]
+    }
+   },
+   "source": [
+    "slam_refact/docs/design/architecture.md v2.1 \u00a76.6.2 (D-1, N2)",
+    "slam_refact/docs/spec/02-map-tracker.md \u00a78.3 P7 \u2461"
+   ],
+   "scenarios": [
+    "tum-room1-full",
+    "tum-room1-lowtex",
+    "flip6-s2",
+    "flip6-n1",
+    "flip6-s3-lowtex"
+   ],
+   "reference_runs": [
+    "r1",
+    "r2"
+   ]
+  },
+  {
+   "id": "MT-P7-3",
+   "class": "REPORT",
+   "owner": "WP5",
+   "level": "trace",
+   "evaluator": "trace_metrics.first_limited",
+   "metric": "input index of the first fresh LIMITED frame; no LIMITED in the references => none expected",
+   "tolerance": {
+    "rule": "[min over reference runs - 1, max + 1] frames",
+    "frames": 1,
+    "tag_rule": "if reference r1 publishMs - 1000*t (floor_index p95 - p5) exceeds the median frame interval, a FAIL carries the memo tag INPUT-ARTIFACT-POSSIBLE; the verdict stays FAIL (M8)"
+   },
+   "source": [
+    "slam_refact/docs/design/architecture.md v2.1 \u00a76.6.2 (M8)",
+    "slam_refact/docs/spec/02-map-tracker.md \u00a78.3 P7 \u2462"
+   ],
+   "scenarios": [
+    "tum-room1-full",
+    "tum-room1-lowtex",
+    "flip6-s2",
+    "flip6-n1",
+    "flip6-s3-lowtex"
+   ],
+   "reference_runs": [
+    "r1",
+    "r2"
+   ]
+  },
+  {
+   "id": "MT-P7-4",
+   "class": "REPORT",
+   "owner": "WP5",
+   "level": "trace",
+   "evaluator": "frame_parity.matched_diffs",
+   "metric": "D-10: per-frame rotation difference (deg) engine vs reference r1 over ALL frames fresh+posed in both; linear (numpy) p95 as analyze_reference.repeatability",
+   "tolerance": {
+    "rule": "p95 <= 2 x original r1-r2 full-run p95",
+    "percentile": "linear",
+    "rot_p95_max_deg": {
+     "tum-room1-full": 45.2,
+     "flip6-s2": 6.2,
+     "flip6-n1": 58.4,
+     "flip6-s3-lowtex": 16.4
+    }
+   },
+   "source": [
+    "slam_refact/docs/design/architecture.md v2.1 \u00a76.6.2 (D-10, F3)",
+    "slam_refact/docs/spec/02-map-tracker.md \u00a78.3 P7 \u2463",
+    "slam_refact/docs/re/03-runtime-reference.md \u00a71"
+   ],
+   "scenarios": [
+    "tum-room1-full",
+    "flip6-s2",
+    "flip6-n1",
+    "flip6-s3-lowtex"
+   ],
+   "not_registered": {
+    "tum-room1-lowtex": "no value in architecture.md \u00a76.6.2 D-10 table"
+   }
+  },
+  {
+   "id": "MT-P8",
+   "class": "REPORT",
+   "owner": "WP5",
+   "level": "profile",
+   "evaluator": "manual",
+   "metric": "CPU share of relocalize (1274) + robustP2P (1025) in an engine profile; compared with the original 44% (TUM) as a record only",
+   "tolerance": {
+    "rule": "record only"
+   },
+   "source": [
+    "slam_refact/docs/design/architecture.md v2.1 \u00a76.6.2",
+    "slam_refact/docs/spec/02-map-tracker.md \u00a78.3 P8"
+   ],
+   "blocked_if": "no engine CPU profile was taken (StageTimings do not separate relocalize)"
+  },
+  {
+   "id": "MT-P9",
+   "class": "BLOCKED-ALLOWED->MUST-PASS",
+   "owner": "WP2",
+   "level": "isolation",
+   "evaluator": "module-report",
+   "metric": "1555 std::sort tie input isolated probe: libcxx::sort order vs original",
+   "tolerance": {
+    "rule": "order identical"
+   },
+   "source": [
+    "slam_refact/docs/design/architecture.md v2.1 \u00a76.6.2 (F6), \u00a75.3"
+   ]
+  },
+  {
+   "id": "MB-TRI",
+   "class": "MUST-PASS",
+   "owner": "WP3",
+   "level": "unit",
+   "evaluator": "module-report",
+   "metric": "TriangulatePointMultiviewAnalytic 128 cases (triangulate-r1/result.json)",
+   "tolerance": {
+    "abs": "1e-12*max(1,|ref|)"
+   },
+   "source": [
+    "slam_refact/docs/design/architecture.md v2.1 \u00a76.6.3",
+    "slam_refact/docs/spec/03-map-builder.md \u00a78.1"
+   ]
+  },
+  {
+   "id": "MB-UNIT",
+   "class": "MUST-PASS",
+   "owner": "WP3",
+   "level": "unit",
+   "evaluator": "module-report",
+   "metric": "S3 \u00a78.2 boundary table (keyframe need, delay, cooldown, reloc hold, gyro 80.0/80.0001, reset, reset=>keyframe, ground depth, prune 7/8, cap 65->64, pair queue 91, dead keys) + engine-internal asserts keyframe interval >= 5 and live keyframes <= 64",
+   "tolerance": {
+    "rule": "as table; ground depth rel 1e-5"
+   },
+   "source": [
+    "slam_refact/docs/design/architecture.md v2.1 \u00a76.6.3",
+    "slam_refact/docs/spec/03-map-builder.md \u00a78.2"
+   ]
+  },
+  {
+   "id": "MB-EPI",
+   "class": "MUST-PASS",
+   "owner": "WP3",
+   "level": "unit",
+   "evaluator": "module-report",
+   "metric": "1115/1116/1118 epipolar prework/depth, 1123 ray-ray, 1121/1120 order (no-tie inputs)",
+   "tolerance": {
+    "float_rel": 1e-06,
+    "status": "exact",
+    "order": "exact"
+   },
+   "source": [
+    "slam_refact/docs/design/architecture.md v2.1 \u00a76.6.3",
+    "slam_refact/docs/spec/03-map-builder.md \u00a78.5"
+   ]
+  },
+  {
+   "id": "G-M1",
+   "class": "REPORT",
+   "owner": "WP5",
+   "level": "trace",
+   "evaluator": "trace_metrics.first_world_points",
+   "metric": "proxy for the first MAP_RESET processed frame (no memory probe): input index of the first fresh frame with worldPoints > 0, evaluated with the same proxy on engine and reference; engine srMapReset first frame is recorded alongside",
+   "tolerance": {
+    "rule": "[min over reference runs - 3, max + 3] frames",
+    "frames": 3,
+    "design_proxy": {
+     "TUM": 172,
+     "Flip6": 13
+    }
+   },
+   "source": [
+    "slam_refact/docs/design/architecture.md v2.1 \u00a76.6.3",
+    "slam_refact/docs/spec/03-map-builder.md \u00a78.3, \u00a78.4 G-M1"
+   ],
+   "scenarios": [
+    "tum-room1-full",
+    "tum-room1-lowtex",
+    "flip6-s2",
+    "flip6-n1",
+    "flip6-s3-lowtex"
+   ],
+   "reference_runs": [
+    "r1",
+    "r2"
+   ]
+  },
+  {
+   "id": "G-M2",
+   "class": "REPORT",
+   "owner": "WP5",
+   "level": "trace",
+   "evaluator": "trace_metrics.engine_keyframe_intervals + early_burst_share_5_6",
+   "metric": "(a) engine-only: processed-frame intervals between consecutive srKeyframeCreated frames, excluding intervals ending on a srMapReset frame; (b) proxy on both traces: share of burst intervals (wpAdded >= 10) in {5,6} within 200 processed frames from the first world-points frame",
+   "tolerance": {
+    "a": "all intervals >= 5 (100%)",
+    "b": "[min over reference runs - 0.15, max + 0.15]",
+    "burst_threshold": 10,
+    "horizon_processed_frames": 200
+   },
+   "source": [
+    "slam_refact/docs/design/architecture.md v2.1 \u00a76.6.3",
+    "slam_refact/docs/spec/03-map-builder.md \u00a78.3, \u00a78.4 G-M2"
+   ],
+   "scenarios": [
+    "tum-room1-full",
+    "tum-room1-lowtex",
+    "flip6-s2",
+    "flip6-n1",
+    "flip6-s3-lowtex"
+   ],
+   "reference_runs": [
+    "r1",
+    "r2"
+   ]
+  },
+  {
+   "id": "G-M3",
+   "class": "REPORT",
+   "owner": "WP5",
+   "level": "trace",
+   "evaluator": "engine srKeyframes",
+   "metric": "(a) engine-only: srKeyframes <= 64 on every fresh row; (b) keyframes created in the first 30 s vs reference mean",
+   "tolerance": {
+    "a": "always <= 64",
+    "b": "+-25% of reference mean or +-2|r1-r2|, whichever larger"
+   },
+   "source": [
+    "slam_refact/docs/design/architecture.md v2.1 \u00a76.6.3",
+    "slam_refact/docs/spec/03-map-builder.md \u00a78.4 G-M3"
+   ],
+   "scenarios": [
+    "tum-room1-full",
+    "tum-room1-lowtex",
+    "flip6-s2",
+    "flip6-n1",
+    "flip6-s3-lowtex"
+   ],
+   "blocked_if": {
+    "b": "reference keyframe counts are not observable in the public trace (S3 \u00a78.4 memory probe not built)"
+   }
+  },
+  {
+   "id": "G-M4",
+   "class": "REPORT",
+   "owner": "WP5",
+   "level": "trace",
+   "evaluator": "engine srPointsBySource",
+   "metric": "median live point count per type 1/2/3 vs reference",
+   "tolerance": {
+    "rule": "+-30% or +-2 x run-to-run difference"
+   },
+   "source": [
+    "slam_refact/docs/design/architecture.md v2.1 \u00a76.6.3",
+    "slam_refact/docs/spec/03-map-builder.md \u00a78.4 G-M4"
+   ],
+   "scenarios": [
+    "tum-room1-full",
+    "tum-room1-lowtex",
+    "flip6-s2",
+    "flip6-n1",
+    "flip6-s3-lowtex"
+   ],
+   "blocked_if": "reference point types are not observable in the public trace (S3 \u00a78.4 memory probe not built); engine values recorded"
+  },
+  {
+   "id": "G-M5",
+   "class": "REPORT",
+   "owner": "WP5",
+   "level": "trace",
+   "evaluator": "engine srMapReset",
+   "metric": "MAP_RESET count over the run",
+   "tolerance": {
+    "rule": "[reference min - 1, max + 1]"
+   },
+   "source": [
+    "slam_refact/docs/design/architecture.md v2.1 \u00a76.6.3",
+    "slam_refact/docs/spec/03-map-builder.md \u00a78.4 G-M5"
+   ],
+   "scenarios": [
+    "tum-room1-full",
+    "tum-room1-lowtex",
+    "flip6-s2",
+    "flip6-n1",
+    "flip6-s3-lowtex"
+   ],
+   "blocked_if": "reference MAP_RESET count is not observable in the public trace (S3 \u00a78.4 memory probe not built); engine count recorded"
+  },
+  {
+   "id": "G-M6",
+   "class": "REPORT",
+   "owner": "WP5",
+   "level": "trace",
+   "evaluator": "trace_metrics.first_world_points",
+   "metric": "public world point count at the G-M1 proxy frame",
+   "tolerance": {
+    "rule": "[0.8 x reference min, 1.2 x reference max]",
+    "design_reference": {
+     "TUM": [
+      52,
+      53
+     ],
+     "Flip6": [
+      69,
+      130
+     ]
+    }
+   },
+   "source": [
+    "slam_refact/docs/design/architecture.md v2.1 \u00a76.6.3",
+    "slam_refact/docs/spec/03-map-builder.md \u00a78.4 G-M6"
+   ],
+   "scenarios": [
+    "tum-room1-full",
+    "tum-room1-lowtex",
+    "flip6-s2",
+    "flip6-n1",
+    "flip6-s3-lowtex"
+   ],
+   "reference_runs": [
+    "r1",
+    "r2"
+   ]
+  },
+  {
+   "id": "G-M7",
+   "class": "BLOCKED-ALLOWED->REPORT",
+   "owner": "WP5",
+   "level": "memory-probe",
+   "evaluator": "manual",
+   "metric": "sky points, Flip6 S2: engine sky points per keyframe and live type-3 count vs original memory probe (pool counts, *(vio+6456)+0x98)",
+   "tolerance": {
+    "rule": "median within +-30% or +-2 x run difference; original frm+0x98 == 0 throughout confirms D-7 (recorded)"
+   },
+   "source": [
+    "slam_refact/docs/design/architecture.md v2.1 \u00a76.6.3 (P2-4, D-22)",
+    "slam_refact/docs/spec/03-map-builder.md \u00a78.4"
+   ],
+   "scenarios": [
+    "flip6-s2"
+   ],
+   "blocked_if": "memory probe not available"
+  },
+  {
+   "id": "V-MP",
+   "class": "MUST-PASS",
+   "owner": "WP4",
+   "level": "unit",
+   "evaluator": "module-report",
+   "metric": "MotionPrediction golden 200 cases",
+   "tolerance": {
+    "abs": 1e-05
+   },
+   "source": [
+    "slam_refact/docs/design/architecture.md v2.1 \u00a76.6.4",
+    "slam_refact/docs/spec/04-vio-tracker.md \u00a78.1"
+   ]
+  },
+  {
+   "id": "V-H1/H2",
+   "class": "MUST-PASS",
+   "owner": "WP4",
+   "level": "unit",
+   "evaluator": "module-report",
+   "metric": "yawOffset, output composition",
+   "tolerance": {
+    "abs": 1e-05
+   },
+   "source": [
+    "slam_refact/docs/design/architecture.md v2.1 \u00a76.6.4",
+    "slam_refact/docs/spec/04-vio-tracker.md \u00a78.1"
+   ]
+  },
+  {
+   "id": "V-H3",
+   "class": "MUST-PASS",
+   "owner": "WP4",
+   "level": "unit",
+   "evaluator": "module-report",
+   "metric": "velocity / history (incl. H3b)",
+   "tolerance": {
+    "rel": 1e-05
+   },
+   "source": [
+    "slam_refact/docs/design/architecture.md v2.1 \u00a76.6.4",
+    "slam_refact/docs/spec/04-vio-tracker.md \u00a78.1"
+   ]
+  },
+  {
+   "id": "V-ST",
+   "class": "MUST-PASS",
+   "owner": "WP4",
+   "level": "unit",
+   "evaluator": "module-report",
+   "metric": "status_table 100 rows + flags_table 12 rows",
+   "tolerance": {
+    "rule": "exact"
+   },
+   "source": [
+    "slam_refact/docs/design/architecture.md v2.1 \u00a76.6.4",
+    "slam_refact/docs/spec/04-vio-tracker.md \u00a78.1"
+   ]
+  },
+  {
+   "id": "V-3DOF",
+   "class": "MUST-PASS",
+   "owner": "WP4",
+   "level": "unit",
+   "evaluator": "module-report",
+   "metric": "disableVio pose",
+   "tolerance": {
+    "rotation_abs": 1e-05,
+    "position": "exactly 0"
+   },
+   "source": [
+    "slam_refact/docs/design/architecture.md v2.1 \u00a76.6.4",
+    "slam_refact/docs/spec/04-vio-tracker.md \u00a78.1"
+   ]
+  },
+  {
+   "id": "V-LATCH",
+   "class": "MUST-PASS",
+   "owner": "WP4",
+   "level": "unit",
+   "evaluator": "module-report",
+   "metric": "metric latch (probe-tail absolute_first_scale)",
+   "tolerance": {
+    "abs": 1e-05
+   },
+   "source": [
+    "slam_refact/docs/design/architecture.md v2.1 \u00a76.6.4",
+    "slam_refact/docs/spec/04-vio-tracker.md \u00a78.1"
+   ]
+  },
+  {
+   "id": "V-XR",
+   "class": "MUST-PASS",
+   "owner": "WP4",
+   "level": "unit",
+   "evaluator": "module-report",
+   "metric": "xrRotationFromDeviceRotation",
+   "tolerance": {
+    "abs": 1e-06
+   },
+   "source": [
+    "slam_refact/docs/design/architecture.md v2.1 \u00a76.6.4",
+    "slam_refact/docs/spec/04-vio-tracker.md \u00a78.1"
+   ]
+  },
+  {
+   "id": "V-P1-P4",
+   "class": "MUST-PASS",
+   "owner": "WP5",
+   "level": "trace",
+   "evaluator": "trace_metrics.runtime_invariants",
+   "metric": "slam_refact/tools/re/spec_vio_tracker/runtime_checks.py check_run on the engine trace (TOL 0.15 s): P1 closed LIMITED runs >= 1.85 s, P2 NORMAL runs after LIMITED >= 1.85 s, P3 first LIMITED t >= 1.85 s, P4 reason UNSPECIFIED on every fresh frame",
+   "tolerance": {
+    "tol_s": 0.15,
+    "min_hold_s": 2.0,
+    "pass": "P1_violations == [] and P2_violations == [] and P3_ok and P4_ok"
+   },
+   "source": [
+    "slam_refact/docs/design/architecture.md v2.1 \u00a76.6.4",
+    "slam_refact/docs/spec/04-vio-tracker.md \u00a78.2 P1-P4"
+   ],
+   "scenarios": [
+    "tum-room1-full",
+    "tum-room1-lowtex",
+    "flip6-s2",
+    "flip6-n1",
+    "flip6-s3-lowtex"
+   ]
+  },
+  {
+   "id": "V-P5/P6",
+   "class": "MUST-PASS",
+   "owner": "WP5",
+   "level": "trace",
+   "evaluator": "trace_metrics.runtime_invariants",
+   "metric": "P5: fresh posed frames with i <= 4 have p == [0, 2, 0] exactly; P6: |heading| (atan2(f.x, -f.z) of the camera -Z) of frames 0 and 6 <= 0.01 deg",
+   "tolerance": {
+    "P5": "exact",
+    "P6_abs_deg": 0.01
+   },
+   "source": [
+    "slam_refact/docs/design/architecture.md v2.1 \u00a76.6.4",
+    "slam_refact/docs/spec/04-vio-tracker.md \u00a78.2 P5, P6"
+   ],
+   "scenarios": [
+    "tum-room1-full",
+    "tum-room1-lowtex",
+    "flip6-s2",
+    "flip6-n1",
+    "flip6-s3-lowtex"
+   ]
+  },
+  {
+   "id": "V-P8",
+   "class": "REPORT",
+   "owner": "WP5",
+   "level": "trace",
+   "evaluator": "trace_metrics.worldpoint_padding_fraction",
+   "metric": "share of sampled world points equal to [id 0, conf 0, (0,2,0)] in worldpoints-sampled.jsonl",
+   "tolerance": {
+    "rule": "> 0"
+   },
+   "source": [
+    "slam_refact/docs/design/architecture.md v2.1 \u00a76.6.4",
+    "slam_refact/docs/spec/04-vio-tracker.md \u00a78.2 P8"
+   ],
+   "scenarios": [
+    "tum-room1-full",
+    "tum-room1-lowtex",
+    "flip6-s2",
+    "flip6-n1",
+    "flip6-s3-lowtex"
+   ]
+  },
+  {
+   "id": "V-FFT-abc",
+   "class": "MUST-PASS",
+   "owner": "WP2",
+   "level": "unit",
+   "evaluator": "module-report",
+   "metric": "FFT synthetic (sigma 1e-3 rays, 20-60 ground points, 20% outliers)",
+   "tolerance": {
+    "a": "accept/reject == noise-free solution",
+    "b": "rotation <= 0.05 deg, translation direction <= 1 deg",
+    "c": "on failure delta.t == 0 exactly"
+   },
+   "source": [
+    "slam_refact/docs/design/architecture.md v2.1 \u00a76.6.4",
+    "slam_refact/docs/spec/04-vio-tracker.md \u00a78.3"
+   ]
+  },
+  {
+   "id": "V-FFT-d",
+   "class": "MUST-PASS",
+   "owner": "WP2",
+   "level": "unit",
+   "evaluator": "module-report",
+   "metric": "seed 5489 pair / sample order per \u00a73.5 consumption order vs 1279 golden",
+   "tolerance": {
+    "rule": "identical"
+   },
+   "source": [
+    "slam_refact/docs/design/architecture.md v2.1 \u00a76.6.4",
+    "slam_refact/docs/spec/04-vio-tracker.md \u00a78.3 (d)",
+    "slam_refact/docs/re/04-wp2-pre.md \u00a71"
+   ]
+  },
+  {
+   "id": "V-FFT-ISO",
+   "class": "MUST-PASS",
+   "owner": "WP2",
+   "level": "unit+evidence",
+   "evaluator": "module-report",
+   "metric": "RobustGroundHomography on golden-1279.json, all 18 cases, one compat::RandomNumbers(5489)",
+   "tolerance": {
+    "sample_selection_and_mt_state": "bit-identical",
+    "ret": "identical",
+    "H_camMotion_abs": 1e-05,
+    "mask": "identical"
+   },
+   "source": [
+    "slam_refact/docs/design/architecture.md v2.1 \u00a76.6.4 (D-23, P2-7)"
+   ]
+  },
+  {
+   "id": "V-H7",
+   "class": "MUST-PASS",
+   "owner": "WP5",
+   "level": "integration",
+   "evaluator": "frame_parity.window_stats",
+   "metric": "Flip6 S2 frames 0-71 with the captured pyramids build/slam-refact-20261015/spec/frontend/capture/flip6-s2/c2-73 injected (capture 0 = bootstrap, capture k = frame k-1), GlueRunner output vs reference r1, per frame fresh+posed in both; nearest-rank percentiles",
+   "tolerance": {
+    "rot_p95_deg": 0.5,
+    "rot_max_deg": 1.0,
+    "pos_p95": 0.09,
+    "pos_max": 0.105,
+    "window": [
+     0,
+     71
+    ],
+    "percentile": "nearest_rank",
+    "tag_rule": "D-20: if r1 publishMs - 1000*t (floor_index p95 - p5) exceeds one frame interval, a FAIL carries the memo tag INPUT-ARTIFACT-POSSIBLE; the verdict stays FAIL"
+   },
+   "source": [
+    "slam_refact/docs/design/architecture.md v2.1 \u00a76.6.4 (F8, D-20)",
+    "slam_refact/docs/spec/04-vio-tracker.md \u00a78.5 flip6-s2 row"
+   ],
+   "scenarios": [
+    "flip6-s2"
+   ],
+   "predeclared_blocked_reason": "WP2-PRE (5) capture unavailable (capture c2-73 exists, so not applicable)"
+  },
+  {
+   "id": "V-H7b",
+   "class": "REPORT",
+   "owner": "WP5",
+   "level": "integration",
+   "evaluator": "frame_parity.window_stats",
+   "metric": "TUM frames 0-22 with capture tum-room1-full/c2 injected (capture 0 = bootstrap), GlueRunner vs r1",
+   "tolerance": {
+    "rot_p95_deg": 0.5,
+    "rot_max_deg": 1.0,
+    "pos_p95": 0.02,
+    "pos_max": 0.066,
+    "window": [
+     0,
+     22
+    ],
+    "percentile": "nearest_rank"
+   },
+   "source": [
+    "slam_refact/docs/design/architecture.md v2.1 \u00a76.6.4",
+    "slam_refact/docs/spec/04-vio-tracker.md \u00a78.5 tum-room1-full row"
+   ],
+   "scenarios": [
+    "tum-room1-full"
+   ]
+  },
+  {
+   "id": "V-EV1",
+   "class": "REPORT",
+   "owner": "WP5",
+   "level": "trace",
+   "evaluator": "trace_metrics.first_translation",
+   "metric": "input index of the first fresh posed frame with p != [0, 2, 0]",
+   "tolerance": {
+    "rule": "[min over reference runs - 5, max + 5]",
+    "frames": 5,
+    "design_reference": {
+     "TUM": 139,
+     "lowtex": 139,
+     "Flip6": 7
+    }
+   },
+   "source": [
+    "slam_refact/docs/design/architecture.md v2.1 \u00a76.6.4",
+    "slam_refact/docs/spec/04-vio-tracker.md \u00a78.4"
+   ],
+   "scenarios": [
+    "tum-room1-full",
+    "tum-room1-lowtex",
+    "flip6-s2",
+    "flip6-n1",
+    "flip6-s3-lowtex"
+   ],
+   "reference_runs": [
+    "r1",
+    "r2"
+   ]
+  },
+  {
+   "id": "V-EV2",
+   "class": "REPORT",
+   "owner": "WP5",
+   "level": "trace",
+   "evaluator": "trace_metrics.first_limited",
+   "metric": "input index of the first fresh LIMITED frame; references without LIMITED => engine without LIMITED",
+   "tolerance": {
+    "rule": "[min over reference runs - 5, max + 5]",
+    "frames": 5,
+    "design_reference": {
+     "TUM": 47,
+     "lowtex": 46,
+     "S3": [
+      70,
+      71
+     ]
+    }
+   },
+   "source": [
+    "slam_refact/docs/design/architecture.md v2.1 \u00a76.6.4 (D-2)",
+    "slam_refact/docs/spec/04-vio-tracker.md \u00a78.4"
+   ],
+   "scenarios": [
+    "tum-room1-full",
+    "tum-room1-lowtex",
+    "flip6-s2",
+    "flip6-n1",
+    "flip6-s3-lowtex"
+   ],
+   "reference_runs": [
+    "r1",
+    "r2"
+   ]
+  },
+  {
+   "id": "V-EV3",
+   "class": "REPORT",
+   "owner": "WP5",
+   "level": "trace",
+   "evaluator": "frame_parity.status_agreement",
+   "metric": "share of frames fresh in both (engine, reference r1) with equal status",
+   "tolerance": {
+    "rule": "agreement >= original r1-r2 agreement - 0.05",
+    "min_agreement": {
+     "tum-room1-full": 0.909,
+     "tum-room1-lowtex": 0.753,
+     "flip6-s2": 0.95,
+     "flip6-n1": 0.95,
+     "flip6-s3-lowtex": 0.892
+    }
+   },
+   "source": [
+    "slam_refact/docs/design/architecture.md v2.1 \u00a76.6.4",
+    "slam_refact/docs/spec/04-vio-tracker.md \u00a78.4"
+   ],
+   "scenarios": [
+    "tum-room1-full",
+    "tum-room1-lowtex",
+    "flip6-s2",
+    "flip6-n1",
+    "flip6-s3-lowtex"
+   ]
+  },
+  {
+   "id": "V-EV4",
+   "class": "REPORT",
+   "owner": "WP5",
+   "level": "trace",
+   "evaluator": "trace_metrics.zero_step_fractions",
+   "metric": "per status: share of consecutive fresh posed frames (i, i+1) with identical p, keyed by the later frame status (runtime_checks P7)",
+   "tolerance": {
+    "rule": "for every status present in a reference run: engine fraction in [min over reference runs having it - 0.10, max + 0.10]; a reference status absent from the engine trace FAILs; statuses only in the engine are recorded",
+    "margin_abs": 0.1
+   },
+   "source": [
+    "slam_refact/docs/design/architecture.md v2.1 \u00a76.6.4",
+    "slam_refact/docs/spec/04-vio-tracker.md \u00a78.4"
+   ],
+   "scenarios": [
+    "tum-room1-full",
+    "tum-room1-lowtex",
+    "flip6-s2",
+    "flip6-n1",
+    "flip6-s3-lowtex"
+   ],
+   "reference_runs": [
+    "r1",
+    "r2"
+   ]
+  },
+  {
+   "id": "V-EV5",
+   "class": "REPORT",
+   "owner": "WP5",
+   "level": "trace",
+   "evaluator": "trace_metrics.world_points_p50",
+   "metric": "p50 (floor_index, as run-reference.mjs summary) of worldPoints over fresh frames",
+   "tolerance": {
+    "rule": "[0.8 x min over reference runs, 1.25 x max]",
+    "design_reference": {
+     "TUM": [
+      29,
+      40
+     ],
+     "S2": 293,
+     "N1": 273,
+     "S3": 111
+    },
+    "note": "design text lists r1 values for Flip6; the rule uses the range over r1 and r2 (baseline block)"
+   },
+   "source": [
+    "slam_refact/docs/design/architecture.md v2.1 \u00a76.6.4",
+    "slam_refact/docs/spec/04-vio-tracker.md \u00a78.4",
+    "slam_refact/docs/re/03-runtime-reference.md \u00a77"
+   ],
+   "scenarios": [
+    "tum-room1-full",
+    "tum-room1-lowtex",
+    "flip6-s2",
+    "flip6-n1",
+    "flip6-s3-lowtex"
+   ],
+   "reference_runs": [
+    "r1",
+    "r2"
+   ]
+  },
+  {
+   "id": "V-PD",
+   "class": "REPORT",
+   "owner": "WP5",
+   "level": "trace",
+   "evaluator": "frame_parity.window_stats",
+   "metric": "full CPU pyramid path (no injection), pre-divergence window, per frame fresh+posed in both, GlueRunner vs r1; nearest-rank percentiles. Values copied from S4 \u00a78.5 verbatim even where they disagree with its 3-digit rounding rule (N6: TUM 0.066 vs 0.0665, lowtex 1.52 vs 1.53)",
+   "tolerance": {
+    "percentile": "nearest_rank",
+    "windows": {
+     "tum-room1-full": {
+      "window": [
+       0,
+       139
+      ],
+      "rot_p95_deg": 0.5,
+      "rot_max_deg": 1.0,
+      "pos_p95": 0.02,
+      "pos_max": 0.066
+     },
+     "tum-room1-lowtex": {
+      "window": [
+       0,
+       138
+      ],
+      "rot_p95_deg": 1.52,
+      "rot_max_deg": 3.6,
+      "pos_p95": 0.02,
+      "pos_max": 0.05
+     },
+     "flip6-s2": {
+      "window": [
+       0,
+       71
+      ],
+      "rot_p95_deg": 0.5,
+      "rot_max_deg": 1.0,
+      "pos_p95": 0.09,
+      "pos_max": 0.105
+     },
+     "flip6-n1": {
+      "window": [
+       0,
+       53
+      ],
+      "rot_p95_deg": 1.24,
+      "rot_max_deg": 6.88,
+      "pos_p95": 0.1,
+      "pos_max": 0.192
+     },
+     "flip6-s3-lowtex": {
+      "window": [
+       0,
+       24
+      ],
+      "rot_p95_deg": 0.5,
+      "rot_max_deg": 1.0,
+      "pos_p95": 0.022,
+      "pos_max": 0.05
+     }
+    }
+   },
+   "source": [
+    "slam_refact/docs/design/architecture.md v2.1 \u00a76.6.4 (N6)",
+    "slam_refact/docs/spec/04-vio-tracker.md \u00a78.5"
+   ],
+   "scenarios": [
+    "tum-room1-full",
+    "tum-room1-lowtex",
+    "flip6-s2",
+    "flip6-n1",
+    "flip6-s3-lowtex"
+   ]
+  },
+  {
+   "id": "MS-P1",
+   "class": "MUST-PASS",
+   "owner": "WP4",
+   "level": "unit",
+   "evaluator": "module-report",
+   "metric": "crossCorrelate (1183)",
+   "tolerance": {
+    "abs": "4 ulp(max|out|)"
+   },
+   "source": [
+    "slam_refact/docs/design/architecture.md v2.1 \u00a76.6.5",
+    "slam_refact/docs/spec/05-metric-scale.md \u00a78.2"
+   ]
+  },
+  {
+   "id": "MS-P2",
+   "class": "MUST-PASS",
+   "owner": "WP4",
+   "level": "unit",
+   "evaluator": "module-report",
+   "metric": "scale methods 1/2 (1191, 1192)",
+   "tolerance": {
+    "scale_rel": 1e-06,
+    "residual_rel": 1e-05,
+    "nan": "NaN == NaN"
+   },
+   "source": [
+    "slam_refact/docs/design/architecture.md v2.1 \u00a76.6.5",
+    "slam_refact/docs/spec/05-metric-scale.md \u00a78.2"
+   ]
+  },
+  {
+   "id": "MS-P3",
+   "class": "MUST-PASS",
+   "owner": "WP4",
+   "level": "unit",
+   "evaluator": "module-report",
+   "metric": "interpolate (1198)",
+   "tolerance": {
+    "abs": "2 ulp + 1e-7",
+    "empty": "exact"
+   },
+   "source": [
+    "slam_refact/docs/design/architecture.md v2.1 \u00a76.6.5",
+    "slam_refact/docs/spec/05-metric-scale.md \u00a78.2"
+   ]
+  },
+  {
+   "id": "MS-P4",
+   "class": "MUST-PASS",
+   "owner": "WP4",
+   "level": "unit",
+   "evaluator": "module-report",
+   "metric": "meanDt / crop / merge / dedupe (1179, 1186-1188)",
+   "tolerance": {
+    "meanDt_rel": 1e-06,
+    "others": "bitwise"
+   },
+   "source": [
+    "slam_refact/docs/design/architecture.md v2.1 \u00a76.6.5",
+    "slam_refact/docs/spec/05-metric-scale.md \u00a78.2"
+   ]
+  },
+  {
+   "id": "MS-P5",
+   "class": "MUST-PASS",
+   "owner": "WP4",
+   "level": "unit",
+   "evaluator": "module-report",
+   "metric": "gaussian kernel / smoothing (1199, 1200)",
+   "tolerance": {
+    "kernel_rel": 2e-06,
+    "smoothed_abs": 1e-06
+   },
+   "source": [
+    "slam_refact/docs/design/architecture.md v2.1 \u00a76.6.5",
+    "slam_refact/docs/spec/05-metric-scale.md \u00a78.2"
+   ]
+  },
+  {
+   "id": "MS-P6",
+   "class": "MUST-PASS",
+   "owner": "WP4",
+   "level": "unit",
+   "evaluator": "module-report",
+   "metric": "FFT (1240, 1241)",
+   "tolerance": {
+    "freq": "bitwise",
+    "amp_abs": "1e-5*max + 1e-7"
+   },
+   "source": [
+    "slam_refact/docs/design/architecture.md v2.1 \u00a76.6.5",
+    "slam_refact/docs/spec/05-metric-scale.md \u00a78.2"
+   ]
+  },
+  {
+   "id": "MS-P7",
+   "class": "MUST-PASS",
+   "owner": "WP4",
+   "level": "unit",
+   "evaluator": "module-report",
+   "metric": "position Kalman (1169)",
+   "tolerance": {
+    "x_abs": "1e-5*(1+|x|)",
+    "P_diag_rel": 0.0001,
+    "ret": "exact"
+   },
+   "source": [
+    "slam_refact/docs/design/architecture.md v2.1 \u00a76.6.5",
+    "slam_refact/docs/spec/05-metric-scale.md \u00a78.2"
+   ]
+  },
+  {
+   "id": "MS-P8",
+   "class": "MUST-PASS",
+   "owner": "WP4",
+   "level": "unit",
+   "evaluator": "module-report",
+   "metric": "MSE 944 end to end s=0.5",
+   "tolerance": {
+    "first_accepted_frame": "exact (253)",
+    "scale_rel": 0.001,
+    "residual_rel": 0.01,
+    "sum_rel": 1e-06
+   },
+   "source": [
+    "slam_refact/docs/design/architecture.md v2.1 \u00a76.6.5",
+    "slam_refact/docs/spec/05-metric-scale.md \u00a78.2"
+   ]
+  },
+  {
+   "id": "MS-P9a-n",
+   "class": "MUST-PASS",
+   "owner": "WP4",
+   "level": "unit",
+   "evaluator": "module-report",
+   "metric": "MSE 944 variants a-n",
+   "tolerance": {
+    "rule": "as MS-P8 (residual only when >= 0)"
+   },
+   "source": [
+    "slam_refact/docs/design/architecture.md v2.1 \u00a76.6.5",
+    "slam_refact/docs/spec/05-metric-scale.md \u00a78.2"
+   ]
+  },
+  {
+   "id": "MS-RT",
+   "class": "BLOCKED-ALLOWED->REPORT",
+   "owner": "WP5",
+   "level": "trace",
+   "evaluator": "trace_metrics.scale_latches",
+   "metric": "absolute-scale runs (\u00a76.5, DERIVED-LINACC-OS-EQUIVALENT input, scale \"absolute\"): latch = first fresh posed frame whose reason leaves INITIALIZING (S4 \u00a73.9, \u00a76.2); scale proxy s_hat = p_y(latch) / p_y(previous fresh frame) (INFERRED from S4 \u00a73.9 latch output); L = latch input index",
+   "tolerance": {
+    "primary": "|L_engine - mean(L_r1, L_r2)| <= 5 and |s_engine - s_bar| / s_bar <= 0.05",
+    "primary_applies_if": "|L_r1 - L_r2| <= 5 and |s_r1 - s_r2| / s_bar <= 0.05",
+    "fallback": "|L_engine - mean| <= max(5, 2|L_r1 - L_r2|) and |s_engine - s_bar| / s_bar <= max(0.05, 2|s_r1 - s_r2| / s_bar)",
+    "no_latch": "neither original latches => PASS iff the engine does not latch",
+    "originals_disagree_on_latch": "exactly one original latches => engine PASS iff it does not latch, or it latches and meets the primary rule against the latched original",
+    "s_bar": "mean of the two original scale proxies"
+   },
+   "source": [
+    "slam_refact/docs/design/architecture.md v2.1 \u00a76.5, \u00a76.6.5 (M6, NI-3)",
+    "slam_refact/docs/spec/05-metric-scale.md \u00a78.4",
+    "slam_refact/docs/spec/04-vio-tracker.md \u00a73.9"
+   ],
+   "scenarios": [
+    "tum-room1-full-absolute",
+    "flip6-s2-absolute"
+   ],
+   "reference_runs": [
+    "r1",
+    "r2"
+   ],
+   "blocked_if": "original absolute runs could not be produced"
+  },
+  {
+   "id": "A-1",
+   "class": "REPORT",
+   "owner": "WP5",
+   "level": "trace",
+   "evaluator": "accuracy.accuracy",
+   "metric": "rotation-only aligned APE rmse (deg), RPE 1 s rotation rmse (deg), Sim(3) ATE rmse (similarity diagnostic) of the body-frame trajectory, GT frame lag 0, 1:1 association <= 6 ms",
+   "tolerance": {
+    "rule": "each metric in [0.8 x reference min, 1.25 x reference max]; below 0.8 x min => label BETTER-THAN-REF (not FAIL)",
+    "reference_runs": [
+     "r1",
+     "r2",
+     "profile1"
+    ],
+    "reference_ranges": {
+     "ape_rot_rmse_deg": [
+      12.2,
+      17.5
+     ],
+     "rpe1s_rot_rmse_deg": [
+      9.0,
+      13.8
+     ],
+     "sim3_ate_rmse": [
+      0.945,
+      0.96
+     ]
+    }
+   },
+   "source": [
+    "slam_refact/docs/design/architecture.md v2.1 \u00a76.6.6 (M14)",
+    "slam_refact/docs/re/03-runtime-reference.md \u00a76"
+   ],
+   "scenarios": [
+    "tum-room1-full"
+   ],
+   "gt": {
+    "tum-room1-full": "build/slam-refact-20261015/reference/fixtures/tum-room1-portrait-full/groundtruth-body.csv"
+   }
+  },
+  {
+   "id": "A-2",
+   "class": "REPORT",
+   "owner": "WP5",
+   "level": "trace",
+   "evaluator": "accuracy.accuracy",
+   "metric": "coverage = associated posed frames / input frames",
+   "tolerance": {
+    "rule": "coverage >= reference min - 0.01",
+    "min_coverage": 0.964,
+    "reference_min": 0.974
+   },
+   "source": [
+    "slam_refact/docs/design/architecture.md v2.1 \u00a76.6.6"
+   ],
+   "scenarios": [
+    "tum-room1-full"
+   ]
+  },
+  {
+   "id": "A-3",
+   "class": "REPORT",
+   "owner": "WP5",
+   "level": "trace",
+   "evaluator": "accuracy.accuracy",
+   "metric": "SE(3) (scale 1) ATE translation, RPE 1 s translation and rotation; responsive units are not metres",
+   "tolerance": {
+    "rule": "report only"
+   },
+   "source": [
+    "slam_refact/docs/design/architecture.md v2.1 \u00a76.4, \u00a76.6.6",
+    "repo CLAUDE.md \u00a73"
+   ],
+   "scenarios": [
+    "tum-room1-full",
+    "tum-room1-lowtex"
+   ]
+  },
+  {
+   "id": "B-1",
+   "class": "MUST-PASS",
+   "owner": "WP0b/all",
+   "level": "build",
+   "evaluator": "command",
+   "metric": "clean native build: warnings in engine sources",
+   "tolerance": {
+    "rule": "0 (tools/check_warnings.sh)"
+   },
+   "source": [
+    "slam_refact/docs/design/architecture.md v2.1 \u00a76.6.7, \u00a72.5"
+   ]
+  },
+  {
+   "id": "B-2",
+   "class": "MUST-PASS",
+   "owner": "all",
+   "level": "build",
+   "evaluator": "command",
+   "metric": "ctest -L unit all PASS; tools/check_std_algos.py; tools/check_vendor.py (a)",
+   "tolerance": {
+    "rule": "all pass"
+   },
+   "source": [
+    "slam_refact/docs/design/architecture.md v2.1 \u00a76.6.7"
+   ]
+  },
+  {
+   "id": "B-3",
+   "class": "MUST-PASS",
+   "owner": "WP5",
+   "level": "build",
+   "evaluator": "command",
+   "metric": "WASM build succeeds and node smoke test passes",
+   "tolerance": {
+    "rule": "pass"
+   },
+   "source": [
+    "slam_refact/docs/design/architecture.md v2.1 \u00a76.6.7, \u00a77.4"
+   ]
+  },
+  {
+   "id": "B-4",
+   "class": "MUST-PASS",
+   "owner": "all",
+   "level": "build",
+   "evaluator": "command",
+   "metric": "changed files: TODO, test.skip, DISABLED_, GTEST_SKIP",
+   "tolerance": {
+    "rule": "0 occurrences"
+   },
+   "source": [
+    "slam_refact/docs/design/architecture.md v2.1 \u00a76.6.7"
+   ]
+  },
+  {
+   "id": "B-5",
+   "class": "MUST-PASS",
+   "owner": "WP5",
+   "level": "build",
+   "evaluator": "command",
+   "metric": "ctest -L evidence all PASS (when evidence tests are registered)",
+   "tolerance": {
+    "rule": "all pass"
+   },
+   "source": [
+    "slam_refact/docs/design/architecture.md v2.1 \u00a76.6.7 (NI-4)"
+   ],
+   "predeclared_blocked_reason": "SLAM_REFACT_EVIDENCE_ROOT absent so evidence tests cannot be registered"
+  }
+ ],
+ "reference_baseline": {
+  "produced_by": "python3 -I slam_refact/tools/harness/eval/reference_baseline.py",
+  "note": "observables of the original reference runs computed with the same functions the engine evaluation uses; tests/test_eval.py re-computes and compares them",
+  "data": {
+   "scenarios": {
+    "flip6-n1": {
+     "r1_r2": {
+      "full_rotation_diff_p95_deg_linear": 29.2154684131758,
+      "status_agreement": 1.0
+     },
+     "runs": {
+      "r1": {
+       "early_burst_share_5_6": 0.13043478260869565,
+       "first_limited": null,
+       "first_translation_i": 7,
+       "first_world_points": {
+        "count": 69,
+        "i": 13
+       },
+       "fresh": 660,
+       "limited_ratio": 0.0,
+       "publish_lag_ms": {
+        "frame_interval_ms": 34.419999999999895,
+        "p5": 0.049999999999272404,
+        "p95": 103.85000000000036,
+        "spread": 103.80000000000109
+       },
+       "rows": 720,
+       "runtime_invariants": {
+        "P1_violations": [],
+        "P2_violations": [],
+        "P3_first_limited": null,
+        "P3_ok": true,
+        "P4_ok": true,
+        "P4_reasons": [
+         "UNSPECIFIED"
+        ],
+        "P5_ok": true,
+        "P6_heading_deg": {
+         "0": -0.0,
+         "6": -0.0
+        },
+        "first_translation": {
+         "i": 7,
+         "t": 0.42112
+        }
+       },
+       "status_hysteresis_pass": true,
+       "world_points_p50": 273,
+       "worldpoint_padding": {
+        "fraction": 0.305332964907433,
+        "padding": 1105,
+        "points": 3619
+       },
+       "zero_step_fractions": {
+        "NORMAL": 0.01001669449081803
+       }
+      },
+      "r2": {
+       "early_burst_share_5_6": 0.4,
+       "first_limited": null,
+       "first_translation_i": 7,
+       "first_world_points": {
+        "count": 72,
+        "i": 13
+       },
+       "fresh": 665,
+       "limited_ratio": 0.0,
+       "publish_lag_ms": {
+        "frame_interval_ms": 34.419999999999895,
+        "p5": 0.015000000001236913,
+        "p95": 95.62000000000262,
+        "spread": 95.60500000000138
+       },
+       "rows": 720,
+       "runtime_invariants": {
+        "P1_violations": [],
+        "P2_violations": [],
+        "P3_first_limited": null,
+        "P3_ok": true,
+        "P4_ok": true,
+        "P4_reasons": [
+         "UNSPECIFIED"
+        ],
+        "P5_ok": true,
+        "P6_heading_deg": {
+         "0": -0.0,
+         "6": -0.0
+        },
+        "first_translation": {
+         "i": 7,
+         "t": 0.42112
+        }
+       },
+       "status_hysteresis_pass": true,
+       "world_points_p50": 291,
+       "worldpoint_padding": {
+        "fraction": 0.317323259579061,
+        "padding": 1176,
+        "points": 3706
+       },
+       "zero_step_fractions": {
+        "NORMAL": 0.011437908496732025
+       }
+      }
+     }
+    },
+    "flip6-s2": {
+     "r1_r2": {
+      "full_rotation_diff_p95_deg_linear": 3.12248471591557,
+      "status_agreement": 1.0
+     },
+     "runs": {
+      "r1": {
+       "early_burst_share_5_6": 0.45454545454545453,
+       "first_limited": null,
+       "first_translation_i": 7,
+       "first_world_points": {
+        "count": 78,
+        "i": 13
+       },
+       "fresh": 987,
+       "limited_ratio": 0.0,
+       "publish_lag_ms": {
+        "frame_interval_ms": 60.605000000000686,
+        "p5": -0.2649999999994179,
+        "p95": 338.1750000000029,
+        "spread": 338.4400000000023
+       },
+       "rows": 1037,
+       "runtime_invariants": {
+        "P1_violations": [],
+        "P2_violations": [],
+        "P3_first_limited": null,
+        "P3_ok": true,
+        "P4_ok": true,
+        "P4_reasons": [
+         "UNSPECIFIED"
+        ],
+        "P5_ok": true,
+        "P6_heading_deg": {
+         "0": 0.0,
+         "6": -0.0
+        },
+        "first_translation": {
+         "i": 7,
+         "t": 0.370965
+        }
+       },
+       "status_hysteresis_pass": true,
+       "world_points_p50": 293,
+       "worldpoint_padding": {
+        "fraction": 0.2384656178186318,
+        "padding": 1349,
+        "points": 5657
+       },
+       "zero_step_fractions": {
+        "NORMAL": 0.0064034151547491995
+       }
+      },
+      "r2": {
+       "early_burst_share_5_6": 0.42105263157894735,
+       "first_limited": null,
+       "first_translation_i": 7,
+       "first_world_points": {
+        "count": 93,
+        "i": 15
+       },
+       "fresh": 987,
+       "limited_ratio": 0.0,
+       "publish_lag_ms": {
+        "frame_interval_ms": 60.605000000000686,
+        "p5": -0.3400000000001455,
+        "p95": 317.8149999999987,
+        "spread": 318.15499999999884
+       },
+       "rows": 1037,
+       "runtime_invariants": {
+        "P1_violations": [],
+        "P2_violations": [],
+        "P3_first_limited": null,
+        "P3_ok": true,
+        "P4_ok": true,
+        "P4_reasons": [
+         "UNSPECIFIED"
+        ],
+        "P5_ok": true,
+        "P6_heading_deg": {
+         "0": 0.0,
+         "6": -0.0
+        },
+        "first_translation": {
+         "i": 7,
+         "t": 0.370965
+        }
+       },
+       "status_hysteresis_pass": true,
+       "world_points_p50": 291,
+       "worldpoint_padding": {
+        "fraction": 0.24257158292814696,
+        "padding": 1347,
+        "points": 5553
+       },
+       "zero_step_fractions": {
+        "NORMAL": 0.0064034151547491995
+       }
+      }
+     }
+    },
+    "flip6-s3-lowtex": {
+     "r1_r2": {
+      "full_rotation_diff_p95_deg_linear": 8.213335924589936,
+      "status_agreement": 0.9422572178477691
+     },
+     "runs": {
+      "r1": {
+       "early_burst_share_5_6": 0.15,
+       "first_limited": {
+        "i": 70,
+        "t": 5.463195
+       },
+       "first_translation_i": 7,
+       "first_world_points": {
+        "count": 130,
+        "i": 13
+       },
+       "fresh": 381,
+       "limited_ratio": 0.2440944881889764,
+       "publish_lag_ms": {
+        "frame_interval_ms": 67.07499999999911,
+        "p5": -0.625,
+        "p95": 6.170000000000073,
+        "spread": 6.795000000000073
+       },
+       "rows": 381,
+       "runtime_invariants": {
+        "P1_violations": [],
+        "P2_violations": [],
+        "P3_first_limited": {
+         "i": 70,
+         "t": 5.463195
+        },
+        "P3_ok": true,
+        "P4_ok": true,
+        "P4_reasons": [
+         "UNSPECIFIED"
+        ],
+        "P5_ok": true,
+        "P6_heading_deg": {
+         "0": -0.0,
+         "6": -0.0
+        },
+        "first_translation": {
+         "i": 7,
+         "t": 0.46615
+        }
+       },
+       "status_hysteresis_pass": true,
+       "world_points_p50": 111,
+       "worldpoint_padding": {
+        "fraction": 0.2619311875693674,
+        "padding": 236,
+        "points": 901
+       },
+       "zero_step_fractions": {
+        "LIMITED": 0.1827956989247312,
+        "NORMAL": 0.27177700348432055
+       }
+      },
+      "r2": {
+       "early_burst_share_5_6": 0.16666666666666666,
+       "first_limited": {
+        "i": 71,
+        "t": 5.53985
+       },
+       "first_translation_i": 7,
+       "first_world_points": {
+        "count": 130,
+        "i": 13
+       },
+       "fresh": 381,
+       "limited_ratio": 0.18635170603674542,
+       "publish_lag_ms": {
+        "frame_interval_ms": 67.07499999999911,
+        "p5": -0.6650000000008731,
+        "p95": 6.760000000000218,
+        "spread": 7.425000000001091
+       },
+       "rows": 381,
+       "runtime_invariants": {
+        "P1_violations": [],
+        "P2_violations": [],
+        "P3_first_limited": {
+         "i": 71,
+         "t": 5.53985
+        },
+        "P3_ok": true,
+        "P4_ok": true,
+        "P4_reasons": [
+         "UNSPECIFIED"
+        ],
+        "P5_ok": true,
+        "P6_heading_deg": {
+         "0": -0.0,
+         "6": -0.0
+        },
+        "first_translation": {
+         "i": 7,
+         "t": 0.46615
+        }
+       },
+       "status_hysteresis_pass": true,
+       "world_points_p50": 81,
+       "worldpoint_padding": {
+        "fraction": 0.34540750323415265,
+        "padding": 267,
+        "points": 773
+       },
+       "zero_step_fractions": {
+        "LIMITED": 0.19718309859154928,
+        "NORMAL": 0.26537216828478966
+       }
+      }
+     }
+    },
+    "tum-room1-full": {
+     "accuracy": {
+      "profile1": {
+       "ape_rot_rmse_deg": 17.492437197532933,
+       "coverage": 0.97837646224743,
+       "rpe1s_rot_rmse_deg": 13.771791547574086,
+       "se3_ate_rmse": 4.497380377682531,
+       "se3_rpe1s_trans_rmse": 3.4898673947008945,
+       "sim3_ate_rmse": 0.9604704403027688,
+       "sim3_scale": 0.06134291478482305
+      },
+      "r1": {
+       "ape_rot_rmse_deg": 15.687132387995456,
+       "coverage": 0.9766040411201702,
+       "rpe1s_rot_rmse_deg": 10.513134589391095,
+       "se3_ate_rmse": 4.15855238248659,
+       "se3_rpe1s_trans_rmse": 2.436189855132614,
+       "sim3_ate_rmse": 0.9450114946933729,
+       "sim3_scale": 0.0765951063824285
+      },
+      "r2": {
+       "ape_rot_rmse_deg": 12.188298169125066,
+       "coverage": 0.9744771357674583,
+       "rpe1s_rot_rmse_deg": 9.004110001993332,
+       "se3_ate_rmse": 5.32783212230283,
+       "se3_rpe1s_trans_rmse": 3.2642785000337207,
+       "sim3_ate_rmse": 0.9472158312886192,
+       "sim3_scale": 0.0597019634718038
+      }
+     },
+     "r1_r2": {
+      "full_rotation_diff_p95_deg_linear": 22.6174296902771,
+      "status_agreement": 0.9585121602288984
+     },
+     "runs": {
+      "r1": {
+       "early_burst_share_5_6": 0.21739130434782608,
+       "first_limited": {
+        "i": 47,
+        "t": 2.352680175
+       },
+       "first_translation_i": 139,
+       "first_world_points": {
+        "count": 53,
+        "i": 172
+       },
+       "fresh": 2812,
+       "limited_ratio": 0.7032967032967034,
+       "publish_lag_ms": {
+        "frame_interval_ms": 50.00199999999211,
+        "p5": 0.016912999999476597,
+        "p95": 9.100860000005923,
+        "spread": 9.083947000006447
+       },
+       "rows": 2821,
+       "runtime_invariants": {
+        "P1_violations": [],
+        "P2_violations": [],
+        "P3_first_limited": {
+         "i": 47,
+         "t": 2.352680175
+        },
+        "P3_ok": true,
+        "P4_ok": true,
+        "P4_reasons": [
+         "UNSPECIFIED"
+        ],
+        "P5_ok": true,
+        "P6_heading_deg": {
+         "0": -0.0,
+         "6": 0.0
+        },
+        "first_translation": {
+         "i": 139,
+         "t": 6.952868877
+        }
+       },
+       "status_hysteresis_pass": true,
+       "world_points_p50": 29,
+       "worldpoint_padding": {
+        "fraction": 0.24738614212298424,
+        "padding": 1396,
+        "points": 5643
+       },
+       "zero_step_fractions": {
+        "LIMITED": 0.5303643724696356,
+        "NORMAL": 0.34382566585956414
+       }
+      },
+      "r2": {
+       "early_burst_share_5_6": 0.20689655172413793,
+       "first_limited": {
+        "i": 47,
+        "t": 2.352680175
+       },
+       "first_translation_i": 139,
+       "first_world_points": {
+        "count": 52,
+        "i": 172
+       },
+       "fresh": 2805,
+       "limited_ratio": 0.7352002835873803,
+       "publish_lag_ms": {
+        "frame_interval_ms": 50.00199999999211,
+        "p5": -0.02928000000247266,
+        "p95": 14.455684999998994,
+        "spread": 14.484965000001466
+       },
+       "rows": 2821,
+       "runtime_invariants": {
+        "P1_violations": [],
+        "P2_violations": [],
+        "P3_first_limited": {
+         "i": 47,
+         "t": 2.352680175
+        },
+        "P3_ok": true,
+        "P4_ok": true,
+        "P4_reasons": [
+         "UNSPECIFIED"
+        ],
+        "P5_ok": true,
+        "P6_heading_deg": {
+         "0": -0.0,
+         "6": -0.0
+        },
+        "first_translation": {
+         "i": 139,
+         "t": 6.952868877
+        }
+       },
+       "status_hysteresis_pass": true,
+       "world_points_p50": 40,
+       "worldpoint_padding": {
+        "fraction": 0.19953513320221705,
+        "padding": 1116,
+        "points": 5593
+       },
+       "zero_step_fractions": {
+        "LIMITED": 0.5511887433284813,
+        "NORMAL": 0.3429355281207133
+       }
+      }
+     }
+    },
+    "tum-room1-lowtex": {
+     "accuracy": {
+      "r1": {
+       "ape_rot_rmse_deg": 12.588929684977755,
+       "coverage": 0.9625,
+       "rpe1s_rot_rmse_deg": 10.425953304898647,
+       "se3_ate_rmse": 2.921793953997824,
+       "se3_rpe1s_trans_rmse": 3.259080899851041,
+       "sim3_ate_rmse": 0.5506724487778604,
+       "sim3_scale": 0.11172594579705106
+      },
+      "r2": {
+       "ape_rot_rmse_deg": 11.14916288625668,
+       "coverage": 0.9791666666666666,
+       "rpe1s_rot_rmse_deg": 7.310109401914679,
+       "se3_ate_rmse": 1.950604642721352,
+       "se3_rpe1s_trans_rmse": 1.8824007772228473,
+       "sim3_ate_rmse": 0.4553645473507301,
+       "sim3_scale": 0.2008036508548857
+      }
+     },
+     "r1_r2": {
+      "full_rotation_diff_p95_deg_linear": 14.780354124931014,
+      "status_agreement": 0.8030973451327433
+     },
+     "runs": {
+      "r1": {
+       "early_burst_share_5_6": 0.1111111111111111,
+       "first_limited": {
+        "i": 46,
+        "t": 2.302678175
+       },
+       "first_translation_i": 139,
+       "first_world_points": {
+        "count": 53,
+        "i": 172
+       },
+       "fresh": 462,
+       "limited_ratio": 0.6604166666666667,
+       "publish_lag_ms": {
+        "frame_interval_ms": 50.001999999999214,
+        "p5": -0.022368000000369648,
+        "p95": 82.927369,
+        "spread": 82.94973700000037
+       },
+       "rows": 480,
+       "runtime_invariants": {
+        "P1_violations": [],
+        "P2_violations": [],
+        "P3_first_limited": {
+         "i": 46,
+         "t": 2.302678175
+        },
+        "P3_ok": true,
+        "P4_ok": true,
+        "P4_reasons": [
+         "UNSPECIFIED"
+        ],
+        "P5_ok": true,
+        "P6_heading_deg": {
+         "0": -0.0,
+         "6": 0.0
+        },
+        "first_translation": {
+         "i": 139,
+         "t": 6.952868877
+        }
+       },
+       "status_hysteresis_pass": true,
+       "world_points_p50": 146,
+       "worldpoint_padding": {
+        "fraction": 0.2748154224774405,
+        "padding": 335,
+        "points": 1219
+       },
+       "zero_step_fractions": {
+        "LIMITED": 0.521311475409836,
+        "NORMAL": 0.7985611510791367
+       }
+      },
+      "r2": {
+       "early_burst_share_5_6": 0.30303030303030304,
+       "first_limited": {
+        "i": 46,
+        "t": 2.302678175
+       },
+       "first_translation_i": 139,
+       "first_world_points": {
+        "count": 52,
+        "i": 172
+       },
+       "fresh": 470,
+       "limited_ratio": 0.4791666666666667,
+       "publish_lag_ms": {
+        "frame_interval_ms": 50.001999999999214,
+        "p5": 0.12571999999636319,
+        "p95": 63.75235099999918,
+        "spread": 63.62663100000282
+       },
+       "rows": 480,
+       "runtime_invariants": {
+        "P1_violations": [],
+        "P2_violations": [],
+        "P3_first_limited": {
+         "i": 46,
+         "t": 2.302678175
+        },
+        "P3_ok": true,
+        "P4_ok": true,
+        "P4_reasons": [
+         "UNSPECIFIED"
+        ],
+        "P5_ok": true,
+        "P6_heading_deg": {
+         "0": -0.0,
+         "6": 0.0
+        },
+        "first_translation": {
+         "i": 139,
+         "t": 6.952868877
+        }
+       },
+       "status_hysteresis_pass": true,
+       "world_points_p50": 211,
+       "worldpoint_padding": {
+        "fraction": 0.10262675626145389,
+        "padding": 168,
+        "points": 1637
+       },
+       "zero_step_fractions": {
+        "LIMITED": 0.5575221238938053,
+        "NORMAL": 0.39148936170212767
+       }
+      }
+     }
+    }
+   },
+   "schema": "slam-refact-reference-baseline-v1",
+   "trace_sha256": {
+    "flip6-n1/r1": "6062cb6e4288c6cbb549fdbe7404392b44d1acda0b2d67a719542a0ced668736",
+    "flip6-n1/r2": "c85ae4b3a04486265dd047823834fe7b9c377ae3dcce73d264b8172f9684ad8e",
+    "flip6-s2/r1": "2dcfac7ff97b6008dcd01f6ef84fe3b8a021a96b5d92fcc185e279fd0fe94094",
+    "flip6-s2/r2": "610cf95e8060276283cb9a124a6c26540db61f344ab96d717e7383087bf4030b",
+    "flip6-s3-lowtex/r1": "b64930bfaa6e0559bd78ebed974b1b9b2cf582e452fb346cbad5323a759cbcff",
+    "flip6-s3-lowtex/r2": "8b8a15dfd6eb1ed438e2f41e19f6bc8a275696cde4309588fd50422b4869e7ef",
+    "tum-room1-full/profile1": "238217235f101b4c558f30559e8f62fc371aba5b69808a09efaea8571be9a068",
+    "tum-room1-full/r1": "df5f6ff5a3c91614b0ec9af92a6b0527edf7fccf0c26217a41b5ab9a5559ac44",
+    "tum-room1-full/r2": "8abceeffa4683d5db8fe88aa4a8949a2e9332e2f0f9e6ab3fc5a5ecbf03eb740",
+    "tum-room1-lowtex/r1": "14d306de929c7435417372bc366d6bd7384b53e7022219ee003f1b56db3cf2d2",
+    "tum-room1-lowtex/r2": "6bd82c04b1ae4fc7c96f5f53694998c14e153655773e2846ea423fe131474409"
+   }
+  }
+ }
+}

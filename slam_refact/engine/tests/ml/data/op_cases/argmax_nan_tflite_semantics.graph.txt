@@ -1,0 +1,7 @@
+model version=3 subgraphs=1 name=main
+tensor 0 x FLOAT32 [6,4] bytes=0 quant=0 var=0 sparse=0
+tensor 1 axis INT32 [] bytes=4 quant=0 var=0 sparse=0
+tensor 2 y INT64 [6] bytes=0 quant=0 var=0 sparse=0
+op 0 ARG_MAX v1 in=[0,1] out=[2] opts={out=INT64} custom=
+inputs [0]
+outputs [2]

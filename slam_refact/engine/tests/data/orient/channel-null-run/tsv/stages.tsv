@@ -1,0 +1,2 @@
+# stageCall msg inputFrame(-1 = bootstrap) videoTimeS frameTimeS timeNanos alpha beta gamma rotation width height (repr doubles; msg = index of the event queue set before this stage)
+

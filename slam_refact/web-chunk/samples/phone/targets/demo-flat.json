@@ -1,0 +1,23 @@
+{
+  "type": "PLANAR",
+  "properties": {
+    "left": 0,
+    "top": 0,
+    "width": 1200,
+    "height": 1600,
+    "isRotated": false,
+    "originalWidth": 1200,
+    "originalHeight": 1600
+  },
+  "imagePath": "image-targets/demo-flat_luminance.png",
+  "metadata": null,
+  "name": "demo-flat",
+  "resources": {
+    "originalImage": "demo-flat_original.png",
+    "croppedImage": "demo-flat_cropped.png",
+    "thumbnailImage": "demo-flat_thumbnail.png",
+    "luminanceImage": "demo-flat_luminance.png"
+  },
+  "created": 1792680876572,
+  "updated": 1792680876572
+}

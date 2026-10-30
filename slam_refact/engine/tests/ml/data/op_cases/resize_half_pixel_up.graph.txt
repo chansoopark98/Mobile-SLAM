@@ -1,0 +1,7 @@
+model version=3 subgraphs=1 name=main
+tensor 0 x FLOAT32 [1,4,6,2] bytes=0 quant=0 var=0 sparse=0
+tensor 1 size INT32 [2] bytes=8 quant=0 var=0 sparse=0
+tensor 2 y FLOAT32 [1,9,11,2] bytes=0 quant=0 var=0 sparse=0
+op 0 RESIZE_BILINEAR v1 in=[0,1] out=[2] opts={ac=0 hp=1} custom=
+inputs [0]
+outputs [2]

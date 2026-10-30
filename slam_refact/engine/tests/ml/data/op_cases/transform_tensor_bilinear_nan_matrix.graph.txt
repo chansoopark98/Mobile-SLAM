@@ -1,0 +1,7 @@
+model version=3 subgraphs=1 name=main
+tensor 0 x FLOAT32 [1,12,10,4] bytes=0 quant=0 var=0 sparse=0
+tensor 1 m FLOAT32 [1,4,4] bytes=0 quant=0 var=0 sparse=0
+tensor 2 y FLOAT32 [1,6,5,4] bytes=0 quant=0 var=0 sparse=0
+op 0 TransformTensorBilinear v2 in=[0,1] out=[2] opts={} custom=6f75747075745f686569676874006f75747075745f77696474680000020000002000000016000000080000000400000002000000060000000500000006060a0000002604
+inputs [0,1]
+outputs [2]

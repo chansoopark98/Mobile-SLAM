@@ -1,0 +1,5 @@
+# Applied to the SNAPSHOT copy of engine/tests/image_target/CMakeLists.txt (build/slam-refact-pkgh-20261022/snap), not to the repo:
+# appends the sr_e5_replay target; e5_replay_main.cc is copied next to or4_replay_main.cc in the snapshot.
+add_executable(sr_e5_replay e5_replay_main.cc)
+target_link_libraries(sr_e5_replay PRIVATE sr_replay_io slam_refact::engine)
+sr_engine_warnings(sr_e5_replay)

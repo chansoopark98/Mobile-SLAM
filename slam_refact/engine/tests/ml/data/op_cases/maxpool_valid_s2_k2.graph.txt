@@ -1,0 +1,6 @@
+model version=3 subgraphs=1 name=main
+tensor 0 x FLOAT32 [2,6,8,4] bytes=0 quant=0 var=0 sparse=0
+tensor 1 y FLOAT32 [2,3,4,4] bytes=0 quant=0 var=0 sparse=0
+op 0 MAX_POOL_2D v1 in=[0] out=[1] opts={pad=VALID sw=2 sh=2 fw=2 fh=2 act=NONE} custom=
+inputs [0]
+outputs [1]

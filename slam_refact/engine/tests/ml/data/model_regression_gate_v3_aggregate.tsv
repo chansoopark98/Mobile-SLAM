@@ -1,0 +1,5 @@
+# slam_refact ML regression gate v3, aggregate rule. Written once by tools/ml_ref/make_regression_gate_v3.py.
+# geometric mean of observed/baseline over the rows with baseline_rms > 0, baseline_max_abs > 0 and ref_rms >= 1e-3 must be <= limit = 1 + 3 * max(2^-23, allowance)
+# statistic	limit	rows
+max_abs	1.5888270152528878	32
+rms	1.3918361275262348	32

@@ -1,0 +1,1522 @@
+[
+ {
+  "i": 0,
+  "n": 10,
+  "kind": "too-few",
+  "path": "none",
+  "attempts": 0,
+  "rawDraws": 0,
+  "mtIndexBefore": 0,
+  "mtIndexAfter": 0,
+  "sampling": {
+   "pairsSame": true,
+   "samplesSame": true,
+   "rngSame": true,
+   "pass": true,
+   "nPairs": 0,
+   "firstPairs": []
+  },
+  "outputs": {
+   "ret": 0,
+   "refOk": false,
+   "okSame": true,
+   "errH": 0,
+   "errCam": 0,
+   "maskSame": true,
+   "maskOnes": 0,
+   "maskLen": 10,
+   "boundary": [],
+   "pass": true,
+   "flagsH": [
+    0,
+    0
+   ],
+   "flagsCam": [
+    0,
+    0
+   ]
+  },
+  "truth": null
+ },
+ {
+  "i": 1,
+  "n": 15,
+  "kind": "clean",
+  "path": "enumerate-shuffle",
+  "attempts": 0,
+  "rawDraws": 147,
+  "mtIndexBefore": 0,
+  "mtIndexAfter": 147,
+  "sampling": {
+   "pairsSame": true,
+   "samplesSame": true,
+   "rngSame": true,
+   "pass": true,
+   "nPairs": 73,
+   "firstPairs": [
+    [
+     9,
+     12
+    ],
+    [
+     3,
+     10
+    ],
+    [
+     10,
+     13
+    ],
+    [
+     0,
+     9
+    ],
+    [
+     11,
+     14
+    ],
+    [
+     5,
+     9
+    ]
+   ]
+  },
+  "outputs": {
+   "ret": 1,
+   "refOk": true,
+   "okSame": true,
+   "errH": 1.2970029789061144e-7,
+   "errCam": 1.1097704017554166e-7,
+   "maskSame": false,
+   "maskOnes": 6,
+   "maskLen": 15,
+   "refBest": 3.4811229275536e-17,
+   "refBestIndex": 63,
+   "kIdx": 4,
+   "boundary": [
+    {
+     "k": 2,
+     "bin": 1,
+     "ref": 0,
+     "rel": 1.186615606254136
+    },
+    {
+     "k": 4,
+     "bin": 1,
+     "ref": 0,
+     "rel": 11.681595328918172
+    },
+    {
+     "k": 12,
+     "bin": 0,
+     "ref": 1,
+     "rel": 0.9999999999999993
+    },
+    {
+     "k": 13,
+     "bin": 0,
+     "ref": 1,
+     "rel": 0.8592002129033472
+    },
+    {
+     "k": 14,
+     "bin": 1,
+     "ref": 0,
+     "rel": 21.030426114562594
+    }
+   ],
+   "pass": false,
+   "flagsH": [
+    1,
+    0
+   ],
+   "flagsCam": [
+    0,
+    0
+   ]
+  },
+  "truth": {
+   "camVsTruth": 1.3818684515068402e-7,
+   "camVsTruthInv": 0.09210073412692847
+  }
+ },
+ {
+  "i": 2,
+  "n": 20,
+  "kind": "clean",
+  "path": "enumerate-shuffle",
+  "attempts": 0,
+  "rawDraws": 275,
+  "mtIndexBefore": 147,
+  "mtIndexAfter": 422,
+  "sampling": {
+   "pairsSame": true,
+   "samplesSame": true,
+   "rngSame": true,
+   "pass": true,
+   "nPairs": 73,
+   "firstPairs": [
+    [
+     10,
+     15
+    ],
+    [
+     2,
+     6
+    ],
+    [
+     3,
+     9
+    ],
+    [
+     6,
+     17
+    ],
+    [
+     0,
+     15
+    ],
+    [
+     1,
+     17
+    ]
+   ]
+  },
+  "outputs": {
+   "ret": 1,
+   "refOk": true,
+   "okSame": true,
+   "errH": 1.5031738420656637e-7,
+   "errCam": 1.3137262783874393e-7,
+   "maskSame": false,
+   "maskOnes": 9,
+   "maskLen": 20,
+   "refBest": 7.26162540506851e-17,
+   "refBestIndex": 15,
+   "kIdx": 6,
+   "boundary": [
+    {
+     "k": 0,
+     "bin": 1,
+     "ref": 0,
+     "rel": 4.26901806817345
+    },
+    {
+     "k": 5,
+     "bin": 1,
+     "ref": 0,
+     "rel": 2.3158038086878157
+    },
+    {
+     "k": 8,
+     "bin": 1,
+     "ref": 0,
+     "rel": 3.0733293156738233
+    },
+    {
+     "k": 10,
+     "bin": 1,
+     "ref": 0,
+     "rel": 2.7683763035474964
+    },
+    {
+     "k": 13,
+     "bin": 0,
+     "ref": 1,
+     "rel": 0.3727486370206909
+    },
+    {
+     "k": 14,
+     "bin": 1,
+     "ref": 0,
+     "rel": 0.13479986870991312
+    },
+    {
+     "k": 16,
+     "bin": 0,
+     "ref": 1,
+     "rel": 0.09090909090909105
+    },
+    {
+     "k": 18,
+     "bin": 0,
+     "ref": 1,
+     "rel": 0.8663942692050881
+    }
+   ],
+   "pass": false,
+   "flagsH": [
+    1,
+    0
+   ],
+   "flagsCam": [
+    0,
+    0
+   ]
+  },
+  "truth": {
+   "camVsTruth": 3.0115911030942355e-7,
+   "camVsTruthInv": 0.12247201736055821
+  }
+ },
+ {
+  "i": 3,
+  "n": 27,
+  "kind": "noisy",
+  "path": "enumerate-shuffle",
+  "attempts": 0,
+  "rawDraws": 513,
+  "mtIndexBefore": 422,
+  "mtIndexAfter": 311,
+  "sampling": {
+   "pairsSame": true,
+   "samplesSame": true,
+   "rngSame": true,
+   "pass": true,
+   "nPairs": 73,
+   "firstPairs": [
+    [
+     10,
+     15
+    ],
+    [
+     7,
+     8
+    ],
+    [
+     14,
+     16
+    ],
+    [
+     11,
+     20
+    ],
+    [
+     6,
+     22
+    ],
+    [
+     0,
+     5
+    ]
+   ]
+  },
+  "outputs": {
+   "ret": 1,
+   "refOk": true,
+   "okSame": true,
+   "errH": 2.0911021780811723e-7,
+   "errCam": 2.258708932043052e-7,
+   "maskSame": true,
+   "maskOnes": 10,
+   "maskLen": 27,
+   "refBest": 0.000001156929204640554,
+   "refBestIndex": 72,
+   "kIdx": 8,
+   "boundary": [],
+   "pass": true,
+   "flagsH": [
+    1,
+    0
+   ],
+   "flagsCam": [
+    0,
+    0
+   ]
+  },
+  "truth": {
+   "camVsTruth": 0.003556831583581367,
+   "camVsTruthInv": 0.15303487853251976
+  }
+ },
+ {
+  "i": 4,
+  "n": 28,
+  "kind": "noisy",
+  "path": "random-set",
+  "attempts": 81,
+  "rawDraws": 162,
+  "mtIndexBefore": 311,
+  "mtIndexAfter": 473,
+  "sampling": {
+   "pairsSame": true,
+   "samplesSame": true,
+   "rngSame": true,
+   "pass": true,
+   "nPairs": 73,
+   "firstPairs": [
+    [
+     0,
+     4
+    ],
+    [
+     0,
+     10
+    ],
+    [
+     0,
+     13
+    ],
+    [
+     0,
+     16
+    ],
+    [
+     0,
+     19
+    ],
+    [
+     1,
+     7
+    ]
+   ]
+  },
+  "outputs": {
+   "ret": 1,
+   "refOk": true,
+   "okSame": true,
+   "errH": 1.4882930887694101e-7,
+   "errCam": 2.0436027936554524e-7,
+   "maskSame": true,
+   "maskOnes": 9,
+   "maskLen": 28,
+   "refBest": 8.202696565948106e-7,
+   "refBestIndex": 3,
+   "kIdx": 8,
+   "boundary": [],
+   "pass": true,
+   "flagsH": [
+    1,
+    0
+   ],
+   "flagsCam": [
+    0,
+    0
+   ]
+  },
+  "truth": {
+   "camVsTruth": 0.0019493006512053778,
+   "camVsTruthInv": 0.1629152066394521
+  }
+ },
+ {
+  "i": 5,
+  "n": 40,
+  "kind": "noisy",
+  "path": "random-set",
+  "attempts": 75,
+  "rawDraws": 150,
+  "mtIndexBefore": 473,
+  "mtIndexAfter": 623,
+  "sampling": {
+   "pairsSame": true,
+   "samplesSame": true,
+   "rngSame": true,
+   "pass": true,
+   "nPairs": 73,
+   "firstPairs": [
+    [
+     0,
+     5
+    ],
+    [
+     0,
+     15
+    ],
+    [
+     0,
+     24
+    ],
+    [
+     0,
+     39
+    ],
+    [
+     1,
+     2
+    ],
+    [
+     1,
+     9
+    ]
+   ]
+  },
+  "outputs": {
+   "ret": 1,
+   "refOk": true,
+   "okSame": true,
+   "errH": 2.195749158051541e-7,
+   "errCam": 2.2329980188182108e-7,
+   "maskSame": true,
+   "maskOnes": 14,
+   "maskLen": 40,
+   "refBest": 8.149621347854485e-7,
+   "refBestIndex": 16,
+   "kIdx": 12,
+   "boundary": [],
+   "pass": true,
+   "flagsH": [
+    1,
+    0
+   ],
+   "flagsCam": [
+    0,
+    0
+   ]
+  },
+  "truth": {
+   "camVsTruth": 0.0019300895292469096,
+   "camVsTruthInv": 0.12045374385765995
+  }
+ },
+ {
+  "i": 6,
+  "n": 60,
+  "kind": "noisy",
+  "path": "random-set",
+  "attempts": 76,
+  "rawDraws": 152,
+  "mtIndexBefore": 623,
+  "mtIndexAfter": 151,
+  "sampling": {
+   "pairsSame": true,
+   "samplesSame": true,
+   "rngSame": true,
+   "pass": true,
+   "nPairs": 73,
+   "firstPairs": [
+    [
+     0,
+     35
+    ],
+    [
+     1,
+     16
+    ],
+    [
+     1,
+     25
+    ],
+    [
+     2,
+     27
+    ],
+    [
+     2,
+     31
+    ],
+    [
+     3,
+     27
+    ]
+   ]
+  },
+  "outputs": {
+   "ret": 1,
+   "refOk": true,
+   "okSame": true,
+   "errH": 2.2036276892123396e-7,
+   "errCam": 1.3900952877676787e-7,
+   "maskSame": true,
+   "maskOnes": 19,
+   "maskLen": 60,
+   "refBest": 9.968452577793729e-7,
+   "refBestIndex": 20,
+   "kIdx": 18,
+   "boundary": [],
+   "pass": true,
+   "flagsH": [
+    1,
+    0
+   ],
+   "flagsCam": [
+    0,
+    0
+   ]
+  },
+  "truth": {
+   "camVsTruth": 0.00117459198423564,
+   "camVsTruthInv": 0.2435601604958218
+  }
+ },
+ {
+  "i": 7,
+  "n": 100,
+  "kind": "noisy",
+  "path": "random-set",
+  "attempts": 75,
+  "rawDraws": 150,
+  "mtIndexBefore": 151,
+  "mtIndexAfter": 301,
+  "sampling": {
+   "pairsSame": true,
+   "samplesSame": true,
+   "rngSame": true,
+   "pass": true,
+   "nPairs": 73,
+   "firstPairs": [
+    [
+     1,
+     61
+    ],
+    [
+     2,
+     89
+    ],
+    [
+     4,
+     82
+    ],
+    [
+     4,
+     99
+    ],
+    [
+     5,
+     39
+    ],
+    [
+     5,
+     70
+    ]
+   ]
+  },
+  "outputs": {
+   "ret": 1,
+   "refOk": true,
+   "okSame": true,
+   "errH": 2.6564662269912276e-7,
+   "errCam": 2.0756373662889072e-7,
+   "maskSame": true,
+   "maskOnes": 32,
+   "maskLen": 100,
+   "refBest": 0.0000012059987830434478,
+   "refBestIndex": 23,
+   "kIdx": 30,
+   "boundary": [],
+   "pass": true,
+   "flagsH": [
+    1,
+    0
+   ],
+   "flagsCam": [
+    0,
+    0
+   ]
+  },
+  "truth": {
+   "camVsTruth": 0.0015641561453796013,
+   "camVsTruthInv": 0.16969320880882194
+  }
+ },
+ {
+  "i": 8,
+  "n": 101,
+  "kind": "noisy",
+  "path": "random-set",
+  "attempts": 74,
+  "rawDraws": 288,
+  "mtIndexBefore": 301,
+  "mtIndexAfter": 589,
+  "sampling": {
+   "pairsSame": true,
+   "samplesSame": true,
+   "rngSame": true,
+   "pass": true,
+   "nPairs": 73,
+   "firstPairs": [
+    [
+     0,
+     11
+    ],
+    [
+     1,
+     83
+    ],
+    [
+     3,
+     16
+    ],
+    [
+     3,
+     72
+    ],
+    [
+     3,
+     100
+    ],
+    [
+     5,
+     63
+    ]
+   ]
+  },
+  "outputs": {
+   "ret": 1,
+   "refOk": true,
+   "okSame": true,
+   "errH": 9.226258690375744e-8,
+   "errCam": 1.3789711239553526e-7,
+   "maskSame": true,
+   "maskOnes": 31,
+   "maskLen": 101,
+   "refBest": 6.340090694237034e-7,
+   "refBestIndex": 14,
+   "kIdx": 30,
+   "boundary": [],
+   "pass": true,
+   "flagsH": [
+    1,
+    0
+   ],
+   "flagsCam": [
+    0,
+    0
+   ]
+  },
+  "truth": {
+   "camVsTruth": 0.0011167284114097509,
+   "camVsTruthInv": 0.12636308386106104
+  }
+ },
+ {
+  "i": 9,
+  "n": 150,
+  "kind": "noisy",
+  "path": "random-set",
+  "attempts": 73,
+  "rawDraws": 364,
+  "mtIndexBefore": 589,
+  "mtIndexAfter": 329,
+  "sampling": {
+   "pairsSame": true,
+   "samplesSame": true,
+   "rngSame": true,
+   "pass": true,
+   "nPairs": 73,
+   "firstPairs": [
+    [
+     0,
+     61
+    ],
+    [
+     1,
+     79
+    ],
+    [
+     2,
+     15
+    ],
+    [
+     3,
+     6
+    ],
+    [
+     3,
+     14
+    ],
+    [
+     5,
+     12
+    ]
+   ]
+  },
+  "outputs": {
+   "ret": 1,
+   "refOk": true,
+   "okSame": true,
+   "errH": 9.818353244352152e-7,
+   "errCam": 7.062888926039068e-7,
+   "maskSame": true,
+   "maskOnes": 48,
+   "maskLen": 150,
+   "refBest": 0.0000011424475053178564,
+   "refBestIndex": 45,
+   "kIdx": 30,
+   "boundary": [],
+   "pass": true,
+   "flagsH": [
+    1,
+    0
+   ],
+   "flagsCam": [
+    0,
+    0
+   ]
+  },
+  "truth": {
+   "camVsTruth": 0.0009773669778868621,
+   "camVsTruthInv": 0.11739640795136537
+  }
+ },
+ {
+  "i": 10,
+  "n": 40,
+  "kind": "nonplanar",
+  "path": "random-set",
+  "attempts": 79,
+  "rawDraws": 158,
+  "mtIndexBefore": 329,
+  "mtIndexAfter": 487,
+  "sampling": {
+   "pairsSame": true,
+   "samplesSame": true,
+   "rngSame": true,
+   "pass": true,
+   "nPairs": 73,
+   "firstPairs": [
+    [
+     0,
+     2
+    ],
+    [
+     0,
+     6
+    ],
+    [
+     0,
+     37
+    ],
+    [
+     0,
+     38
+    ],
+    [
+     1,
+     9
+    ],
+    [
+     1,
+     31
+    ]
+   ]
+  },
+  "outputs": {
+   "ret": 1,
+   "refOk": true,
+   "okSame": true,
+   "errH": 1.1458715842849188e-7,
+   "errCam": 1.871550685790882e-7,
+   "maskSame": true,
+   "maskOnes": 13,
+   "maskLen": 40,
+   "refBest": 0.000005487900606955175,
+   "refBestIndex": 38,
+   "kIdx": 12,
+   "boundary": [],
+   "pass": true,
+   "flagsH": [
+    1,
+    0
+   ],
+   "flagsCam": [
+    0,
+    0
+   ]
+  },
+  "truth": {
+   "camVsTruth": 0.03308624113813902,
+   "camVsTruthInv": 0.09362986100320055
+  }
+ },
+ {
+  "i": 11,
+  "n": 60,
+  "kind": "noisy",
+  "path": "random-set",
+  "attempts": 76,
+  "rawDraws": 152,
+  "mtIndexBefore": 487,
+  "mtIndexAfter": 15,
+  "sampling": {
+   "pairsSame": true,
+   "samplesSame": true,
+   "rngSame": true,
+   "pass": true,
+   "nPairs": 73,
+   "firstPairs": [
+    [
+     0,
+     31
+    ],
+    [
+     0,
+     32
+    ],
+    [
+     0,
+     41
+    ],
+    [
+     1,
+     3
+    ],
+    [
+     1,
+     15
+    ],
+    [
+     1,
+     19
+    ]
+   ]
+  },
+  "outputs": {
+   "ret": 1,
+   "refOk": true,
+   "okSame": true,
+   "errH": 1.728802068168278e-7,
+   "errCam": 1.1751275560620278e-7,
+   "maskSame": true,
+   "maskOnes": 20,
+   "maskLen": 60,
+   "refBest": 7.418614703000371e-7,
+   "refBestIndex": 38,
+   "kIdx": 18,
+   "boundary": [],
+   "pass": true,
+   "flagsH": [
+    1,
+    0
+   ],
+   "flagsCam": [
+    0,
+    0
+   ]
+  },
+  "truth": {
+   "camVsTruth": 0.0017863264027696696,
+   "camVsTruthInv": 0.13024283716239915
+  }
+ },
+ {
+  "i": 12,
+  "n": 20,
+  "kind": "noisy",
+  "path": "enumerate-shuffle",
+  "attempts": 0,
+  "rawDraws": 276,
+  "mtIndexBefore": 15,
+  "mtIndexAfter": 291,
+  "sampling": {
+   "pairsSame": true,
+   "samplesSame": true,
+   "rngSame": true,
+   "pass": true,
+   "nPairs": 73,
+   "firstPairs": [
+    [
+     2,
+     9
+    ],
+    [
+     9,
+     10
+    ],
+    [
+     8,
+     12
+    ],
+    [
+     1,
+     16
+    ],
+    [
+     8,
+     10
+    ],
+    [
+     1,
+     4
+    ]
+   ]
+  },
+  "outputs": {
+   "ret": 1,
+   "refOk": true,
+   "okSame": true,
+   "errH": 3.8190235573942743e-7,
+   "errCam": 3.852141647886498e-7,
+   "maskSame": true,
+   "maskOnes": 7,
+   "maskLen": 20,
+   "refBest": 0.0000014973717705081564,
+   "refBestIndex": 47,
+   "kIdx": 6,
+   "boundary": [],
+   "pass": true,
+   "flagsH": [
+    1,
+    0
+   ],
+   "flagsCam": [
+    0,
+    0
+   ]
+  },
+  "truth": {
+   "camVsTruth": 0.0017851212219234074,
+   "camVsTruthInv": 0.15997237033672215
+  }
+ },
+ {
+  "i": 13,
+  "n": 120,
+  "kind": "clean",
+  "path": "random-set",
+  "attempts": 73,
+  "rawDraws": 328,
+  "mtIndexBefore": 291,
+  "mtIndexAfter": 619,
+  "sampling": {
+   "pairsSame": true,
+   "samplesSame": true,
+   "rngSame": true,
+   "pass": true,
+   "nPairs": 73,
+   "firstPairs": [
+    [
+     1,
+     42
+    ],
+    [
+     1,
+     88
+    ],
+    [
+     2,
+     72
+    ],
+    [
+     3,
+     71
+    ],
+    [
+     4,
+     35
+    ],
+    [
+     4,
+     83
+    ]
+   ]
+  },
+  "outputs": {
+   "ret": 1,
+   "refOk": true,
+   "okSame": true,
+   "errH": 1.2132733151482e-7,
+   "errCam": 1.2074537747430725e-7,
+   "maskSame": false,
+   "maskOnes": 44,
+   "maskLen": 120,
+   "refBest": 4.8398743022936917e-17,
+   "refBestIndex": 19,
+   "kIdx": 30,
+   "boundary": [
+    {
+     "k": 0,
+     "bin": 0,
+     "ref": 1,
+     "rel": 0.3892750152216362
+    },
+    {
+     "k": 3,
+     "bin": 1,
+     "ref": 0,
+     "rel": 0.8214789887602298
+    },
+    {
+     "k": 4,
+     "bin": 0,
+     "ref": 1,
+     "rel": 0.18772677370135146
+    },
+    {
+     "k": 5,
+     "bin": 0,
+     "ref": 1,
+     "rel": 0.8338013911113759
+    },
+    {
+     "k": 7,
+     "bin": 0,
+     "ref": 1,
+     "rel": 0.9376780723825969
+    },
+    {
+     "k": 10,
+     "bin": 1,
+     "ref": 0,
+     "rel": 0.11422899196627914
+    },
+    {
+     "k": 13,
+     "bin": 0,
+     "ref": 1,
+     "rel": 0.77027338268938
+    },
+    {
+     "k": 16,
+     "bin": 1,
+     "ref": 0,
+     "rel": 11.535275398173019
+    },
+    {
+     "k": 18,
+     "bin": 1,
+     "ref": 0,
+     "rel": 2.122047511605988
+    },
+    {
+     "k": 24,
+     "bin": 1,
+     "ref": 0,
+     "rel": 4.118372811969868
+    },
+    {
+     "k": 29,
+     "bin": 1,
+     "ref": 0,
+     "rel": 2.835222555904675
+    },
+    {
+     "k": 30,
+     "bin": 1,
+     "ref": 0,
+     "rel": 3.4568625154674906
+    },
+    {
+     "k": 32,
+     "bin": 1,
+     "ref": 0,
+     "rel": 8.884904954727086
+    },
+    {
+     "k": 40,
+     "bin": 1,
+     "ref": 0,
+     "rel": 29.23042611111434
+    },
+    {
+     "k": 43,
+     "bin": 0,
+     "ref": 1,
+     "rel": 0.4347362579775392
+    },
+    {
+     "k": 47,
+     "bin": 0,
+     "ref": 1,
+     "rel": 0.6388279107175446
+    },
+    {
+     "k": 51,
+     "bin": 1,
+     "ref": 0,
+     "rel": 0.5557310014936153
+    },
+    {
+     "k": 53,
+     "bin": 0,
+     "ref": 1,
+     "rel": 0.9730435182920921
+    },
+    {
+     "k": 56,
+     "bin": 0,
+     "ref": 1,
+     "rel": 0.004883743064404991
+    },
+    {
+     "k": 57,
+     "bin": 0,
+     "ref": 1,
+     "rel": 0.5867097162767992
+    },
+    {
+     "k": 62,
+     "bin": 1,
+     "ref": 0,
+     "rel": 1.4995513556721258
+    },
+    {
+     "k": 65,
+     "bin": 0,
+     "ref": 1,
+     "rel": 0.41238601136217673
+    },
+    {
+     "k": 67,
+     "bin": 1,
+     "ref": 0,
+     "rel": 4.589726427239979
+    },
+    {
+     "k": 68,
+     "bin": 0,
+     "ref": 1,
+     "rel": 0.9555160149784706
+    },
+    {
+     "k": 76,
+     "bin": 0,
+     "ref": 1,
+     "rel": 0.9970723876146107
+    },
+    {
+     "k": 78,
+     "bin": 1,
+     "ref": 0,
+     "rel": 1.647149626766304
+    },
+    {
+     "k": 81,
+     "bin": 0,
+     "ref": 1,
+     "rel": 0.26714022875697946
+    },
+    {
+     "k": 86,
+     "bin": 1,
+     "ref": 0,
+     "rel": 1.3706733260186994
+    },
+    {
+     "k": 90,
+     "bin": 1,
+     "ref": 0,
+     "rel": 0.39673171373065663
+    },
+    {
+     "k": 93,
+     "bin": 0,
+     "ref": 1,
+     "rel": 0.4694201449737375
+    },
+    {
+     "k": 97,
+     "bin": 1,
+     "ref": 0,
+     "rel": 8.32939872048125
+    },
+    {
+     "k": 99,
+     "bin": 1,
+     "ref": 0,
+     "rel": 0.15584232894397224
+    },
+    {
+     "k": 105,
+     "bin": 0,
+     "ref": 1,
+     "rel": 0.7311901046312566
+    },
+    {
+     "k": 108,
+     "bin": 1,
+     "ref": 0,
+     "rel": 8.17521518186586
+    },
+    {
+     "k": 115,
+     "bin": 1,
+     "ref": 0,
+     "rel": 1.230354082697289
+    },
+    {
+     "k": 117,
+     "bin": 1,
+     "ref": 0,
+     "rel": 1.6122513751504637
+    }
+   ],
+   "pass": false,
+   "flagsH": [
+    1,
+    0
+   ],
+   "flagsCam": [
+    0,
+    0
+   ]
+  },
+  "truth": {
+   "camVsTruth": 1.1034063085446633e-7,
+   "camVsTruthInv": 0.1842866441566908
+  }
+ },
+ {
+  "i": 14,
+  "n": 33,
+  "kind": "noisy",
+  "path": "random-set",
+  "attempts": 82,
+  "rawDraws": 164,
+  "mtIndexBefore": 619,
+  "mtIndexAfter": 159,
+  "sampling": {
+   "pairsSame": true,
+   "samplesSame": true,
+   "rngSame": true,
+   "pass": true,
+   "nPairs": 73,
+   "firstPairs": [
+    [
+     0,
+     2
+    ],
+    [
+     0,
+     18
+    ],
+    [
+     0,
+     22
+    ],
+    [
+     0,
+     26
+    ],
+    [
+     0,
+     28
+    ],
+    [
+     1,
+     6
+    ]
+   ]
+  },
+  "outputs": {
+   "ret": 1,
+   "refOk": true,
+   "okSame": true,
+   "errH": 3.695536425069035e-7,
+   "errCam": 2.821150367621206e-7,
+   "maskSame": true,
+   "maskOnes": 10,
+   "maskLen": 33,
+   "refBest": 6.093960337113685e-7,
+   "refBestIndex": 10,
+   "kIdx": 9,
+   "boundary": [],
+   "pass": true,
+   "flagsH": [
+    1,
+    0
+   ],
+   "flagsCam": [
+    0,
+    0
+   ]
+  },
+  "truth": {
+   "camVsTruth": 0.001682123859516882,
+   "camVsTruthInv": 0.15371999973101222
+  }
+ },
+ {
+  "i": 15,
+  "n": 45,
+  "kind": "noisy",
+  "path": "random-set",
+  "attempts": 76,
+  "rawDraws": 152,
+  "mtIndexBefore": 159,
+  "mtIndexAfter": 311,
+  "sampling": {
+   "pairsSame": true,
+   "samplesSame": true,
+   "rngSame": true,
+   "pass": true,
+   "nPairs": 73,
+   "firstPairs": [
+    [
+     0,
+     17
+    ],
+    [
+     0,
+     18
+    ],
+    [
+     0,
+     32
+    ],
+    [
+     1,
+     8
+    ],
+    [
+     1,
+     23
+    ],
+    [
+     1,
+     35
+    ]
+   ]
+  },
+  "outputs": {
+   "ret": 1,
+   "refOk": true,
+   "okSame": true,
+   "errH": 2.2432702207505865e-7,
+   "errCam": 1.682676394332283e-7,
+   "maskSame": true,
+   "maskOnes": 14,
+   "maskLen": 45,
+   "refBest": 8.869434214832258e-7,
+   "refBestIndex": 45,
+   "kIdx": 13,
+   "boundary": [],
+   "pass": true,
+   "flagsH": [
+    1,
+    0
+   ],
+   "flagsCam": [
+    0,
+    0
+   ]
+  },
+  "truth": {
+   "camVsTruth": 0.0009518016255132267,
+   "camVsTruthInv": 0.1516266272141788
+  }
+ },
+ {
+  "i": 16,
+  "n": 30,
+  "kind": "random",
+  "path": "random-set",
+  "attempts": 81,
+  "rawDraws": 162,
+  "mtIndexBefore": 311,
+  "mtIndexAfter": 473,
+  "sampling": {
+   "pairsSame": true,
+   "samplesSame": true,
+   "rngSame": true,
+   "pass": true,
+   "nPairs": 73,
+   "firstPairs": [
+    [
+     0,
+     3
+    ],
+    [
+     0,
+     11
+    ],
+    [
+     0,
+     16
+    ],
+    [
+     0,
+     29
+    ],
+    [
+     1,
+     12
+    ],
+    [
+     1,
+     15
+    ]
+   ]
+  },
+  "outputs": {
+   "ret": 0,
+   "refOk": false,
+   "okSame": true,
+   "errH": 0,
+   "errCam": 0,
+   "maskSame": true,
+   "maskOnes": 0,
+   "maskLen": 0,
+   "refBest": 0.09017440275105164,
+   "refBestIndex": 21,
+   "kIdx": 9,
+   "boundary": [],
+   "pass": true,
+   "flagsH": [
+    0,
+    0
+   ],
+   "flagsCam": [
+    0,
+    0
+   ]
+  },
+  "truth": null
+ },
+ {
+  "i": 17,
+  "n": 110,
+  "kind": "random",
+  "path": "random-set",
+  "attempts": 75,
+  "rawDraws": 318,
+  "mtIndexBefore": 473,
+  "mtIndexAfter": 167,
+  "sampling": {
+   "pairsSame": true,
+   "samplesSame": true,
+   "rngSame": true,
+   "pass": true,
+   "nPairs": 73,
+   "firstPairs": [
+    [
+     1,
+     55
+    ],
+    [
+     1,
+     109
+    ],
+    [
+     2,
+     45
+    ],
+    [
+     3,
+     49
+    ],
+    [
+     5,
+     35
+    ],
+    [
+     6,
+     97
+    ]
+   ]
+  },
+  "outputs": {
+   "ret": 0,
+   "refOk": false,
+   "okSame": true,
+   "errH": 0,
+   "errCam": 0,
+   "maskSame": true,
+   "maskOnes": 0,
+   "maskLen": 0,
+   "refBest": 0.06889694826771386,
+   "refBestIndex": 35,
+   "kIdx": 30,
+   "boundary": [],
+   "pass": true,
+   "flagsH": [
+    0,
+    0
+   ],
+   "flagsCam": [
+    0,
+    0
+   ]
+  },
+  "truth": null
+ }
+]

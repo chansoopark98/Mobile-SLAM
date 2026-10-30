@@ -1,0 +1,11 @@
+{"actions": [
+ {"id": "A1-recenter",            "atFrame": 60,  "calls": [{"fn": "recenter"}]},
+ {"id": "A2-configure-empty",     "atFrame": 90,  "calls": [{"fn": "configure", "args": {}}]},
+ {"id": "A3-update-origin-y3",    "atFrame": 130, "calls": [{"fn": "update", "args": {"origin": {"x": 0.5, "y": 3, "z": 0}}}]},
+ {"id": "A4-recenter",            "atFrame": 160, "calls": [{"fn": "recenter"}]},
+ {"id": "A5-configure-empty",     "atFrame": 190, "calls": [{"fn": "configure", "args": {}}]},
+ {"id": "A6-recenter-configure",  "atFrame": 220, "calls": [{"fn": "recenter"}, {"fn": "configure", "args": {}}]},
+ {"id": "A7-update-no-recenter-point", "atFrame": 245, "calls": [{"fn": "update", "args": {"origin": {"x": 0, "y": 2, "z": 0}, "updateRecenterPoint": false}}]},
+ {"id": "A8-recenter",            "atFrame": 265, "calls": [{"fn": "recenter"}]},
+ {"id": "A9-configure-empty",     "atFrame": 280, "calls": [{"fn": "configure", "args": {}}]}
+]}

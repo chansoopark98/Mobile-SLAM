@@ -1,0 +1,17 @@
+{
+  "schema": "slam-refact-chunk-engine-v1",
+  "record_kind": "source-artifact-index",
+  "engine": "slam_refact",
+  "artifacts": {
+    "js": {
+      "file": "slam_refact_engine.js",
+      "sha256": "e59c52fd33ad7f5810fc5fe146b28753d624a6c3360ea27ed3967571dcb3d885",
+      "bytes": 99858
+    },
+    "wasm": {
+      "file": "slam_refact_engine.wasm",
+      "sha256": "6ff5f165ec597055fb3cf516a600fbc8895fecc564a77bb412acff9850040021",
+      "bytes": 3711760
+    }
+  }
+}

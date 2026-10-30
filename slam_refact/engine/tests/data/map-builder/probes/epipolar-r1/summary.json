@@ -1,0 +1,19 @@
+{
+ "generator": "slam_refact/engine/tests/map_builder/gen_epipolar_golden.mjs",
+ "generator_sha256": "d50fd13d4bc78ac079dab33988a338e2bc361e1b14c690c0307f86d53521e354",
+ "node": "v22.21.1",
+ "original_sha256": "780731fe294a725acf1b7717ed5ffb07ad9f0929e408a1d74f47450c291ec422",
+ "code_section_unchanged": true,
+ "seed": 20261016,
+ "tolerance": "|ours - wasm| <= 1e-6 * max(1, |wasm|) for float/double fields; Status/bool exact; sort order exact (unique keys)",
+ "counts": {
+  "E1115": 64,
+  "E1116": 256,
+  "E1118": 512,
+  "E1123": 128,
+  "S1121": 19,
+  "S1120": 19
+ },
+ "invokedImports": [],
+ "pass": true
+}

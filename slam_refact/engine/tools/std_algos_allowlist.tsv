@@ -1,0 +1,71 @@
+# std_algos_allowlist.tsv — reviewed uses of libc++-sensitive constructs (tools/check_std_algos.py).
+# Columns (tab-separated): path:line	construct	reason	reviewer	note
+# reason: value-only | lookup-only | order-irrelevant | ported | unreachable
+# Vendored call sites that affect results were ported by third_party/xr_source/patches/libcxx-compat.patch
+# (gr8gl.cc nth_element, pose-pnp.cc nth_element, random-numbers.h shuffle+distributions,
+# descriptor-lsh-index.cc shuffle, lsh-table.h shuffle+sort, frame-point.h heap ops, two-d.cc
+# priority_queue) and therefore no longer appear here.
+third_party/xr_source/c8/map.h:17	std::unordered_*	order-irrelevant	WP0a	HashMap alias definition; every HashMap< use is flagged separately (none in the vendored closure)
+third_party/xr_source/c8/map.h:27	std::unordered_*	order-irrelevant	WP0a	HashMultiMap alias definition; no uses in the vendored closure
+third_party/xr_source/c8/map.h:39	HashMap/HashSet	order-irrelevant	WP0a	alias declaration itself (using HashMap = ...)
+third_party/xr_source/c8/set.h:23	std::unordered_*	order-irrelevant	WP0a	HashSet alias definition; every HashSet< use is flagged separately (none in the vendored closure)
+third_party/xr_source/c8/set.h:33	HashMap/HashSet	order-irrelevant	WP0a	alias declaration itself (using HashSet = ...)
+third_party/xr_source/c8/random-numbers.h:19	std::random_device	unreachable	WP0a	RandomNumbers(std::random_device) ctor; the engine constructs RandomNumbers with the default seed 5489 (architecture.md §5.2) and must not call this ctor
+third_party/xr_source/third_party/cvlite/flann/lsh-table.h:144	std::unordered_*	order-irrelevant	WP0a	BucketsSpace: find()/operator[] lookups; the two iterations in optimize() write buckets_speed_[key] / key_bitset_.set(key) by key, getStats() only aggregates sizes
+third_party/xr_source/third_party/cvlite/flann/heap.h:116	std::*_heap	unreachable	WP0a	c8flann::Heap is not used by LshIndex/GlobalMatcher (no Heap< instantiation in the closure)
+third_party/xr_source/third_party/cvlite/flann/heap.h:134	std::*_heap	unreachable	WP0a	c8flann::Heap is not used by LshIndex/GlobalMatcher (no Heap< instantiation in the closure)
+third_party/xr_source/third_party/cvlite/flann/lsh-index.h:331	std::*_heap	unreachable	WP0a	getNeighbors(vec, do_radius, ...) overload is never called (findNeighbors calls getNeighbors(vec, result)); template member not instantiated
+third_party/xr_source/third_party/cvlite/flann/lsh-index.h:335	std::*_heap	unreachable	WP0a	same overload as lsh-index.h:331
+third_party/xr_source/third_party/cvlite/flann/random.h:46	rand()	unreachable	WP0a	seed_random/rand_* are used only by kmeans/kdtree/hierarchical indexes, which are not in the closure; LshIndex does not call them
+third_party/xr_source/third_party/cvlite/flann/random.h:58	rand()	unreachable	WP0a	see random.h:46
+third_party/xr_source/third_party/cvlite/flann/random.h:68	rand()	unreachable	WP0a	see random.h:46
+third_party/xr_source/third_party/cvlite/flann/random.h:100	std::shuffle	unreachable	WP0a	UniqueRandom is used only by non-LSH flann indexes (not in the closure)
+# engine/gate sources reviewed in hygiene pass 2026-10-23 (floor_detector.cc:204/:256 made total orders and floor_detector.h cloud_ made an ordered std::map by w1-floor-det)
+src/engine/floor_detector.cc:21	std::sort	order-irrelevant	w1-hygiene	ConvexHull: lexicographic (x,z) strict weak order over finite points (Update drops non-finite); elements that compare equal are bit-identical points and std::unique follows, so any sort gives the same sequence. slam_refact extension ACC-3 (no original counterpart)
+src/engine/floor_detector.cc:64	std::nth_element	value-only	w1-hygiene	Median(): only v[m] is read, and the m-th order statistic of finite floats does not depend on the algorithm (equal values are numerically equal; only a -0.0/+0.0 sign could differ). ACC-3 extension
+src/engine/floor_detector.cc:100	std::sort	order-irrelevant	w1-hygiene	pairs (frame,id) with unique ids: a total order, so the sorted sequence and the dropped oldest points are identical on every library. ACC-3 extension
+src/engine/floor_detector.cc:167	std::sort	order-irrelevant	w1-hygiene	candidates ordered by height. Candidates with equal height are identical surfaces (inliers, hull and area are functions of the height only), so tie order cannot change the merged list. ACC-3 extension
+src/engine/floor_detector.cc:204	std::sort	order-irrelevant	w1-floor-det	state_.others ordered by inliers desc, then height asc: a total order (merged heights are >= 3 bins apart, hence distinct), so the sequence is identical on every library. ACC-3 extension
+src/engine/floor_detector.cc:256	std::sort	order-irrelevant	w1-floor-det	hits ordered by distance, then HitType, then surface: a total order ((type, surface) is unique per hit), so exact distance ties no longer depend on the library. ACC-3 extension
+src/vio_tracker/vi_prediction.cc:37	std::nth_element	value-only	w1-hygiene	gravity_angle_deg(): only a[size/2] (the median of doubles) is read; the order statistic is algorithm-independent. ACC-5 extension, off by default
+src/sky/bench/sky_held.h:90	std::sort	order-irrelevant	w1-hygiene	sorts directory names of recorded sets (unique within one directory, total order on strings); gate tooling, not engine output
+src/sky/bench/sky_held.h:155	std::sort	order-irrelevant	w1-hygiene	sorts file names of one directory (unique, total order on strings); gate tooling, not engine output
+# tests/ (scanned only with --include-tests)
+tests/vendor/vendor_probe.cc:77	std::sort	order-irrelevant	WP0a	SetHash sorts 48-byte records with operator< (total order on bytes) before hashing; equal records are byte-identical
+tests/compat/libcxx_golden_impls.h:23	std::sort	ported	WP0a	StdImpl: the reference side of the libc++ golden comparison (intentionally std::)
+tests/compat/libcxx_golden_impls.h:25	std::sort	ported	WP0a	StdImpl: the reference side of the libc++ golden comparison (intentionally std::)
+tests/compat/libcxx_golden_impls.h:27	std::nth_element	ported	WP0a	StdImpl: the reference side of the libc++ golden comparison (intentionally std::)
+tests/compat/libcxx_golden_impls.h:29	std::nth_element	ported	WP0a	StdImpl: the reference side of the libc++ golden comparison (intentionally std::)
+tests/compat/libcxx_golden_impls.h:31	std::partial_sort	ported	WP0a	StdImpl: the reference side of the libc++ golden comparison (intentionally std::)
+tests/compat/libcxx_golden_impls.h:33	std::partial_sort	ported	WP0a	StdImpl: the reference side of the libc++ golden comparison (intentionally std::)
+tests/compat/libcxx_golden_impls.h:35	std::*_heap	ported	WP0a	StdImpl: the reference side of the libc++ golden comparison (intentionally std::)
+tests/compat/libcxx_golden_impls.h:37	std::*_heap	ported	WP0a	StdImpl: the reference side of the libc++ golden comparison (intentionally std::)
+tests/compat/libcxx_golden_impls.h:39	std::*_heap	ported	WP0a	StdImpl: the reference side of the libc++ golden comparison (intentionally std::)
+tests/compat/libcxx_golden_impls.h:41	std::*_heap	ported	WP0a	StdImpl: the reference side of the libc++ golden comparison (intentionally std::)
+tests/compat/libcxx_golden_impls.h:43	std::*_heap	ported	WP0a	StdImpl: the reference side of the libc++ golden comparison (intentionally std::)
+tests/compat/libcxx_golden_impls.h:45	std::*_heap	ported	WP0a	StdImpl: the reference side of the libc++ golden comparison (intentionally std::)
+tests/compat/libcxx_golden_impls.h:47	std::*_heap	ported	WP0a	StdImpl: the reference side of the libc++ golden comparison (intentionally std::)
+tests/compat/libcxx_golden_impls.h:49	std::*_heap	ported	WP0a	StdImpl: the reference side of the libc++ golden comparison (intentionally std::)
+tests/compat/libcxx_golden_impls.h:51	std::shuffle	ported	WP0a	StdImpl: the reference side of the libc++ golden comparison (intentionally std::)
+tests/compat/libcxx_golden_impls.h:53	generate_canonical	ported	WP0a	StdImpl: the reference side of the libc++ golden comparison (intentionally std::)
+tests/compat/libcxx_golden_impls.h:55	*_distribution<	ported	WP0a	StdImpl: the reference side of the libc++ golden comparison (intentionally std::)
+tests/compat/libcxx_golden_impls.h:57	*_distribution<	ported	WP0a	StdImpl: the reference side of the libc++ golden comparison (intentionally std::)
+tests/compat/libcxx_golden_impls.h:59	*_distribution<	ported	WP0a	StdImpl: the reference side of the libc++ golden comparison (intentionally std::)
+tests/compat/libcxx_golden_impls.h:61	std::priority_queue	ported	WP0a	StdImpl: the reference side of the libc++ golden comparison (intentionally std::)
+third_party/xr_source/reality/engine/imagedetection/detection-image-tracker.cc:39	*_distribution<	unreachable	US-011	IdGenerator member of an anonymous-namespace class; constructed only by the test-only track(feats, roiFeats, imageTargets, random) overload and next() is never called, so no value is ever drawn
+third_party/xr_source/reality/engine/imagedetection/detection-image-tracker.cc:188	std::sort	order-irrelevant	US-011	comparator (lastSeen ASC, firstSeen DESC, name ASC) is a strict total order: names are the unique TreeMap keys of images_, so every correct sort gives the same sequence
+third_party/xr_source/reality/engine/ears/ear-types.cc:67	HashMap/HashSet	lookup-only	US-018	faceIdToEarAnchorFilters: only operator[] by face id (ear-types.cc:251); never iterated
+third_party/xr_source/reality/engine/ears/ear-types.cc:690	HashMap/HashSet	lookup-only	US-018	averageEar3d: find / operator[] by face id; never iterated
+third_party/xr_source/reality/engine/ears/ear-types.cc:766	HashMap/HashSet	lookup-only	US-018	updateAverageEar: operator[] by face id; never iterated
+third_party/xr_source/reality/engine/ears/ear-types.cc:797	HashMap/HashSet	lookup-only	US-018	isEar3DSampled: find by face id
+third_party/xr_source/reality/engine/ears/ear-types.cc:827	HashMap/HashSet	lookup-only	US-018	getEar3DSampled: find by face id
+third_party/xr_source/reality/engine/ears/ear-types.h:107	HashMap/HashSet	lookup-only	US-018	declaration of averageEar3d (ear-types.cc:690)
+third_party/xr_source/reality/engine/ears/ear-types.h:118	HashMap/HashSet	lookup-only	US-018	declaration of updateAverageEar (ear-types.cc:766)
+third_party/xr_source/reality/engine/ears/ear-types.h:123	HashMap/HashSet	lookup-only	US-018	declaration of isEar3DSampled (ear-types.cc:797)
+third_party/xr_source/reality/engine/ears/ear-types.h:127	HashMap/HashSet	lookup-only	US-018	declaration of getEar3DSampled (ear-types.cc:827)
+third_party/xr_source/reality/engine/faces/face-tracker.h:92	HashMap/HashSet	lookup-only	US-018	debug accessor returning faceIdToSampledEar3d_ by reference; the engine never iterates it
+third_party/xr_source/reality/engine/faces/face-tracker.h:149	HashMap/HashSet	lookup-only	US-018	faceIdToSampledEar3d_: erase/find by face id only (face-tracker.cc:350,429,432,481)
+third_party/xr_source/reality/engine/faces/face-tracker.h:152	HashMap/HashSet	lookup-only	US-018	faceIdToPersistentEar3d_: operator[] by face id only (face-tracker.cc:485 -> ear-types.cc:772)
+third_party/xr_source/reality/engine/faces/tracked-face-state.cc:177	std::sort	value-only	US-018	sorts float IPD estimates with operator<; equal floats are indistinguishable, so every correct sort gives the same values and the trimmed mean (tracked-face-state.cc:180-186) is identical
+src/hand/bench/hand_bench_main.cc:51	std::sort	value-only	US-021	sorts double timings for a percentile; equal doubles are indistinguishable, so every correct sort gives the same order statistics
+src/sky/bench/sky_bench_main.cc:60	std::sort	value-only	US-020	sorts double timings for a percentile; equal doubles are indistinguishable, so every correct sort gives the same order statistics

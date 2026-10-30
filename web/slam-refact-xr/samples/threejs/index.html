@@ -1,0 +1,23 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no">
+  <title>slam_refact chunk: three.js tap to place</title>
+  <style>
+    html, body { margin: 0; height: 100%; overflow: hidden; background: #000; }
+    #camerafeed { position: fixed; inset: 0; width: 100vw; height: 100vh; display: block; touch-action: none; }
+    #hud { position: fixed; left: 0; right: 0; top: 0; padding: 8px 12px; font: 14px/1.3 sans-serif; color: #fff; background: rgba(0, 0, 0, .35); pointer-events: none; }
+  </style>
+  <!-- Paths come from slam_refact/web-chunk/samples/serve.mjs (nothing is copied): /engine/xr.js is the deployed SDK, /engine/xr-slam.js is the
+       slam_refact chunk next to it, /three/ is the local three.js build. -->
+  <script src="../../gate.js"></script>
+  <script src="../../engine/xr.js" async data-preload-chunks="slam"></script>
+  <script src="../../samples/common/probe.js"></script>
+</head>
+<body>
+  <canvas id="camerafeed"></canvas>
+  <div id="hud">Starting...</div>
+  <script type="module" src="./app.js"></script>
+</body>
+</html>

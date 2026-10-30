@@ -1,0 +1,76 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>slam_refact 실기기 측정</title>
+<style>
+  :root { color-scheme: dark; }
+  body { margin: 0; padding: 10px; font: 13px/1.35 system-ui, sans-serif; background: #111; color: #e8e8e8; }
+  h1 { font-size: 15px; margin: 0 0 4px; }
+  .banner { background: #4a3500; border: 1px solid #a07400; padding: 6px 8px; border-radius: 6px; margin-bottom: 8px; }
+  .engine { font: 11px/1.3 ui-monospace, monospace; color: #b8c4d0; word-break: break-all; margin-bottom: 8px; }
+  .buttons { display: flex; gap: 6px; flex-wrap: wrap; margin-bottom: 8px; }
+  button { font-size: 15px; padding: 9px 14px; border-radius: 6px; border: 1px solid #555; background: #2a2a2a; color: #eee; }
+  button:disabled { opacity: 0.4; }
+  #start { background: #0a5a2a; border-color: #2a9a5a; }
+  #stop { background: #6a1a1a; border-color: #aa4a4a; }
+  .views { display: flex; gap: 8px; margin-bottom: 8px; align-items: flex-start; }
+  video { width: 120px; height: 160px; background: #000; object-fit: contain; border: 1px solid #333; flex: none; }
+  #preview { width: 120px; height: 160px; background: #000; border: 1px solid #333; flex: none; }
+  #traj { width: 160px; height: 160px; background: #000; border: 1px solid #333; }
+  .view3d { position: relative; width: 100%; height: min(62vh, 560px); margin-bottom: 8px; }
+  #view3d { width: 100%; height: 100%; display: block; background: #10131a; border: 1px solid #333; border-radius: 6px; touch-action: none; }
+  .view3d .modes { position: absolute; top: 6px; right: 6px; display: flex; gap: 4px; }
+  .view3d .modes button { font-size: 12px; padding: 5px 8px; background: rgba(30,30,30,.85); }
+  .view3d .modes button.on { border-color: #4fc3f7; color: #4fc3f7; }
+  #view3dStats { position: absolute; left: 6px; bottom: 6px; font: 11px/1.3 ui-monospace, monospace; color: #cfd8dc;
+    background: rgba(0,0,0,.55); padding: 4px 6px; border-radius: 4px; pointer-events: none; white-space: pre-wrap; right: 6px; }
+  .legend { font: 11px/1.3 system-ui, sans-serif; color: #b0bec5; margin: -4px 0 8px; }
+  .legend i { display: inline-block; width: 10px; height: 3px; margin: 0 3px 2px 6px; vertical-align: middle; }
+  #status { font-size: 18px; font-weight: 600; }
+  pre { font: 11px/1.3 ui-monospace, monospace; white-space: pre-wrap; margin: 0; }
+  .warn { color: #ffb84d; }
+  #recBadge { position: fixed; top: 8px; right: 8px; z-index: 10; padding: 6px 10px; background: #111; color: #ff4040;
+    border: 2px solid #ff4040; border-radius: 6px; font: 700 16px system-ui, sans-serif; pointer-events: none; }
+  #recBanner { background: #5a0f0f; border-color: #ff4040; color: #ffd0d0; }
+  .err { color: #ff6b6b; }
+</style>
+</head>
+<body>
+<h1>slam_refact 실기기 측정 페이지</h1>
+<div class="banner">측정 페이지입니다. <b>시작</b>을 누르기 전에는 카메라와 센서를 쓰지 않습니다.
+영상·IMU는 기본적으로 저장하거나 전송하지 않으며(<code>?record=1</code>로 명시적으로 켠 경우만 예외, 아래 빨간 안내), 지표 JSON(pose·status·timing)은 <b>다운로드</b>를 눌렀을 때만 기기에 저장됩니다.
+엔진: slam_refact (reference runtime world SLAM C++ 재구현) + 정확도 모드(미터 단위 scale 연속 추정, 바닥 인식·hit test). <code>?accuracy=0</code>은 원본과 같은 동작입니다. 기존 VINS-Mono 페이지(index.html)와 무관합니다.</div>
+<div id="recBadge" hidden>● REC</div>
+<div class="banner" id="recBanner" hidden>녹화 모드(?record=1): 시작하면 엔진에 보낸 영상 프레임(480x640 gray)과 센서 값이 <b>이 기기의 브라우저 저장소(OPFS)에만</b> 저장됩니다. 전송하지 않으며, 정지 후 <b>녹화 다운로드</b>를 눌렀을 때만 파일로 내려받습니다.</div>
+<div class="engine" id="engine">engine manifest loading…</div>
+<div class="buttons">
+  <button id="start" disabled>시작</button>
+  <button id="stop" disabled>정지</button>
+  <button id="reset" disabled>Reset</button>
+  <button id="download" disabled>지표 JSON 다운로드</button>
+  <button id="downloadRec" disabled hidden>녹화 다운로드</button>
+</div>
+<div class="view3d" id="view3dBox" hidden>
+  <canvas id="view3d"></canvas>
+  <div class="modes"><button id="viewOrbit" class="on">회전</button><button id="viewFollow">추적</button><button id="viewTop">위</button><button id="viewFit">맞춤</button></div>
+  <div id="view3dStats"></div>
+</div>
+<div class="legend" id="view3dLegend" hidden>궤적 <i style="background:#3ddc84"></i>NORMAL<i style="background:#ffb300"></i>LIMITED<i style="background:#ff5252"></i>NOT_AVAILABLE · 회색: 바닥(y=0) 투영 · 점: world points(파랑 낮은 → 노랑 높은 confidence) · 흰 점: 시작 위치 · <i style="background:#26c6da"></i>인식된 바닥 · <i style="background:#ab47bc"></i>다른 수평면 · <i style="background:#ff4081"></i>hit 결과(엔진 입력 미리보기를 탭) · 드래그 회전, 휠/핀치 확대</div>
+<div class="views">
+  <video id="video" muted playsinline title="카메라 원본"></video>
+  <canvas id="preview" width="120" height="160" title="엔진 입력 (480x640, 회전·crop 후) — 탭하면 hit test"></canvas>
+  <canvas id="traj" width="320" height="320"></canvas>
+</div>
+<div id="status">IDLE</div>
+<pre id="state">state: idle</pre>
+<pre id="pose"></pre>
+<pre id="tracker"></pre>
+<pre id="accuracy"></pre>
+<pre id="hit">hit test: 엔진 입력 미리보기(가운데 작은 화면)를 탭하면 그 지점의 바닥·수평면·특징점을 찾습니다</pre>
+<pre id="timing"></pre>
+<pre id="notes" class="warn"></pre>
+<script type="module" src="js/slam-refact-app.js"></script>
+</body>
+</html>

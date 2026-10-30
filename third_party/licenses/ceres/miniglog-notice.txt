@@ -1,0 +1,90 @@
+// Ceres Solver - A fast non-linear least squares minimizer
+// Copyright 2015 Google Inc. All rights reserved.
+// http://ceres-solver.org/
+//
+// Redistribution and use in source and binary forms, with or without
+// modification, are permitted provided that the following conditions are met:
+//
+// * Redistributions of source code must retain the above copyright notice,
+//   this list of conditions and the following disclaimer.
+// * Redistributions in binary form must reproduce the above copyright notice,
+//   this list of conditions and the following disclaimer in the documentation
+//   and/or other materials provided with the distribution.
+// * Neither the name of Google Inc. nor the names of its contributors may be
+//   used to endorse or promote products derived from this software without
+//   specific prior written permission.
+//
+// THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS "AS IS"
+// AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE
+// IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE
+// ARE DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT OWNER OR CONTRIBUTORS BE
+// LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR
+// CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF
+// SUBSTITUTE GOODS OR SERVICES; LOSS OF USE, DATA, OR PROFITS; OR BUSINESS
+// INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN
+// CONTRACT, STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE)
+// ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE
+// POSSIBILITY OF SUCH DAMAGE.
+//
+// Author: settinger@google.com (Scott Ettinger)
+//         mierle@gmail.com (Keir Mierle)
+//
+// Simplified Glog style logging with Android support. Supported macros in
+// decreasing severity level per line:
+//
+//   VLOG(2), VLOG(N)
+//   VLOG(1),
+//   LOG(INFO), VLOG(0), LG
+//   LOG(WARNING),
+//   LOG(ERROR),
+//   LOG(FATAL),
+//
+// With VLOG(n), the output is directed to one of the 5 Android log levels:
+//
+//   2 - Verbose
+//   1 - Debug
+//   0 - Info
+//  -1 - Warning
+//  -2 - Error
+//  -3 - Fatal
+//
+// Any logging of level 2 and above is directed to the Verbose level. All
+// Android log output is tagged with the string "native".
+//
+// If the symbol ANDROID is not defined, all output goes to std::cerr.
+// This allows code to be built on a different system for debug.
+//
+// Portions of this code are taken from the GLOG package.  This code is only a
+// small subset of the GLOG functionality. Notable differences from GLOG
+// behavior include lack of support for displaying unprintable characters and
+// lack of stack trace information upon failure of the CHECK macros.  On
+// non-Android systems, log output goes to std::cerr and is not written to a
+// file.
+//
+// CHECK macros are defined to test for conditions within code.  Any CHECK that
+// fails will log the failure and terminate the application.
+// e.g. CHECK_GE(3, 2) will pass while CHECK_GE(3, 4) will fail after logging
+//      "Check failed 3 >= 4".
+//
+// The following CHECK macros are defined:
+//
+//   CHECK(condition)        - fails if condition is false and logs condition.
+//   CHECK_NOTNULL(variable) - fails if the variable is nullptr.
+//
+// The following binary check macros are also defined :
+//
+//   Macro                     Operator equivalent
+//   --------------------      -------------------
+//   CHECK_EQ(val1, val2)      val1 == val2
+//   CHECK_NE(val1, val2)      val1 != val2
+//   CHECK_GT(val1, val2)      val1 > val2
+//   CHECK_GE(val1, val2)      val1 >= val2
+//   CHECK_LT(val1, val2)      val1 < val2
+//   CHECK_LE(val1, val2)      val1 <= val2
+//
+// Debug only versions of all of the check macros are also defined.  These
+// macros generate no code in a release build, but avoid unused variable
+// warnings / errors.
+//
+// To use the debug only versions, prepend a D to the normal check macros, e.g.
+// DCHECK_EQ(a, b).

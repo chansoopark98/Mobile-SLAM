@@ -1,0 +1,1 @@
+{"max_rot_err_vs_R_xr": 4.0847000293275926e-07, "n_written_floats": 32, "last_translation_and_inverse_translation_and_w": [0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 1.0, 1.0], "verdict": "tamExtrinsic = cameraMotion((0,0,0), xrRotationFromDeviceRotation(devicePose))"}

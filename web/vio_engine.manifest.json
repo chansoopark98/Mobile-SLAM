@@ -1,0 +1,10 @@
+{
+  "schema": "mobile-slam-build-v1",
+  "record_kind": "source-artifact-index",
+  "artifact": {
+    "file": "vio_engine.js",
+    "sha256": "e7420b3699d075ad7123e32a0e8a5039a28e6a4008abda2d13e940b84b9ce93b",
+    "bytes": 6056932
+  },
+  "single_file_embedded_wasm": true
+}

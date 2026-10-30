@@ -1,0 +1,182 @@
+diff -ruN a/c8/geometry/two-d.cc b/c8/geometry/two-d.cc
+--- a/c8/geometry/two-d.cc
++++ b/c8/geometry/two-d.cc
+@@ -21,6 +21,7 @@
+ #include <queue>
+ 
+ #include "c8/geometry/two-d.h"
++#include "libcxx_compat/queue.h"  // slam_refact libcxx-compat.patch
+ 
+ #define PI_F 3.14159265f
+ 
+@@ -195,7 +196,7 @@
+   Line2 base(minpt, pts[index2]);
+ 
+   // Create a priority queue sorted by min angle to the base.
+-  std::priority_queue<Angle2, Vector<Angle2>, std::greater<Angle2>> angles;
++  slam_refact::libcxx::priority_queue<Angle2, Vector<Angle2>, std::greater<Angle2>> angles;
+   for (int i = 0; i < pts.size(); ++i) {
+     if (i == index || i == index2) {
+       continue;
+diff -ruN a/c8/random-numbers.h b/c8/random-numbers.h
+--- a/c8/random-numbers.h
++++ b/c8/random-numbers.h
+@@ -7,6 +7,9 @@
+ #include <algorithm>
+ #include <random>
+ 
++#include "libcxx_compat/algorithm.h"  // slam_refact libcxx-compat.patch
++#include "libcxx_compat/random.h"
++
+ namespace c8 {
+ 
+ class RandomNumbers {
+@@ -32,7 +35,7 @@
+ 
+   template <class RandomIt>
+   void shuffle(RandomIt first, RandomIt last) {
+-    std::shuffle(first, last, rng);
++    slam_refact::libcxx::shuffle(first, last, rng);
+   }
+ 
+   // Disallow copying.
+@@ -41,10 +44,10 @@
+ 
+ private:
+   std::mt19937 rng;
+-  std::normal_distribution<float> gaussian32f;
+-  std::uniform_real_distribution<float> uniform32f;
+-  std::uniform_int_distribution<uint32_t> uniform32i;
+-  std::uniform_int_distribution<uint64_t> uniform64i;
++  slam_refact::libcxx::normal_distribution<float> gaussian32f;
++  slam_refact::libcxx::uniform_real_distribution<float> uniform32f;
++  slam_refact::libcxx::uniform_int_distribution<uint32_t> uniform32i;
++  slam_refact::libcxx::uniform_int_distribution<uint64_t> uniform64i;
+ };
+ 
+ class MultinomialDistribution {
+diff -ruN a/reality/engine/features/descriptor-lsh-index.cc b/reality/engine/features/descriptor-lsh-index.cc
+--- a/reality/engine/features/descriptor-lsh-index.cc
++++ b/reality/engine/features/descriptor-lsh-index.cc
+@@ -18,6 +18,7 @@
+ #include <bitset>
+ #include <random>
+ 
++#include "libcxx_compat/algorithm.h"  // slam_refact libcxx-compat.patch
+ #include "c8/map.h"
+ #include "c8/set.h"
+ #include "reality/engine/features/descriptor-lsh-index.h"
+@@ -88,7 +89,7 @@
+   for (int t = 0; t < numHashes; ++t) {
+     for (int i = 0; i < numTriesPerHash; ++i) {
+       // Randomly choose a hash with n=bitsPerHash bits set to 1.
+-      std::shuffle(bitIndex.begin(), bitIndex.end(), rnd);
++      slam_refact::libcxx::shuffle(bitIndex.begin(), bitIndex.end(), rnd);
+       std::bitset<64> bitset;
+       for (int h = 0; h < bitsPerHash; ++h) {
+         bitset[bitIndex[h]] = true;
+diff -ruN a/reality/engine/features/frame-point.h b/reality/engine/features/frame-point.h
+--- a/reality/engine/features/frame-point.h
++++ b/reality/engine/features/frame-point.h
+@@ -17,6 +17,7 @@
+ #include "c8/string.h"
+ #include "c8/string/format.h"
+ #include "c8/vector.h"
++#include "libcxx_compat/algorithm.h"  // slam_refact libcxx-compat.patch
+ #include "reality/engine/features/feature-manager.h"
+ #include "reality/engine/features/image-descriptor.h"
+ #include "reality/engine/geometry/epipolar.h"
+@@ -60,12 +61,12 @@
+   void push(const PointMatch &match) {
+     if (matches_.size() < k_) {
+       matches_.push_back(match);
+-      std::push_heap(matches_.begin(), matches_.end(), comparator_);
++      slam_refact::libcxx::push_heap(matches_.begin(), matches_.end(), comparator_);
+     } else if (match.descriptorDist < matches_.front().descriptorDist) {
+-      std::pop_heap(matches_.begin(), matches_.end(), comparator_);
++      slam_refact::libcxx::pop_heap(matches_.begin(), matches_.end(), comparator_);
+       matches_.pop_back();
+       matches_.push_back(match);
+-      std::push_heap(matches_.begin(), matches_.end(), comparator_);
++      slam_refact::libcxx::push_heap(matches_.begin(), matches_.end(), comparator_);
+     }
+   }
+ 
+@@ -73,7 +74,7 @@
+   Vector<PointMatch> sortedMatches() {
+     // Copy the matches and sort them.
+     Vector<PointMatch> sortedMatches = matches_;
+-    std::sort_heap(sortedMatches.begin(), sortedMatches.end(), comparator_);
++    slam_refact::libcxx::sort_heap(sortedMatches.begin(), sortedMatches.end(), comparator_);
+     return sortedMatches;
+   }
+ 
+diff -ruN a/reality/engine/features/gr8gl.cc b/reality/engine/features/gr8gl.cc
+--- a/reality/engine/features/gr8gl.cc
++++ b/reality/engine/features/gr8gl.cc
+@@ -72,6 +72,7 @@
+ #include <queue>
+ #include <vector>
+ 
++#include "libcxx_compat/algorithm.h"  // slam_refact libcxx-compat.patch
+ #include "c8/c8-log.h"
+ #include "c8/exceptions.h"
+ #include "c8/pixels/pixel-transforms.h"
+@@ -200,7 +201,7 @@
+     collisionToScore.push_back(std::make_pair(binCounts[bini]++, keypoint));
+   }
+   // We are only interested in nPoints from this list
+-  std::nth_element(
++  slam_refact::libcxx::nth_element(
+     collisionToScore.begin(),
+     collisionToScore.begin() + nPoints,
+     collisionToScore.end(),
+diff -ruN a/reality/engine/geometry/pose-pnp.cc b/reality/engine/geometry/pose-pnp.cc
+--- a/reality/engine/geometry/pose-pnp.cc
++++ b/reality/engine/geometry/pose-pnp.cc
+@@ -31,6 +31,7 @@
+ #include <cmath>
+ #include <numeric>
+ 
++#include "libcxx_compat/algorithm.h"  // slam_refact libcxx-compat.patch
+ #include "c8/c8-log.h"
+ #include "c8/geometry/egomotion.h"
+ #include "c8/geometry/homography.h"
+@@ -304,7 +305,7 @@
+       }
+ 
+       // Find the nth best residual.
+-      std::nth_element(
++      slam_refact::libcxx::nth_element(
+         sampleResiduals->begin(), sampleResiduals->begin() + residualN, sampleResiduals->end());
+       float residual = sampleResiduals->at(residualN);
+ 
+diff -ruN a/third_party/cvlite/flann/lsh-table.h b/third_party/cvlite/flann/lsh-table.h
+--- a/third_party/cvlite/flann/lsh-table.h
++++ b/third_party/cvlite/flann/lsh-table.h
+@@ -56,6 +56,7 @@
+ #include <stddef.h>
+ 
+ #include "c8/exceptions.h"
++#include "libcxx_compat/algorithm.h"  // slam_refact libcxx-compat.patch
+ #include "third_party/cvlite/flann/dynamic-bitset.h"
+ #include "third_party/cvlite/flann/matrix.h"
+ 
+@@ -361,7 +362,7 @@
+   // A bit brutal but fast to code
+   std::vector<size_t> indices(feature_size * CHAR_BIT);
+   for (size_t i = 0; i < feature_size * CHAR_BIT; ++i) indices[i] = i;
+-  std::shuffle(indices.begin(), indices.end(), rng_);
++  slam_refact::libcxx::shuffle(indices.begin(), indices.end(), rng_);
+ 
+   // Generate a random set of order of subsignature_size_ bits
+   for (unsigned int i = 0; i < key_size_; ++i) {
+@@ -455,7 +456,7 @@
+     stats.n_buckets_ = buckets_space_.size();
+   }
+ 
+-  std::sort(stats.bucket_sizes_.begin(), stats.bucket_sizes_.end());
++  slam_refact::libcxx::sort(stats.bucket_sizes_.begin(), stats.bucket_sizes_.end());
+ 
+   //  BOOST_FOREACH(int size, stats.bucket_sizes_)
+   //          std::cout << size << " ";

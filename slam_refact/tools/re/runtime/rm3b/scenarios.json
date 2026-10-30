@@ -1,0 +1,6 @@
+{
+  "rm3b-s2-absolute": {"kind": "flip6", "dataset": "build/flip6-20261015/L-S2-loop-replay", "ua": "reduced", "scale": "absolute",
+    "note": "G6 / RM-3b criterion 5 probe: flip6-s2 with scale 'absolute' (page-runtime dispatches DERIVED-LINACC-OS-EQUIVALENT acceleration), first 300 frames"},
+  "rm3b-s2-responsive": {"kind": "flip6", "dataset": "build/flip6-20261015/L-S2-loop-replay", "ua": "reduced", "scale": "responsive",
+    "note": "G6 control: same input and the same API call script with scale 'responsive' (scale = origin.y)"}
+}

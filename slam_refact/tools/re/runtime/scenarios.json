@@ -1,0 +1,87 @@
+{
+ "tum-room1-full": {
+  "kind": "tum", "dataset": "build/slam-refact-20261015/reference/fixtures/tum-room1-portrait-full",
+  "ua": "pixel7", "scale": "responsive",
+  "note": "TUM VI room1 full sequence (2821 frames, 141 s), fisheye rectified to a 240x320 portrait pinhole, fx=fy=260.9, IMU in phone body frame"
+ },
+ "tum-room1-lowtex": {
+  "kind": "tum", "dataset": "build/slam-refact-20261015/reference/fixtures/tum-room1-portrait-lowtex17-20",
+  "ua": "pixel7", "scale": "responsive",
+  "note": "TUM VI room1 first 480 frames (24 s), 17-20 s blended to low texture (same recipe/seed as the prior lowtexlate fixture), portrait"
+ },
+ "flip6-s2": {
+  "kind": "flip6", "dataset": "build/flip6-20261015/L-S2-loop-replay",
+  "ua": "reduced", "scale": "responsive",
+  "note": "Flip6 S2 60 s room loop replay view (1037 frames 480x640 portrait, DeviceMotion ~40 Hz, body->device by the existing adapter)"
+ },
+ "flip6-n1": {
+  "kind": "flip6", "dataset": "build/flip6-20261015/L-N1-stages-replay",
+  "ua": "reduced", "scale": "responsive",
+  "note": "Flip6 N1 30 s S2 route replay view (720 frames)"
+ },
+ "flip6-s3-lowtex": {
+  "kind": "flip6", "dataset": "build/flip6-20261015/L-S3-lowtex-replay",
+  "ua": "reduced", "scale": "responsive",
+  "note": "Flip6 S3 white wall/ceiling replay view (381 frames, thermal status 2 during capture)"
+ },
+ "tum-prior-landscape": {
+  "kind": "tum", "dataset": "build/rea-analysis-20261015/side-by-side/fixtures/normal",
+  "ua": "pixel7", "scale": "responsive",
+  "note": "CONTROL ONLY: prior side-by-side landscape fixture (320x240, viewport 320x240 -> screen orientation 90). Used to show the orientation/IMU axis mismatch; not a reference scenario"
+ },
+ "tum-room1-full-absolute": {
+  "kind": "tum", "dataset": "build/slam-refact-20261015/reference/fixtures/tum-room1-portrait-full",
+  "ua": "pixel7", "scale": "absolute",
+  "note": "WP5 MS-RT (architecture.md 6.5): tum-room1-full with scale 'absolute'; page-runtime dispatches DERIVED-LINACC-OS-EQUIVALENT acceleration (slam_refact/tools/harness/derive_linear_accel.py)"
+ },
+ "flip6-s2-absolute": {
+  "kind": "flip6", "dataset": "build/flip6-20261015/L-S2-loop-replay",
+  "ua": "reduced", "scale": "absolute",
+  "note": "WP5 MS-RT (architecture.md 6.5): flip6-s2 with scale 'absolute'; page-runtime dispatches DERIVED-LINACC-OS-EQUIVALENT acceleration (slam_refact/tools/harness/derive_linear_accel.py)"
+ },
+ "tum-room2-full": {
+  "kind": "tum", "dataset": "build/slam-refact-20261015/reference/fixtures/tum-room2-portrait-full",
+  "ua": "pixel7", "scale": "responsive",
+  "note": "HELD-OUT accuracy only (no original reference run): TUM VI room2 full sequence (2882 frames), same conversion as tum-room1-full"
+ },
+ "tum-room4-full": {
+  "kind": "tum", "dataset": "build/slam-refact-20261015/reference/fixtures/tum-room4-portrait-full",
+  "ua": "pixel7", "scale": "responsive",
+  "note": "HELD-OUT accuracy only (no original reference run): TUM VI room4 full sequence (2223 frames), same conversion as tum-room1-full"
+ },
+ "flip6-arcore-s2": {
+  "kind": "tum", "dataset": "build/slam-refact-20261015/reference/fixtures/flip6-arcore-s2",
+  "ua": "reduced", "scale": "responsive",
+  "note": "ARCORE-REFERENCED accuracy only: Galaxy Z Flip6 ARCore recording A-S2 (30 s room route), mp4 frames rotated to 480x640 portrait, Chrome-like 60 Hz quantized IMU (build_arcore_fixture.py); GT = ARCore poses (reference VIO, not independent)"
+ },
+ "flip6-arcore-s3": {
+  "kind": "tum", "dataset": "build/slam-refact-20261015/reference/fixtures/flip6-arcore-s3",
+  "ua": "reduced", "scale": "responsive",
+  "note": "ARCORE-REFERENCED accuracy only: Galaxy Z Flip6 ARCore recording A-S3 (30 s white wall/ceiling route), same conversion as flip6-arcore-s2"
+ },
+ "flip6-arcore-s2-lag110": {
+  "kind": "tum", "dataset": "build/slam-refact-20261015/reference/fixtures/flip6-arcore-s2-lag110",
+  "ua": "reduced", "scale": "responsive",
+  "note": "ARCORE-REFERENCED, sensitivity only: flip6-arcore-s2 with every IMU sample stamped 110 ms late (Chrome DeviceMotion lag seen in the L-* records)"
+ },
+ "flip6-arcore-l1": {
+  "kind": "tum", "dataset": "build/slam-refact-20261015/reference/fixtures/flip6-arcore-l1",
+  "ua": "reduced", "scale": "responsive",
+  "note": "ARCORE-REFERENCED accuracy only: Galaxy Z Flip6 ARCore recording physical-live-01 (2026-10-14, 30 s, 20 Hz ARCore poses), same conversion as flip6-arcore-s2"
+ },
+ "flip6-arcore-s2-absolute": {
+  "kind": "tum", "dataset": "build/slam-refact-20261015/reference/fixtures/flip6-arcore-s2",
+  "ua": "reduced", "scale": "absolute",
+  "note": "ARCORE-REFERENCED: flip6-arcore-s2 with scale 'absolute' (DERIVED-LINACC-OS-EQUIVALENT acceleration)"
+ },
+ "flip6-arcore-s3-absolute": {
+  "kind": "tum", "dataset": "build/slam-refact-20261015/reference/fixtures/flip6-arcore-s3",
+  "ua": "reduced", "scale": "absolute",
+  "note": "ARCORE-REFERENCED: flip6-arcore-s3 with scale 'absolute' (DERIVED-LINACC-OS-EQUIVALENT acceleration)"
+ },
+ "flip6-arcore-l1-absolute": {
+  "kind": "tum", "dataset": "build/slam-refact-20261015/reference/fixtures/flip6-arcore-l1",
+  "ua": "reduced", "scale": "absolute",
+  "note": "ARCORE-REFERENCED: flip6-arcore-l1 with scale 'absolute' (DERIVED-LINACC-OS-EQUIVALENT acceleration)"
+ }
+}

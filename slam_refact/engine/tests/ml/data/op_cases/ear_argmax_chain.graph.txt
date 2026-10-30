@@ -1,0 +1,25 @@
+model version=3 subgraphs=1 name=main
+tensor 0 heat FLOAT32 [2,5,4,3] bytes=0 quant=0 var=0 sparse=0
+tensor 1 perm INT32 [4] bytes=16 quant=0 var=0 sparse=0
+tensor 2 t FLOAT32 [2,3,5,4] bytes=0 quant=0 var=0 sparse=0
+tensor 3 shape INT32 [3] bytes=12 quant=0 var=0 sparse=0
+tensor 4 r FLOAT32 [2,3,20] bytes=0 quant=0 var=0 sparse=0
+tensor 5 axis INT32 [] bytes=4 quant=0 var=0 sparse=0
+tensor 6 am INT64 [2,3] bytes=0 quant=0 var=0 sparse=0
+tensor 7 amf FLOAT32 [2,3] bytes=0 quant=0 var=0 sparse=0
+tensor 8 inv_w FLOAT32 [] bytes=4 quant=0 var=0 sparse=0
+tensor 9 q FLOAT32 [2,3] bytes=0 quant=0 var=0 sparse=0
+tensor 10 qi INT64 [2,3] bytes=0 quant=0 var=0 sparse=0
+tensor 11 w4 INT64 [] bytes=8 quant=0 var=0 sparse=0
+tensor 12 mod INT64 [2,3] bytes=0 quant=0 var=0 sparse=0
+tensor 13 modf FLOAT32 [2,3] bytes=0 quant=0 var=0 sparse=0
+op 0 TRANSPOSE v1 in=[0,1] out=[2] opts={} custom=
+op 1 RESHAPE v1 in=[2,3] out=[4] opts={new_shape=none} custom=
+op 2 ARG_MAX v1 in=[4,5] out=[6] opts={out=INT64} custom=
+op 3 CAST v1 in=[6] out=[7] opts={} custom=
+op 4 MUL v1 in=[7,8] out=[9] opts={act=NONE} custom=
+op 5 CAST v1 in=[9] out=[10] opts={} custom=
+op 6 FLOOR_MOD v1 in=[6,11] out=[12] opts={} custom=
+op 7 CAST v1 in=[12] out=[13] opts={} custom=
+inputs [0]
+outputs [10,13]

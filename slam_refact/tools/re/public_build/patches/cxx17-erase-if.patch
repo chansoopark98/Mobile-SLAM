@@ -1,0 +1,21 @@
+diff -ruN a/reality/engine/features/global-matcher.cc b/reality/engine/features/global-matcher.cc
+--- a/reality/engine/features/global-matcher.cc	2026-10-15 18:44:49.673720250 +0900
++++ b/reality/engine/features/global-matcher.cc	2026-10-15 18:44:49.673720250 +0900
+@@ -382,9 +382,14 @@
+ 
+     // If there is a relative threshold, remove matches that are not close to the best match
+     auto relativeThreshold = matchesForWord[0].descriptorDist * relativeThresholdRatio;
+-    std::erase_if(matchesForWord, [relativeThreshold](const PointMatch &match) {
+-      return match.descriptorDist > relativeThreshold;
+-    });
++    matchesForWord.erase(
++      std::remove_if(
++        matchesForWord.begin(),
++        matchesForWord.end(),
++        [relativeThreshold](const PointMatch &match) {
++          return match.descriptorDist > relativeThreshold;
++        }),
++      matchesForWord.end());
+   }
+ }
+ 

@@ -1,0 +1,26 @@
+<!doctype html>
+<html lang="ko">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>Mobile-SLAM 실기기 입력 진단</title>
+  <style>
+    body{margin:0;background:#10151b;color:#e4edf5;font:14px system-ui,sans-serif}main{max-width:1000px;margin:auto;padding:14px}h1{font-size:19px;margin:0 0 8px}p{line-height:1.5;margin:8px 0;color:#b9c6d3}.controls{display:flex;gap:8px;flex-wrap:wrap;align-items:center}button,input{font:inherit;padding:9px;border:1px solid #64768a;background:#1c2834;color:inherit;border-radius:5px}button:disabled{opacity:.45}input{width:65px}#status{color:#7fdeaf}#summary{font:12px monospace;white-space:pre-wrap;max-height:160px;overflow:auto}iframe{width:100%;height:70vh;border:1px solid #64768a;background:#000}details{margin:10px 0}a{color:#8fc9ff}
+  </style>
+</head>
+<body data-mobile-audit="page">
+<main>
+  <h1>Mobile-SLAM 실기기 입력 진단</h1>
+  <p>기존 앱의 카메라·IMU·추정 결과를 관측. 앱 열기 → 기록 시작 → 아래 앱의 Start → 권한 허용. 첫 구간은 기기를 정지한 상태로 기록.</p>
+  <div class="controls">
+    <button id="open">앱 열기</button><label>최대 <input id="seconds" type="number" min="10" max="120" value="60">초</label>
+    <button id="record" disabled>기록 시작</button><button id="stop" disabled>기록·센서 종료</button><button id="export" disabled>JSON 내보내기</button>
+  </div>
+  <p id="status">실기기 카메라·IMU 사용에는 HTTPS와 기기 권한 필요.</p>
+  <details><summary>기록 범위·한계</summary><p>이미지·영상·기기 ID·track label 저장 제외. 최대120초, channel당10000개·전체40000개. 업로드 없이 이 브라우저에서 JSON 다운로드. Worker roundtrip·제출 시각 대용값은 실제 camera-to-pose latency 또는 정확도 보증과 구분. Pose jump marker는 탐색용0.5m/20° 기준이며 실제 움직임·reset을 함께 검토.</p></details>
+  <pre id="summary">기록 대기</pre>
+  <iframe id="app" title="기존 Mobile-SLAM 앱" allow="camera; accelerometer; gyroscope; fullscreen" src="about:blank"></iframe>
+</main>
+<script type="module" src="./js/audit-mobile.js"></script>
+</body>
+</html>

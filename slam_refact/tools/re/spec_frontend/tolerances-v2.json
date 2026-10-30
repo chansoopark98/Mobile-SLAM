@@ -1,0 +1,21 @@
+{
+  "schema": "slam-refact-spec-frontend-tolerances-v2",
+  "fixed_at": "2026-10-15, AFTER the TUM c1/c2 comparisons (v1 = tolerances.json failed there) and BEFORE any Flip6 capture was compared",
+  "why_v2": "v1 assumed GPU-identical bilinear rounding. The TUM capture showed the input/stage-1 resampling differs at rounding ties (~0.9% of level-0 pixels, |d| <= 2), which no CPU float model reproduced. v2 separates the stages: stages that were bit exact on TUM must stay bit exact; the full CPU pyramid is gated as a regression bound calibrated on TUM and evaluated first on held-out Flip6 captures.",
+  "calibration_data": "build/slam-refact-20261015/spec/frontend/compare/tum-c2-ss1-bf1.json (medians R 0.99116, G 0.99157, candJ 0.84394, kpJ 0.5051, desc 0.6421)",
+  "model": "swiftshader_approx = 1, binary_expression_forms = 1",
+  "gates": {
+    "cpu_half_wasm_libcxx": "BIT_EXACT: same kept set and order as binary func917+func918 on every level of every capture",
+    "isolated_stage23_from_captured_gray": "BIT_EXACT: all 4 channels in all level regions",
+    "isolated_levels123_rebuilt_from_captured_level0": "R and G identical fraction >= 0.9999 per capture, |d| <= 1; B and A identical fraction >= 0.9999",
+    "full_cpu_pyramid_vs_capture": {
+      "R_identical_min_fraction": 0.985,
+      "R_max_abs_diff": 2,
+      "G_identical_min_fraction": 0.985,
+      "G_max_abs_diff": 2,
+      "B_candidates_jaccard_min": 0.75,
+      "per_level_keypoint_count_rel_diff_max": 0.1
+    },
+    "full_cpu_keypoints_vs_capture_keypoints": "REPORT ONLY (jaccard, descriptor identity); not a pass/fail gate"
+  }
+}

@@ -1,0 +1,2 @@
+# textureWidth textureHeight orientation m0..m15 (float32 bits, copied from the page)
+480	640	0	00000000	80000000	00000001	80000001	007fffff	807fffff	00800000	80800000	3f800000	bf800000	c08ccccd	7f7fffff	ff7fffff	7f800000	ff800000	3dcccccd
