@@ -7,9 +7,9 @@ import { loadBundledManifest, loadBundledTarget, loadPickedTarget, MAX_TARGETS }
 window.THREE = THREE;  // XR8.Threejs reads window.THREE
 const $ = (id) => document.getElementById(id);
 const ui = {
-  start: $('start'), startNote: $('start-note'), startScreen: $('start-screen'), hud: $('hud'), errors: $('errors'), canvas: $('camerafeed'),
+  start: $('start'), startNote: $('start-note'), startScreen: $('start-screen'), hud: $('hud'), errors: $('errors'), errorBox: $('error-box'), canvas: $('camerafeed'),
   status: $('h-status'), reason: $('h-reason'), points: $('h-points'), ups: $('h-ups'), orient: $('h-orient'), video: $('h-video'), targets: $('h-targets'), msg: $('h-msg'),
-  clear: $('b-clear'), recenter: $('b-recenter'), stop: $('b-stop'), metrics: $('b-metrics'),
+  clear: $('b-clear'), recenter: $('b-recenter'), stop: $('b-stop'), restart: $('b-restart'), metrics: $('b-metrics'), panel: $('panel'),
   demo: $('demo-targets'), fJson: $('f-json'), fImage: $('f-image'), add: $('b-add-target'), list: $('target-list'),
 };
 const metrics = createMetrics();
@@ -30,10 +30,12 @@ window.__phoneApp = { getState: () => JSON.parse(JSON.stringify({ ...state, targ
 const showError = (where, message) => {
   metrics.error();
   const line = `[${where}] ${message}`;
-  if (state.errors.length < 20) state.errors.push(line);
-  ui.errors.hidden = false;
+  state.errors.push(line);
+  if (state.errors.length > 20) state.errors.shift();
+  ui.errorBox.hidden = false;
   ui.errors.textContent = state.errors.join('\n');
 };
+$('error-dismiss').addEventListener('click', () => { state.errors = []; ui.errors.textContent = ''; ui.errorBox.hidden = true; });
 window.addEventListener('error', (e) => showError('오류', e.message));
 window.addEventListener('unhandledrejection', (e) => showError('오류', String(e.reason && e.reason.message || e.reason)));
 // The chunk reports unsupported cases with console.warn ("[XR] ..."); keep the original behaviour and also show it.
@@ -168,9 +170,15 @@ const onTap = (event) => {
   const hits = XR8.XrController.hitTest((event.clientX - rect.left) / rect.width, (event.clientY - rect.top) / rect.height, ['FEATURE_POINT']);
   const ok = hits.length > 0 && hits[0].distance > 0;
   metrics.hit(ok);
-  if (!ok) { ui.msg.textContent = '탭한 곳의 표면을 아직 추정하지 못했습니다. 폰을 천천히 움직인 뒤 다시 탭하세요.'; return; }
+  if (!ok) { ui.msg.textContent = '탭한 곳에서 기준점을 찾지 못했습니다. 휴대폰을 천천히 움직인 뒤 다시 시도하세요.'; return; }
   placeObject(hits[0].position);
   ui.msg.textContent = `물체를 놓았습니다(거리 ${hits[0].distance.toFixed(2)}). 다시 탭하면 하나 더 놓습니다.`;
+};
+const onCanvasKey = (event) => {
+  if (event.key !== 'Enter' && event.key !== ' ') return;
+  event.preventDefault();
+  const rect = ui.canvas.getBoundingClientRect();
+  onTap({ clientX: rect.left + rect.width / 2, clientY: rect.top + rect.height / 2 });
 };
 
 // ---- XR8 pipeline ----------------------------------------------------------------------------------------------------------------------
@@ -190,10 +198,12 @@ const pageModule = () => ({
     x.renderer.setClearColor(0x000000, 0);
     x.camera.position.set(0, 1.5, 0);
     XR8.XrController.updateCameraProjectionMatrix({ origin: x.camera.position, facing: x.camera.quaternion });
-    scene.add(new THREE.Mesh(new THREE.PlaneGeometry(40, 40).rotateX(-Math.PI / 2), new THREE.MeshBasicMaterial({ color: 0x4488aa, transparent: true, opacity: 0.15, side: THREE.DoubleSide })));
     ui.canvas.addEventListener('click', onTap);
+    ui.canvas.addEventListener('keydown', onCanvasKey);
+    ui.canvas.tabIndex = 0;
     metrics.start(); upsWindowStart = performance.now();
     state.phase = 'running';
+    ui.msg.textContent = '휴대폰을 천천히 움직여 주변을 살펴보세요.';
     for (const b of [ui.clear, ui.recenter, ui.stop, ui.metrics]) b.disabled = false;
   },
   onVideoSizeChange: ({ videoWidth, videoHeight }) => { state.videoSize = { ...(state.videoSize || {}), videoWidth, videoHeight }; showVideo(); },
@@ -202,8 +212,9 @@ const pageModule = () => ({
     metrics.event('deviceOrientationChange', { videoWidth, videoHeight, orientation });
     showVideo();
   },
-  onException: (error) => { showError('엔진', error && error.message || String(error)); state.phase = 'error'; ui.msg.textContent = '엔진 오류가 났습니다. 페이지를 새로 고쳐 다시 시작하세요.'; for (const b of [ui.clear, ui.recenter]) b.disabled = true; ui.stop.disabled = false; },
+  onException: (error) => { showError('카메라 또는 엔진', error && error.message || String(error)); state.phase = 'error'; ui.canvas.tabIndex = -1; ui.status.textContent = '시작할 수 없음'; ui.status.parentElement.dataset.state = 'error'; ui.msg.textContent = '권한과 연결을 확인한 뒤 다시 시작하세요.'; for (const b of [ui.clear, ui.recenter]) b.disabled = true; ui.stop.disabled = false; ui.restart.hidden = false; ui.panel.open = true; },
   onUpdate: ({ processCpuResult }) => {
+    if (state.phase !== 'running') return;
     const r = processCpuResult && processCpuResult.reality;
     const pts = r && r.worldPoints ? r.worldPoints.length : 0;
     metrics.update(r || null, pts);
@@ -211,19 +222,21 @@ const pageModule = () => ({
     if (r.trackingStatus !== state.status || r.trackingReason !== state.reason) {
       state.status = r.trackingStatus; state.reason = r.trackingReason;
       metrics.transition(state.status, state.reason);
+      ui.msg.textContent = state.status === 'NORMAL' ? '화면을 탭해 물체를 놓아보세요.' : '휴대폰을 천천히 움직여 주변을 살펴보세요.';
     }
     state.worldPoints = pts;
     upsCount++;
     const t = performance.now();
     if (t - upsWindowStart >= 1000) { ui.ups.textContent = String(Math.round(upsCount * 1000 / (t - upsWindowStart))); upsCount = 0; upsWindowStart = t; }
-    ui.status.textContent = state.status;
+    ui.status.textContent = state.status === 'NORMAL' ? '추적 중' : state.status === 'LIMITED' ? '주변을 찾는 중' : '준비 중';
+    ui.status.parentElement.dataset.state = state.status === 'NORMAL' ? 'normal' : 'pending';
     ui.reason.textContent = state.reason && state.reason !== 'UNSPECIFIED' ? `(${state.reason})` : '';
     ui.points.textContent = String(pts);
     if (state.status !== 'NORMAL' && state.screenOrientation && /landscape/.test(state.screenOrientation.type)) {
       ui.msg.textContent = '가로 화면은 아직 실기기 검증 전이라 추적이 멈출 수 있습니다. 폰을 세로로 돌려 보세요.';
     }
   },
-  onDetach: () => { ui.canvas.removeEventListener('click', onTap); },
+  onDetach: () => { ui.canvas.tabIndex = -1; ui.canvas.removeEventListener('click', onTap); ui.canvas.removeEventListener('keydown', onCanvasKey); },
 });
 const showVideo = () => {
   const v = state.videoSize;
@@ -243,6 +256,7 @@ const loadXr8 = () => new Promise((resolve, reject) => {
 });
 const startRun = async () => {
   if (state.phase !== 'idle') return;
+  state.errors = []; ui.errors.textContent = ''; ui.errorBox.hidden = true; ui.startNote.textContent = '';
   state.phase = 'starting'; state.startClicked = true;
   ui.start.disabled = true;
   ui.startNote.textContent = '엔진을 불러오는 중…';
@@ -253,7 +267,7 @@ const startRun = async () => {
       if (p !== 'granted') throw new Error('모션 센서 권한이 허용되지 않았습니다');
     }
     await loadXr8();
-    ui.startScreen.hidden = true; ui.hud.hidden = false;
+    ui.startScreen.hidden = true; ui.hud.hidden = false; ui.panel.hidden = false;
     fitCanvas();
     XR8.XrController.configure({ enableWorldPoints: true, imageTargetData: state.targets.map((t) => t.entry) });
     XR8.addCameraPipelineModules([
@@ -266,23 +280,34 @@ const startRun = async () => {
   } catch (e) {
     try { if (window.XR8) { XR8.stop(); XR8.clearCameraPipelineModules(); } } catch (_) { /* nothing was running */ }
     state.phase = 'idle'; state.startClicked = false;
-    ui.startScreen.hidden = false; ui.hud.hidden = true; ui.start.disabled = false;
+    ui.startScreen.hidden = false; ui.hud.hidden = true; ui.panel.hidden = true; ui.start.disabled = false;
     ui.startNote.textContent = '시작하지 못했습니다. 아래 오류를 확인하세요.';
     showError('시작', e.message);
   }
 };
 ui.start.addEventListener('click', startRun);
 ui.stop.addEventListener('click', () => {
-  try { XR8.stop(); } catch (e) { showError('정지', e.message); }
+  try { XR8.stop(); } catch (e) {
+    showError('카메라 종료', e.message);
+    state.phase = 'error';
+    ui.status.textContent = '종료 실패'; ui.status.parentElement.dataset.state = 'error';
+    ui.msg.textContent = '카메라를 종료하지 못했습니다. 페이지를 다시 열어주세요.';
+    ui.restart.hidden = false; ui.panel.open = true;
+    return;
+  }
   state.phase = 'stopped';
+  ui.canvas.tabIndex = -1;
   for (const b of [ui.clear, ui.recenter, ui.stop]) b.disabled = true;
-  ui.msg.textContent = '정지를 요청했습니다. 다시 시작하려면 페이지를 새로 고치세요.';
+  ui.status.textContent = '종료 요청됨'; ui.status.parentElement.dataset.state = 'pending';
+  ui.msg.textContent = '카메라 종료를 요청했습니다. 다시 시작할 수 있습니다.';
+  ui.restart.hidden = false; ui.panel.open = true;
 });
+ui.restart.addEventListener('click', () => window.location.reload());
 ui.clear.addEventListener('click', () => scene && clearObjects());
 ui.recenter.addEventListener('click', () => { try { XR8.XrController.recenter(); ui.msg.textContent = '원점을 다시 잡았습니다.'; } catch (e) { showError('원점', e.message); } });
 // The only place data leaves the page: the user clicks, the browser downloads a small JSON file to the user's own device.
 ui.metrics.addEventListener('click', () => {
-  const json = metrics.snapshot({ createdAtMs: Date.now(), userAgent: navigator.userAgent, screen: state.screenOrientation, video: state.videoSize, finalStatus: state.status, finalReason: state.reason, chunkWarnings: state.chunkWarnings });
+  const json = metrics.snapshot({ createdAtMs: Date.now(), userAgent: navigator.userAgent, screen: state.screenOrientation, video: state.videoSize, camera: window.XrCameraResolution || null, finalStatus: state.status, finalReason: state.reason, chunkWarnings: state.chunkWarnings });
   const url = URL.createObjectURL(new Blob([JSON.stringify(json, null, 1)], { type: 'application/json' }));
   const a = document.createElement('a');
   a.href = url; a.download = `slam-refact-phone-metrics-${new Date().toISOString().replace(/[:.]/g, '-')}.json`;
