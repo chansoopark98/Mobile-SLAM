@@ -36,8 +36,32 @@
     const s = track && track.getSettings ? track.getSettings() : {};
     return { width: s.width, height: s.height, frameRate: s.frameRate };
   };
+  // iPhone (WebKit, also under Chrome for iOS): xr.js asks for {min: 960x720} (no exact size), which WebKit may answer with a 16:9 stream, and
+  // a 16:9 crop is not the sensor crop the engine intrinsics assume. So the first request is tried at 4:3 sizes (exact, largest first) and
+  // only then passed on unchanged. Which size WebKit really grants is read from granted; this ladder has not been run on an iPhone.
+  const ua = typeof navigator.userAgent === 'string' ? navigator.userAgent : '';
+  const isIOS = /iPhone|iPad|iPod/.test(ua) || (/Macintosh/.test(ua) && navigator.maxTouchPoints > 1);
+  const IOS_LADDER = [{ width: 1920, height: 1440 }, { width: 1440, height: 1080 }, { width: 1280, height: 960 }];
+  const isIosFirst = (v) => !!(v && typeof v === 'object' && v.width && v.height && v.width.exact === undefined && v.width.min === SDK_FIRST.width && v.height.min === SDK_FIRST.height);
+  const iosAsk = (constraints, video, ladder, refusals) => {
+    if (!ladder.length) {
+      report.fallbackReason = `${refusals.join('; ')}; SDK request used`;
+      return original(constraints).then((stream) => { report.granted = settingsOf(stream); return stream; });
+    }
+    const [size, ...rest] = ladder;
+    const asked = { ...constraints, video: { ...video, width: { exact: size.width }, height: { exact: size.height } } };
+    return original(asked).then((stream) => {
+      report.granted = settingsOf(stream);
+      if (refusals.length) report.fallbackReason = `${refusals.join('; ')}; ${size.width}x${size.height} used`;
+      return stream;
+    }, (error) => iosAsk(constraints, video, rest, [...refusals, `${size.width}x${size.height} refused (${error && error.name})`]));
+  };
   md.getUserMedia = function (constraints) {
     const video = constraints && constraints.video;
+    if (isIOS && isIosFirst(video)) {
+      report.sdkRequest = { width: SDK_FIRST.width, height: SDK_FIRST.height };
+      return iosAsk(constraints, video, parseSize(param) ? [size] : IOS_LADDER, []);
+    }
     if (!isSdkFirst(video)) return original(constraints);
     report.sdkRequest = { width: SDK_FIRST.width, height: SDK_FIRST.height };
     const larger = { ...constraints, video: { ...video, width: { exact: size.width }, height: { exact: size.height } } };
