@@ -37,7 +37,13 @@ export function createSensors(isInvalid, diagnosticOptions = null) {
     return staged;
   };
 
-  return { updateDeviceMotion, takeForStage, queueLength: () => eventQueue.length, ...(delivery ? { delivery } : {}) };
+  const carryForStage = (events) => {
+    if (!events?.length) return;
+    delivery?.carry(events);
+    eventQueue.unshift(...events);
+  };
+
+  return { updateDeviceMotion, takeForStage, carryForStage, queueLength: () => eventQueue.length, ...(delivery ? { delivery } : {}) };
 }
 
 // M0: event-unit ownership accounting only. WeakMap metadata never changes the event/payload,
@@ -83,6 +89,7 @@ function createDeliveryDiagnostics(limit = 256) {
   };
   return {
     receive: () => ++received,
+    seqOf: (event) => states.get(event)?.seq ?? null,
     reject: (seq, reason) => recordDrops([seq], reason),
     enqueue(e, seq) {
       states.set(e, { seq, phase: 'queued' }); pending.queued++;
@@ -92,6 +99,7 @@ function createDeliveryDiagnostics(limit = 256) {
       previousArrival = e.timestampNanos; previousEvent = e.eventTimestampNanos;
     },
     stage: (events) => { for (const e of events) transition(e, 'staged'); },
+    carry: (events) => { for (const e of events) transition(e, 'queued'); },
     process: (events) => { for (const e of events) transition(e, 'inFlight'); },
     pushed(e) { if (transition(e, 'pushed') !== null) pushed++; },
     uncertain(e) { if (transition(e, 'uncertain') !== null) uncertain++; },

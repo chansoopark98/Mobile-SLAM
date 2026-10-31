@@ -63,6 +63,275 @@ const roundToPowerOfTwo = (v) => { let x = v - 1; x |= x >> 1; x |= x >> 2; x |=
 const POSITION = 0, UV = 2;
 const CAPS = ['BLEND', 'SCISSOR_TEST', 'DEPTH_TEST', 'STENCIL_TEST', 'CULL_FACE', 'RASTERIZER_DISCARD'];
 
+const SNAPSHOT_OWNERS = new Set(['gpuPending', 'task', 'enginePrevious', 'display', 'retired']);
+const sameEpoch = (a, b) => !!a && !!b && a.sessionEpoch === b.sessionEpoch && a.schedulerEpoch === b.schedulerEpoch;
+
+// B1′ draw-context copies. A free allocation retains its reservation, and becomes reusable only
+// after the last owner's post-render fence signals. No SDK compute/draw texture mapping is involved.
+export class OwnedDisplaySnapshots {
+  constructor(gl, { maxSlots = 4, reserveBytes, releaseBytes } = {}) {
+    if (!gl || typeof gl.copyTexSubImage2D !== 'function' || typeof gl.fenceSync !== 'function') {
+      throw new Error('[XR] owned snapshots need a WebGL2 draw context');
+    }
+    if (!Number.isInteger(maxSlots) || maxSlots < 1 || maxSlots > 4) throw new Error('[XR] owned snapshots require 1–4 slots');
+    if (typeof reserveBytes !== 'function' || typeof releaseBytes !== 'function') throw new Error('[XR] owned snapshots need a shared byte ledger');
+    this.gl = gl;
+    this.maxSlots = maxSlots;
+    this.reserveBytes = reserveBytes;
+    this.releaseBytes = releaseBytes;
+    this.slots = [];
+    this.scratch = null;
+    this.disposed = false;
+    this.counters = { captures: 0, releases: 0, staleRejects: 0, duplicateReleases: 0,
+      backpressure: 0, errors: 0, invalidations: 0, peakBytes: 0, lastError: null, lastInvalidation: null };
+  }
+
+  _alive() { return !this.gl.isContextLost(); }
+
+  _assertActive() {
+    if (this.disposed) throw new Error('[XR] owned snapshots disposed');
+    if (!this._alive()) throw new Error('[XR] owned snapshots context lost');
+  }
+
+  _recordError(error) {
+    this.counters.errors++;
+    this.counters.lastError = String(error?.message ?? error).slice(0, 512);
+  }
+
+  _bytes() { return this.slots.reduce((n, s) => n + s.bytes, 0); }
+
+  _slot(key) {
+    const s = key && this.slots[key.slot];
+    if (!s || !s.texture || s.invalid || key.generation !== s.generation || key.captureSeq !== s.captureSeq
+      || !sameEpoch(key.epoch, s.epoch)) {
+      this.counters.staleRejects++;
+      return null;
+    }
+    return s;
+  }
+
+  _deleteAllocation(slot) {
+    // All callers either own an unused slot or are disposing the entire pool.
+    let error = null;
+    if (this._alive()) {
+      if (slot.fence) { try { this.gl.deleteSync(slot.fence); } catch (e) { error = e; } }
+      if (slot.texture) { try { this.gl.deleteTexture(slot.texture); } catch (e) { error ??= e; } }
+    }
+    slot.fence = null;
+    slot.texture = null;
+    if (slot.token !== null) {
+      const token = slot.token;
+      slot.token = null;
+      try { this.releaseBytes(token); } catch (e) { error ??= e; }
+    }
+    slot.bytes = 0;
+    slot.owners.clear();
+    slot.retiring = false;
+    slot.invalid = true;
+    if (error) throw error;
+  }
+
+  capture({ sourceDrawTexture, width, height, meta } = {}) {
+    let slot = null;
+    try {
+      this._assertActive();
+      const gl = this.gl;
+      if (!Number.isInteger(width) || !Number.isInteger(height) || width < 1 || height < 1
+        || width > gl.getParameter(gl.MAX_TEXTURE_SIZE) || height > gl.getParameter(gl.MAX_TEXTURE_SIZE)
+        || !Number.isSafeInteger(width * height * 4)) throw new Error('[XR] invalid owned snapshot dimensions');
+      const e = meta?.epoch;
+      if (!e || !Number.isSafeInteger(e.sessionEpoch) || !Number.isSafeInteger(e.schedulerEpoch)
+        || !Number.isSafeInteger(meta.captureSeq) || meta.captureSeq < 0) throw new Error('[XR] invalid owned snapshot metadata');
+      if ((meta.width !== undefined && meta.width !== width) || (meta.height !== undefined && meta.height !== height)) {
+        throw new Error('[XR] owned snapshot metadata dimensions do not match the source');
+      }
+      if (!sourceDrawTexture || !gl.isTexture(sourceDrawTexture)) throw new Error('[XR] owned snapshot source is not a draw-context texture');
+      // getError consumes one flag; record/refuse it rather than silently draining existing errors.
+      const before = gl.getError();
+      if (before !== gl.NO_ERROR) {
+        const error = new Error(`[XR] owned snapshot preexisting GL error ${before}`);
+        error.code = 'preexisting-gl-error';
+        throw error;
+      }
+      const free = (s) => !s.owners.size && !s.retiring;
+      slot = this.slots.find((s) => free(s) && s.texture && s.width === width && s.height === height)
+        ?? this.slots.find(free);
+      if (!slot) {
+        if (this.slots.length >= this.maxSlots) { this.counters.backpressure++; return null; }
+        slot = { index: this.slots.length, generation: 0, texture: null, token: null, bytes: 0,
+          owners: new Set(), retiring: false, invalid: true, fence: null };
+        this.slots.push(slot);
+      }
+      if (slot.texture && (slot.width !== width || slot.height !== height)) this._deleteAllocation(slot);
+      if (!slot.texture) {
+        const bytes = width * height * 4;
+        const token = this.reserveBytes('draw-snapshot', bytes);
+        if (token === null || token === undefined || token === false) { this.counters.backpressure++; return null; }
+        slot.token = token;
+        slot.bytes = bytes;
+        this.counters.peakBytes = Math.max(this.counters.peakBytes, this._bytes());
+      }
+      this._copy(slot, sourceDrawTexture, width, height);
+      slot.width = width;
+      slot.height = height;
+      slot.generation++;
+      slot.epoch = Object.freeze({ sessionEpoch: e.sessionEpoch, schedulerEpoch: e.schedulerEpoch });
+      slot.captureSeq = meta.captureSeq;
+      slot.invalid = false;
+      slot.owners.add('gpuPending');
+      this.counters.captures++;
+      return Object.freeze({ slot: slot.index, generation: slot.generation, epoch: slot.epoch, captureSeq: slot.captureSeq });
+    } catch (error) {
+      this._recordError(error);
+      if (slot) { try { this._deleteAllocation(slot); } catch { /* preserve the copy/allocation error */ } }
+      throw error;
+    }
+  }
+
+  _copy(slot, source, width, height) {
+    const gl = this.gl;
+    const saved = { active: gl.getParameter(gl.ACTIVE_TEXTURE), binding: gl.getParameter(gl.TEXTURE_BINDING_2D),
+      read: gl.getParameter(gl.READ_FRAMEBUFFER_BINDING), draw: gl.getParameter(gl.DRAW_FRAMEBUFFER_BINDING) };
+    let unit0 = null, attached = false;
+    try {
+      gl.activeTexture(gl.TEXTURE0);
+      unit0 = gl.getParameter(gl.TEXTURE_BINDING_2D);
+      if (!slot.texture) {
+        slot.texture = gl.createTexture();
+        if (!slot.texture) throw new Error('[XR] owned snapshot createTexture returned null');
+        gl.bindTexture(gl.TEXTURE_2D, slot.texture);
+        gl.texStorage2D(gl.TEXTURE_2D, 1, gl.RGBA8, width, height);
+        gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR);
+        gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.LINEAR);
+        gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);
+        gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
+      } else gl.bindTexture(gl.TEXTURE_2D, slot.texture);
+      if (!this.scratch) {
+        this.scratch = gl.createFramebuffer();
+        if (!this.scratch) throw new Error('[XR] owned snapshot createFramebuffer returned null');
+      }
+      gl.bindFramebuffer(gl.READ_FRAMEBUFFER, this.scratch);
+      gl.framebufferTexture2D(gl.READ_FRAMEBUFFER, gl.COLOR_ATTACHMENT0, gl.TEXTURE_2D, source, 0);
+      attached = true;
+      if (gl.checkFramebufferStatus(gl.READ_FRAMEBUFFER) !== gl.FRAMEBUFFER_COMPLETE) {
+        throw new Error('[XR] owned snapshot source framebuffer incomplete');
+      }
+      gl.copyTexSubImage2D(gl.TEXTURE_2D, 0, 0, 0, 0, 0, width, height);
+      const after = gl.getError();
+      if (after !== gl.NO_ERROR) throw new Error(`[XR] owned snapshot copy GL error ${after}`);
+    } finally {
+      if (this._alive()) {
+        if (attached) gl.framebufferTexture2D(gl.READ_FRAMEBUFFER, gl.COLOR_ATTACHMENT0, gl.TEXTURE_2D, null, 0);
+        gl.bindFramebuffer(gl.READ_FRAMEBUFFER, saved.read);
+        gl.bindFramebuffer(gl.DRAW_FRAMEBUFFER, saved.draw);
+        gl.activeTexture(gl.TEXTURE0);
+        gl.bindTexture(gl.TEXTURE_2D, unit0);
+        gl.activeTexture(saved.active);
+        gl.bindTexture(gl.TEXTURE_2D, saved.binding);
+      }
+    }
+  }
+
+  retain(key, ownerTag) {
+    if (!SNAPSHOT_OWNERS.has(ownerTag)) throw new Error('[XR] invalid snapshot owner');
+    const s = this._slot(key);
+    if (!s) return false;
+    if (s.retiring || !s.owners.size) { this.counters.staleRejects++; return false; }
+    s.owners.add(ownerTag);
+    return true;
+  }
+
+  release(key, ownerTag) {
+    if (!SNAPSHOT_OWNERS.has(ownerTag)) throw new Error('[XR] invalid snapshot owner');
+    const s = this._slot(key);
+    if (!s) return false;
+    if (!s.owners.delete(ownerTag)) { this.counters.duplicateReleases++; return false; }
+    this.counters.releases++;
+    if (!s.owners.size || (s.owners.size === 1 && s.owners.has('retired'))) s.retiring = true;
+    return true;
+  }
+
+  textureForPublication(key, expectedEpoch) {
+    const s = this._slot(key);
+    if (!s) return null;
+    if (s.retiring || !s.owners.size || !sameEpoch(s.epoch, expectedEpoch) || this.disposed || !this._alive()) {
+      this.counters.staleRejects++;
+      return null;
+    }
+    return s.texture;
+  }
+
+  fenceRetiredAfterRender() {
+    this._assertActive();
+    let inserted = 0;
+    for (const s of this.slots) {
+      if (!s.retiring || s.fence) continue;
+      s.fence = this.gl.fenceSync(this.gl.SYNC_GPU_COMMANDS_COMPLETE, 0);
+      if (!s.fence) {
+        const error = new Error('[XR] owned snapshot retirement fence allocation failed');
+        this._recordError(error);
+        throw error;
+      }
+      inserted++;
+    }
+    if (inserted) this.gl.flush();
+    return inserted;
+  }
+
+  pollRetired() {
+    this._assertActive();
+    let released = 0;
+    for (const s of this.slots) {
+      if (!s.retiring || !s.fence) continue;
+      const status = this.gl.clientWaitSync(s.fence, 0, 0);
+      if (status === this.gl.WAIT_FAILED) {
+        const error = new Error('[XR] owned snapshot retirement fence wait failed');
+        this._recordError(error);
+        throw error;
+      }
+      if (status !== this.gl.ALREADY_SIGNALED && status !== this.gl.CONDITION_SATISFIED) continue;
+      this.gl.deleteSync(s.fence);
+      s.fence = null;
+      s.retiring = false;
+      s.invalid = true;
+      s.owners.clear();
+      released++;
+    }
+    return released;
+  }
+
+  // The supplied old epoch is invalidated; a newer epoch in the same pool is untouched.
+  invalidateEpoch(epoch, reason) {
+    let count = 0;
+    for (const s of this.slots) {
+      if (!s.texture || !sameEpoch(s.epoch, epoch) || s.invalid) continue;
+      s.invalid = true;
+      s.owners.clear();
+      s.retiring = true;
+      count++;
+    }
+    this.counters.invalidations += count;
+    this.counters.lastInvalidation = String(reason ?? 'epoch-invalidated').slice(0, 128);
+    return count;
+  }
+
+  stats() {
+    return { ...this.counters, uniqueSlots: this.slots.filter((s) => !!s.texture).length,
+      controlledBytes: this._bytes(), pendingRetire: this.slots.filter((s) => s.retiring).length,
+      logicalOwners: this.slots.reduce((n, s) => n + s.owners.size, 0), driverBytes: null };
+  }
+
+  dispose() {
+    if (this.disposed) return;
+    this.disposed = true;
+    let error = null;
+    for (const s of this.slots) { try { this._deleteAllocation(s); } catch (e) { error ??= e; } }
+    if (this.scratch && this._alive()) { try { this.gl.deleteFramebuffer(this.scratch); } catch (e) { error ??= e; } }
+    this.scratch = null;
+    if (error) { this._recordError(error); throw error; }
+  }
+}
+
 export class Gr8ComputePyramid {
   // gl: XR8 computeCtx (WebGL2). layout: SlamRefactGlue.pyramidLayout(). camera: engineInit size.
   constructor(gl, layout, { cameraWidth, cameraHeight, rotation = 0, warn = null }) {
@@ -406,6 +675,46 @@ export class Gr8ComputePyramid {
     if (rois.length) this.stats.roiStages++;
     this.needsRead = true;
     this.stats.staged++;
+  }
+
+  // B1′ alone uses this nonblocking readiness probe. Legacy read() still has its original behavior.
+  isReadReady() {
+    if (!this.needsRead) return false;
+    this._assertContext('isReadReady');
+    if (!this.sync) throw new Error('[XR] gr8 readback has no readiness fence');
+    this.readySync = null;
+    const status = this.gl.clientWaitSync(this.sync, 0, 0);
+    this.stats.readinessPolls = (this.stats.readinessPolls ?? 0) + 1;
+    if (status === this.gl.WAIT_FAILED) throw new Error('[XR] gr8 readiness fence wait failed');
+    const ready = status === this.gl.ALREADY_SIGNALED || status === this.gl.CONDITION_SATISFIED;
+    if (ready) this.readySync = this.sync;
+    return ready;
+  }
+
+  // Consume only the exact fence already observed signaled by B1′. Re-polling here would
+  // turn a ready-on-second-poll task into three waits in the same pipeline tick.
+  readReady() {
+    if (!this.needsRead) return null;
+    this._assertContext('readReady');
+    if (!this.sync || this.readySync !== this.sync) throw new Error('[XR] gr8 readback readiness was not established');
+    const gl = this.gl;
+    this.needsRead = false;
+    this.stats.signaledAtRead++;
+    gl.deleteSync(this.sync);
+    this.sync = null;
+    this.readySync = null;
+    const pack = gl.getParameter(gl.PIXEL_PACK_BUFFER_BINDING);
+    gl.bindBuffer(gl.PIXEL_PACK_BUFFER, this.pixelBuffer);
+    try {
+      const view = this.out.subarray(0, this.size * this.stageRows * 4);
+      gl.getBufferSubData(gl.PIXEL_PACK_BUFFER, 0, view);
+      this._check('readReady');
+      this.stats.read++;
+      this.lastReadRows = this.stageRows;
+      return view;
+    } finally {
+      gl.bindBuffer(gl.PIXEL_PACK_BUFFER, pack);
+    }
   }
 
   // onProcessCpu: the pyramid of the last stage() (null when nothing is pending); `lastReadRows` rows of it. The returned
