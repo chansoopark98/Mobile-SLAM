@@ -29,6 +29,8 @@
 //   onCameraStatusChange(status, direction)  direction 'back' | 'front'; throws
 //                                       slam-front-camera-unsupported like the original
 //   getIntrinsic()                      reality.intrinsics of the last response (16 numbers)
+//   getCaptureIntrinsics()              capture-space K fixed at construction (not display projection)
+//   SlamRefactGlue.getCompileFeatures()  features compiled into this WASM, not runtime enablement
 //   getPose() also has intrinsics (16 numbers), lighting {exposure, temperature} (enableLighting)
 //   and trackingStatusChanged (reality.trackingstatus would be dispatched).
 //   config.facing = [w, x, y, z] (with config.origin) at construction; origin and facing must be
@@ -82,6 +84,7 @@
 #include <string>
 #include <vector>
 
+#include "engine/display_intrinsics.h"
 #include "frontend/frontend.h"
 #include "frontend/roi_draw.h"
 #include "slam_refact/glue_runner.h"
@@ -225,6 +228,7 @@ class SlamRefactGlue {
     g.left_handed_axes = Get<bool>(cfg, "leftHandedAxes", false);
     g.mirrored_display = Get<bool>(cfg, "mirroredDisplay", false);
     glue_ = std::make_unique<GlueRunner>(e, g);
+    capture_intrinsics_ = CaptureIntrinsicsFor(e);
     layout_ = frontend::ComputePyramidLayout(e.capture_width, e.capture_height);
     capture_width_ = e.capture_width;
     capture_height_ = e.capture_height;
@@ -537,6 +541,27 @@ class SlamRefactGlue {
 
   val GetIntrinsic() const { return Intrinsics(glue_->last_published()); }
 
+  val GetCaptureIntrinsics() const {
+    val out = val::object();
+    out.set("width", capture_intrinsics_.width);
+    out.set("height", capture_intrinsics_.height);
+    out.set("fx", capture_intrinsics_.fx);
+    out.set("fy", capture_intrinsics_.fy);
+    out.set("cx", capture_intrinsics_.cx);
+    out.set("cy", capture_intrinsics_.cy);
+    return out;
+  }
+
+  static val GetCompileFeatures() {
+    val out = val::object();
+#ifdef SLAM_REFACT_LOOP_CLOSE
+    out.set("loopClose", true);
+#else
+    out.set("loopClose", false);
+#endif
+    return out;
+  }
+
   // A JS Error with the original message and, when the original sets them, err / type / source.
   [[noreturn]] static void ThrowXr(const XrError& e) {
     val error = val::global("Error").new_(val(e.message));
@@ -800,6 +825,7 @@ class SlamRefactGlue {
  private:
   std::unique_ptr<GlueRunner> glue_;
   frontend::PyramidLayout layout_;
+  PinholeIntrinsics capture_intrinsics_;
   int rotation_deg_ = 0;
   int capture_width_ = 0;
   int capture_height_ = 0;
@@ -829,6 +855,8 @@ EMSCRIPTEN_BINDINGS(slam_refact_engine) {
       .function("xrHitTest", &SlamRefactGlue::XrHitTest)
       .function("onCameraStatusChange", &SlamRefactGlue::OnCameraStatusChange)
       .function("getIntrinsic", &SlamRefactGlue::GetIntrinsic)
+      .function("getCaptureIntrinsics", &SlamRefactGlue::GetCaptureIntrinsics)
+      .class_function("getCompileFeatures", &SlamRefactGlue::GetCompileFeatures)
       .function("setImageTargets", &SlamRefactGlue::SetImageTargets)
       .function("unloadImageTargets", &SlamRefactGlue::UnloadImageTargets)
       .function("clearImageTargets", &SlamRefactGlue::ClearImageTargets)

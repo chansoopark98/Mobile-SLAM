@@ -115,8 +115,65 @@ function captureRoiSlots(s, atlas, rois, stageIndex) {
     }) };
 }
 
+// P1-I1 is constructor-only and opt-in. Identity is not a calibration profile or an accuracy switch.
+function deviceIdentityOptions(value) {
+  if (!value || value.enabled !== true) return null;
+  const timeoutMs = value.timeoutMs ?? 1000;
+  if (!Number.isFinite(timeoutMs) || timeoutMs < 1 || timeoutMs > 5000) {
+    throw new Error('[XR] deviceIdentity.timeoutMs must be between 1 and 5000');
+  }
+  let fallback = null;
+  if (value.fallback !== undefined) {
+    const input = value.fallback;
+    if (!input || typeof input.model !== 'string' || !input.model.trim()) {
+      throw new Error('[XR] deviceIdentity.fallback.model must be a non-empty string');
+    }
+    const text = (name, def = '') => {
+      const v = input[name] ?? def;
+      if (typeof v !== 'string' || v.length > 128 || /[\x00-\x1f\x7f]/.test(v)) {
+        throw new Error(`[XR] deviceIdentity.fallback.${name} must be a string of at most 128 printable characters`);
+      }
+      return v.trim();
+    };
+    fallback = { model: text('model'), manufacturer: text('manufacturer'), profileId: text('profileId'), source: 'explicit-fallback' };
+  }
+  return { timeoutMs, fallback };
+}
+
+async function resolveDeviceIdentity({ timeoutMs, fallback }) {
+  let timer;
+  let highEntropyStatus = 'unavailable';
+  const expired = Symbol('timeout');
+  try {
+    const uaData = globalThis.navigator?.userAgentData;
+    if (typeof uaData?.getHighEntropyValues === 'function') {
+      const result = await Promise.race([
+        Promise.resolve().then(() => uaData.getHighEntropyValues(['model'])),
+        new Promise((resolve) => { timer = setTimeout(() => resolve(expired), timeoutMs); }),
+      ]);
+      if (result === expired) highEntropyStatus = 'timed-out';
+      else if (typeof result?.model === 'string' && result.model.trim()
+          && result.model.length <= 128 && !/[\x00-\x1f\x7f]/.test(result.model)) {
+        // UA-CH supplies model, not manufacturer. Let the engine's existing model resolver use it.
+        return { selected: { manufacturer: '', model: result.model.trim(), source: 'userAgentData.model' }, highEntropyStatus: 'available' };
+      } else highEntropyStatus = 'empty-or-invalid-model';
+    }
+  } catch (_) {
+    highEntropyStatus = 'rejected';
+  } finally { clearTimeout(timer); }
+  return { selected: fallback, highEntropyStatus };
+}
+
 const XrControllerFactory = singleton((runConfig, xrccPromise, logCallback, errorCallback) => {
   const options = (typeof window !== 'undefined' && window.SLAM_REFACT_CHUNK_OPTIONS) || {};
+  const identityOptions = deviceIdentityOptions(options.deviceIdentity);  // value copy before any await
+  let resolvedIdentity = null;
+  const deliveryOptions = options.deliveryDiagnostics?.enabled === true
+    ? { enabled: true, maxEntries: Number.isInteger(options.deliveryDiagnostics.maxEntries)
+      && options.deliveryDiagnostics.maxEntries >= 1 && options.deliveryDiagnostics.maxEntries <= 1024
+      ? options.deliveryDiagnostics.maxEntries : 256 } : null;
+  const responseEntries = [];
+  let responseNext = 0, responseTotal = 0, publication = null, nextSessionEpoch = 0, lastPublishedSource = null;
   const diag = window.__slamRefactChunk = {
     chunk: 'slam_refact', engine: null, error: null, session: null, gpuCheck: [], roiCheck: [], warnings: [], sessionLog: [],
     stats: { stagedFrames: 0, processedFrames: 0, freshResponses: 0, droppedStaged: 0, motionEventsPushed: 0,
@@ -172,7 +229,32 @@ const XrControllerFactory = singleton((runConfig, xrccPromise, logCallback, erro
     },
       (error) => { diag.error = String(error && error.message || error); diag.engineLoad = error.loaded ?? null; throw error; });
 
-  const sensors = createSensors(() => !engine_ || !window.XR8 || window.XR8.isPaused());
+  // No UA access, new promise or extra wait in the default parity arm. In the opt-in arm the
+  // controller is not exposed until this bounded request settles; late UA answers cannot change it.
+  const identityPromise = identityOptions ? resolveDeviceIdentity(identityOptions).then((result) => {
+    resolvedIdentity = result;
+    diag.deviceIdentity = { enabled: true, timeoutMs: identityOptions.timeoutMs,
+      highEntropyStatus: result.highEntropyStatus, selected: result.selected ? { ...result.selected } : null };
+  }) : null;
+
+  const sensors = createSensors(() => !engine_ || !window.XR8 || window.XR8.isPaused(), deliveryOptions);
+  // Per-frame recorder path: copy only the latest scalar receipt, not the full history rings.
+  const latestSourceTiming = () => publication ? { ...publication } : null;
+  Object.defineProperty(diag, 'sourceTiming', { enumerable: true, get: latestSourceTiming });
+  if (deliveryOptions) Object.defineProperty(diag, 'delivery', { enumerable: true, get: () => ({
+    schema: 'xr-passive-delivery-v1', mode: 'passive', enabled: true, physicalExposureVerified: false,
+    sourceTimeMeaning: 'WASM frame-time argument, not physical exposure',
+    publishTimeMeaning: 'not sampled here; recorder callback arrival is separate',
+    sourceTiming: latestSourceTiming(),
+    responses: { total: responseTotal, overwritten: Math.max(0, responseTotal - deliveryOptions.maxEntries),
+      entries: (responseTotal < deliveryOptions.maxEntries ? responseEntries
+        : responseEntries.slice(responseNext).concat(responseEntries.slice(0, responseNext))).map((e) => ({ ...e })) },
+    sensors: sensors.delivery.snapshot(),
+    stages: { stageMs: diag.stats.stageMs.slice(-deliveryOptions.maxEntries),
+      readMs: diag.stats.readMs.slice(-deliveryOptions.maxEntries), engineMs: diag.stats.engineMs.slice(-deliveryOptions.maxEntries) },
+    sourceMetadata: { entries: session_?.delivery?.sourceFrames.size ?? 0, evicted: session_?.delivery?.evicted ?? 0 },
+    maxSourceFrames: 64, maxEntries: deliveryOptions.maxEntries,
+  }) });
 
   // JS state (SDK factory locals; tracking-controller.ts:256-306).
   let isSimulator_ = false;
@@ -275,7 +357,8 @@ const XrControllerFactory = singleton((runConfig, xrccPromise, logCallback, erro
       throw new Error('[XR] slam_refact chunk needs XR8.run({webgl2: true}) (WebGL2 compute context)');
     }
     const { Module } = engine_;
-    const device = window.XR8.XrDevice.deviceEstimate();
+    const device = resolvedIdentity?.selected ?? window.XR8.XrDevice.deviceEstimate();
+    const deviceSource = resolvedIdentity?.selected?.source ?? 'XR8.XrDevice.deviceEstimate';
     const glueConfig = {
       captureWidth: videoWidth, captureHeight: videoHeight, rotationDeg: rotation,
       manufacturer: device.manufacturer || '', model: device.model || '',
@@ -283,6 +366,7 @@ const XrControllerFactory = singleton((runConfig, xrccPromise, logCallback, erro
       leftHandedAxes: leftHandedAxes_, mirroredDisplay: mirroredDisplay_,
     };
     if (framesUntilRecenter !== null) glueConfig.framesUntilRecenter = framesUntilRecenter;
+    const sentGlueConfig = { ...glueConfig };  // diagnostic copy; never passed back to the engine
     // options.createGlue is a test hook (chunk-contract.test.mjs wraps or replaces the engine glue). Whether a replaced glue was
     // used is decided here, for every session, not once at engine load (RM-4c m-F): once true it stays true.
     const createGlue = options.createGlue;
@@ -308,11 +392,38 @@ const XrControllerFactory = singleton((runConfig, xrccPromise, logCallback, erro
         ? { every: Math.max(1, options.gpuCheck.every | 0 || 10), left: Math.max(0, options.gpuCheck.frames | 0 || 30) } : null;
       const roiCheck = options.roiCheck
         ? { every: Math.max(1, options.roiCheck.every | 0 || 1), left: Math.max(0, options.roiCheck.frames | 0 || 20) } : null;
-      diag.session = { videoWidth, videoHeight, rotation, device: { manufacturer: device.manufacturer, model: device.model },
+      // Old WASM has neither getter. In particular getIntrinsic() is a display projection,
+      // not capture-space K, and a build label/hash alone cannot establish compiled features.
+      const readback = { captureIntrinsics: null, captureIntrinsicsSource: 'unavailable',
+        captureIntrinsicsConvention: 'engine-capture-before-processing',
+        compileFeatures: { loopClose: 'unknown' }, compileFeaturesSource: 'unavailable', errors: [] };
+      try {
+        if (typeof glue.getCaptureIntrinsics === 'function') {
+          readback.captureIntrinsics = { ...glue.getCaptureIntrinsics() };
+          readback.captureIntrinsicsSource = 'SlamRefactGlue.getCaptureIntrinsics';
+        }
+        if (typeof Module.SlamRefactGlue.getCompileFeatures === 'function') {
+          const features = Module.SlamRefactGlue.getCompileFeatures();
+          if (typeof features.loopClose === 'boolean') {
+            readback.compileFeatures.loopClose = features.loopClose;
+            readback.compileFeaturesSource = 'SlamRefactGlue.getCompileFeatures';
+          }
+        }
+      } catch (error) {
+        readback.errors.push(String(error && error.message || error));  // diagnostics must not fail tracking
+      }
+      diag.session = { videoWidth, videoHeight, rotation,
+        device: { manufacturer: sentGlueConfig.manufacturer, model: sentGlueConfig.model, source: deviceSource },
+        glueConfig: sentGlueConfig,
+        engineManifest: { jsSha256: engine_.loaded.manifest.jsSha256, wasmSha256: engine_.loaded.manifest.wasmSha256,
+          matchesLoadedBytes: engine_.loaded.matchesManifest, glueReplaced: engine_.loaded.glueReplaced },
+        configurationReadback: readback,
         layout: { textureSize: layout.textureSize, rows: layout.rows }, renderer: rendererInfo(computeCtx), readback: pyramid.stats };
       diag.stats.sessionsCreated++;
+      const delivery = deliveryOptions ? { epoch: ++nextSessionEpoch, sourceFrames: new Map(), sourceTiming: null, responses: 0, evicted: 0 } : null;
+      if (delivery) diag.session.sessionEpoch = delivery.epoch;
       pushEntry(diag.sessionLog, { event: 'created', videoWidth, videoHeight, rotation });
-      return { glue, pyramid, layout, videoWidth, videoHeight, pending: null, textures: new Map(),
+      return { glue, pyramid, layout, videoWidth, videoHeight, pending: null, textures: new Map(), delivery,
         last: null, lastWorldPoints: [], activeTexture: null, hasResponse: false, gpuCheck, roiCheck, prevAllZeroes: null,
         lastDesc: null, liveStale: !sameCoords(coords, { origin: origin_, facing: facing_ }), contextLost: false };
     } catch (error) {
@@ -331,6 +442,7 @@ const XrControllerFactory = singleton((runConfig, xrccPromise, logCallback, erro
     if (!session_) return;
     const s = session_;
     session_ = null;
+    sensors.delivery?.drop(s.pending?.events || [], 'session-discard');
     if (s.hasResponse && s.last) {
       lastExtrinsic_ = { position: Array.from(s.last.position), rotationWxyz: Array.from(s.last.rotationWxyz) };
     }
@@ -378,10 +490,15 @@ const XrControllerFactory = singleton((runConfig, xrccPromise, logCallback, erro
     const t1 = performance.now();
     pushSample(diag.stats.readMs, t1 - t0);
     for (const e of f.events || []) {
-      if (pushMotion(s.glue, e)) {
+      let accepted;
+      try { accepted = pushMotion(s.glue, e); }
+      catch (error) { sensors.delivery?.uncertain(e); throw error; }
+      if (accepted) {
         diag.stats.motionEventsPushed++;
+        sensors.delivery?.pushed(e);
       } else {
         diag.stats.motionEventsSkipped++;
+        sensors.delivery?.drop([e], 'invalid-interval');
         warnOnce('[XR] slam_refact chunk: a DeviceMotion event with an interval outside the 64-bit nanosecond range was skipped (the engine rejects such an event with a JS error; the original throws a RangeError from setEventQueue)');
       }
     }
@@ -405,11 +522,26 @@ const XrControllerFactory = singleton((runConfig, xrccPromise, logCallback, erro
     // timestampNanos (the stage time `timeNanos`). Passing the stage time always made every frame's engine time differ from the original's
     // (CHK-1, spec 07 section 12).
     const pose = s.glue.processFramePyramid(f.frameTime ? f.frameTime * 1e9 : f.timeNanos, f.videoTime * 1e9, atlas, s.layout.textureSize, rows);
-    pushSample(diag.stats.engineMs, performance.now() - t1);
+    const engineReturnedAtMs = performance.now();
+    pushSample(diag.stats.engineMs, engineReturnedAtMs - t1);
     diag.stats.processedFrames++;
     // The glue's own stage index of this frame is the key (RM-4a2: a counter kept here drifted for good after one
     // transient exception); bounded, because a glue that never answers fresh would only add entries.
     const stageIndex = pose.videoFrameIndex;
+    if (s.delivery) {
+      const d = s.delivery;
+      const inputTimeNanos = f.frameTime ? f.frameTime * 1e9 : f.timeNanos;
+      d.sourceFrames.set(stageIndex, { sourceVideoTimeS: f.videoTime, sourceFrameTimeS: f.frameTime ?? null,
+        sourceTimeNanos: Math.trunc(inputTimeNanos), sourceTimeNanosInput: inputTimeNanos,
+        sourceStageTimeNanos: f.timeNanos, sessionEpoch: d.epoch });
+      while (d.sourceFrames.size > 64) { d.sourceFrames.delete(d.sourceFrames.keys().next().value); d.evicted++; }
+      const source = !pose.repeated || s.hasResponse ? d.sourceFrames.get(pose.sourceFrameIndex) : null;
+      d.sourceTiming = { sourceFrameIndex: pose.sourceFrameIndex, sourceVideoTimeS: null, sourceFrameTimeS: null,
+        sourceTimeNanos: null, sourceTimeNanosInput: null, sourceStageTimeNanos: null,
+        sessionEpoch: d.epoch, ...source, sourceMetadataFound: !!source, repeated: !!pose.repeated, engineReturnedAtMs };
+      d.responses++;
+      if (publication) { publication.newEngineResponse = true; publication.engineFresh = !pose.repeated; }
+    }
     s.textures.set(stageIndex, f.computeTexture);
     while (s.textures.size > 32) s.textures.delete(s.textures.keys().next().value);
     // checkAllZeroes runs on the pyramid of the frame tracked in this call (the previous staged frame).
@@ -485,13 +617,17 @@ const XrControllerFactory = singleton((runConfig, xrccPromise, logCallback, erro
     const { alpha, beta, gamma } = lastDevicePose_;
     const timeNanos = 1e3 * window.performance.now() * 1e3;
     const events = sensors.takeForStage() || [];
-    if (!session_ || checkContext(session_)) return;
+    if (!session_ || checkContext(session_)) {
+      sensors.delivery?.drop(events, session_ ? 'context-lost' : 'no-session');
+      return;
+    }
     try {
       stageFrame(session_, { computeTexture, textureWidth, textureHeight, orientation, alpha, beta, gamma,
         videoTime, frameTime, timeNanos, events });
     } catch (error) {
       // xr.js runs processGpu inside post-render's try block; a throw would skip its frame bookkeeping.
       diag.stats.stageErrors++;
+      sensors.delivery?.drop(events, 'stage-error');
       reportOnce('stage', error);
     }
     imageTargets.pump();  // a pending replay of the loaded targets into the rebuilt glue goes on, one time budget per frame
@@ -515,7 +651,7 @@ const XrControllerFactory = singleton((runConfig, xrccPromise, logCallback, erro
     };
   };
 
-  const finishResult = (framework, result) => {
+  const finishResult = (framework, result, timing = null, kind = 'held') => {
     intrinsics_ = result.intrinsics;
     if (engineVpsEventsDisabled_) {
       result.rotation = fakeSimulatorExtrinsic_.rotation;
@@ -529,6 +665,17 @@ const XrControllerFactory = singleton((runConfig, xrccPromise, logCallback, erro
       trackingStatus_ = result.trackingStatus;
       trackingReason_ = result.trackingReason;
       framework.dispatchEvent('trackingstatus', { status: result.trackingStatus, reason: result.trackingReason });
+    }
+    // Commit only after every fallible callback above succeeds. A source computed during an
+    // earlier failed callback can be published for the first time by a later repeat callback.
+    if (publication) {
+      const sameSource = !!(timing && lastPublishedSource && timing.sessionEpoch === lastPublishedSource.epoch
+        && timing.sourceFrameIndex === lastPublishedSource.index);
+      const isFresh = !!(timing?.sourceMetadataFound && !timing.repeated
+        && timing.sessionEpoch === session_?.delivery?.epoch && !sameSource);
+      Object.assign(publication, timing || {}, { hasPose: true,
+        currentSessionEpoch: session_?.delivery?.epoch ?? null, kind, fresh: isFresh, publicationRepeated: sameSource });
+      if (timing?.sourceMetadataFound) lastPublishedSource = { epoch: timing.sessionEpoch, index: timing.sourceFrameIndex };
     }
     return result;
   };
@@ -546,13 +693,24 @@ const XrControllerFactory = singleton((runConfig, xrccPromise, logCallback, erro
     return finishResult(framework, {
       ...resultFromDesc(heldDesc_), realityTexture: frameStartResult.cameraTexture,
       trackingStatus: 'LIMITED', trackingReason: 'UNSPECIFIED', worldPoints: [], detectedImages: [],
-    });
+    }, heldDesc_.sourceTiming, 'inactive-held');
   };
 
   // The compute context is lost right now (RM-4c m-E). A rebuilt session needs working GL, a lost one cannot answer.
   const computeContextLost = (gl = computeCtx_) => !!(gl && typeof gl.isContextLost === 'function' && gl.isContextLost());
 
   const onProcessCpu = ({ framework, frameStartResult }) => {
+    if (deliveryOptions) {
+      publication = { hasPose: false, sourceFrameIndex: null, sourceVideoTimeS: null, sourceFrameTimeS: null,
+        sourceTimeNanos: null, sourceTimeNanosInput: null, sourceStageTimeNanos: null,
+        sessionEpoch: null, currentSessionEpoch: session_?.delivery?.epoch ?? null,
+        repeated: null, fresh: false, publicationRepeated: false, newEngineResponse: false, engineFresh: false,
+        sourceMetadataFound: false, kind: 'no-result',
+        callbackVideoTimeS: frameStartResult.videoTime ?? null, callbackFrameTimeS: frameStartResult.frameTime ?? null };
+      responseEntries[responseNext] = publication;
+      responseNext = (responseNext + 1) % deliveryOptions.maxEntries;
+      responseTotal++;
+    }
     const { repeatFrame } = frameStartResult;
     if (cameraProcessingDisabled_) {
       fakeRealityTexture_ = fakeRealityTexture_ || initFakeRealityTexture(drawCtx_);
@@ -570,14 +728,19 @@ const XrControllerFactory = singleton((runConfig, xrccPromise, logCallback, erro
     // No session and a lost context (a size change arrived before the context came back): the one report was already made
     // when the session saw the loss; the answer is the same null as with a session, not a frozen LIMITED pose.
     if (!session_) return computeContextLost(deferredRebuild_ && deferredRebuild_.computeCtx || computeCtx_) ? null : inactiveAnswer(framework, frameStartResult);
+    if (publication) publication.currentSessionEpoch = session_.delivery?.epoch ?? null;
     if (checkContext(session_)) return null;
+    const responsesBefore = session_.delivery?.responses;
     if (!repeatFrame) {
       // xr.js runs processCpu inside pre-render's try block; a throw would skip onUpdate and the camera texture
       // upload of this and every later frame. Report the failure and answer "no response" instead.
+      const pendingEvents = session_.pending?.events || [];
+      sensors.delivery?.process(pendingEvents);
       try {
         processStagedFrame(session_);
       } catch (error) {
         diag.stats.processErrors++;
+        sensors.delivery?.drop(pendingEvents, 'process-error');
         reportOnce('process', error);
         return null;
       }
@@ -592,7 +755,7 @@ const XrControllerFactory = singleton((runConfig, xrccPromise, logCallback, erro
       // answered like the inactive frames (RM-4c m-B); NORMAL comes with the first fresh response of the new session.
       if (!s.lastDesc && heldInactive_) return inactiveAnswer(framework, frameStartResult);
       diag.stats.gapAnswers++;
-      return finishResult(framework, resultFromDesc(d));
+      return finishResult(framework, resultFromDesc(d), d.sourceTiming, 'held-gap');
     }
     const pose = s.last;
     s.lastDesc = {
@@ -601,8 +764,11 @@ const XrControllerFactory = singleton((runConfig, xrccPromise, logCallback, erro
       status: pose.status, reason: pose.reason, worldPoints: s.lastWorldPoints,
       detectedImages: pose.detectedImages || [],
       realityTexture: window.XR8.drawTexForComputeTex(s.activeTexture),
+      sourceTiming: s.delivery?.sourceTiming,
     };
-    return finishResult(framework, resultFromDesc(s.lastDesc));
+    const newResponse = s.delivery && s.delivery.responses !== responsesBefore;
+    return finishResult(framework, resultFromDesc(s.lastDesc), s.lastDesc.sourceTiming,
+      newResponse ? 'engine-response' : 'callback-repeat');
   };
 
   const onStart = ({ computeCtx, canvasWidth, canvasHeight }) => {
@@ -1014,7 +1180,8 @@ const XrControllerFactory = singleton((runConfig, xrccPromise, logCallback, erro
   const stopDatarecorder = () => undefined;
   const getIsDataRecording = () => false;
 
-  return enginePromise.then(() => ({
+  const ready = identityPromise ? Promise.all([enginePromise, identityPromise]) : enginePromise;
+  return ready.then(() => ({
     pipelineModule,
     configure,
     recenter,

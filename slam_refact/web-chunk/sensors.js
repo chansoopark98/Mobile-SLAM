@@ -9,18 +9,23 @@
 // frame to the caller, which pushes them into the engine right before that frame is processed.
 // The 5e9 ns clear rule is applied here exactly as in the original; GlueRunner's SensorIntake
 // applies the same rule to the same push sequence, so it never fires a second time.
-export function createSensors(isInvalid) {
+export function createSensors(isInvalid, diagnosticOptions = null) {
   const eventQueue = [];
+  const delivery = diagnosticOptions?.enabled === true ? createDeliveryDiagnostics(diagnosticOptions.maxEntries) : null;
 
   // updateDeviceMotion: timestampNanos = 1e3 * performance.now() * 1e3 (same float operation order).
   const updateDeviceMotion = ({ acceleration, accelerationIncludingGravity, rotationRate, timeStamp, interval }) => {
-    if (isInvalid()) return;
+    const seq = delivery?.receive();
+    if (isInvalid()) { delivery?.reject(seq, 'invalid-context'); return; }
     const timestampNanos = 1e3 * window.performance.now() * 1e3;
     const eventTimestampNanos = 1e3 * timeStamp * 1e3;
     if (eventQueue.length && timestampNanos - eventQueue[0].timestampNanos > 5e9) {
+      delivery?.drop(eventQueue, 'queue-age-clear');
       eventQueue.length = 0;  // clear the queue for large lag times
     }
-    eventQueue.push({ timestampNanos, eventTimestampNanos, interval, acceleration, accelerationIncludingGravity, rotationRate });
+    const entry = { timestampNanos, eventTimestampNanos, interval, acceleration, accelerationIncludingGravity, rotationRate };
+    delivery?.enqueue(entry, seq);
+    eventQueue.push(entry);
   };
 
   // setEventQueue: returns the staged entries and empties the queue (nothing when invalid, like the original).
@@ -28,10 +33,76 @@ export function createSensors(isInvalid) {
     if (isInvalid()) return null;
     const staged = eventQueue.slice();
     eventQueue.length = 0;
+    delivery?.stage(staged);
     return staged;
   };
 
-  return { updateDeviceMotion, takeForStage, queueLength: () => eventQueue.length };
+  return { updateDeviceMotion, takeForStage, queueLength: () => eventQueue.length, ...(delivery ? { delivery } : {}) };
+}
+
+// M0: event-unit ownership accounting only. WeakMap metadata never changes the event/payload,
+// and detailed timing/drop histories are fixed-size rings; no raw acceleration/gyro is exported.
+function createDeliveryDiagnostics(limit = 256) {
+  const maxEntries = Number.isInteger(limit) && limit >= 1 && limit <= 1024 ? limit : 256;
+  const ring = () => {
+    const entries = []; let next = 0, total = 0;
+    return { push(value) { entries[next] = value; next = (next + 1) % maxEntries; total++; },
+      snapshot: () => ({ total, overwritten: Math.max(0, total - maxEntries),
+        entries: (total < maxEntries ? entries : entries.slice(next).concat(entries.slice(0, next))).map((e) => ({ ...e })) }) };
+  };
+  const timings = ring(), drops = ring(), transitions = ring(), states = new WeakMap();
+  const pending = { queued: 0, staged: 0, inFlight: 0 };
+  const droppedByReason = {};
+  let received = 0, pushed = 0, dropped = 0, uncertain = 0, duplicateSettlements = 0;
+  let previousArrival = null, previousEvent = null;
+  const finite = (n) => Number.isFinite(n) ? n : null;
+  const context = () => {
+    try { return { visibility: globalThis.document?.visibilityState ?? 'unknown',
+      focused: typeof globalThis.document?.hasFocus === 'function' ? globalThis.document.hasFocus() : null }; }
+    catch (_) { return { visibility: 'unknown', focused: null }; }
+  };
+  const transition = (e, phase) => {
+    const state = states.get(e);
+    if (!state || !(state.phase in pending)) { duplicateSettlements++; return null; }
+    pending[state.phase]--;
+    transitions.push({ seq: state.seq, from: state.phase, to: phase });
+    state.phase = phase;
+    if (phase in pending) pending[phase]++;
+    return state.seq;
+  };
+  const recordDrops = (seqs, reason) => {
+    if (!seqs.length) return;
+    dropped += seqs.length;
+    droppedByReason[reason] = (droppedByReason[reason] || 0) + seqs.length;
+    let first = seqs[0], last = first;
+    for (const seq of seqs.slice(1)) {
+      if (seq === last + 1) last = seq;
+      else { drops.push({ reason, firstSeq: first, lastSeq: last, count: last - first + 1 }); first = last = seq; }
+    }
+    drops.push({ reason, firstSeq: first, lastSeq: last, count: last - first + 1 });
+  };
+  return {
+    receive: () => ++received,
+    reject: (seq, reason) => recordDrops([seq], reason),
+    enqueue(e, seq) {
+      states.set(e, { seq, phase: 'queued' }); pending.queued++;
+      timings.push({ seq, arrivalTimeNanos: finite(e.timestampNanos), eventTimeNanos: finite(e.eventTimestampNanos),
+        arrivalDtMs: previousArrival === null ? null : finite((e.timestampNanos - previousArrival) / 1e6),
+        eventDtMs: previousEvent === null ? null : finite((e.eventTimestampNanos - previousEvent) / 1e6), ...context() });
+      previousArrival = e.timestampNanos; previousEvent = e.eventTimestampNanos;
+    },
+    stage: (events) => { for (const e of events) transition(e, 'staged'); },
+    process: (events) => { for (const e of events) transition(e, 'inFlight'); },
+    pushed(e) { if (transition(e, 'pushed') !== null) pushed++; },
+    uncertain(e) { if (transition(e, 'uncertain') !== null) uncertain++; },
+    drop(events, reason) { recordDrops(events.filter((e) => states.get(e)?.phase in pending)
+      .map((e) => transition(e, 'dropped')), reason); },
+    snapshot: () => ({ unit: 'DeviceMotion-event', received, pushed, dropped, uncertainPushes: uncertain,
+      pending: { ...pending }, droppedByReason: { ...droppedByReason }, duplicateSettlements,
+      accountingError: received - pushed - dropped - uncertain - pending.queued - pending.staged - pending.inFlight,
+      preReceiveLoss: 'unknown', pushedMeaning: 'successful-glue-push-call-not-backend-fusion', maxEntries,
+      timings: timings.snapshot(), dropRanges: drops.snapshot(), transitions: transitions.snapshot(), context: context() }),
+  };
 }
 
 // Pushes one staged DeviceMotion entry into SlamRefactGlue.pushDeviceMotionEvent (FULL-7, spec 06 section 6.1): the
