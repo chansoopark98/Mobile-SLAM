@@ -1,7 +1,7 @@
 // slam_refact phone page: Start button -> XR8 (deployed SDK + the slam_refact chunk) -> status panel, tap-to-place (hitTest), image targets,
 // orientation display, error display, opt-in metrics download. Nothing is stored; nothing leaves the page. The chunk and engine are used as they are.
 import * as THREE from '../../three/three.module.min.js';
-import { createMetrics } from './metrics.js';
+import { createMetrics, buildReceipt } from './metrics.js';
 import { loadBundledManifest, loadBundledTarget, loadPickedTarget, MAX_TARGETS } from './targets.js';
 
 window.THREE = THREE;  // XR8.Threejs reads window.THREE
@@ -12,7 +12,13 @@ const ui = {
   clear: $('b-clear'), recenter: $('b-recenter'), stop: $('b-stop'), restart: $('b-restart'), metrics: $('b-metrics'), panel: $('panel'),
   demo: $('demo-targets'), fJson: $('f-json'), fImage: $('f-image'), add: $('b-add-target'), list: $('target-list'),
 };
-const metrics = createMetrics();
+const RECORD = new URLSearchParams(window.location.search).get('record') === '1';  // opt-in pose log; off = the page and its metrics JSON are unchanged
+// record=1 also turns on the chunk's delivery diagnostics (source timing + sensor accounting); &delivery=0 keeps them off so the
+// diagnostics' own cost can be measured (ABBA). The option is read when the chunk factory is created, i.e. after Start.
+const DELIVERY = RECORD && new URLSearchParams(window.location.search).get('delivery') !== '0';
+if (DELIVERY) window.SLAM_REFACT_CHUNK_OPTIONS = { ...(window.SLAM_REFACT_CHUNK_OPTIONS || {}), deliveryDiagnostics: { enabled: true, maxEntries: 256 } };
+const metrics = createMetrics(() => performance.now(), { record: RECORD });
+let cameraTrack = null;  // the live camera video track (record=1 only: its getSettings() go into the receipt)
 const MAX_OBJECTS = 20;
 const XR_SRC = '../../engine/xr.js';  // loaded only after the Start click (the chunk registers sensor listeners when it loads)
 
@@ -181,6 +187,26 @@ const onCanvasKey = (event) => {
   onTap({ clientX: rect.left + rect.width / 2, clientY: rect.top + rect.height / 2 });
 };
 
+// ---- record=1: receipt and HUD hint ----------------------------------------------------------------------------------------------------
+const makeReceipt = () => buildReceipt({
+  track: cameraTrack, win: window, nav: navigator, scr: screen, canvas: ui.canvas,
+  fetchFn: typeof fetch === 'function' ? fetch.bind(window) : null, subtle: window.crypto && window.crypto.subtle || null,
+});
+let recHud = null;
+if (RECORD) {
+  recHud = document.createElement('div');
+  recHud.id = 'h-rec'; recHud.setAttribute('role', 'status');
+  // Below the status pill (#hud is a fixed full-screen layer; an in-flow element would sit under the absolutely placed pill).
+  recHud.style.cssText = 'position:absolute;top:calc(max(16px, env(safe-area-inset-top)) + 44px);left:max(16px, env(safe-area-inset-left));right:max(16px, env(safe-area-inset-right));padding:4px 8px;border-radius:8px;background:rgba(160,0,0,.75);color:#fff;font-size:12px;pointer-events:none';
+  recHud.textContent = '기록 중 (record=1): 위치 시계열을 이 페이지 메모리에만 모읍니다. 도구 > 지표 JSON 받기를 눌러야 파일로 내려받습니다.';
+  ui.hud.append(recHud);
+}
+const updateRecHud = () => {
+  if (!recHud) return;
+  const c = metrics.poseLogCounts();
+  recHud.textContent = `기록 중 (record=1): ${c.rows}행${c.droppedRows ? `, 한도 초과로 ${c.droppedRows}행 버려짐` : ''}. 메모리에만 있고, 지표 JSON 받기를 눌러야 내려받습니다.`;
+};
+
 // ---- XR8 pipeline ----------------------------------------------------------------------------------------------------------------------
 let upsCount = 0, upsWindowStart = 0;
 const setImageSeen = (name, v) => { state.seenTargets[name] = v; renderTargetList(); };
@@ -202,9 +228,16 @@ const pageModule = () => ({
     ui.canvas.addEventListener('keydown', onCanvasKey);
     ui.canvas.tabIndex = 0;
     metrics.start(); upsWindowStart = performance.now();
+    if (RECORD) makeReceipt().then((r) => metrics.setReceiptAtStart(r), (e) => metrics.setReceiptAtStart({ unavailable: String(e && e.message || e) }));
     state.phase = 'running';
     ui.msg.textContent = '휴대폰을 천천히 움직여 주변을 살펴보세요.';
     for (const b of [ui.clear, ui.recenter, ui.stop, ui.metrics]) b.disabled = false;
+  },
+  onCameraStatusChange: ({ status, stream, video }) => {
+    if (!RECORD) return;
+    const src = status === 'hasStream' ? stream : status === 'hasVideo' ? video && video.srcObject : null;
+    const track = src && src.getVideoTracks && src.getVideoTracks()[0];
+    if (track) cameraTrack = track;
   },
   onVideoSizeChange: ({ videoWidth, videoHeight }) => { state.videoSize = { ...(state.videoSize || {}), videoWidth, videoHeight }; showVideo(); },
   onDeviceOrientationChange: ({ videoWidth, videoHeight, orientation }) => {
@@ -213,11 +246,12 @@ const pageModule = () => ({
     showVideo();
   },
   onException: (error) => { showError('카메라 또는 엔진', error && error.message || String(error)); state.phase = 'error'; ui.canvas.tabIndex = -1; ui.status.textContent = '시작할 수 없음'; ui.status.parentElement.dataset.state = 'error'; ui.msg.textContent = '권한과 연결을 확인한 뒤 다시 시작하세요.'; for (const b of [ui.clear, ui.recenter]) b.disabled = true; ui.stop.disabled = false; ui.restart.hidden = false; ui.panel.open = true; },
-  onUpdate: ({ processCpuResult }) => {
+  onUpdate: ({ processCpuResult, frameStartResult }) => {
     if (state.phase !== 'running') return;
     const r = processCpuResult && processCpuResult.reality;
     const pts = r && r.worldPoints ? r.worldPoints.length : 0;
-    metrics.update(r || null, pts);
+    const chunk = window.__slamRefactChunk;  // sourceTiming: latest-only scalar copy (null when delivery diagnostics are off)
+    metrics.update(r || null, pts, frameStartResult, chunk && chunk.stats ? chunk.stats.lastSourceFrameIndex : null, RECORD && chunk ? chunk.sourceTiming : null);
     if (!r) return;
     if (r.trackingStatus !== state.status || r.trackingReason !== state.reason) {
       state.status = r.trackingStatus; state.reason = r.trackingReason;
@@ -227,7 +261,7 @@ const pageModule = () => ({
     state.worldPoints = pts;
     upsCount++;
     const t = performance.now();
-    if (t - upsWindowStart >= 1000) { ui.ups.textContent = String(Math.round(upsCount * 1000 / (t - upsWindowStart))); upsCount = 0; upsWindowStart = t; }
+    if (t - upsWindowStart >= 1000) { updateRecHud(); ui.ups.textContent = String(Math.round(upsCount * 1000 / (t - upsWindowStart))); upsCount = 0; upsWindowStart = t; }
     ui.status.textContent = state.status === 'NORMAL' ? '추적 중' : state.status === 'LIMITED' ? '주변을 찾는 중' : '준비 중';
     ui.status.parentElement.dataset.state = state.status === 'NORMAL' ? 'normal' : 'pending';
     ui.reason.textContent = state.reason && state.reason !== 'UNSPECIFIED' ? `(${state.reason})` : '';
@@ -306,8 +340,9 @@ ui.restart.addEventListener('click', () => window.location.reload());
 ui.clear.addEventListener('click', () => scene && clearObjects());
 ui.recenter.addEventListener('click', () => { try { XR8.XrController.recenter(); ui.msg.textContent = '원점을 다시 잡았습니다.'; } catch (e) { showError('원점', e.message); } });
 // The only place data leaves the page: the user clicks, the browser downloads a small JSON file to the user's own device.
-ui.metrics.addEventListener('click', () => {
-  const json = metrics.snapshot({ createdAtMs: Date.now(), userAgent: navigator.userAgent, screen: state.screenOrientation, video: state.videoSize, camera: window.XrCameraResolution || null, finalStatus: state.status, finalReason: state.reason, chunkWarnings: state.chunkWarnings });
+ui.metrics.addEventListener('click', async () => {
+  const receiptNow = RECORD ? await makeReceipt().catch((e) => ({ unavailable: String(e && e.message || e) })) : null;  // receipt again at download: the session may have changed since the start
+  const json = metrics.snapshot({ createdAtMs: Date.now(), userAgent: navigator.userAgent, screen: state.screenOrientation, video: state.videoSize, camera: window.XrCameraResolution || null, finalStatus: state.status, finalReason: state.reason, chunkWarnings: state.chunkWarnings }, receiptNow);
   const url = URL.createObjectURL(new Blob([JSON.stringify(json, null, 1)], { type: 'application/json' }));
   const a = document.createElement('a');
   a.href = url; a.download = `slam-refact-phone-metrics-${new Date().toISOString().replace(/[:.]/g, '-')}.json`;
