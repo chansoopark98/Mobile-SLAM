@@ -17,14 +17,28 @@
 #include "common/check.h"
 #include "config/settings.h"
 #include "frame_frame_tracker/frame_frame_tracker_internal.h"
+#include "map/f2_confirm.h"
 #include "map_tracker/map_tracker.h"
 #include "map_tracker/map_tracker_internal.h"
+#include "slam_refact/accuracy_counters.h"
 
 namespace slam_refact::map_tracker {
 
 namespace {
 
 using frame_frame_tracker::FrameFrameTrackerAccess;
+
+// P2 candidate F1: ground_y stops being a measurement after a state change, a map reset or an
+// engine rebuild (f2-contract-v3.3.md; the stamp is the frame of the last UpdateGroundHeight).
+void F1ClearStamp(MapTrackerAccess::Impl* t) {
+  t->f1_stamp_frame = -1;
+  t->f1_attempt_samples = -1;
+}
+
+// First reason the measured plane must not be used (tracker side; MapBuilder adds the geometry).
+uint8_t F1TrackerReason(const MapTrackerAccess::Impl& t) {
+  return F1ReasonFor(t.frame_count, t.f1_stamp_frame, t.f1_attempt_samples, t.ground_y);
+}
 
 // 1260 applyTrackResult: move the match vectors into the tracker, pose_ = result pose.
 void ApplyTrackResult(MapTrackerAccess::Impl* t, MapTrackResult* r) {
@@ -111,6 +125,22 @@ bool EventExceedsLimits(const TrackingSensorEvent& e, const config::MapTrackerSe
 
 }  // namespace
 
+uint8_t F1ReasonFor(int64_t frame_count, int64_t stamp_frame, int32_t attempt_samples,
+                    float ground_y) {
+  constexpr int64_t kStaleFrames = 15;
+  if (stamp_frame < 0) {
+    // An update was attempted since the epoch event but had too few height samples, or none yet.
+    return attempt_samples >= 0 ? kF1InsufficientSamples : kF1EpochInvalid;
+  }
+  if (frame_count - stamp_frame >= kStaleFrames) {
+    return kF1Stale;
+  }
+  if (!std::isfinite(ground_y)) {
+    return kF1InvalidInput;
+  }
+  return kF1Ok;
+}
+
 bool UpdateGroundHeight(std::vector<float>* heights, size_t ground_candidates, float pose_ty,
                         float* ground_height) {
   const config::MapTrackerSettings& s = config::MapTrackerSettings::Get();
@@ -155,6 +185,7 @@ c8::HMatrix MapTracker::ApplyMapBuilderOutput(const MapBuilderOutput& o) {
   Impl& t = *impl_;
   if (o.map_reset) {
     t.frame_tracker.ResetPartial();
+    F1ClearStamp(&t);
   }
   if (o.keyframe_created) {
     t.map_initialized_pending = true;
@@ -192,6 +223,7 @@ void MapTracker::Track(map::WorldMap& map, TrackerInput* frame, const FrameState
   t.intrinsic = fp.intrinsic();
   t.frame_start_pose = t.pose;
   ++t.frame_count;
+  map::F2TrackBegin();
   // out reset (F926:317-332); pose and predicted keep their previous values.
   out->consecutive_frame_tracker_ok = 0;
   out->frame_tracker_ok = false;
@@ -332,6 +364,7 @@ void MapTracker::Track(map::WorldMap& map, TrackerInput* frame, const FrameState
     }
     t.state = 1;
     t.last_state_change_frame = t.frame_count;
+    F1ClearStamp(&t);
   }
   t.map_initialized_pending = false;
   t.tracked.Clear();
@@ -362,6 +395,7 @@ void MapTracker::Track(map::WorldMap& map, TrackerInput* frame, const FrameState
       } else {
         t.state = 1;
         t.last_state_change_frame = t.frame_count;
+        F1ClearStamp(&t);
         ApplyTrackResult(&t, &t.track_result);
         t.anchor_pose = t.pose;
       }
@@ -420,6 +454,7 @@ void MapTracker::Track(map::WorldMap& map, TrackerInput* frame, const FrameState
           id_by_frame[m.frame_index] = m.id;
         }
       }
+      t.f1_attempt_samples = 0;
       if (out->ground_idx.size() >= static_cast<size_t>(s.min_ground_points_for_scale)) {
         std::vector<float> heights;
         for (const auto& kv : id_by_frame) {
@@ -429,8 +464,10 @@ void MapTracker::Track(map::WorldMap& map, TrackerInput* frame, const FrameState
           }
         }
         const float ty = t.pose(1, 3);
+        t.f1_attempt_samples = static_cast<int32_t>(heights.size());
         if (UpdateGroundHeight(&heights, out->ground_idx.size(), ty, &t.ground_height)) {
           t.ground_y = ty - t.ground_height;
+          t.f1_stamp_frame = t.frame_count;
         }
       }
       // Previous-frame map depth per frame point (camera z), -FLT_MAX where unmatched.
@@ -449,12 +486,16 @@ void MapTracker::Track(map::WorldMap& map, TrackerInput* frame, const FrameState
       t.state = 0;
       t.lost_residual = residual;
       t.last_state_change_frame = t.frame_count;
+      F1ClearStamp(&t);
     }
     t.anchor_pose = t.pose;
   }
 
   // Output (F926:2648-2701).
   out->state = t.state;
+  out->f1_ground_y = t.ground_y;
+  out->f1_invalid_reason = F1TrackerReason(t);
+  map::F2TrackEnd(t.last_state_change_frame == t.frame_count);
   out->consecutive_frame_tracker_ok = t.consecutive_frame_tracker_ok;
   out->pose = t.pose;
   out->tracked = t.tracked.by_frame;

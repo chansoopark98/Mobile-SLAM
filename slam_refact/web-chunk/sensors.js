@@ -94,6 +94,8 @@ function createDeliveryDiagnostics(limit = 256) {
     enqueue(e, seq) {
       states.set(e, { seq, phase: 'queued' }); pending.queued++;
       timings.push({ seq, arrivalTimeNanos: finite(e.timestampNanos), eventTimeNanos: finite(e.eventTimestampNanos),
+        // Raw DeviceMotionEvent.interval as delivered (spec: ms; WebKit unit UNVERIFIED). pushMotion uses interval * 1e6 as ns.
+        rawInterval: finite(e.interval),
         arrivalDtMs: previousArrival === null ? null : finite((e.timestampNanos - previousArrival) / 1e6),
         eventDtMs: previousEvent === null ? null : finite((e.eventTimestampNanos - previousEvent) / 1e6), ...context() });
       previousArrival = e.timestampNanos; previousEvent = e.eventTimestampNanos;

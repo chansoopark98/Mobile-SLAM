@@ -120,6 +120,11 @@ struct MapTrackerOutput {
   map::KeyframeId depth_kf_reloc_id;       // +0x1b8
   bool depth_kf_reloc_latch = false;       // +0x1c0
   bool lost_reloc_attempted = false;       // +0x1c5 (meaning INFERRED)
+  // P2 candidate F1 (f2-contract-v3.3.md; not part of the original): the tracker's measured ground
+  // plane y after this Track call and the first reason it must not be used (F1Reason; 0 = no
+  // tracker-side reason). Always filled, read only when AccuracyConfig::f1_ground_plane is on.
+  float f1_ground_y = -1.0f;
+  uint8_t f1_invalid_reason = 0;
 };
 
 // MapBuilder::Update output (vio+6600; S3 §2.6, S4 §3.5 / 664).

@@ -46,3 +46,12 @@ if(SLAM_REFACT_LOOP_CLOSE)
   target_compile_definitions(sr_map_builder_loop_close_test PRIVATE
     SR_TEST_DATA_DIR="${SLAM_REFACT_TEST_DATA_DIR}")
 endif()
+
+# P2 drift candidates F1 / F2 (build/xr-drift-p2-20261031/f2-contract-v3.3.md section 7, gate G1).
+# One binary so that a single gtest XML holds every required test id; the harness passes the hash of
+# the candidate binary in SR_BINARY_SHA256 and the XML records it as property binary_sha256.
+sr_add_unit_test(sr_p2_candidate_test
+  SOURCES p2_f2_geometry_test.cc p2_f2_lifecycle_test.cc p2_f2_hook_test.cc p2_subset_f1_test.cc
+          p2_test_util.h map_builder_test_util.h
+  LIBS sr_map_builder sr_map_tracker sr_config
+  LABELS unit)

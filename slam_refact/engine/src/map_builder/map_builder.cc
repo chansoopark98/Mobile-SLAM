@@ -24,10 +24,12 @@
 #include "common/stage_timer.h"
 #include "config/accuracy.h"
 #include "config/settings.h"
+#include "map/f2_confirm.h"
 #include "map/world_map.h"
 #include "map/world_map_internal.h"
 #include "map_builder/loop_close.h"
 #include "map_builder/map_builder_internal.h"
+#include "slam_refact/accuracy_counters.h"
 
 namespace slam_refact::map_builder {
 
@@ -44,6 +46,48 @@ int32_t TruncToI32(float v) {
 
 // Live keyframe count = raw slots minus free slots (936.c:3267). Free slots have id 0.
 int LiveKeyframes(const map::WorldMap& wm) { return wm.NumKeyframes(); }
+
+// P2 candidate F1: where the seeds of this keyframe are placed. reason == kF1Ok: on the tracker's
+// measured plane y = ground_y (per seed, only if its ray meets that plane in front of the camera).
+struct F1Plan {
+  bool enabled = false;
+  uint8_t reason = kF1Ok;
+  float ground_y = -1.0f;
+};
+
+F1Plan PlanF1(const MapTrackerOutput& trk, bool map_reset, const c8::HMatrix& pose) {
+  constexpr float kMinCameraHeight = 0.05f;  // camera - plane, internal units (contract F1 geometry)
+  F1Plan f1;
+  const AccuracyConfig& acc = config::Accuracy();
+  f1.enabled = acc.enabled && acc.f1_ground_plane;
+  if (!f1.enabled) {
+    return f1;
+  }
+  f1.ground_y = trk.f1_ground_y;
+  if (map_reset) {
+    f1.reason = kF1InitialKeyframe;  // y = -1 defines the unit of the first keyframe
+  } else if (trk.f1_invalid_reason != kF1Ok) {
+    f1.reason = trk.f1_invalid_reason;
+  } else if (!std::isfinite(trk.f1_ground_y) || !std::isfinite(pose(1, 3))) {
+    f1.reason = kF1InvalidInput;
+  } else if (!(pose(1, 3) - trk.f1_ground_y >= kMinCameraHeight)) {
+    f1.reason = kF1CameraTooClose;
+  }
+  return f1;
+}
+
+// P2 candidate F2: one hook for both exits of Update.
+void FinalizeF2(map::WorldMap& wm, const MapTrackerOutput& trk, int64_t frame_count,
+                int64_t last_reset_frame, int64_t last_state_change_frame, bool kf_path) {
+  if (!map::F2Enabled()) {
+    return;
+  }
+  map::F2FinalizeArgs a;
+  a.frame = frame_count;
+  a.hold = trk.state != 1 || RelocalizationHold(frame_count, last_reset_frame, last_state_change_frame);
+  a.kf_path = kf_path;
+  map::F2Finalize(wm, a);
+}
 
 bool KeyframeIdValid(const map::WorldMap& wm, map::KeyframeId id) {
   const auto& slots = map::WorldMapAccess::impl(wm).keyframes;
@@ -166,6 +210,41 @@ GroundPlane GroundPlaneInCamera(const c8::HMatrix& world_from_camera) {
   g.p0y = p0.y();
   g.p0z = p0.z();
   return g;
+}
+
+GroundPlane GroundPlaneInCameraAt(const c8::HMatrix& world_from_camera, float plane_y) {
+  const c8::HMatrix camera_from_world = world_from_camera.inv();
+  const c8::HPoint3 p0 = camera_from_world * c8::HPoint3(0.0f, plane_y, 0.0f);
+  const c8::HPoint3 p1 = camera_from_world * c8::HPoint3(1.0f, plane_y, 0.0f);
+  const c8::HPoint3 p2 = camera_from_world * c8::HPoint3(0.0f, plane_y, 1.0f);
+  const float ax = p1.x() - p0.x();
+  const float ay = p1.y() - p0.y();
+  const float az = p1.z() - p0.z();
+  const float bx = p2.x() - p0.x();
+  const float by = p2.y() - p0.y();
+  const float bz = p2.z() - p0.z();
+  GroundPlane g;
+  g.nx = ay * bz - az * by;
+  g.ny = az * bx - ax * bz;
+  g.nz = ax * by - ay * bx;
+  g.p0x = p0.x();
+  g.p0y = p0.y();
+  g.p0z = p0.z();
+  return g;
+}
+
+bool GroundRayScale(const GroundPlane& g, float ray_x, float ray_y, float* s) {
+  const float rz = 1.0f;
+  const float den = g.nz * rz + (g.nx * ray_x + g.ny * ray_y);
+  if (den == 0.0f) {
+    return false;
+  }
+  const float v = (g.nz * g.p0z + (g.nx * g.p0x + g.p0y * g.ny)) / den;
+  if (!(v > 0.0f) || !std::isfinite(v)) {
+    return false;
+  }
+  *s = v;
+  return true;
 }
 
 c8::HPoint3 GroundPointInWorld(const GroundPlane& g, const c8::HMatrix& world_from_camera,
@@ -370,8 +449,12 @@ void MapBuilder::Update(map::WorldMaps* ctx, const TrackerInput& frm, const MapT
   prev_state_ = state_;
   ++frame_count_;
   state_ = trk.state;
+  if (frame_count_ == 0) {
+    map::F2NoteBuilderStart(ctx->active());  // a rebuilt MapBuilder on a map that has seeds
+  }
   if (state_ != prev_state_) {
     last_state_change_frame_ = frame_count_;
+    map::F2BumpTrackerEpoch(ctx->active());
   }
   // 936.c:457-461 (cloud map or VPS-localized frame) cannot occur: CloudEmpty() and trk +0x1c4
   // is a VPS flag not modeled in MapTrackerOutput.
@@ -444,6 +527,7 @@ void MapBuilder::Update(map::WorldMaps* ctx, const TrackerInput& frm, const MapT
     EpipolarMatcher(wm, &pair_queue_, vps_baseline_mode_);  // 1112
     wm.CullAndTenureAll();                                  // 1141
     wm.AdjustDirtyPoints();                                 // 1127
+    FinalizeF2(wm, trk, frame_count_, last_reset_frame_, last_state_change_frame_, false);
     return;
   }
 
@@ -481,16 +565,54 @@ void MapBuilder::Update(map::WorldMaps* ctx, const TrackerInput& frm, const MapT
     }
     // inv() aborts on a non-invertible pose like the flag checks of 936.c:2007-2018.
     const GroundPlane plane = GroundPlaneInCamera(pose);
+    // P2 candidate F1 (default off: f1.enabled false, nothing below differs from the original).
+    const F1Plan f1 = PlanF1(trk, out->map_reset, pose);
+    GroundPlane measured;
+    if (f1.enabled && f1.reason == kF1Ok) {
+      measured = GroundPlaneInCameraAt(pose, f1.ground_y);
+    }
+    std::vector<uint8_t> seed_reason;  // F1Reason per candidate (F1 only)
+    std::vector<float> seed_scale;     // z-depth of the seed on the measured plane (F1 only)
     std::vector<c8::HPoint3> world;
     world.reserve(cand.size());
     for (uint32_t c : cand) {
       SR_CHECK(c < kf.frame.points().size(), "[map_builder] ground candidate out of range");
       const c8::FramePoint& fp = kf.frame.points()[c];
-      world.push_back(GroundPointInWorld(plane, pose, fp.x(), fp.y()));
+      float scale = 0.0f;
+      if (f1.enabled && f1.reason == kF1Ok && GroundRayScale(measured, fp.x(), fp.y(), &scale)) {
+        world.push_back(GroundPointInWorld(measured, pose, fp.x(), fp.y()));
+        seed_reason.push_back(kF1Ok);
+        seed_scale.push_back(scale);
+      } else {
+        world.push_back(GroundPointInWorld(plane, pose, fp.x(), fp.y()));
+        if (f1.enabled) {
+          seed_reason.push_back(f1.reason == kF1Ok ? static_cast<uint8_t>(kF1LambdaNonpositive) : f1.reason);
+          seed_scale.push_back(0.0f);
+        }
+      }
+    }
+    if (f1.enabled) {
+      ++(f1.reason == kF1Ok ? map::MutableCounters().f1_kf_applied : map::MutableCounters().f1_kf_fallback);
     }
     for (size_t i = 0; i < cand.size(); ++i) {
       if (kf.frame.points()[cand[i]].id() == map::PointId::nullId()) {
         const map::PointId ph = wm.AddPoint(kf.seq, world[i], map::PointSource::kGround);  // 657
+        if (f1.enabled) {
+          AccuracyCounters& cnt = map::MutableCounters();
+          if (seed_reason[i] == kF1Ok) {
+            wm.MutablePoint(ph).f2.plane_y = static_cast<double>(f1.ground_y);
+            wm.MutablePoint(ph).f2.f1_plane = true;
+            ++cnt.f1_applied;
+            // AdjustDirtyPoints (1127) re-places a ground point at the mean of its observations'
+            // initialDepth, which SetKeyframePose derived from the constant plane y = -1
+            // (FramePoint::updateInitialDepth); without this the seed would return to y = -1 right
+            // after it was placed on the measured plane.
+            (*wm.MutableKeyframe(nk).frame.mutablePoints())[cand[i]]
+                .updateInitialDepthDuringDeserialization(static_cast<double>(seed_scale[i]));
+          } else {
+            ++cnt.f1_fallback[seed_reason[i]];
+          }
+        }
         wm.AddObservation(ph, cand[i], nk);
         out->new_points.push_back(ph);
       }
@@ -578,6 +700,7 @@ void MapBuilder::Update(map::WorldMaps* ctx, const TrackerInput& frm, const MapT
 #endif
   }
   wm.AdjustDirtyPoints();  // 936.c:5758
+  FinalizeF2(wm, trk, frame_count_, last_reset_frame_, last_state_change_frame_, true);
 }
 
 }  // namespace slam_refact::map_builder

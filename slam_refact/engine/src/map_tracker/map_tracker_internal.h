@@ -86,6 +86,12 @@ struct MapTracker::Impl {
   // ground_y_ = -1.0f, so the FFT scale pose.ty - ground_y_ starts at ty + 1 (S2 §2 / table at 745).
   float ground_height = 1.0f;                              // +0x11e0
   float ground_y = -1.0f;                                  // +0x11e4
+  // P2 candidate F1 (not in the original): when ground_y was last updated by UpdateGroundHeight
+  // (-1 = not since the last state change / map reset / rebuild) and the number of height samples
+  // of the latest update attempt since then (-1 = none). Read-only bookkeeping: they never feed
+  // back into the tracker.
+  int64_t f1_stamp_frame = -1;
+  int32_t f1_attempt_samples = -1;
   bool extreme_motion = false;                             // +0x11e8
   float last_good_residual = 0.0f;                         // +0x11ec
   float lost_residual = 0.0f;                              // +0x11f0
@@ -130,6 +136,14 @@ void ComputeFramePoseUsingRobustP2P(const TrackerInput& frame,
 void Relocalize(RelocResult* out, const map::WorldMap& map, const TrackerInput& frame,
                 const c8::HMatrix& tracking_pose, compat::RandomNumbers* rng,
                 c8::RobustP2PScratchSpace* scratch);
+
+// P2 candidate F1 (f2-contract-v3.3.md): tracker-side reason (F1Reason, 0 = none) why ground_y must
+// not be used as the seed plane. `stamp_frame` is the frame of the latest successful ground height
+// update since the last state change / map reset / rebuild (-1 = none), `attempt_samples` the
+// number of height samples of the latest attempt since then (-1 = no attempt). The measurement is
+// fresh when it is at most 14 frames old (it lies within the last 15 frames).
+uint8_t F1ReasonFor(int64_t frame_count, int64_t stamp_frame, int32_t attempt_samples,
+                    float ground_y);
 
 // F926 small-motion gate inputs, in the f926 wasm's float operation order:
 //   translation       |frame_delta translation| = sqrt(z^2 + (y^2 + (x^2 + 0)))

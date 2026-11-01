@@ -53,6 +53,30 @@ export function resolveManifestFile(baseUrl, entry, what) {
   return url;
 }
 
+// The engine is built with -msimd128 (v128 instructions, VERIFIED by wasm-dis) and asks for 256 MB initial / 512 MB maximum
+// linear memory (not shared). When the factory rejects, the cause is told apart so the failure is readable and recordable:
+//   code 'engine-simd-unsupported'        this runtime cannot validate a v128 module (WebKit before iOS 16.4, old Chrome)
+//   code 'engine-memory-unavailable'      the runtime refused the linear memory (RangeError / "could not allocate")
+// Anything else is rethrown unchanged. The original error is kept as `cause`. Whether iOS WebKit produces these exact
+// error types is UNVERIFIED on this host (no WebKit execution); the classification only reads error type, message and a
+// WebAssembly.validate probe, so it cannot change the success path.
+const SIMD_PROBE = new Uint8Array([0, 97, 115, 109, 1, 0, 0, 0, 1, 5, 1, 96, 0, 1, 123, 3, 2, 1, 0, 10, 10, 1, 8, 0, 65, 0, 253, 15, 253, 98, 11]);
+const MEMORY_MESSAGE = /out of memory|could not allocate|cannot allocate|failed to allocate|allocation failed|memory.*(alloc|grow)/i;
+export function classifyInstantiateError(error, wa = globalThis.WebAssembly) {
+  let simd = true;
+  try { simd = !!wa && typeof wa.validate === 'function' && wa.validate(SIMD_PROBE) === true; } catch (_) { simd = false; }
+  const detail = String(error && error.message || error);
+  if (!simd) {
+    return Object.assign(new Error(`[XR] slam_refact engine needs WebAssembly SIMD, which this browser does not support (${detail})`),
+      { code: 'engine-simd-unsupported', cause: error });
+  }
+  if (error instanceof RangeError || MEMORY_MESSAGE.test(detail)) {
+    return Object.assign(new Error(`[XR] slam_refact engine could not get its WebAssembly memory (256 MB initial, 512 MB maximum): ${detail}`),
+      { code: 'engine-memory-unavailable', cause: error });
+  }
+  return error;
+}
+
 // baseUrl: directory URL of the engine files (ends with '/'). moduleArgs: Emscripten Module overrides
 // (print, printErr, onAbort). Returns {Module, loaded}; throws with error.loaded on a hash mismatch.
 export async function loadEngine(baseUrl, moduleArgs = {}) {
@@ -71,7 +95,9 @@ export async function loadEngine(baseUrl, moduleArgs = {}) {
   let factory;
   try { factory = (await import(blobUrl)).default; } finally { URL.revokeObjectURL(blobUrl); }
   const t0 = performance.now();
-  const Module = await factory({ ...moduleArgs, wasmBinary: new Uint8Array(wasmBuf) });
+  let Module;
+  try { Module = await factory({ ...moduleArgs, wasmBinary: new Uint8Array(wasmBuf) }); }
+  catch (error) { throw classifyInstantiateError(error); }
   loaded.instantiateMs = performance.now() - t0;
   return { Module, loaded };
 }

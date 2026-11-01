@@ -65,6 +65,15 @@ struct AccuracyConfig {
   bool metric_low_band = false;
   // Fixed IMU lag (s, |lag| <= 0.3) instead of the lag search; NaN = search (default).
   double metric_fixed_lag_s = std::numeric_limits<double>::quiet_NaN();
+  // P2 drift candidates (build/xr-drift-p2-20261031/f2-contract-v3.3.md). Both default off and, off,
+  // leave the engine output bit-identical. They need `enabled`.
+  // F1: new ground points of a keyframe are seeded on the tracker's measured ground plane
+  // (MapTracker ground_y) instead of the constant plane y = -1 when that measurement is valid;
+  // otherwise y = -1 and a fallback reason is counted.
+  bool f1_ground_plane = false;
+  // F2: a ground point gets the ground preference of the PnP subset selection (+0.55, first 52)
+  // only after a multi-view check on at least three keyframes agrees with its plane depth.
+  bool f2_ground_confirmation = false;
 };
 
 struct EngineConfig {

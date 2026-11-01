@@ -79,6 +79,15 @@ struct GroundPlane {
 
 GroundPlane GroundPlaneInCamera(const c8::HMatrix& world_from_camera);
 
+// P2 candidate F1: the same plane construction for the horizontal plane y = plane_y (the original
+// function above is left untouched so that the default path stays bit-identical).
+GroundPlane GroundPlaneInCameraAt(const c8::HMatrix& world_from_camera, float plane_y);
+
+// Scale s of the ray (x, y, 1) to the plane (the s of GroundPointInWorld, same operation order).
+// False when the ray is parallel to the plane (den == 0) or s is not a positive finite number
+// (the plane is behind the ray).
+bool GroundRayScale(const GroundPlane& plane, float ray_x, float ray_y, float* s);
+
 // X_w = T_wc * (s * (x, y, 1), 1), s = n.p0 / n.r (n.r == 0 -> denominator 1). No sign check
 // (quirk Q7).
 c8::HPoint3 GroundPointInWorld(const GroundPlane& plane, const c8::HMatrix& world_from_camera,

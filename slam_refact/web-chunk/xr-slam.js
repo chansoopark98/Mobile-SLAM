@@ -269,6 +269,7 @@ const XrControllerFactory = singleton((runConfig, xrccPromise, logCallback, erro
   // Higher refresh rates are unverified. This recovery limit does not change D2's gate.
   const MAX_STALLED_GPU_TICKS = 32;
   let retireStallTicks = 0, retireWatchdogReported = false;
+  let glErrorStreak = 0;  // consecutive frames dropped for a preexisting GL error
   const retiredSnapshotPools = [];
   const MAX_DISCARD_MOTION_SEQS = 128;
   const schedulerCounts = { admitted: 0, primingAcked: 0, processed: 0, publications: 0,
@@ -636,6 +637,7 @@ const XrControllerFactory = singleton((runConfig, xrccPromise, logCallback, erro
         if (s.pending === f) s.pending = null;
         return;
       }
+      glErrorStreak = 0;
       q.snapshots.retain(f.snapshotKey, 'task'); q.snapshots.release(f.snapshotKey, 'gpuPending');
       q.pending = f; stageFrame(s, f); schedulerCounts.admitted++; queueSchedulerTask(s);
     } catch (error) {
@@ -644,8 +646,13 @@ const XrControllerFactory = singleton((runConfig, xrccPromise, logCallback, erro
         // preflight getError; this frame has no owned pixels or native admission.
         schedulerCounts.droppedGlError++;
         sensors.carryForStage(events); q.pending = null; s.pending = null;
-        pushEntry(schedulerFailures, { where: 'scheduler-capture-gl-preexisting', message: error.message,
-          epoch: { ...q.epoch }, nativeAdvanced: false, partialDispatchCount: 0 });
+        // A persistent flag fails every frame: record and report the first of a consecutive run only
+        // (reportOnce also dedups by message); the counter above still counts every dropped frame.
+        if (glErrorStreak++ === 0) {
+          pushEntry(schedulerFailures, { where: 'scheduler-capture-gl-preexisting', message: error.message,
+            epoch: { ...q.epoch }, nativeAdvanced: false, partialDispatchCount: 0 });
+          reportSchedulerError('scheduler-capture-gl-preexisting', error);
+        }
         return;
       }
       q.pending ||= f; schedulerFailure(s, 'scheduler-stage', error);
@@ -1345,9 +1352,15 @@ const XrControllerFactory = singleton((runConfig, xrccPromise, logCallback, erro
         try {
           session_ = createSession({ videoWidth, videoHeight, rotation, computeCtx: computeCtx_, coords: configured_, framesUntilRecenter: startupFramesLeft_ });
         } catch (error) {
+          // createSession already released its glue/pyramid. Leave no session (inactive answers, no throw out of the
+          // XR8 attach callback), record the failure, and finish the attach below (simulator listeners, flags).
+          // A later size/orientation change, or detach + attach, builds a session again.
           session_ = null;
+          schedulerCounts.errors++;
+          pushEntry(schedulerFailures, { where: 'scheduler-attach', message: String(error?.message || error),
+            epoch: null, nativeAdvanced: false, partialDispatchCount: 0 });
+          pushEntry(diag.sessionLog, { event: 'scheduler-attach-failed' });
           reportSchedulerError('scheduler-attach', error);
-          return;
         }
       } else session_ = createSession({ videoWidth, videoHeight, rotation, computeCtx: computeCtx_, coords: configured_, framesUntilRecenter: startupFramesLeft_ });
       inactiveWarned_ = false;

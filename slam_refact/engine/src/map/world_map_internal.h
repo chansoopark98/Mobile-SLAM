@@ -20,6 +20,7 @@
 #include <cstdint>
 #include <random>
 #include <set>
+#include <utility>
 #include <vector>
 
 #include "c8/hpoint.h"
@@ -36,6 +37,17 @@ struct MajorityRecord {
   uint32_t count = 0;                    // +0x400
   std::array<uint8_t, 32> majority{};    // +0x408
   bool majority_valid = true;            // +0x428 (1 on creation, 0 after every count change)
+};
+
+// Monotone counters that outlive a map (WorldMaps owns them; a standalone WorldMap owns its own):
+// creation serials of points and keyframes (f2-contract-v3.3.md 6.1; NextId() is random, so an id
+// can repeat, a serial cannot) and the F2 epochs. WorldMaps::ResetMap does not reset them.
+struct MapSerials {
+  uint64_t point = 0;
+  uint64_t kf = 0;
+  uint32_t tracker_epoch = 0;  // +1 when the tracker state changes or the MapBuilder is rebuilt
+  uint32_t map_epoch = 0;      // +1 on every map reset
+  int epoch_reason = 7;        // F2Invalidation of the pending tracker_epoch bump (7 = tracker_epoch, 8 = rebuild)
 };
 
 struct PointPool {
@@ -55,6 +67,15 @@ struct WorldMap::Impl {
   int64_t last_keyframe_frame = 0;        // +0x1a0
   KeyframeId newest;                      // +0x1a8
   std::set<PointId> dirty;                // +0x1b0
+  // ---- P2 candidate F2 (map/f2_confirm.h); untouched while F2 is off.
+  MapSerials own_serials;
+  MapSerials* serials = &own_serials;
+  // Ground points whose F2 basis may have changed, keyed by (PointId, point_serial) so that a point
+  // that reuses the random id of a retired one is told apart (id_reuse).
+  std::set<std::pair<PointId, uint64_t>> f2_dirty;
+  bool f2_all_dirty = false;              // every ground point must be re-evaluated
+  uint32_t f2_last_tracker_epoch = 0;
+  bool f2_in_merge = false;               // MergePoint reports one 'merge' event, not obs_added
 
   uint32_t NextId() { return (*id_generator)(); }
 };
@@ -67,7 +88,8 @@ struct WorldMapAccess {
   static const Impl& impl(const WorldMap& map) { return *map.impl_; }
   // Rebinds a freshly constructed map to a shared id generator and draws the map id from it
   // (653: map id = first draw after construction).
-  static void BindGenerator(WorldMap& map, std::mt19937* generator);
+  // `serials` (optional) binds the monotone serials / epochs of the owning WorldMaps.
+  static void BindGenerator(WorldMap& map, std::mt19937* generator, MapSerials* serials = nullptr);
 };
 
 // 1150 WorldMap::setPointPosition. Writes the position, recomputes the depth of every observation

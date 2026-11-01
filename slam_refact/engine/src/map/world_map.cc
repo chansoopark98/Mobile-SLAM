@@ -24,6 +24,7 @@
 #include "compat/libcxx_algorithms.h"
 #include "config/accuracy.h"
 #include "config/settings.h"
+#include "map/f2_confirm.h"
 #include "map/world_map_internal.h"
 #include "reality/engine/features/descriptor-bit-counter.h"
 #include "reality/engine/features/image-descriptor.h"
@@ -317,6 +318,7 @@ void SetPointState(WorldMap* map, Impl& m, PointId id, PointState state) {
     }
     Pool(m, p.source).free_slots.push_back(static_cast<uint32_t>(id.index()));
     m.dirty.erase(id);
+    p.f2 = F2PointState{};  // F2 state dies with the point (a Dead src of MergePoint included)
   }
   p.state = state;
 }
@@ -416,6 +418,8 @@ KeyframeId WorldMap::AddKeyframe(const c8::FrameWithPoints& f, int64_t frame_cou
   kf.id = id;
   kf.seq = m.keyframe_seq++;
   kf.creation_frame = frame_count;
+  kf.kf_serial = ++m.serials->kf;
+  kf.pose_rev = 0;
   // 4067: a keyframe source frame must not carry world point links.
   SR_CHECK(kf.frame.worldPointIndices().empty(), "[world_map] keyframe frame has world points");
   const KeyframeId kf_id(slot, id);
@@ -431,9 +435,31 @@ void WorldMap::SetKeyframePose(KeyframeId kf_id, const c8::HMatrix& world_from_c
   Keyframe& kf = SlotAt(m, kf_id.index());
   (void)world_from_camera.inv();  // aborts on noInvert / invertFailed, like 655
   kf.frame.setExtrinsic(world_from_camera);
+  ++kf.pose_rev;
+  if (config::Accuracy().enabled && config::Accuracy().f1_ground_plane) {
+    // setExtrinsic derived every initial depth from the constant plane y = -1. A seed that F1 placed
+    // on its measured plane keeps that plane: the creating keyframe's depth is re-derived from the
+    // recorded plane at the new pose (AdjustDirtyPoints would otherwise move the seed back).
+    for (size_t idx : kf.frame.worldPointIndices()) {
+      const WorldPoint& p = PointOrAbort(m, kf.frame.points()[idx].id());
+      if (!p.f2.f1_plane || !(p.f2.creator == kf_id)) {
+        continue;
+      }
+      const std::array<float, 16>& d = kf.frame.extrinsic().data();  // world_from_camera, col-major
+      const c8::FramePoint& fp = kf.frame.points()[idx];
+      // world y of the ray (x, y, 1): row 1 of the rotation, element (r, c) is d[4 * c + r].
+      const double wy = static_cast<double>(d[1]) * fp.x() + static_cast<double>(d[5]) * fp.y() +
+                        static_cast<double>(d[9]);
+      const double s = (p.f2.plane_y - static_cast<double>(d[13])) / wy;
+      if (wy < 0.0 && s > 0.0 && std::isfinite(s)) {
+        (*kf.frame.mutablePoints())[idx].updateInitialDepthDuringDeserialization(s);
+      }
+    }
+  }
   for (size_t idx : kf.frame.worldPointIndices()) {
     const PointId pid = kf.frame.points()[idx].id();
     const WorldPoint& p = PointOrAbort(m, pid);
+    F2NoteChange(m, pid, p, kInvKfPoseRev);
     (*kf.frame.mutablePoints())[idx].setDepth(CameraDepth(kf.frame.extrinsic(), p.position));
     m.dirty.insert(pid);
   }
@@ -478,6 +504,8 @@ PointId WorldMap::AddPoint(uint32_t kf_seq, const c8::HPoint3& p, PointSource so
   w.scale_by_kf.clear();
   w.observations.clear();
   w.position = p;
+  w.point_serial = ++m.serials->point;
+  w.f2 = F2PointState{};  // like MajorityRecord{} above: a reused slot starts without F2 state
   // loaded_from_map (+0x44) is not reset on slot reuse (657); it is never set in world SLAM.
   return PointId(slot, id);
 }
@@ -506,12 +534,14 @@ void WorldMap::AddObservation(PointId point, uint32_t obs_idx, KeyframeId kf_id)
     kf.frame.setWorldPoint(obs_idx, PointId::nullId());
     RemoveObservationRecord(old_p, kf_id);
     MajoritySubtract(m, *old_p, old_id, kf, obs_idx);
+    F2NoteChange(m, old_id, *old_p, point == PointId::nullId() ? kInvObsRemoved : kInvObsReplaced);
   }
   if (point == PointId::nullId()) {
     return;
   }
   WorldPoint& p = PointOrAbort(m, point);
   // The point may already be observed at another index of this keyframe: unlink that one first.
+  bool moved = false;
   const auto existing = p.observations.find(kf_id);
   if (existing != p.observations.end()) {
     const uint32_t prev_idx = existing->second;
@@ -525,6 +555,19 @@ void WorldMap::AddObservation(PointId point, uint32_t obs_idx, KeyframeId kf_id)
     kf.frame.setWorldPoint(prev_idx, PointId::nullId());
     RemoveObservationRecord(&p, kf_id);
     MajoritySubtract(m, p, point, kf, prev_idx);
+    F2NoteChange(m, point, p, kInvObsReplaced);
+    moved = true;  // one 'obs_replaced' for the point, not also 'obs_added'
+  }
+  if (p.source == PointSource::kGround && p.f2.creator_serial == 0 && !p.f2.creator_lost &&
+      p.observations.empty()) {
+    // The first observation of a ground seed is the one of its creating keyframe (MapBuilder [D]).
+    p.f2.creator = kf_id;
+    p.f2.creator_serial = kf.kf_serial;
+    p.f2.birth_valid = true;
+    p.f2.birth_pos[0] = p.position.x();
+    p.f2.birth_pos[1] = p.position.y();
+    p.f2.birth_pos[2] = p.position.z();
+    p.f2.birth_creator_rev = kf.pose_rev;
   }
   kf.frame.setWorldPoint(obs_idx, point);
   const uint8_t scale = kf.frame.points()[obs_idx].scale();
@@ -547,6 +590,9 @@ void WorldMap::AddObservation(PointId point, uint32_t obs_idx, KeyframeId kf_id)
   }
   m.dirty.insert(point);
   (*kf.frame.mutablePoints())[obs_idx].setDepth(CameraDepth(kf.frame.extrinsic(), p.position));
+  if (!moved) {
+    F2NoteChange(m, point, p, kInvObsAdded);
+  }
 }
 
 const WorldPoint& WorldMap::Point(PointId id) const {
@@ -580,11 +626,14 @@ void WorldMap::MergePoint(PointId src, PointId dst) {
   const std::map<KeyframeId, uint32_t> src_observations = PointOrAbort(m, src).observations;
   PointOrAbort(m, dst);
   SetPointState(this, m, src, PointState::kDead);
+  m.f2_in_merge = true;
   for (const auto& [kf_id, obs_idx] : src_observations) {
     if (PointOrAbort(m, dst).observations.count(kf_id) == 0) {
       AddObservation(dst, obs_idx, kf_id);
     }
   }
+  m.f2_in_merge = false;
+  F2NoteChange(m, dst, PointOrAbort(m, dst), kInvMerge);
 }
 
 // 1127 (WorldMap.adjustPoints / adjustUntriangulatedPoints). Repeats until the dirty set stays
@@ -667,6 +716,15 @@ void WorldMap::RemoveKeyframe(KeyframeId kf_id) {
   const std::set<size_t> world_indices = m.keyframes[kf_id.index()].frame.worldPointIndices();
   for (size_t idx : world_indices) {
     const PointId pid = m.keyframes[kf_id.index()].frame.points()[idx].id();
+    if (F2Enabled()) {
+      WorldPoint& gp = PointOrAbort(m, pid);
+      if (gp.source == PointSource::kGround && gp.f2.creator == kf_id && !gp.f2.creator_lost) {
+        gp.f2.creator_lost = true;  // the plane depth of the seed is undefined from now on
+        gp.f2.state = F2Status::kUnconfirmed;
+        gp.f2.evaluated = false;    // judged once more (too_few_kfs / no_creator), then never again
+        F2NoteChange(m, pid, gp, kInvCreatorDeleted);
+      }
+    }
     AddObservation(PointId::nullId(), static_cast<uint32_t>(idx), kf_id);
     if (PointOrAbort(m, pid).observations.size() < 2) {
       SetPointState(this, m, pid, PointState::kDead);
@@ -764,8 +822,12 @@ std::array<int, 5> WorldMap::NumPointsBySource() const {
 // ---------------------------------------------------------------------------------------------
 // Module-internal functions (world_map_internal.h)
 
-void WorldMapAccess::BindGenerator(WorldMap& map, std::mt19937* generator) {
+void WorldMapAccess::BindGenerator(WorldMap& map, std::mt19937* generator, MapSerials* serials) {
   map.impl_->id_generator = generator;
+  if (serials != nullptr) {
+    map.impl_->serials = serials;
+    map.impl_->f2_last_tracker_epoch = serials->tracker_epoch;
+  }
   map.impl_->map_id = map.impl_->NextId();
 }
 
@@ -847,6 +909,7 @@ struct WorldMaps::Impl {
   // getentropy() word per run; here kIdGeneratorSeed, or a replay's recorded seed.
   std::mt19937 generator{ReplayIdGeneratorSeed().value_or(kIdGeneratorSeed)};
   std::unique_ptr<WorldMap> active;
+  MapSerials serials;  // point / keyframe serials and F2 epochs: they outlive a map reset
   // VioTracker +7240: a second draw right after the first map's id (VioTracker ctor, DCMP:28431).
   // Not read by world SLAM, but it advances the id generator, so every later map / keyframe / point
   // id depends on it. Known gap: the 476 re-creation (disableVio on, DCMP:26247) also makes a new map
@@ -857,7 +920,7 @@ struct WorldMaps::Impl {
 
 WorldMaps::WorldMaps() : impl_(std::make_unique<Impl>()) {
   impl_->active = std::make_unique<WorldMap>();
-  WorldMapAccess::BindGenerator(*impl_->active, &impl_->generator);
+  WorldMapAccess::BindGenerator(*impl_->active, &impl_->generator, &impl_->serials);
   impl_->maps_id = impl_->generator();
 }
 
@@ -870,7 +933,9 @@ const WorldMap& WorldMaps::active() const { return *impl_->active; }
 // 653: the new map (with its id drawn) is created before the old one is destroyed.
 void WorldMaps::ResetMap() {
   auto fresh = std::make_unique<WorldMap>();
-  WorldMapAccess::BindGenerator(*fresh, &impl_->generator);
+  F2NoteMapReset(*impl_->active);
+  ++impl_->serials.map_epoch;
+  WorldMapAccess::BindGenerator(*fresh, &impl_->generator, &impl_->serials);
   impl_->active = std::move(fresh);
 }
 

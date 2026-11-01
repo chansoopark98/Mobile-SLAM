@@ -16,14 +16,14 @@ const event = (timeStamp, interval = 16) => ({ type: 'devicemotion', timeStamp, 
   acceleration: null, accelerationIncludingGravity: { x: 0, y: 9.8, z: 0 }, rotationRate: { alpha: 0, beta: 0, gamma: 0 } });
 
 let serial = 0;
-export async function fixture(enabled, check, sourceDir = chunkDir, extraOptions = {}) {
+export async function fixture(enabled, check, sourceDir = chunkDir, { failAttachGlue = false, ...extraOptions } = {}) {
   const saved = new Map(), listeners = new Map(), calls = [], errors = [], clockCalls = [], poses = [];
   const set = (key, value) => { saved.set(key, Object.getOwnPropertyDescriptor(globalThis, key));
     Object.defineProperty(globalThis, key, { configurable: true, writable: true, value }); };
   const deletedTextures = new Set();
   let now = 1000, failProcess = false, failRead = false, failStage = false, failPush = false,
-    failWorldPoints = false, failDispatch = false, failCreateGlue = false, lost = false, paused = false,
-    readyFence = true, drawFenceReady = true, drawFinishFail = false, drawLost = false, drawError = 0,
+    failWorldPoints = false, failDispatch = false, failCreateGlue = failAttachGlue, lost = false, paused = false,
+    readyFence = true, drawFenceReady = true, drawFinishFail = false, drawLost = false, drawError = 0, drawErrorSticky = false,
     hooks = {}, reads = 0, lastGlue = null, noReadRequest = false, throwErrorCallback = false;
   const originalReadReady = Gr8ComputePyramid.prototype.isReadReady;
   Gr8ComputePyramid.prototype.isReadReady = function () {
@@ -76,7 +76,7 @@ export async function fixture(enabled, check, sourceDir = chunkDir, extraOptions
   const drawGl = new Proxy(gl, { get(target, name) { return name === 'isContextLost' ? () => drawLost
     : name === 'clientWaitSync' ? () => drawFenceReady ? target.ALREADY_SIGNALED : target.TIMEOUT_EXPIRED
       : name === 'finish' ? () => { if (drawFinishFail) throw new Error('injected draw finish failure'); return target.finish(); }
-        : name === 'getError' ? () => { if (drawError) { const error = drawError; drawError = 0; return error; } return target.getError(); }
+        : name === 'getError' ? () => { if (drawError) { const error = drawError; if (!drawErrorSticky) drawError = 0; return error; } return target.getError(); }
         : target[name]; } });
   const framework = { dispatchEvent: (name) => {
     if (hooks.dispatch) hooks.dispatch(name);
@@ -104,7 +104,7 @@ export async function fixture(enabled, check, sourceDir = chunkDir, extraOptions
       snapshot: () => globalThis.__slamRefactChunk.delivery,
       latest: () => globalThis.__slamRefactChunk.sourceTiming, scheduler: () => globalThis.__slamRefactChunk.scheduler, nativeNames: () => lastGlue.getImageTargetNames(),
       drawFenceReady: (v) => { drawFenceReady = v; }, drawFinishFail: (v) => { drawFinishFail = v; },
-      drawError: (v) => { drawError = v; }, failCreateGlue: () => { failCreateGlue = true; },
+      drawError: (v, sticky = false) => { drawError = v; drawErrorSticky = sticky; }, failCreateGlue: () => { failCreateGlue = true; },
       readyFence: (v) => { readyFence = v; }, reads: () => reads, hooks,
       noReadRequest: (v) => { noReadRequest = v; },
       errorCallbackThrows: (v) => { throwErrorCallback = v; },

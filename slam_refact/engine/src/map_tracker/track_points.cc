@@ -3,6 +3,7 @@
 
 #include <cfloat>
 #include <cmath>
+#include <array>
 #include <cstdint>
 #include <deque>
 #include <map>
@@ -14,11 +15,13 @@
 #include "common/check.h"
 #include "compat/libcxx_algorithms.h"
 #include "config/settings.h"
+#include "map/f2_confirm.h"
 #include "map/world_map.h"
 #include "map_tracker/map_tracker.h"
 #include "map_tracker/map_tracker_internal.h"
 #include "reality/engine/features/local-matcher.h"
 #include "reality/engine/geometry/bundle.h"
+#include "slam_refact/accuracy_counters.h"
 
 namespace slam_refact::map_tracker {
 
@@ -74,6 +77,8 @@ void SelectSubset(const map::WorldMap& map, MapTrackResult* result) {
   result->subset_matches.clear();
   result->subset_world_points.clear();
   const size_t m = result->all_obs.size();
+  const bool f2 = map::F2Enabled();  // P2 candidate F2: only confirmed ground points are encouraged
+  int ground_count = 0;
 
   std::vector<uint32_t> order(m);
   for (size_t i = 0; i < m; ++i) {
@@ -82,7 +87,6 @@ void SelectSubset(const map::WorldMap& map, MapTrackResult* result) {
   if (m >= n_max) {
     std::vector<float> score(m, 0.0f);
     const std::vector<c8::FramePoint>& proj = result->projected.frame.points();
-    int ground_count = 0;
     for (size_t i = 0; i < m; ++i) {
       const map::WorldPoint& p = map.Point(result->all_matches[i].id);
       float& s = score[i];
@@ -99,9 +103,13 @@ void SelectSubset(const map::WorldMap& map, MapTrackResult* result) {
           break;
         default:
           s = w.subset_is_non_skypoint_weight + s;
-          if (p.source == map::PointSource::kGround && ground_count < w.encouraged_n_ground_points) {
+          if (p.source == map::PointSource::kGround && ground_count < w.encouraged_n_ground_points &&
+              (!f2 || map::F2StateOf(map, p) == map::F2Status::kConfirmed)) {
             s = s + w.encouraged_ground_point_weight;
             ++ground_count;
+            if (f2) {
+              map::F2NoteBonusGranted();
+            }
           } else if (p.source == map::PointSource::kCloud) {
             s = w.subset_is_cloud_point_weight + s;
           }
@@ -129,6 +137,32 @@ void SelectSubset(const map::WorldMap& map, MapTrackResult* result) {
     libcxx::sort(order.begin(), order.end(),
                  [&score](uint32_t a, uint32_t b) { return score[a] > score[b]; });
     order.resize(n_max);
+  }
+  if (f2) {
+    AccuracyCounters& c = map::MutableCounters();
+    ++c.sel_calls;
+    if (m >= n_max) {
+      ++c.sel_active;
+      c.sel_bonus_granted += static_cast<uint64_t>(ground_count);
+      c.sel_cap_reached += ground_count >= w.encouraged_n_ground_points ? 1 : 0;
+    }
+    auto count = [&](uint32_t i, std::array<uint64_t, 3>* by_state, uint64_t* fresh) {
+      const map::WorldPoint& p = map.Point(result->all_matches[i].id);
+      if (p.source != map::PointSource::kGround) {
+        return;
+      }
+      const map::F2Status st = map::F2StateOf(map, p);
+      ++(*by_state)[st == map::F2Status::kConfirmed ? 0 : st == map::F2Status::kUnconfirmed ? 1 : 2];
+      if (st == map::F2Status::kConfirmed && p.f2.applied_frame == map::F2AppliedFrame()) {
+        ++*fresh;
+      }
+    };
+    for (size_t i = 0; i < m; ++i) {
+      count(static_cast<uint32_t>(i), &c.sel_all_ground, &c.sel_new_confirmed_all);
+    }
+    for (uint32_t i : order) {
+      count(i, &c.sel_subset_ground, &c.sel_new_confirmed_subset);
+    }
   }
   for (uint32_t i : order) {
     result->subset_obs.push_back(result->all_obs[i]);

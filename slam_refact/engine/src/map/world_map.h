@@ -27,6 +27,57 @@
 
 namespace slam_refact::map {
 
+// ---- P2 candidate F2 (f2-contract-v3.3.md, section 6.1). Plain data for the WP2-owned tails below;
+// the logic is in map/f2_confirm.h. Not part of the original; unused while F2 is off.
+enum class F2Status : uint8_t { kUnconfirmed = 0, kConfirmed = 1, kContradicted = 2 };
+// First failing step of the contract 5.2 table (kConfirmed = all passed, kNotEvaluated = none yet).
+// The values 0..8 index AccuracyCounters::f2_eval.
+enum class F2Reason : uint8_t {
+  kConfirmed = 0,
+  kInvalidInput,
+  kTooFewKfs,
+  kDegenerate,
+  kNegativeDepth,
+  kLowParallax,
+  kLargeResidual,
+  kPlaneInvalid,
+  kDepthRatioOutOfBand,
+  kNotEvaluated,
+};
+struct F2Basis {
+  uint32_t kf_id = 0;      // KeyframeId.id() (not the slot)
+  uint64_t kf_serial = 0;  // Keyframe::kf_serial at evaluation
+  uint32_t obs_idx = 0;
+  uint32_t pose_rev = 0;   // Keyframe::pose_rev at evaluation
+  bool operator==(const F2Basis& o) const {
+    return kf_id == o.kf_id && kf_serial == o.kf_serial && obs_idx == o.obs_idx &&
+           pose_rev == o.pose_rev;
+  }
+};
+struct F2PointState {
+  F2Status state = F2Status::kUnconfirmed;
+  F2Reason last_reason = F2Reason::kNotEvaluated;
+  bool evaluated = false;
+  bool no_creator = false;          // detail of last_reason == kTooFewKfs
+  bool creator_lost = false;        // permanent: the creating keyframe is gone
+  KeyframeId creator;               // creating keyframe (slot + id)
+  uint64_t creator_serial = 0;
+  std::vector<F2Basis> basis;       // observations and pose revisions the state was computed from
+  uint64_t basis_hash = 0;
+  uint64_t point_serial_at_eval = 0;
+  uint32_t tracker_epoch = 0;
+  uint32_t map_epoch = 0;
+  int64_t eval_frame = -1;
+  int64_t applied_frame = -1;       // eval_frame + 1: first tracking frame that sees the state
+  double plane_y = -1.0;            // plane the seed was placed on (F1 records its value)
+  bool f1_plane = false;            // F1 placed the seed on plane_y (its creator depth follows plane_y)
+  bool birth_valid = false;
+  double birth_pos[3] = {0.0, 0.0, 0.0};  // seed position at birth (diagnostic)
+  uint32_t birth_creator_rev = 0;   // pose_rev of the creator at birth
+  // Last evaluation values (diagnostic / tests); NaN when the step was not reached.
+  double d_mv = 0.0, d_plane = 0.0, ratio = 0.0, theta_max = 0.0, rho_max = 0.0;
+};
+
 // Map point (0x48 B record; S2 §2.3, S3 §2.5).
 struct WorldPoint {
   uint32_t birth_kf_seq = 0;    // +0x00 keyframe sequence at creation (1562 age)
@@ -41,6 +92,10 @@ struct WorldPoint {
   PointSource source = PointSource::kTriangulated;  // +0x40
   bool loaded_from_map = false; // +0x44
   // ---- WP2-owned tail: WP2 may append members below this line ----
+  // Monotone creation serial (never reused, not reset by WorldMaps::ResetMap). The random point id
+  // may repeat; (id, point_serial) does not (f2-contract-v3.3.md 6.1).
+  uint64_t point_serial = 0;
+  F2PointState f2;
 };
 
 // Keyframe (0x3d8 B record; S2 §2.3, S3 §2.3). The keyframe pose is frame.extrinsic().
@@ -63,6 +118,10 @@ struct Keyframe {
   std::shared_ptr<void> new_points_matcher_gorb;  // +0x3bc LocalMatcher<GorbFeature>(…, 0.05, 32)
   std::shared_ptr<void> epipolar_matcher_orb;     // +0x3c4 epipolar matcher, BinMap 15x20
   std::shared_ptr<void> epipolar_matcher_gorb;    // +0x3c8
+  // Monotone creation serial (see WorldPoint::point_serial) and the number of SetKeyframePose calls
+  // since creation (f2-contract-v3.3.md 6.1).
+  uint64_t kf_serial = 0;
+  uint32_t pose_rev = 0;
 };
 
 // verifyPointVisibility (1549) per-point view: keyframe and observation index in it.
