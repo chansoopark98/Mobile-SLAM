@@ -6,7 +6,9 @@
 #include <array>
 #include <cmath>
 #include <cstdint>
+#include <cstdlib>
 #include <memory>
+#include <string>
 #include <utility>
 #include <vector>
 
@@ -25,6 +27,20 @@
 
 namespace slam_refact::vio_tracker {
 namespace {
+
+// G1 binds its gtest XML to the binary under test: the harness passes the hash of the candidate
+// binary in SR_BINARY_SHA256 and it is recorded as a property of the whole run.
+class BindBinaryEnvironment : public ::testing::Environment {
+ public:
+  void SetUp() override {
+    const char* sha = std::getenv("SR_BINARY_SHA256");
+    if (sha != nullptr && *sha != '\0') {
+      ::testing::Test::RecordProperty("binary_sha256", std::string(sha));
+    }
+  }
+};
+const ::testing::Environment* const kBindBinary =
+    ::testing::AddGlobalTestEnvironment(new BindBinaryEnvironment);
 
 constexpr int64_t kFrameNs = 33333333;
 
