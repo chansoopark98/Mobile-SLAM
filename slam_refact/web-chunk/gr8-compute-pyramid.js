@@ -718,8 +718,9 @@ export class Gr8ComputePyramid {
   }
 
   // onProcessCpu: the pyramid of the last stage() (null when nothing is pending); `lastReadRows` rows of it. The returned
-  // array is reused by the next read().
-  read() {
+  // array is reused by the next read(), unless `dst` (a Uint8Array of at least size * rows * 4 bytes) is given: the readback then
+  // lands in it and the returned view is on dst (engineWorker mode transfers that buffer to the Worker; the default path passes nothing).
+  read(dst = null) {
     if (!this.needsRead) return null;
     this._assertContext('read');
     this.needsRead = false;
@@ -733,7 +734,7 @@ export class Gr8ComputePyramid {
     }
     const pack = gl.getParameter(gl.PIXEL_PACK_BUFFER_BINDING);
     gl.bindBuffer(gl.PIXEL_PACK_BUFFER, this.pixelBuffer);
-    const view = this.out.subarray(0, this.size * this.stageRows * 4);
+    const view = (dst ?? this.out).subarray(0, this.size * this.stageRows * 4);
     gl.getBufferSubData(gl.PIXEL_PACK_BUFFER, 0, view);
     gl.bindBuffer(gl.PIXEL_PACK_BUFFER, null);
     gl.bindBuffer(gl.PIXEL_PACK_BUFFER, pack);

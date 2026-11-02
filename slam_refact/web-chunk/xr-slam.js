@@ -221,10 +221,45 @@ const XrControllerFactory = singleton((runConfig, xrccPromise, logCallback, erro
   // xrccPromise is not used: the original only needs XRCC to share its Emscripten GL texture table
   // (scc.GL.textures = xrcc.GL.textures); this chunk uses XR8's computeTexture objects directly.
   let engine_ = null;  // {Module, loaded}; the original's `scc_`
-  const enginePromise = loadEngine(new URL(ENGINE_DIR, import.meta.url),
-    { print: logCallback(false), printErr: logCallback(true), onAbort: errorCallback })
+  let ew_ = null;      // R1: the engine Worker client when the engine runs in a Worker (opt-in), else null
+  // R1 (opt-in, default OFF): the engine in a dedicated Worker. Nothing of it runs, and engine-worker-client.js is not imported, unless
+  // requested by SLAM_REFACT_CHUNK_OPTIONS.engineWorker (true / {enabled: true}) or ?engineWorker=1. Distinct from ?capture=worker.
+  const engineWorkerAsked = options.engineWorker === true || options.engineWorker?.enabled === true
+    || (options.engineWorker !== false && options.engineWorker?.enabled !== false
+      && (() => { try { return new URLSearchParams(globalThis.location?.search ?? '').get('engineWorker') === '1'; } catch (_) { return false; } })());
+  if (engineWorkerAsked) diag.engineWorker = { requested: true, active: false, fallback: null, stats: null, compileFeatures: null,
+    maxInFlight: Math.max(1, options.engineWorker?.maxInFlight | 0 || 4), pendingBuilds: 0, deferredBuilds: 0,
+    engineMsMeaning: 'main-thread cost of submitting the frame (stats.workerEngineMs is the Worker-side engine time)',
+    limits: ['no frameScheduler', 'no createGlue hook', 'no gpuCheck/roiCheck', 'image targets refused', 'hitTest answers no hit',
+      'pose answers lag the main-thread mode by the frames in flight', 'framesUntilRecenter carried over a rebuild lags by the frames in flight'] };
+  const loadMainEngine = () => loadEngine(new URL(ENGINE_DIR, import.meta.url),
+    { print: logCallback(false), printErr: logCallback(true), onAbort: errorCallback });
+  // Worker first; any failure (no Worker, script error, engine/WASM failure with its classified code) is recorded and the engine is
+  // loaded on the main thread exactly as without the option. If that fails too, its error is the one the chunk reports.
+  const loadWorkerEngine = async () => {
+    const unsupported = options.frameScheduler?.enabled === true ? 'frameScheduler (B1prime) is not supported with engineWorker'
+      : options.createGlue ? 'the createGlue test hook cannot run in a Worker'
+        : options.gpuCheck || options.roiCheck ? 'gpuCheck / roiCheck need the engine on the main thread' : null;
+    try {
+      if (unsupported) throw Object.assign(new Error(`[XR] engineWorker not used: ${unsupported}`), { code: 'engine-worker-unsupported-option' });
+      const client = await import('./engine-worker-client.js');
+      return await client.loadEngineInWorker(new URL(ENGINE_DIR, import.meta.url),
+        { print: logCallback(false), printErr: logCallback(true), onAbort: errorCallback },
+        { maxInFlight: diag.engineWorker.maxInFlight, warn: (m) => warnOnce(m), onFatal: (error) => reportOnce('process', error),  // same key as the frame path's throw of it: one report
+          createWorker: options.engineWorker?.createWorker, workerUrl: options.engineWorker?.workerUrl });
+    } catch (error) {
+      diag.engineWorker.fallback = { code: error && error.code || 'engine-worker-failed', message: String(error && error.message || error) };
+      warnOnce(`[XR] slam_refact engineWorker unavailable (${diag.engineWorker.fallback.code}); the engine runs on the main thread: ${diag.engineWorker.fallback.message}`);
+      return loadMainEngine();
+    }
+  };
+  const enginePromise = (engineWorkerAsked ? loadWorkerEngine() : loadMainEngine())
     .then((r) => {
       engine_ = r;
+      if (r.worker) {
+        ew_ = r.worker;
+        Object.assign(diag.engineWorker, { active: true, stats: ew_.stats, compileFeatures: r.Module.SlamRefactGlue.getCompileFeatures() });
+      }
       // A test hook that replaces the engine glue must not leave the evidence "engine = manifest bytes" looking untouched.
       r.loaded.glueReplaced = !!options.createGlue;
       diag.engine = r.loaded;
@@ -958,6 +993,7 @@ const XrControllerFactory = singleton((runConfig, xrccPromise, logCallback, erro
   };
 
   const destroySession = (reason = 'session-discard') => {
+    ewBuildToken_++;  // R1: cancels a Worker-mode build that waits for its layout (no-op otherwise)
     if (!session_) return;
     const s = session_;
     if (schedulerEnabled) disposeScheduler(s, reason);
@@ -1004,9 +1040,133 @@ const XrControllerFactory = singleton((runConfig, xrccPromise, logCallback, erro
     s.pending = frame;
   };
 
+  // ---- engine Worker mode (R1, opt-in; ew_ is null otherwise and none of this runs) ----
+  // The frame is read back into a buffer the Worker handed back earlier, transferred with its IMU events and orientation, and the
+  // engine answers later: results are applied here in submission order at the next onProcessCpu (so the pose answer lags the
+  // main-thread mode by the frames in flight). The post-processing of a result is the tail of processStagedFrame below.
+  const applyWorkerResult = (s, r) => {
+    const ctx = s.ewFrames.get(r.seq);
+    s.ewFrames.delete(r.seq);
+    if (r.error) {
+      diag.stats.processErrors++;
+      reportOnce('process', r.error);
+      return;
+    }
+    const { f, allZeroes } = ctx;
+    const pose = r.pose;
+    const engineReturnedAtMs = performance.now();
+    diag.stats.processedFrames++;
+    const stageIndex = pose.videoFrameIndex;
+    if (s.delivery) {
+      const d = s.delivery;
+      const inputTimeNanos = f.frameTime ? f.frameTime * 1e9 : f.timeNanos;
+      d.sourceFrames.set(stageIndex, { sourceVideoTimeS: f.videoTime, sourceFrameTimeS: f.frameTime ?? null,
+        sourceTimeNanos: Math.trunc(inputTimeNanos), sourceTimeNanosInput: inputTimeNanos,
+        sourceStageTimeNanos: f.timeNanos, sessionEpoch: d.epoch });
+      while (d.sourceFrames.size > 64) { d.sourceFrames.delete(d.sourceFrames.keys().next().value); d.evicted++; }
+      const source = !pose.repeated || s.hasResponse ? d.sourceFrames.get(pose.sourceFrameIndex) : null;
+      d.sourceTiming = { sourceFrameIndex: pose.sourceFrameIndex, sourceVideoTimeS: null, sourceFrameTimeS: null,
+        sourceTimeNanos: null, sourceTimeNanosInput: null, sourceStageTimeNanos: null,
+        sessionEpoch: d.epoch, ...source, sourceMetadataFound: !!source, repeated: !!pose.repeated, engineReturnedAtMs };
+      d.responses++;
+      if (publication) { publication.newEngineResponse = true; publication.engineFresh = !pose.repeated; }
+    }
+    s.textures.set(stageIndex, f.computeTexture);
+    while (s.textures.size > 32) s.textures.delete(s.textures.keys().next().value);
+    if (!pose.repeated) {
+      s.hasResponse = true;
+      diag.stats.freshResponses++;
+      const lag = stageIndex - pose.sourceFrameIndex;
+      diag.stats.lastSourceFrameIndex = pose.sourceFrameIndex;
+      diag.stats.responseLag[lag] = (diag.stats.responseLag[lag] || 0) + 1;
+      s.activeTexture = s.textures.get(pose.sourceFrameIndex) ?? null;
+      for (const k of s.textures.keys()) if (k < pose.sourceFrameIndex) s.textures.delete(k);
+      if (toCheckAllZeros_ && s.prevAllZeroes !== null) {
+        window._c8.isAllZeroes = s.prevAllZeroes ? 1 : 0;
+        window._c8.wasEverNonZero = !s.prevAllZeroes || window._c8.wasEverNonZero;
+      }
+    }
+    s.prevAllZeroes = allZeroes;
+    s.last = pose;
+    if (!pose.repeated && pose.imageEvents && pose.imageEvents.length) diag.stats.engineImageEventsIgnored += pose.imageEvents.length;
+    const flat = r.world;
+    const points = new Array(flat.length / 5);
+    for (let i = 0, k = 0; i < points.length; i++, k += 5) {
+      points[i] = { id: flat[k], confidence: flat[k + 1], position: { x: flat[k + 2], y: flat[k + 3], z: flat[k + 4] } };
+    }
+    s.lastWorldPoints = points;
+  };
+
+  const drainWorkerResults = (s) => {
+    if (!s.ewFrames) return;
+    for (const r of s.glue.takeResults()) applyWorkerResult(s, r);
+  };
+
+  const processStagedFrameWorker = (s) => {
+    s.ewFrames ??= new Map();
+    drainWorkerResults(s);
+    const f = s.pending;
+    if (!f) return;
+    const g = s.glue;
+    if (g.fatal) throw g.fatal;
+    // The Worker is behind: keep the staged frame (the next stageFrame replaces it and carries its IMU events, droppedStaged), like a
+    // skipped onProcessCpu. Never reached while the Worker keeps up.
+    if (g.inflight >= ew_.maxInFlight) { ew_.stats.backpressureSkips++; return; }
+    s.pending = null;
+    const t0 = performance.now();
+    const size = s.layout.textureSize;
+    const dst = g.acquireAtlas(size * Math.max(s.layout.rows, s.layout.roiAtlasRows | 0) * 4);
+    const atlas = s.pyramid.read(dst);
+    if (!atlas) throw new Error('[XR] slam_refact chunk: no staged pyramid to read');
+    const rows = s.pyramid.lastReadRows;
+    const t1 = performance.now();
+    pushSample(diag.stats.readMs, t1 - t0);
+    const motion = [];
+    const sink = { pushDeviceMotionEvent: (timestampNanos, event) => motion.push([timestampNanos, ew_.plainMotion(event)]) };
+    for (const e of f.events || []) {
+      let accepted;
+      try { accepted = pushMotion(sink, e); }
+      catch (error) { sensors.delivery?.uncertain(e); throw error; }
+      if (accepted) {
+        diag.stats.motionEventsPushed++;
+        sensors.delivery?.pushed(e);
+      } else {
+        diag.stats.motionEventsSkipped++;
+        sensors.delivery?.drop([e], 'invalid-interval');
+        warnOnce('[XR] slam_refact chunk: a DeviceMotion event with an interval outside the 64-bit nanosecond range was skipped (the engine rejects such an event with a JS error; the original throws a RangeError from setEventQueue)');
+      }
+    }
+    const allZeroes = levelIsAllZeroes(atlas, size, s.layout.levels[3]);  // before the transfer detaches the atlas
+    const engineTime = f.frameTime ? f.frameTime * 1e9 : f.timeNanos;  // the engine time argument of the main-thread mode (CHK-1)
+    const videoNs = f.videoTime * 1e9;
+    const seq = g.submitFrame({ motion, orientation: [f.timeNanos, Number(f.alpha), Number(f.beta), Number(f.gamma)],
+      timeNanos: engineTime, videoNs, atlas, size, rows });
+    s.ewFrames.set(seq, { f, allZeroes });
+    pushSample(diag.stats.engineMs, performance.now() - t1);
+  };
+
+  // The pyramid layout of a capture is needed synchronously by createSession; in Worker mode it is fetched from the Worker first
+  // and the session is built when it arrives (a few ms; frames in between get the usual no-session answer). The token cancels a
+  // pending build when the session is destroyed, rebuilt or detached meanwhile. Returns true when the build was deferred.
+  let ewBuildToken_ = 0;
+  const ewDefer = (videoWidth, videoHeight, rotation, run) => {
+    if (!ew_ || ew_.hasLayout(videoWidth, videoHeight, rotation) || unsupportedCapture(videoWidth, videoHeight, rotation)) return false;
+    const token = ++ewBuildToken_;
+    diag.engineWorker.deferredBuilds++;
+    pushEntry(diag.sessionLog, { event: 'layout-pending', videoWidth, videoHeight, rotation });
+    ew_.requestLayout(videoWidth, videoHeight, rotation).then(() => {
+      if (token !== ewBuildToken_) return;
+      try { run(); } catch (error) { session_ = null; errorCallback(error instanceof Error ? error : new Error(String(error))); }
+    }, (error) => {
+      if (token === ewBuildToken_) errorCallback(error instanceof Error ? error : new Error(String(error)));
+    });
+    return true;
+  };
+
   // c8EmAsm_processStagedFrame: read the staged pyramid, push the IMU staged with it, let the glue stage it and
   // track the previous one.
   const processStagedFrame = (s) => {
+    if (ew_) return processStagedFrameWorker(s);
     const f = s.pending;
     if (!f) return;
     s.pending = null;
@@ -1287,6 +1447,9 @@ const XrControllerFactory = singleton((runConfig, xrccPromise, logCallback, erro
         reportOnce('process', error);
         return null;
       }
+    } else if (ew_ && session_.ewFrames) {
+      // Worker mode: a repeated callback has no new frame to submit but still takes the results that arrived since.
+      try { drainWorkerResults(session_); } catch (error) { diag.stats.processErrors++; reportOnce('process', error); return null; }
     }
     const s = session_;
     if (!s.hasResponse || !s.activeTexture) {
@@ -1362,7 +1525,9 @@ const XrControllerFactory = singleton((runConfig, xrccPromise, logCallback, erro
           pushEntry(diag.sessionLog, { event: 'scheduler-attach-failed' });
           reportSchedulerError('scheduler-attach', error);
         }
-      } else session_ = createSession({ videoWidth, videoHeight, rotation, computeCtx: computeCtx_, coords: configured_, framesUntilRecenter: startupFramesLeft_ });
+      } else if (!ewDefer(videoWidth, videoHeight, rotation, () => {
+        session_ = createSession({ videoWidth, videoHeight, rotation, computeCtx: computeCtx_, coords: configured_, framesUntilRecenter: startupFramesLeft_ });
+      })) session_ = createSession({ videoWidth, videoHeight, rotation, computeCtx: computeCtx_, coords: configured_, framesUntilRecenter: startupFramesLeft_ });
       inactiveWarned_ = false;
     }
     isSimulator_ = sessionAttributes.isSimulator === true;
@@ -1573,7 +1738,9 @@ const XrControllerFactory = singleton((runConfig, xrccPromise, logCallback, erro
 
   // Builds the session for a size / orientation change (or a postponed one) and brings the live coordinate system to where the
   // original's engineInit would have it. A failed build is reported (errorCallback: a real failure) and leaves no session.
-  const buildSession = (kind, { videoWidth, videoHeight, orientation, computeCtx }) => {
+  const buildSession = (kind, args) => {
+    const { videoWidth, videoHeight, orientation, computeCtx } = args;
+    if (ewDefer(videoWidth, videoHeight, orientation, () => buildSession(kind, args))) return;
     try {
       // engineInit -> rebuildEngine applies the configured coordinate system; an orientation change then sends P (configureXr).
       // The startup recenter count continues where the destroyed glue was (engineInit does not arm it again).
