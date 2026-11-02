@@ -21,6 +21,7 @@
 #include "c8/hpoint.h"
 #include "common/check.h"
 #include "common/stage_timer.h"
+#include "config/accuracy.h"
 #include "config/settings.h"
 #include "reality/engine/features/frame-point.h"
 #include "reality/engine/features/image-descriptor.h"
@@ -245,11 +246,27 @@ void ApplyResult(map::WorldMap& wm, map::KeyframeId newest, map::KeyframeId cand
   // summation order bit for bit and not the 789 order of spec §9 (U10 resolved). inv() aborts on
   // a non-invertible P_old.
   const c8::HMatrix old_pose = wm.GetKeyframe(newest).frame.extrinsic();
-  out->world_correction = old_pose.inv() * result.pose;
+  // P3 candidate R7 (default off; not part of the original): the accepted loop is closed by a
+  // keyframe pose-graph optimization that spreads the misclosure over the keyframes between the
+  // candidate and the newest one and the points they anchor (pose_graph.h). The newest keyframe
+  // gets exactly result.pose, as below, so C is the original one. Without a usable graph the
+  // original single-keyframe update below is kept. Either way the merge / associate / unlink below and the closing 1127 run after
+  // the keyframe poses are final (R7: correction -> observations added -> adjust), so the points
+  // that receive newest-keyframe observations are re-placed by the original rule from the
+  // corrected poses.
+  const bool graph = config::Accuracy().enabled && config::Accuracy().r7_pose_graph &&
+                     CloseLoopWithPoseGraph(wm, cand, newest, result.pose, &rep->pose_graph);
+  const c8::HMatrix new_pose = graph ? wm.GetKeyframe(newest).frame.extrinsic() : result.pose;
+  out->world_correction = old_pose.inv() * new_pose;
   out->world_transform_updated = true;
 
   StageTimer timer("updateFromLoopCloseResult");
-  wm.SetKeyframePose(newest, result.pose);  // 655
+  if (!graph) {
+    // The original path, unchanged and unchecked like the original (R7 off runs exactly this).
+    // R7 rejects non-finite inputs (loop pose, keyframe poses, solved poses) and then falls back
+    // to this unchanged original behavior; it adds no check of its own here.
+    wm.SetKeyframePose(newest, result.pose);  // 655
+  }
   SR_CHECK(wm.IsKeyframeValid(cand) && wm.IsKeyframeValid(newest),
            "[WorldMap::getKeyframe] WorldMapKeyFrameId mismatch");
 
