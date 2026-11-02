@@ -662,6 +662,28 @@ TEST(P3R7PoseGraph, AdjacentCandidateWithNonFiniteLoopPoseIsRejected) {
   for (size_t k = 0; k < after.pt.size(); ++k) EXPECT_TRUE(SameBits(after.pt[k], before.pt[k])) << k;
 }
 
+// 14. Every raw entry of the loop pose is checked, not only the block the pose graph converts: an
+// adjacent loop whose pose has NaN only at (3,3), or only in the rotation block (0,0), is rejected
+// and the map keeps its bits.
+TEST(P3R7PoseGraph, AdjacentLoopPoseWithANonFiniteEntryAnywhereIsRejected) {
+  for (const size_t entry : {size_t{15}, size_t{0}}) {  // column-major: 15 = (3,3), 0 = (0,0)
+    LoopScene scene(true);
+    map::WorldMap& wm = scene.wm();
+    const MapBits before = Snapshot(wm, scene.points);
+    std::array<float, 16> fwd = scene.pose_true.data();
+    fwd[entry] = std::nanf("");
+    const c8::HMatrix bad(fwd.data(), scene.pose_true.inverseData().data());
+    LoopPoseGraphReport rep;
+    EXPECT_FALSE(CloseLoopWithPoseGraph(wm, scene.middle.back(), scene.newest, bad, &rep)) << entry;
+    EXPECT_FALSE(rep.applied) << entry;
+    EXPECT_FALSE(rep.solve.usable) << entry;
+    EXPECT_EQ(rep.nodes, 2) << entry;
+    const MapBits after = Snapshot(wm, scene.points);
+    for (size_t i = 0; i < after.kf.size(); ++i) EXPECT_TRUE(SameBits(after.kf[i], before.kf[i])) << entry << " " << i;
+    for (size_t k = 0; k < after.pt.size(); ++k) EXPECT_TRUE(SameBits(after.pt[k], before.pt[k])) << entry << " " << k;
+  }
+}
+
 // 11. Ground points keep the original placement rule: a lone ground point whose keyframe is
 // corrected upwards by 0.5 is re-placed by 1127 on the plane y = -1 along its ray from the corrected
 // camera, not carried rigidly to y = -0.5.

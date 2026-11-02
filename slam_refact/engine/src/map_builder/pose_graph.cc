@@ -5,6 +5,7 @@
 
 #include <algorithm>
 #include <array>
+#include <cmath>
 #include <cstddef>
 #include <cstdint>
 #include <map>
@@ -35,6 +36,15 @@ Eigen::Matrix4d ToEigen(const c8::HMatrix& m) {
     }
   }
   return e;
+}
+
+bool AllFinite(const c8::HMatrix& m) {
+  for (size_t i = 0; i < 16; ++i) {
+    if (!std::isfinite(m.data()[i]) || !std::isfinite(m.inverseData()[i])) {
+      return false;
+    }
+  }
+  return true;
 }
 
 Eigen::Isometry3d ToIsometry(const c8::HMatrix& m) {
@@ -252,6 +262,17 @@ bool CloseLoopWithPoseGraph(map::WorldMap& wm, map::KeyframeId cand, map::Keyfra
   }
   const std::vector<map::KeyframeId> nodes(all.begin() + static_cast<std::ptrdiff_t>(first),
                                            all.begin() + static_cast<std::ptrdiff_t>(last) + 1);
+  report->nodes = static_cast<int>(nodes.size());
+  // Raw input check before any conversion (ToIsometry reads only the upper 3x4 block): all 16
+  // forward and 16 inverse entries of the loop pose and of every node pose must be finite.
+  if (!AllFinite(newest_loop_pose)) {
+    return false;
+  }
+  for (const map::KeyframeId kf : nodes) {
+    if (!AllFinite(wm.GetKeyframe(kf).frame.extrinsic())) {
+      return false;
+    }
+  }
   std::vector<Eigen::Isometry3d> poses;
   poses.reserve(nodes.size());
   for (const map::KeyframeId kf : nodes) {
@@ -263,7 +284,6 @@ bool CloseLoopWithPoseGraph(map::WorldMap& wm, map::KeyframeId cand, map::Keyfra
   }
   const size_t end = nodes.size() - 1;
   poses[end] = ToIsometry(newest_loop_pose);  // loop end held at the loop close's pose
-  report->nodes = static_cast<int>(nodes.size());
   report->edges = static_cast<int>(edges.size());
   report->solve = OptimizePoseGraph(&poses, {0, end}, edges);
   if (!report->solve.usable) {
