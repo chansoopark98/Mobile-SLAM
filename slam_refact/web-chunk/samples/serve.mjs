@@ -19,7 +19,10 @@ import http from 'node:http';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 
-export const CHUNK_FILES = ['xr-slam.js', 'engine-loader.js', 'gr8-compute-pyramid.js', 'gr8-shaders.js', 'image-events.js', 'image-targets.js', 'sensors.js'];
+// engine-worker.js / engine-worker-client.js are the opt-in engine Worker (R1, ?engineWorker=1); the default chunk never requests them, and
+// without them the Worker mode falls back to the main-thread engine.
+export const CHUNK_FILES = ['xr-slam.js', 'engine-loader.js', 'gr8-compute-pyramid.js', 'gr8-shaders.js', 'image-events.js', 'image-targets.js', 'sensors.js',
+  'engine-worker.js', 'engine-worker-client.js'];
 export const ENGINE_FILES = ['manifest.json', 'slam_refact_engine.js', 'slam_refact_engine.wasm'];
 const here = path.dirname(fileURLToPath(import.meta.url));
 export const REPO_ROOT = path.resolve(here, '../../..');
