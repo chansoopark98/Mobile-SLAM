@@ -74,6 +74,12 @@ struct AccuracyConfig {
   // F2: a ground point gets the ground preference of the PnP subset selection (+0.55, first 52)
   // only after a multi-view check on at least three keyframes agrees with its plane depth.
   bool f2_ground_confirmation = false;
+  // P3 candidates (build/xr-drift-p3-20261102/preregistration-v4.md). Default off; off leaves the
+  // engine output bit-identical. They need `enabled`.
+  // R6: motion prediction velocity estimated over a time span instead of the last frame pair only.
+  bool r6_span_velocity = false;
+  // R7: a detected loop is closed with a keyframe pose-graph optimization.
+  bool r7_pose_graph = false;
 };
 
 struct EngineConfig {

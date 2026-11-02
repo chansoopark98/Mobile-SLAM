@@ -100,6 +100,8 @@ void ApplyAccuracyEnv(EngineConfig* cfg) {
     else if (k == "metric") a.metric_output = d != 0.0;
     else if (k == "f1") a.f1_ground_plane = d != 0.0;
     else if (k == "f2") a.f2_ground_confirmation = d != 0.0;
+    else if (k == "r6") a.r6_span_velocity = d != 0.0;
+    else if (k == "r7") a.r7_pose_graph = d != 0.0;
     else if (k == "vi") a.vi_prediction = d != 0.0;
     else if (k == "vi_gain") a.vi_velocity_gain = d;
     else if (k == "metric_window") a.metric_window_s = d;
@@ -266,7 +268,8 @@ int Run(int argc, char** argv) {
                  "\"metric_prior_scale\":%.17g,\"local_ba\":%s,\"multiview_triangulation\":%s,"
                  "\"ba_window\":%d,\"ba_ground_points\":%d,\"vi_prediction\":%s,"
                  "\"vi_velocity_gain\":%.17g,\"metric_low_band\":%s,\"metric_fixed_lag_s\":%s,"
-                 "\"detect_surfaces\":%s,\"f1_ground_plane\":%s,\"f2_ground_confirmation\":%s}\n",
+                 "\"detect_surfaces\":%s,\"f1_ground_plane\":%s,\"f2_ground_confirmation\":%s,"
+                 "\"r6_span_velocity\":%s,\"r7_pose_graph\":%s}\n",
                  a.enabled ? "true" : "false", a.metric_output ? "true" : "false", a.metric_window_s,
                  a.metric_prior_scale, a.local_ba ? "true" : "false",
                  a.multiview_triangulation ? "true" : "false", a.ba_window, a.ba_ground_points,
@@ -274,7 +277,8 @@ int Run(int argc, char** argv) {
                  a.metric_low_band ? "true" : "false",
                  std::isfinite(a.metric_fixed_lag_s) ? std::to_string(a.metric_fixed_lag_s).c_str() : "null",
                  glue_config.detect_surfaces ? "true" : "false",
-                 a.f1_ground_plane ? "true" : "false", a.f2_ground_confirmation ? "true" : "false");
+                 a.f1_ground_plane ? "true" : "false", a.f2_ground_confirmation ? "true" : "false",
+                 a.r6_span_velocity ? "true" : "false", a.r7_pose_graph ? "true" : "false");
     std::fclose(f);
   }
   const auto wall_start = std::chrono::steady_clock::now();
