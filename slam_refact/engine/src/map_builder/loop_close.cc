@@ -21,6 +21,7 @@
 #include "c8/hpoint.h"
 #include "common/check.h"
 #include "common/stage_timer.h"
+#include "config/accuracy.h"
 #include "config/settings.h"
 #include "reality/engine/features/frame-point.h"
 #include "reality/engine/features/image-descriptor.h"
@@ -245,11 +246,21 @@ void ApplyResult(map::WorldMap& wm, map::KeyframeId newest, map::KeyframeId cand
   // summation order bit for bit and not the 789 order of spec §9 (U10 resolved). inv() aborts on
   // a non-invertible P_old.
   const c8::HMatrix old_pose = wm.GetKeyframe(newest).frame.extrinsic();
-  out->world_correction = old_pose.inv() * result.pose;
+  // P3 candidate R7 (default off; not part of the original): the accepted loop is closed by a
+  // keyframe pose-graph optimization that moves every keyframe from the candidate to the newest
+  // one and the points they anchor (pose_graph.h). The newest keyframe then has its pose-graph pose
+  // and C carries the tracker onto it. Without a usable graph the original single-keyframe update
+  // below is kept.
+  const bool graph = config::Accuracy().enabled && config::Accuracy().r7_pose_graph &&
+                     CloseLoopWithPoseGraph(wm, cand, newest, result.pose, &rep->pose_graph);
+  const c8::HMatrix new_pose = graph ? wm.GetKeyframe(newest).frame.extrinsic() : result.pose;
+  out->world_correction = old_pose.inv() * new_pose;
   out->world_transform_updated = true;
 
   StageTimer timer("updateFromLoopCloseResult");
-  wm.SetKeyframePose(newest, result.pose);  // 655
+  if (!graph) {
+    wm.SetKeyframePose(newest, result.pose);  // 655
+  }
   SR_CHECK(wm.IsKeyframeValid(cand) && wm.IsKeyframeValid(newest),
            "[WorldMap::getKeyframe] WorldMapKeyFrameId mismatch");
 

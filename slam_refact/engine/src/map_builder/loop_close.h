@@ -15,6 +15,7 @@
 #include "common/tracking_types.h"
 #include "map/world_map.h"
 #include "map_builder/agate_descriptor.h"
+#include "map_builder/pose_graph.h"
 
 namespace slam_refact::map_builder {
 
@@ -67,6 +68,8 @@ struct LoopCloseReport {
   size_t num_matches = 0;
   size_t num_correspondences = 0;
   size_t num_unlinked = 0;         // S12 final loop
+  // P3 candidate R7 (AccuracyConfig::r7_pose_graph, pose_graph.h); untouched while R7 is off.
+  LoopPoseGraphReport pose_graph;
 };
 
 // 654 -> 1263: the agate descriptor of the keyframe's ORB descriptors (descriptor vector order).
@@ -76,6 +79,9 @@ void ComputeKeyframeGlobalDescriptor(LoopCloseState* state, map::Keyframe* kf);
 // S1..S12 (the caller has checked MapBuilder.loopCloseEnabled, S0, and runs the common
 // AdjustDirtyPoints afterwards). Sets out->world_transform_updated and, on success,
 // out->world_correction. Returns true when a loop close was applied.
+// With R7 on (config::Accuracy().enabled && r7_pose_graph) an accepted loop (same acceptance) is
+// closed by CloseLoopWithPoseGraph before the S12 point merge; world_correction is then
+// P_old^-1 * P_new of the newest keyframe with P_new its pose-graph pose.
 bool LoopClose(map::WorldMap& wm, LoopCloseState* state, MapBuilderOutput* out,
                LoopCloseReport* report = nullptr);
 

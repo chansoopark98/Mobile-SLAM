@@ -428,6 +428,13 @@ void MapBuilder::ResetMap(map::WorldMaps* ctx, MapBuilderOutput* out) {
   vps_corrected_kfs_.clear();
 }
 
+// [I] loop close runs when MapBuilder.loopCloseEnabled is set or when the P3 candidate R7
+// (AccuracyConfig::r7_pose_graph, pose_graph.h) is on: R7 closes the loops that this detection
+// accepts. With R7 off this is exactly the config key.
+static bool LoopCloseActive(const config::MapBuilderSettings& s) {
+  return s.loop_close_enabled || (config::Accuracy().enabled && config::Accuracy().r7_pose_graph);
+}
+
 void MapBuilder::Update(map::WorldMaps* ctx, const TrackerInput& frm, const MapTrackerOutput& trk,
                         int64_t frame_ms, MapBuilderOutput* out) {
   StageTimer timer("map-keyframe");
@@ -535,13 +542,13 @@ void MapBuilder::Update(map::WorldMaps* ctx, const TrackerInput& frm, const MapT
   // the original per-frame path never fills that set, so the value is expected to be 0).
   const int world_matches = static_cast<int>(frm.frame_points.worldPointIndices().size());
 #ifdef SLAM_REFACT_LOOP_CLOSE
-  if (s.loop_close_enabled && !loop_close_) {
+  if (LoopCloseActive(s) && !loop_close_) {
     loop_close_ = std::make_unique<LoopCloseState>();
   }
 #endif
   const map::KeyframeId nk = wm.AddKeyframe(frm.frame_points, frame_count_);  // 990 + 654
 #ifdef SLAM_REFACT_LOOP_CLOSE
-  if (s.loop_close_enabled) {
+  if (LoopCloseActive(s)) {
     // 654 calls func 1263 on the stored ORB descriptors here (spec/12-loop-close.md §2.5). It is
     // done at this call site because sr_map cannot depend on sr_map_builder (US025-CC-1).
     ComputeKeyframeGlobalDescriptor(loop_close_.get(), &wm.MutableKeyframe(nk));
@@ -692,7 +699,7 @@ void MapBuilder::Update(map::WorldMaps* ctx, const TrackerInput& frm, const MapT
   }
   // [I] loop close, default off (936.c:4159-5754; spec/12-loop-close.md, US-025). With the option
   // off nothing below the condition is executed or read.
-  if (s.loop_close_enabled) {
+  if (LoopCloseActive(s)) {
 #ifdef SLAM_REFACT_LOOP_CLOSE
     LoopClose(wm, loop_close_.get(), out);
 #else
