@@ -61,6 +61,6 @@ sr_add_unit_test(sr_p2_candidate_test
 if(SLAM_REFACT_LOOP_CLOSE)
   sr_add_unit_test(sr_p3_r7_test
     SOURCES p3_r7_pose_graph_test.cc map_builder_test_util.h
-    LIBS sr_map_builder sr_config
+    LIBS sr_map_builder sr_map_tracker sr_config
     LABELS unit)
 endif()

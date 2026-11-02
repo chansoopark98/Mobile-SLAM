@@ -49,20 +49,31 @@ struct PoseGraphSummary {
 PoseGraphSummary OptimizePoseGraph(std::vector<Eigen::Isometry3d>* poses, size_t fixed,
                                    const std::vector<PoseGraphEdge>& edges);
 
-// Gives each keyframe in `corrected` its new pose (655) and carries every live point along with its
-// reference keyframe, the oldest keyframe (creation order) observing it: X' = P_new * P_old^-1 * X,
-// so the point keeps its coordinates in the reference camera. Positions are written before the
-// poses, so 655 derives the observation depths from the moved points; the common 1127
-// (AdjustDirtyPoints) of the caller re-places the dirty points afterwards. Returns the number of
-// points moved.
-int ApplyKeyframeCorrections(map::WorldMap& wm,
-                             const std::vector<std::pair<map::KeyframeId, c8::HMatrix>>& corrected);
+struct KeyframeCorrectionResult {
+  int checked_points = 0;         // live points observed by a corrected keyframe
+  int moved_points = 0;           // of those, points whose reference keyframe was corrected
+  int unlinked_observations = 0;  // removed by 1150 on the corrected poses
+};
+
+// Gives each keyframe in `corrected` its new pose (655) and re-places every live point that a
+// corrected keyframe observes by its reference keyframe, the oldest keyframe (creation order)
+// observing it: X' = P_new * P_old^-1 * X when the reference keyframe is corrected, X' = X when it
+// is not (e.g. the fixed loop candidate). The point keeps its coordinates in the reference camera.
+// X' is then set with 1150 (WorldMap::SetPointPosition) on the corrected poses: every observation
+// depth is re-derived from X' and an observation whose ray residual exceeds
+// WorldMap.maxInternalSquaredResidualForTriangulatedPts is unlinked, the engine's own rule for a
+// placed point. X' is final for this update: the point leaves the dirty set, so the caller's 1127
+// (AdjustDirtyPoints) does not re-average the observation rays into a position that neither the
+// reference nor the corrected keyframes see (local BA treats its solved positions the same way). A
+// point left without observations stays dirty so that 1127 retires it.
+KeyframeCorrectionResult ApplyKeyframeCorrections(
+    map::WorldMap& wm, const std::vector<std::pair<map::KeyframeId, c8::HMatrix>>& corrected);
 
 struct LoopPoseGraphReport {
   bool applied = false;
   int nodes = 0;
   int edges = 0;
-  int moved_points = 0;
+  KeyframeCorrectionResult points;
   PoseGraphSummary solve;
 };
 

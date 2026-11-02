@@ -24,11 +24,13 @@
 #include "common/tracking_types.h"
 #include "config/accuracy.h"
 #include "config/params.h"
+#include "config/settings.h"
 #include "gtest/gtest.h"
 #include "map/world_map.h"
 #include "map_builder/loop_close.h"
 #include "map_builder/map_builder.h"
 #include "map_builder/pose_graph.h"
+#include "map_tracker/map_tracker.h"
 #include "map_builder_test_util.h"
 #include "reality/engine/features/frame-point.h"
 #include "reality/engine/features/image-descriptor.h"
@@ -93,6 +95,19 @@ double RotationAngle(const c8::HMatrix& a, const c8::HMatrix& b) {
     for (int c = 0; c < 3; ++c) tr += static_cast<double>(a(r, c)) * static_cast<double>(b(r, c));
   }
   return std::acos(std::max(-1.0, std::min(1.0, (tr - 1.0) / 2.0)));
+}
+
+float TranslationDistance(const c8::HMatrix& a, const c8::HMatrix& b) {
+  const float dx = a(0, 3) - b(0, 3);
+  const float dy = a(1, 3) - b(1, 3);
+  const float dz = a(2, 3) - b(2, 3);
+  return std::sqrt(dx * dx + dy * dy + dz * dz);
+}
+
+std::vector<map::KeyframeId> Observers(const map::WorldMap& wm, map::PointId p) {
+  std::vector<map::KeyframeId> out;
+  for (const auto& [kf, idx] : wm.Point(p).observations) out.push_back(kf);
+  return out;
 }
 
 c8::FeatureSet OrbSet(const Desc& d) {
@@ -269,7 +284,10 @@ TEST(P3R7PoseGraph, LoopCloseSuccessPathRunsWithThePoseGraph) {
   }
   const c8::HMatrix& now = wm.GetKeyframe(scene.newest).frame.extrinsic();
   EXPECT_LT(RotationAngle(now, scene.pose_true), RotationAngle(old_newest, scene.pose_true));
+  EXPECT_LT(TranslationDistance(now, scene.pose_true), TranslationDistance(old_newest, scene.pose_true));
   EXPECT_LT(MaxAbsDiff(old_newest * out.world_correction, now), 1e-5f);
+  // the candidate's points are referenced by the fixed candidate: not moved by the graph
+  EXPECT_EQ(rep.pose_graph.points.moved_points, 0);
   // a second attempt with the same newest keyframe: the ring holds the candidate, no new loop
   MapBuilderOutput out2;
   LoopCloseReport rep2;
@@ -308,8 +326,10 @@ TEST(P3R7PoseGraph, MapPointsFollowTheirReferenceKeyframe) {
   const c8::HMatrix new_b = c8::HMatrixGen::translation(0.05f, -0.02f, 0.03f) * pose[1] * c8::HMatrixGen::yRadians(0.04f);
   const c8::HMatrix new_c = c8::HMatrixGen::translation(-0.08f, 0.01f, 0.06f) * pose[2] * c8::HMatrixGen::xRadians(-0.03f);
   const c8::HPoint3 x0_before = wm.Point(pid[0]).position;
-  const int moved = ApplyKeyframeCorrections(wm, {{kf[1], new_b}, {kf[2], new_c}});
-  EXPECT_EQ(moved, 2);
+  const KeyframeCorrectionResult res = ApplyKeyframeCorrections(wm, {{kf[1], new_b}, {kf[2], new_c}});
+  wm.AdjustDirtyPoints();  // 1127 must not re-place the corrected points
+  EXPECT_EQ(res.checked_points, 3);
+  EXPECT_EQ(res.moved_points, 2);
   EXPECT_TRUE(SameBits(wm.Point(pid[0]).position, x0_before));
   EXPECT_TRUE(SameBits(wm.GetKeyframe(kf[0]).frame.extrinsic(), pose[0]));
   EXPECT_TRUE(SameBits(wm.GetKeyframe(kf[1]).frame.extrinsic(), new_b));
@@ -377,6 +397,155 @@ TEST(P3R7PoseGraph, R7EnablesTheLoopCloseDetectionWithoutTheConfigKey) {
   EXPECT_GE(std::get<0>(on).size(), 5u);
   EXPECT_EQ(std::get<2>(off), 0u);
   EXPECT_GT(std::get<2>(on), 0u);
+}
+
+// 6. A point shared by a keyframe that is not corrected (A, like the fixed loop candidate) and a
+// corrected one (B) stays where A sees it, also after 1127; B's observation is kept when its ray
+// still agrees within WorldMap.maxInternalSquaredResidualForTriangulatedPts and unlinked by 1150
+// when it does not. A point referenced by B moves with B and keeps its link.
+TEST(P3R7PoseGraph, SharedPointStaysInTheUncorrectedReferenceFrameAfterAdjust) {
+  const float max_sq = config::WorldMapSettings::Get().max_internal_squared_residual_for_triangulated_pts;
+  for (const float b_new_x : {3.0f, 1.01f}) {
+    map::WorldMaps maps;
+    map::WorldMap& wm = maps.active();
+    const c8::HMatrix pa = Pose(0.0f, 0.0f, 0.0f, 0.0f);
+    const c8::HMatrix pb = Pose(0.0f, 1.0f, 0.0f, 0.0f);
+    const c8::HMatrix pb_new = Pose(0.0f, b_new_x, 0.0f, 0.0f);
+    const c8::HPoint3 xs(0.0f, 0.0f, 5.0f);  // seen by A and B
+    const c8::HPoint3 xb(1.0f, 0.2f, 4.0f);  // seen by B only
+    c8::FrameWithPoints fa(TestIntrinsics());
+    fa.addImageRayPoint(Project(pa, xs), 1, 0.25f, 0.5f, OrbSet(testing::Descriptor(1)));
+    c8::FrameWithPoints fb(TestIntrinsics());
+    fb.addImageRayPoint(Project(pb, xs), 1, 0.25f, 0.5f, OrbSet(testing::Descriptor(2)));
+    fb.addImageRayPoint(Project(pb, xb), 1, 0.25f, 0.5f, OrbSet(testing::Descriptor(3)));
+    const map::KeyframeId a = wm.AddKeyframe(fa, 0);
+    wm.SetKeyframePose(a, pa);
+    const map::KeyframeId b = wm.AddKeyframe(fb, 10);
+    wm.SetKeyframePose(b, pb);
+    const map::PointId ps = wm.AddPoint(0, xs, map::PointSource::kTriangulated);
+    wm.AddObservation(ps, 0, a);
+    wm.AddObservation(ps, 0, b);
+    const map::PointId pbo = wm.AddPoint(0, xb, map::PointSource::kTriangulated);
+    wm.AddObservation(pbo, 1, b);
+    wm.AdjustDirtyPoints();
+    const c8::HPoint3 xs_before = wm.Point(ps).position;
+    const c8::HPoint3 xb_before = wm.Point(pbo).position;
+
+    // expected link of B on xs: its stored ray against xs seen from the corrected B
+    const c8::HPoint2 ray_b = Project(pb, xs_before);
+    const c8::HPoint2 seen = Project(pb_new, xs_before);
+    const float dx = seen.x() - ray_b.x();
+    const float dy = seen.y() - ray_b.y();
+    const bool b_kept = !(dx * dx + dy * dy > max_sq);
+
+    const KeyframeCorrectionResult res = ApplyKeyframeCorrections(wm, {{b, pb_new}});
+    wm.AdjustDirtyPoints();
+    EXPECT_EQ(res.checked_points, 2) << b_new_x;
+    EXPECT_EQ(res.moved_points, 1) << b_new_x;
+    EXPECT_EQ(res.unlinked_observations, b_kept ? 0 : 1) << b_new_x;
+    EXPECT_TRUE(SameBits(wm.Point(ps).position, xs_before)) << b_new_x;  // A's frame
+    const std::vector<map::KeyframeId> expect_obs = b_kept ? std::vector<map::KeyframeId>{a, b}
+                                                           : std::vector<map::KeyframeId>{a};
+    std::vector<map::KeyframeId> sorted_expect = expect_obs;
+    std::sort(sorted_expect.begin(), sorted_expect.end());
+    EXPECT_EQ(Observers(wm, ps), sorted_expect) << b_new_x;
+    EXPECT_NE(wm.Point(ps).state, map::PointState::kDead) << b_new_x;
+    // the point referenced by B moved with B and keeps B's observation
+    const c8::HPoint3 cam_before = pb.inv() * xb_before;
+    const c8::HPoint3 cam_after = pb_new.inv() * wm.Point(pbo).position;
+    EXPECT_NEAR(cam_after.x(), cam_before.x(), 1e-5f) << b_new_x;
+    EXPECT_NEAR(cam_after.y(), cam_before.y(), 1e-5f) << b_new_x;
+    EXPECT_NEAR(cam_after.z(), cam_before.z(), 1e-5f) << b_new_x;
+    EXPECT_EQ(Observers(wm, pbo), std::vector<map::KeyframeId>{b}) << b_new_x;
+    if (b_new_x == 3.0f) {
+      EXPECT_FALSE(b_kept);  // the scene exercises the unlink branch
+    } else {
+      EXPECT_TRUE(b_kept);   // and the keep branch
+    }
+  }
+}
+
+// 7. The tracker frame after the loop close starts from the corrected newest keyframe pose: the
+// MapTracker holds the old newest pose on the keyframe frame, applies the MapBuilderOutput (664),
+// and its pose (the next Track's start pose) equals the pose-graph pose of the newest keyframe.
+TEST(P3R7PoseGraph, NextTrackerFrameStartsFromTheCorrectedNewestPose) {
+  const ScopedAccuracy r7(true);
+  LoopScene scene(true);
+  map::WorldMap& wm = scene.wm();
+  const c8::HMatrix old_newest = wm.GetKeyframe(scene.newest).frame.extrinsic();
+  map_tracker::MapTracker tracker;
+  MapBuilderOutput prime;
+  prime.pose_correction_applied = true;
+  prime.pose_correction = old_newest;  // identity start pose -> old newest pose
+  tracker.ApplyMapBuilderOutput(prime);
+  ASSERT_LT(MaxAbsDiff(tracker.pose(), old_newest), 1e-6f);
+  LoopCloseState st;
+  MapBuilderOutput out;
+  LoopCloseReport rep;
+  ASSERT_TRUE(LoopClose(wm, &st, &out, &rep));
+  ASSERT_TRUE(rep.pose_graph.applied);
+  wm.AdjustDirtyPoints();
+  const c8::HMatrix next_start = tracker.ApplyMapBuilderOutput(out);
+  const c8::HMatrix& corrected = wm.GetKeyframe(scene.newest).frame.extrinsic();
+  EXPECT_LT(MaxAbsDiff(next_start, corrected), 1e-5f);
+  EXPECT_LT(MaxAbsDiff(tracker.pose(), corrected), 1e-5f);
+  EXPECT_GT(MaxAbsDiff(next_start, old_newest), 1e-2f);  // the correction is not hidden
+}
+
+// 8. Graphs without a cycle are refused and leave the map untouched: the candidate equal to the
+// newest keyframe (self candidate) and a candidate that is not older than the newest keyframe.
+TEST(P3R7PoseGraph, SelfCandidateAndUnorderedNodesLeaveTheMapUntouched) {
+  LoopScene scene(true);
+  map::WorldMap& wm = scene.wm();
+  std::vector<c8::HMatrix> kf_before;
+  for (const map::KeyframeId kf : wm.AllKeyframesByCreation()) kf_before.push_back(wm.GetKeyframe(kf).frame.extrinsic());
+  std::vector<c8::HPoint3> pt_before;
+  for (const map::PointId p : scene.points) pt_before.push_back(wm.Point(p).position);
+  LoopPoseGraphReport rep;
+  EXPECT_FALSE(CloseLoopWithPoseGraph(wm, scene.newest, scene.newest, scene.pose_true, &rep));
+  EXPECT_FALSE(rep.applied);
+  EXPECT_EQ(rep.nodes, 0);
+  EXPECT_FALSE(CloseLoopWithPoseGraph(wm, scene.newest, scene.first, scene.pose_true, &rep));  // reversed
+  EXPECT_FALSE(rep.applied);
+  EXPECT_EQ(rep.nodes, 0);
+  size_t i = 0;
+  for (const map::KeyframeId kf : wm.AllKeyframesByCreation()) {
+    EXPECT_TRUE(SameBits(wm.GetKeyframe(kf).frame.extrinsic(), kf_before[i++]));
+  }
+  for (size_t k = 0; k < scene.points.size(); ++k) EXPECT_TRUE(SameBits(wm.Point(scene.points[k]).position, pt_before[k]));
+}
+
+// 9. An unusable solve (non-finite loop measurement) is refused and changes no pose (the loop
+// close then keeps its original single-keyframe update, loop_close.cc ApplyResult).
+TEST(P3R7PoseGraph, UnusableSolveChangesNothing) {
+  std::vector<Eigen::Isometry3d> poses(3, Eigen::Isometry3d::Identity());
+  poses[1].translation() = Eigen::Vector3d(1.0, 0.0, 0.0);
+  poses[2].translation() = Eigen::Vector3d(2.0, 0.0, 0.0);
+  const std::vector<Eigen::Isometry3d> before = poses;
+  Eigen::Isometry3d bad = Eigen::Isometry3d::Identity();
+  bad.translation() = Eigen::Vector3d(std::nan(""), 0.0, 0.0);
+  const std::vector<PoseGraphEdge> edges = {{0, 1, poses[0].inverse() * poses[1]},
+                                            {1, 2, poses[1].inverse() * poses[2]},
+                                            {0, 2, bad}};
+  const PoseGraphSummary s = OptimizePoseGraph(&poses, 0, edges);
+  EXPECT_FALSE(s.usable);
+  for (size_t i = 0; i < poses.size(); ++i) EXPECT_TRUE(poses[i].isApprox(before[i], 0.0)) << i;
+
+  LoopScene scene(true);
+  map::WorldMap& wm = scene.wm();
+  std::vector<c8::HMatrix> kf_before;
+  for (const map::KeyframeId kf : wm.AllKeyframesByCreation()) kf_before.push_back(wm.GetKeyframe(kf).frame.extrinsic());
+  const float nan = std::nanf("");
+  LoopPoseGraphReport rep;
+  EXPECT_FALSE(CloseLoopWithPoseGraph(wm, scene.first, scene.newest,
+                                      c8::HMatrixGen::translation(nan, 0.0f, 0.0f), &rep));
+  EXPECT_FALSE(rep.applied);
+  EXPECT_FALSE(rep.solve.usable);
+  EXPECT_EQ(rep.nodes, 6);
+  size_t i = 0;
+  for (const map::KeyframeId kf : wm.AllKeyframesByCreation()) {
+    EXPECT_TRUE(SameBits(wm.GetKeyframe(kf).frame.extrinsic(), kf_before[i++]));
+  }
 }
 
 }  // namespace

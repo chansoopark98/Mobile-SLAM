@@ -18,6 +18,7 @@
 #include "c8/quaternion.h"
 #include "common/check.h"
 #include "common/stage_timer.h"
+#include "map/world_map_internal.h"
 
 namespace slam_refact::map_builder {
 namespace {
@@ -141,27 +142,31 @@ PoseGraphSummary OptimizePoseGraph(std::vector<Eigen::Isometry3d>* poses, size_t
   return out;
 }
 
-int ApplyKeyframeCorrections(map::WorldMap& wm,
-                             const std::vector<std::pair<map::KeyframeId, c8::HMatrix>>& corrected) {
+KeyframeCorrectionResult ApplyKeyframeCorrections(
+    map::WorldMap& wm, const std::vector<std::pair<map::KeyframeId, c8::HMatrix>>& corrected) {
+  KeyframeCorrectionResult result;
   // world_from_world change of each corrected keyframe, from the poses as stored (float).
   std::map<map::KeyframeId, Eigen::Matrix4d> delta;
   for (const auto& [kf, pose] : corrected) {
     SR_CHECK(wm.IsKeyframeValid(kf), "[pose_graph] corrected keyframe is not valid");
     delta[kf] = ToEigen(pose) * ToEigen(wm.GetKeyframe(kf).frame.extrinsic()).inverse();
   }
-  int moved = 0;
+  // Points observed by a corrected keyframe and their position X' (pool order).
+  std::vector<std::pair<map::PointId, c8::HPoint3>> placed;
   for (const map::PointId pid : wm.AllPointIds()) {
     const map::WorldPoint* p = wm.FindPoint(pid);
     if (p == nullptr || p->state == map::PointState::kDead) {
       continue;
     }
     bool found = false;
+    bool affected = false;
     map::KeyframeId ref;
     int64_t ref_creation = 0;
     for (const auto& [kf, obs_idx] : p->observations) {
       if (!wm.IsKeyframeValid(kf)) {
         continue;
       }
+      affected = affected || delta.count(kf) != 0;
       const int64_t creation = wm.GetKeyframe(kf).creation_frame;
       if (!found || creation < ref_creation) {
         found = true;
@@ -169,25 +174,41 @@ int ApplyKeyframeCorrections(map::WorldMap& wm,
         ref_creation = creation;
       }
     }
-    if (!found) {
+    if (!affected) {
       continue;
     }
     const auto it = delta.find(ref);
     if (it == delta.end()) {
+      placed.emplace_back(pid, p->position);  // reference keyframe not corrected: X' = X
       continue;
     }
     const auto& raw = p->position.raw();
     const Eigen::Vector3d x(static_cast<double>(raw[0] / raw[3]), static_cast<double>(raw[1] / raw[3]),
                             static_cast<double>(raw[2] / raw[3]));
     const Eigen::Vector3d y = it->second.block<3, 3>(0, 0) * x + it->second.block<3, 1>(0, 3);
-    wm.MutablePoint(pid).position =
-        c8::HPoint3(static_cast<float>(y.x()), static_cast<float>(y.y()), static_cast<float>(y.z()));
-    ++moved;
+    const c8::HPoint3 moved(static_cast<float>(y.x()), static_cast<float>(y.y()), static_cast<float>(y.z()));
+    wm.MutablePoint(pid).position = moved;  // before 655, so its depths and point views use X'
+    placed.emplace_back(pid, moved);
+    ++result.moved_points;
   }
+  result.checked_points = static_cast<int>(placed.size());
   for (const auto& [kf, pose] : corrected) {
-    wm.SetKeyframePose(kf, pose);  // 655: depths from the moved points, dirty set
+    wm.SetKeyframePose(kf, pose);  // 655: depths, point views, dirty set
   }
-  return moved;
+  map::WorldMapAccess::Impl& impl = map::WorldMapAccess::impl(wm);
+  for (const auto& [pid, position] : placed) {
+    const size_t before = wm.Point(pid).observations.size();
+    wm.SetPointPosition(pid, position);  // 1150 on the corrected poses
+    const size_t after = wm.Point(pid).observations.size();
+    result.unlinked_observations += static_cast<int>(before - after);
+    if (after == 0) {
+      // Unlinking the last observation does not dirty a point by itself; 1127 must retire it.
+      wm.MarkPointDirty(pid);
+    } else {
+      impl.dirty.erase(pid);  // X' is final for this update
+    }
+  }
+  return result;
 }
 
 bool CloseLoopWithPoseGraph(map::WorldMap& wm, map::KeyframeId cand, map::KeyframeId newest,
@@ -229,7 +250,7 @@ bool CloseLoopWithPoseGraph(map::WorldMap& wm, map::KeyframeId cand, map::Keyfra
   for (size_t i = 1; i < nodes.size(); ++i) {
     corrected.emplace_back(nodes[i], ToHMatrix(poses[i]));
   }
-  report->moved_points = ApplyKeyframeCorrections(wm, corrected);
+  report->points = ApplyKeyframeCorrections(wm, corrected);
   report->applied = true;
   return true;
 }
