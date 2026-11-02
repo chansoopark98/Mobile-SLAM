@@ -18,6 +18,13 @@
 //   residual  [p_ab_est - p_ab; 2 vec(q_ab * q_ab_est^-1)], unit weight, no robust loss
 // So R7 = the original loop close of the newest keyframe + the misclosure spread over the
 // keyframes between the candidate and the newest one (and the triangulated points they anchor).
+// With both ends anchored the graph has no gauge freedom (no local null space), but the objective
+// is non-convex in rotation: for large misclosures (rotation errors approaching 180 degrees) a
+// unique global minimum is not guaranteed and LM returns the local minimum reached from the
+// pre-loop poses. With only the candidate and the newest keyframe (adjacent) there is no free node
+// and nothing is solved; the newest keyframe gets the loop pose as in the original. Non-finite
+// input poses or measurements make the graph unusable on every path (the caller then keeps the
+// original update).
 //
 // SE(3), not Sim(3): the loop measurement is a 6-DoF PnP pose (scale 1) against the candidate's
 // points, so a scale ratio between the two loop ends is not measured; and the map scale is tied at

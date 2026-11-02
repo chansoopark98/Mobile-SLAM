@@ -606,6 +606,62 @@ TEST(P3R7PoseGraph, LoopCloseFullPathPlacesMatchedPointsByTheOriginalRule) {
   }
 }
 
+// Pose bits of every keyframe in creation order and position bits of the given points.
+struct MapBits {
+  std::vector<c8::HMatrix> kf;
+  std::vector<c8::HPoint3> pt;
+};
+
+MapBits Snapshot(const map::WorldMap& wm, const std::vector<map::PointId>& points) {
+  MapBits b;
+  for (const map::KeyframeId kf : wm.AllKeyframesByCreation()) b.kf.push_back(wm.GetKeyframe(kf).frame.extrinsic());
+  for (const map::PointId p : points) b.pt.push_back(wm.Point(p).position);
+  return b;
+}
+
+// 12. Candidate and newest keyframe adjacent (two nodes, no free node): nothing is solved and the
+// newest keyframe gets exactly the loop pose, every other keyframe and the candidate's points keep
+// their bits (the original single-keyframe update).
+TEST(P3R7PoseGraph, AdjacentCandidateBehavesAsTheOriginalLoopClose) {
+  LoopScene scene(true);
+  map::WorldMap& wm = scene.wm();
+  const MapBits before = Snapshot(wm, scene.points);
+  const map::KeyframeId cand = scene.middle.back();  // created right before the newest keyframe
+  LoopPoseGraphReport rep;
+  ASSERT_TRUE(CloseLoopWithPoseGraph(wm, cand, scene.newest, scene.pose_true, &rep));
+  EXPECT_TRUE(rep.applied);
+  EXPECT_EQ(rep.nodes, 2);
+  EXPECT_EQ(rep.edges, 1);
+  EXPECT_TRUE(rep.solve.usable);
+  EXPECT_EQ(rep.solve.iterations, 0);
+  EXPECT_EQ(rep.points.checked_points, 0);
+  const MapBits after = Snapshot(wm, scene.points);
+  const std::vector<map::KeyframeId> order = wm.AllKeyframesByCreation();
+  for (size_t i = 0; i < order.size(); ++i) {
+    const bool is_newest = order[i] == scene.newest;
+    EXPECT_TRUE(SameBits(after.kf[i], is_newest ? scene.pose_true : before.kf[i])) << i;
+  }
+  for (size_t k = 0; k < after.pt.size(); ++k) EXPECT_TRUE(SameBits(after.pt[k], before.pt[k])) << k;
+}
+
+// 13. The same adjacent pair with a non-finite loop pose: refused before anything is applied, the
+// map keeps its bits (the caller then keeps the original update).
+TEST(P3R7PoseGraph, AdjacentCandidateWithNonFiniteLoopPoseIsRejected) {
+  LoopScene scene(true);
+  map::WorldMap& wm = scene.wm();
+  const MapBits before = Snapshot(wm, scene.points);
+  const float nan = std::nanf("");
+  LoopPoseGraphReport rep;
+  EXPECT_FALSE(CloseLoopWithPoseGraph(wm, scene.middle.back(), scene.newest,
+                                      c8::HMatrixGen::translation(nan, 0.0f, 0.0f), &rep));
+  EXPECT_FALSE(rep.applied);
+  EXPECT_FALSE(rep.solve.usable);
+  EXPECT_EQ(rep.nodes, 2);
+  const MapBits after = Snapshot(wm, scene.points);
+  for (size_t i = 0; i < after.kf.size(); ++i) EXPECT_TRUE(SameBits(after.kf[i], before.kf[i])) << i;
+  for (size_t k = 0; k < after.pt.size(); ++k) EXPECT_TRUE(SameBits(after.pt[k], before.pt[k])) << k;
+}
+
 // 11. Ground points keep the original placement rule: a lone ground point whose keyframe is
 // corrected upwards by 0.5 is re-placed by 1127 on the plane y = -1 along its ray from the corrected
 // camera, not carried rigidly to y = -0.5.

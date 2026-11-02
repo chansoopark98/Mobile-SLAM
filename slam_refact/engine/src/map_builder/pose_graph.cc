@@ -90,6 +90,15 @@ PoseGraphSummary OptimizePoseGraph(std::vector<Eigen::Isometry3d>* poses, const 
   for (const size_t f : fixed) {
     SR_CHECK(f < n, "[pose_graph] fixed node out of range");
   }
+  // Every input pose (fixed ones included: they are applied as given) and every measurement must
+  // be finite; otherwise the graph is not usable and the caller keeps its fallback. Checked on
+  // every path, also when nothing is left to solve.
+  for (const Eigen::Isometry3d& pose : *poses) {
+    if (!pose.matrix().allFinite()) return out;
+  }
+  for (const PoseGraphEdge& e : edges) {
+    if (!e.a_from_b.matrix().allFinite()) return out;
+  }
   std::vector<std::array<double, 3>> p(n);
   std::vector<std::array<double, 4>> q(n);  // Eigen order x, y, z, w
   for (size_t i = 0; i < n; ++i) {
@@ -141,12 +150,16 @@ PoseGraphSummary OptimizePoseGraph(std::vector<Eigen::Isometry3d>* poses, const 
   if (!out.usable) {
     return out;
   }
+  std::vector<Eigen::Isometry3d> solved(n, Eigen::Isometry3d::Identity());
   for (size_t i = 0; i < n; ++i) {
-    Eigen::Isometry3d iso = Eigen::Isometry3d::Identity();
-    iso.linear() = Eigen::Quaterniond(q[i][3], q[i][0], q[i][1], q[i][2]).normalized().toRotationMatrix();
-    iso.translation() = Eigen::Vector3d(p[i][0], p[i][1], p[i][2]);
-    (*poses)[i] = iso;
+    solved[i].linear() = Eigen::Quaterniond(q[i][3], q[i][0], q[i][1], q[i][2]).normalized().toRotationMatrix();
+    solved[i].translation() = Eigen::Vector3d(p[i][0], p[i][1], p[i][2]);
+    if (!solved[i].matrix().allFinite()) {
+      out.usable = false;
+      return out;
+    }
   }
+  *poses = solved;
   return out;
 }
 
