@@ -7,11 +7,20 @@ namespace slam_refact::vio_tracker {
 
 void SpanVelocity::Restart() { pose_count_ = 0; }
 
+void SpanVelocity::Break() {
+  pose_count_ = 0;
+  have_last_time_ = false;
+}
+
 void SpanVelocity::Push(int64_t time_ns, float x, float y, float z) {
-  if (have_last_time_ && time_ns > last_time_ns_) {
-    std::copy_backward(intervals_.begin(), intervals_.end() - 1, intervals_.end());
-    intervals_[0] = time_ns - last_time_ns_;
-    interval_count_ = std::min(interval_count_ + 1, kIntervals);
+  if (have_last_time_) {
+    if (time_ns > last_time_ns_) {
+      std::copy_backward(intervals_.begin(), intervals_.end() - 1, intervals_.end());
+      intervals_[0] = time_ns - last_time_ns_;
+      interval_count_ = std::min(interval_count_ + 1, kIntervals);
+    } else {
+      pose_count_ = 0;  // time did not increase: earlier poses are another time segment
+    }
   }
   have_last_time_ = true;
   last_time_ns_ = time_ns;

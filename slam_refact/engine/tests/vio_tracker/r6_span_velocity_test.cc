@@ -64,7 +64,15 @@ TEST(R6SpanVelocity, ShortPairDoesNotInflateVelocity) {
   t = t - kFrameNs + 3300000;
   h.Step(t, static_cast<float>(0.3 * t * 1e-9 + 0.004), 0.f, 0.f);
   EXPECT_GT(Len(h.orig[1].velocity), 1.0f) << "the original estimate must show the inflation";
-  EXPECT_LT(std::fabs(Len(h.r6[1].velocity) - 0.3f), 0.15f);
+  // Exact expectation: the last seven intervals are six nominal ones and the 3.3 ms one, so the
+  // median is kFrameNs; the spans from the newest pose are 3.3 ms (error ~30 ms) and 36.6 ms (error
+  // 3.3 ms): the reference is the pose two frames back, and v = dx / real dt of that span.
+  EXPECT_EQ(h.span.nominal_interval_ns(), kFrameNs);
+  const int64_t t8 = 8 * kFrameNs;
+  const double expect_vx = (0.3 * t * 1e-9 + 0.004 - 0.3 * t8 * 1e-9) / ((t - t8) * 1e-9);
+  EXPECT_NEAR(h.r6[1].velocity.x(), expect_vx, 1e-4);
+  EXPECT_NEAR(expect_vx, 0.3 + 0.004 / ((t - t8) * 1e-9), 1e-9);  // = 0.409 u/s, not 1.5 u/s
+  EXPECT_EQ(h.r6[1].velocity.y(), 0.0f);
   // The prediction step of the next frame (one nominal interval later) follows the velocity.
   const FrameRecord next = RecordAt(t + kFrameNs);
   const FrameState po = PredictMotionWithParams(h.orig[1], next, 0.f, 0.f);
@@ -118,11 +126,23 @@ TEST(R6SpanVelocity, RestartAndGapDoNotReachAcrossTheDiscontinuity) {
   h.Step(t, 0.01f, 0.f, 0.f);
   t += kFrameNs;
   EXPECT_NEAR(h.r6[1].velocity.x(), 0.01f / (kFrameNs * 1e-9f), 1e-3f);
-  // A map reset without a world transform (restart only): that frame keeps the original velocity
-  // (no pose before the reset is used), and the next frame is clean.
+  // A map reset without a world transform (restart only): R6 keeps the ORIGINAL velocity of that
+  // frame, which UpdateHistory computed across the reset (the jump, ~ -1500 u/s). That is deliberate:
+  // R6 changes only the span rule, so the reset-crossing velocity, the acceleration and the next
+  // frame's prediction are the original values bit for bit.
   h.Step(t, -50.f, 0.f, 0.f, /*restart=*/true, /*world=*/false);
+  EXPECT_LT(h.orig[1].velocity.x(), -1000.f);
+  for (int i = 0; i < 3; ++i) {
+    EXPECT_EQ(h.r6[1].velocity.data()[i], h.orig[1].velocity.data()[i]);
+    EXPECT_EQ(h.r6[1].acceleration.data()[i], h.orig[1].acceleration.data()[i]);
+  }
+  {
+    const FrameRecord next = RecordAt(t + kFrameNs);
+    const FrameState po = PredictMotionWithParams(h.orig[1], next, 0.5f, 0.2f);
+    const FrameState pr = PredictMotionWithParams(h.r6[1], next, 0.5f, 0.2f);
+    for (int i = 0; i < 16; ++i) EXPECT_EQ(pr.pose.data()[i], po.pose.data()[i]);
+  }
   t += kFrameNs;
-  EXPECT_EQ(h.r6[1].velocity.x(), h.orig[1].velocity.x());
   h.Step(t, -49.99f, 0.f, 0.f);
   t += kFrameNs;
   EXPECT_NEAR(h.r6[1].velocity.x(), 0.01f / (kFrameNs * 1e-9f), 1e-1f);
@@ -163,9 +183,54 @@ TEST(R6SpanVelocity, RotationPathUnchanged) {
   EXPECT_NE(po.pose(0, 3), pr.pose(0, 3));  // only the position differs
 }
 
+// Seven distinct intervals (ms, oldest -> newest): 31 38 29 35 33 27 11. Sorted 11 27 29 31 33 35
+// 38, median (index 3) = 31 ms. Spans from the newest pose: 11 (error 20), 38 (error 7), 71, 106,
+// 135, 173 (errors 40, 75, 104, 142); the reference is the second earlier pose (index 2), span 38 ms.
+TEST(R6SpanVelocity, MedianReferenceAndVelocityMatchHandComputedValues) {
+  const int64_t kMs = 1000000;
+  const int64_t intervals_ms[7] = {31, 38, 29, 35, 33, 27, 11};
+  const double xs[8] = {1.0, 1.25, 1.5, 2.0, 2.5, 3.0, 3.875, 4.0};  // x of poses 0..7, oldest first
+  SpanVelocity span;
+  int64_t t = 5 * kMs;
+  span.Push(t, static_cast<float>(xs[0]), 0.f, 0.f);
+  for (int i = 0; i < 7; ++i) {
+    t += intervals_ms[i] * kMs;
+    span.Push(t, static_cast<float>(xs[i + 1]), 0.f, 0.f);
+  }
+  EXPECT_EQ(span.nominal_interval_ns(), 31 * kMs);
+  c8::HVector3 v;
+  ASSERT_TRUE(span.Estimate(&v));
+  // Newest pose 7 (x = 4.0) over pose 5 (x = 3.0) across 27 + 11 = 38 ms (intervals 6 and 7).
+  const double expected = (4.0 - 3.0) / 0.038;
+  EXPECT_NEAR(v.x(), expected, expected * 4 * 1.2e-7);  // a few float ulp
+  EXPECT_EQ(v.y(), 0.0f);
+  EXPECT_EQ(v.z(), 0.0f);
+}
+
+// Non-increasing time restarts the ring: a later forward jump cannot select a pose of the earlier
+// time segment (here the 99 ms pose, 34 ms before the new 133 ms pose, would be the closest span).
+TEST(R6SpanVelocity, NonIncreasingTimeRestartsTheRing) {
+  const int64_t kMs = 1000000;
+  SpanVelocity span;
+  for (int k = 0; k < 6; ++k) span.Push(k * 33 * kMs, 100.f + k, 0.f, 0.f);  // 0 .. 165 ms
+  ASSERT_EQ(span.nominal_interval_ns(), 33 * kMs);
+  span.Push(100 * kMs, 500.f, 0.f, 0.f);  // time went backwards
+  EXPECT_EQ(span.pose_count(), 1);
+  c8::HVector3 v;
+  EXPECT_FALSE(span.Estimate(&v));
+  span.Push(133 * kMs, 501.f, 0.f, 0.f);  // forward again
+  ASSERT_TRUE(span.Estimate(&v));
+  EXPECT_NEAR(v.x(), 1.0 / 0.033, 1e-3);  // reference = the 100 ms pose, not a pre-backjump one
+  // The same timestamp twice is also a restart (and no zero interval enters the median).
+  span.Push(133 * kMs, 502.f, 0.f, 0.f);
+  EXPECT_EQ(span.pose_count(), 1);
+  EXPECT_EQ(span.nominal_interval_ns(), 33 * kMs);
+}
+
 // ---- through VioTracker: the flag gate ----
 struct FakeModules : public TrackerModules {
   c8::HMatrix tam = c8::HMatrixGen::i();
+  bool map_reset = false;
   FrameState last_prediction;
   void Detect(const c8::Gr8Pyramid&, const c8::DetectionConfig&, c8::FrameWithPoints*) override {}
   frontend::DetectStats detect_stats() const override { return {}; }
@@ -176,6 +241,7 @@ struct FakeModules : public TrackerModules {
   }
   void UpdateMap(const TrackerInput&, const MapTrackerOutput&, int64_t, MapBuilderOutput* out) override {
     *out = MapBuilderOutput();
+    out->map_reset = map_reset;
   }
   c8::HMatrix ApplyMapBuilderOutput(const MapBuilderOutput&) override { return tam; }
   void RecreateMapTrackerAndBuilder() override {}
@@ -243,6 +309,114 @@ TEST(R6SpanVelocity, FlagGateThroughTracker) {
   EXPECT_GT(base[after_short], 0.05f);
   EXPECT_LT(on[after_short], 0.02f);
   for (size_t i = 0; i < 8; ++i) EXPECT_EQ(on[i], base[i]) << i;  // uniform part: identical
+}
+
+
+// One tracker driven frame by frame; the same script runs with R6 off and on.
+struct TrackerRun {
+  TrackerRun(bool enabled, bool r6) : scoped(enabled, r6) {
+    cfg.enabled = enabled;
+    cfg.r6_span_velocity = r6;
+    config::RegisterDefaults();
+    auto f = std::make_unique<FakeModules>();
+    fake = f.get();
+    tracker = NewVioTrackerWithModules(false, false, std::move(f));
+    pyr.levels.push_back(c8::LevelLayout{});
+  }
+  void Track(int64_t t_ns, float x, bool map_reset = false) {
+    config::SetAccuracy(cfg);  // process-global: each run sets its own before every frame
+    fake->tam = PoseAt(x, 0.f, 0.f);
+    fake->map_reset = map_reset;
+    TrackingSensorFrame frame;
+    frame.time_ns = t_ns;
+    frame.device_pose = c8::Quaternion(1, 0, 0, 0);
+    tracker->Track(frame, pyr, &rng, &status, &debug);
+  }
+  const FrameState& hist() { return VioTrackerAccess::state(*tracker).hist[1]; }
+  SpanVelocity& span() { return VioTrackerAccess::state(*tracker).span; }
+  ScopedAccuracy scoped;
+  AccuracyConfig cfg;
+  FakeModules* fake = nullptr;
+  std::unique_ptr<VioTracker> tracker;
+  c8::Gr8Pyramid pyr;
+  compat::RandomNumbers rng;
+  StatusOut status;
+  TrackDebug debug;
+};
+
+void ExpectSameVelocityAndPrediction(TrackerRun& a, TrackerRun& b, const char* what) {
+  for (int i = 0; i < 3; ++i) {
+    EXPECT_EQ(a.hist().velocity.data()[i], b.hist().velocity.data()[i]) << what << " v" << i;
+    EXPECT_EQ(a.hist().acceleration.data()[i], b.hist().acceleration.data()[i]) << what << " a" << i;
+  }
+  for (int i = 0; i < 16; ++i) {
+    EXPECT_EQ(a.tracker->last_prediction().pose.data()[i], b.tracker->last_prediction().pose.data()[i])
+        << what << " pred " << i;
+  }
+}
+
+// Map reset through the tracker: the reset frame's velocity (computed across the reset by the
+// original UpdateHistory) and every later prediction equal the R6-off values bit for bit; the frame
+// right after the reset is a 3.3 ms pair, which would pick a pre-reset pose if the ring survived.
+TEST(R6SpanVelocity, MapResetKeepsTheOriginalVelocityAndPrediction) {
+  TrackerRun off(true, false), on(true, true);
+  int64_t t = 5000000000LL;
+  float x = 0.f;
+  const auto both = [&](int64_t tt, float xx, bool reset) {
+    off.Track(tt, xx, reset);
+    on.Track(tt, xx, reset);
+  };
+  for (int k = 0; k < 10; ++k) {
+    both(t, x, false);
+    t += kFrameNs;
+    x += 0.01f;
+  }
+  both(t, -50.f, true);  // map reset: pose jumps
+  ASSERT_LT(on.hist().velocity.x(), -1000.f);  // the reset-crossing original velocity is kept
+  ExpectSameVelocityAndPrediction(off, on, "reset frame");
+  EXPECT_EQ(on.span().pose_count(), 1);
+  t += 3300000;
+  both(t, -49.99f, false);
+  ExpectSameVelocityAndPrediction(off, on, "3.3 ms after reset");
+  t += kFrameNs;
+  both(t, -49.98f, false);
+  ExpectSameVelocityAndPrediction(off, on, "next prediction");
+}
+
+// SetDisableVio: the ring is cut on both transitions and disabled frames are not pushed. After
+// switching on again the 3.3 ms pair has no earlier reference, so it equals the R6-off values.
+TEST(R6SpanVelocity, DisableVioTransitionCutsTheRing) {
+  TrackerRun off(true, false), on(true, true);
+  int64_t t = 5000000000LL;
+  float x = 0.f;
+  const auto both = [&](int64_t tt, float xx) {
+    off.Track(tt, xx);
+    on.Track(tt, xx);
+  };
+  for (int k = 0; k < 10; ++k) {
+    both(t, x);
+    t += kFrameNs;
+    x += 0.01f;
+  }
+  ASSERT_GT(on.span().pose_count(), 5);
+  off.tracker->SetDisableVio(true);
+  on.tracker->SetDisableVio(true);
+  EXPECT_EQ(on.span().pose_count(), 0);
+  for (int k = 0; k < 3; ++k) {  // disabled frames: not pushed
+    both(t, 0.f);
+    t += kFrameNs;
+    EXPECT_EQ(on.span().pose_count(), 0);
+  }
+  off.tracker->SetDisableVio(false);
+  on.tracker->SetDisableVio(false);
+  EXPECT_EQ(on.span().pose_count(), 0);
+  both(t, 5.f);
+  EXPECT_EQ(on.span().pose_count(), 1);
+  ExpectSameVelocityAndPrediction(off, on, "first frame after enabling");
+  t += 3300000;
+  both(t, 5.004f);  // short pair: only the one new pose can be the reference
+  ExpectSameVelocityAndPrediction(off, on, "short pair after enabling");
+  EXPECT_EQ(on.span().pose_count(), 2);
 }
 
 }  // namespace

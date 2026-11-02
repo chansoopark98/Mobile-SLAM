@@ -13,8 +13,15 @@
 // the original one bit for bit; an unusually short pair is replaced by the pair that spans one
 // nominal interval; a long interval (gap) is already farther above nominal than any longer span, so
 // it is used as it is. The velocity always divides by the real time between its two poses, and the
-// prediction multiplies by the real time to the current frame (PredictMotion, unchanged). Poses
-// from before a discontinuity (map reset, world transform, pose correction) are never used.
+// prediction multiplies by the real time to the current frame (PredictMotion, unchanged).
+//
+// Discontinuities (map reset, world transform, pose correction; VIO switched off or on; a
+// timestamp that does not increase) restart the pose ring: no pose from before the event is a
+// reference afterwards. R6 deliberately changes nothing else at such an event. The velocity that
+// UpdateHistory computes on a map-reset frame from the poses across the reset is kept exactly as in
+// the original (it is not corrected or limited), and so is the prediction of the next frame; with a
+// world transform / pose correction the original also keeps the previous velocity. So the effect of
+// the R6 arm is attributable to the span rule alone.
 
 #ifndef SLAM_REFACT_VIO_TRACKER_SPAN_VELOCITY_H_
 #define SLAM_REFACT_VIO_TRACKER_SPAN_VELOCITY_H_
@@ -38,13 +45,20 @@ class SpanVelocity {
   // Poses pushed before this call are not used for a velocity any more. The interval history is a
   // property of the camera stream and is kept.
   void Restart();
-  // Newest tracker pose (position part) at time_ns; call once per frame.
+  // Restart() and forget the last frame time too, so that the next Push adds no interval (frames
+  // were not pushed in between, e.g. VIO switched off).
+  void Break();
+  // Newest tracker pose (position part) at time_ns; call once per frame. A time_ns that does not
+  // increase restarts the ring (the earlier poses belong to another time segment) and adds no
+  // interval.
   void Push(int64_t time_ns, float x, float y, float z);
   // Velocity of the newest pose over its reference pose; false when there is no reference or the
   // stream is too short for a nominal interval (the caller keeps the original velocity).
   bool Estimate(c8::HVector3* v) const;
   // Nominal interval in ns (0 until kMinIntervals intervals were seen).
   int64_t nominal_interval_ns() const;
+  // Poses usable as reference now (including the newest one).
+  int pose_count() const { return pose_count_; }
 
  private:
   struct Entry {
@@ -61,7 +75,9 @@ class SpanVelocity {
 
 // Run after UpdateHistory on the same hist: pushes hist[1] and, unless the world transform was
 // updated (665 keeps the previous velocity), replaces hist[1].velocity and .acceleration by the
-// span estimate. `restart` = map reset or world transform / pose correction on this frame.
+// span estimate. `restart` = map reset or world transform / pose correction on this frame: the ring
+// restarts before the push, so the estimate is unavailable and the velocity of UpdateHistory (the
+// original one, also across a map reset) stays.
 void ApplySpanVelocity(SpanVelocity* span, FrameState hist[2], bool restart,
                        bool world_transform_updated);
 
