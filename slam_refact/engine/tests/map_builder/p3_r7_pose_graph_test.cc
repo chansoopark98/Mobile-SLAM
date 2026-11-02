@@ -684,6 +684,30 @@ TEST(P3R7PoseGraph, AdjacentLoopPoseWithANonFiniteEntryAnywhereIsRejected) {
   }
 }
 
+// 15. ApplyKeyframeCorrections validates its input before touching the map: a correction with a
+// NaN entry, and one whose float product overflows to infinity, are refused (applied == false)
+// and every keyframe pose and point keeps its bits, also when a valid correction precedes it.
+TEST(P3R7PoseGraph, KeyframeCorrectionsWithNonFiniteEntriesAreRefused) {
+  std::array<float, 16> nan_fwd = Pose(0.0f, 0.1f, 0.0f, 0.0f).data();
+  nan_fwd[7] = std::nanf("");  // (3,1)
+  const c8::HMatrix with_nan(nan_fwd.data(), Pose(0.0f, 0.1f, 0.0f, 0.0f).inverseData().data());
+  const c8::HMatrix overflow =
+      c8::HMatrixGen::translation(3.0e38f, 0.0f, 0.0f) * c8::HMatrixGen::translation(3.0e38f, 0.0f, 0.0f);
+  ASSERT_TRUE(std::isinf(overflow(0, 3)));  // the scene really produces a float overflow
+  for (const c8::HMatrix& bad : {with_nan, overflow}) {
+    LoopScene scene(true);
+    map::WorldMap& wm = scene.wm();
+    const MapBits before = Snapshot(wm, scene.points);
+    const KeyframeCorrectionResult res = ApplyKeyframeCorrections(
+        wm, {{scene.middle[0], Pose(0.0f, 0.12f, 0.0f, 0.0f)}, {scene.middle[1], bad}});
+    EXPECT_FALSE(res.applied);
+    EXPECT_EQ(res.checked_points, 0);
+    const MapBits after = Snapshot(wm, scene.points);
+    for (size_t i = 0; i < after.kf.size(); ++i) EXPECT_TRUE(SameBits(after.kf[i], before.kf[i])) << i;
+    for (size_t k = 0; k < after.pt.size(); ++k) EXPECT_TRUE(SameBits(after.pt[k], before.pt[k])) << k;
+  }
+}
+
 // 11. Ground points keep the original placement rule: a lone ground point whose keyframe is
 // corrected upwards by 0.5 is re-placed by 1127 on the plane y = -1 along its ray from the corrected
 // camera, not carried rigidly to y = -0.5.

@@ -262,6 +262,9 @@ void ApplyResult(map::WorldMap& wm, map::KeyframeId newest, map::KeyframeId cand
 
   StageTimer timer("updateFromLoopCloseResult");
   if (!graph) {
+    // The original path, unchanged and unchecked like the original (R7 off runs exactly this).
+    // R7 rejects non-finite inputs (loop pose, keyframe poses, solved poses) and then falls back
+    // to this unchanged original behavior; it adds no check of its own here.
     wm.SetKeyframePose(newest, result.pose);  // 655
   }
   SR_CHECK(wm.IsKeyframeValid(cand) && wm.IsKeyframeValid(newest),

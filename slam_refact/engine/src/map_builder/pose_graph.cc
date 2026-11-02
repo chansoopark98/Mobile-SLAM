@@ -176,6 +176,14 @@ PoseGraphSummary OptimizePoseGraph(std::vector<Eigen::Isometry3d>* poses, const 
 KeyframeCorrectionResult ApplyKeyframeCorrections(
     map::WorldMap& wm, const std::vector<std::pair<map::KeyframeId, c8::HMatrix>>& corrected) {
   KeyframeCorrectionResult result;
+  // Every entry (16 forward, 16 inverse) of every new pose must be finite, also after the double ->
+  // float conversion of a solved pose; otherwise nothing is applied.
+  for (const auto& [kf, pose] : corrected) {
+    if (!AllFinite(pose)) {
+      return result;
+    }
+  }
+  result.applied = true;
   // world_from_world change of each corrected keyframe, from the poses as stored (float).
   std::map<map::KeyframeId, Eigen::Matrix4d> delta;
   for (const auto& [kf, pose] : corrected) {
@@ -294,7 +302,10 @@ bool CloseLoopWithPoseGraph(map::WorldMap& wm, map::KeyframeId cand, map::Keyfra
     corrected.emplace_back(nodes[i], ToHMatrix(poses[i]));
   }
   corrected.emplace_back(newest, newest_loop_pose);  // exactly the pose the original adopts
-  report->points = ApplyKeyframeCorrections(wm, corrected);
+  report->points = ApplyKeyframeCorrections(wm, corrected);  // re-checks the float poses
+  if (!report->points.applied) {
+    return false;
+  }
   report->applied = true;
   return true;
 }

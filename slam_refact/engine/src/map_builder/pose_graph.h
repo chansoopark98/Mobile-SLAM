@@ -65,11 +65,14 @@ PoseGraphSummary OptimizePoseGraph(std::vector<Eigen::Isometry3d>* poses, const 
                                    const std::vector<PoseGraphEdge>& edges);
 
 struct KeyframeCorrectionResult {
+  bool applied = false;           // false: a new pose had a non-finite entry, the map is untouched
   int checked_points = 0;         // live TRIANGULATED points observed by a corrected keyframe
   int moved_points = 0;           // of those, points whose reference keyframe was corrected
   int unlinked_observations = 0;  // removed by 1150 on the corrected poses
 };
 
+// Validates first: when any of the 16 forward or 16 inverse entries of a new pose is not finite,
+// returns applied == false and touches nothing.
 // Gives each keyframe in `corrected` its new pose (655) and re-places every live TRIANGULATED
 // point that a corrected keyframe observes by its reference keyframe, the oldest keyframe (creation order)
 // observing it: X' = P_new * P_old^-1 * X when the reference keyframe is corrected, X' = X when it
