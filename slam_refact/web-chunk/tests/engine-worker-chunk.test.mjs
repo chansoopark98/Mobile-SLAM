@@ -75,6 +75,7 @@ test('R1-C4: a Worker script that fails to load (error event) falls back', { ski
     assert.match(r.diag.engineWorker.fallback.message, /Failed to fetch module script/);
     assert.equal(r.diag.engineWorker.active, false);
     assert.ok(r.answers.slice(1).every((a) => a !== null), 'the main-thread engine tracks');
+    assert.deepEqual(r.errors, [], 'a successful fallback is not an error of the page');
   } finally { r.close(); }
 });
 
@@ -91,6 +92,7 @@ test('R1-C5: engine failures inside the Worker keep their classified code in the
       assert.equal(r.diag.engineWorker.fallback.code, code);
       assert.equal(r.diag.engineWorker.active, false);
       assert.ok(r.diag.engine, 'the main-thread engine loaded after the fallback');
+      assert.deepEqual(r.errors, [], `${code}: a successful fallback reports nothing`);
     } finally { r.close(); }
   }
 });
@@ -130,7 +132,6 @@ test('R1-C8: IDENTITY - the same camera + IMU input gives the same answers on bo
     assert.equal(workerAnswers[0], null, 'nothing has come back yet at the first callback');
     for (let k = 0; k < N; k++) assert.deepEqual(workerAnswers[k + 1], mainAnswers[k], `answer of callback ${k}`);
     assert.ok(mainAnswers.some((a) => a && (a.position.x !== 0 || a.position.y !== 2)), 'the sequence is not a trivial constant pose');
-    assert.ok(mainAnswers.some((a) => a && a.worldPoints.length > 0) || true);
     assert.equal(w.diag.stats.processedFrames, mainDiag.processedFrames);
     assert.equal(w.diag.stats.freshResponses, mainDiag.freshResponses);
     assert.deepEqual(w.diag.stats.responseLag, mainDiag.responseLag);
@@ -260,4 +261,132 @@ test('R1-C16: a Worker that dies after the load is reported through errorCallbac
     assert.equal(w.errors.filter((e) => /unreachable executed/.test(e)).length, 1, 'reported once');
     assert.ok(w.diag.stats.processErrors >= 2);
   } finally { w.close(); }
+});
+
+test('R1-C18: an abort of the Worker engine during the load falls back with no errorCallback report', { skip }, async () => {
+  const loop = loopbackWorker({ coreDeps: { loadEngine: async (url, args) => { args.onAbort('Aborted(early)'); await new Promise((r) => setTimeout(r, 5)); throw new Error('aborted'); } } });
+  const r = await run({ steps: 4, engineWorker: withWorker(loop) });
+  try {
+    assert.equal(r.diag.engineWorker.active, false);
+    assert.equal(r.diag.engineWorker.fallback.code, 'engine-worker-abort');
+    assert.deepEqual(r.errors, []);
+    assert.ok(r.answers.slice(1).every((a) => a !== null));
+  } finally { r.close(); }
+});
+
+test('R1-C19: a Worker that dies after the load is ONE report, also when a session build was waiting for its layout', { skip }, async () => {
+  const loop = loopbackWorker({ delay: (m) => (m.type === 'probe' ? 20 : 0) });
+  const w = await run({ steps: 0, attach: false, loop, engineWorker: withWorker(loop) });
+  try {
+    w.ctx.pm.onSessionAttach(w.ctx.attachArgs);   // probe in flight
+    loop.crash('RuntimeError: unreachable executed');
+    await new Promise((r) => setTimeout(r, 60));
+    assert.equal(w.errors.filter((e) => /unreachable executed/.test(e)).length, 1, 'one report for one death');
+    assert.equal(w.errors.length, 1);
+  } finally { w.close(); }
+});
+
+test('R1-C20: an engine abort after the load is ONE report through the chunk', { skip }, async () => {
+  const loop = loopbackWorker();
+  const w = await run({ steps: 6, loop, engineWorker: withWorker(loop) });
+  try {
+    // emulate the Emscripten abort message the Worker posts
+    loop.worker.onmessage({ data: { type: 'abort', message: 'Aborted(oom)' } });
+    assert.equal(w.errors.length, 1);
+    assert.match(w.errors[0], /Aborted\(oom\)/);
+  } finally { w.close(); }
+});
+
+test('R1-C21: without the measurement option the chunk never calls performance.mark (default path unchanged)', { skip }, async () => {
+  const r = await run({ steps: 8 });
+  try { assert.deepEqual(r.ctx.g.marks, []); } finally { r.close(); }
+  const loop = loopbackWorker();
+  const w = await run({ steps: 8, loop, engineWorker: withWorker(loop) });
+  try { await w.drain(3); assert.deepEqual(w.ctx.g.marks, []); } finally { w.close(); }
+});
+
+test('R1-C22: frameDoneMarks - sr-frame-start at the entry of every frame callback, sr-frame-done once per frame response after the callback returned; same in both modes', { skip }, async () => {
+  const N = 14;
+  const seqs = {};
+  for (const mode of ['main', 'worker']) {
+    const loop = mode === 'worker' ? loopbackWorker() : null;
+    const r = await run({ steps: N, extraOptions: { frameDoneMarks: true }, loop, ...(loop ? { engineWorker: withWorker(loop) } : {}) });
+    try {
+      if (loop) await r.drain(3);
+      const marks = r.ctx.g.marks;
+      const starts = marks.filter((m) => m.startsWith('sr-frame-start:')).map((m) => Number(m.split(':')[1]));
+      const dones = marks.filter((m) => m.startsWith('sr-frame-done:')).map((m) => Number(m.split(':')[1]));
+      assert.deepEqual(starts, Array.from({ length: N }, (_, k) => k), `${mode}: one start per frame callback, ordinals in order`);
+      assert.deepEqual(dones, Array.from({ length: N }, (_, k) => k), `${mode}: exactly one done per processed frame 0 .. N-1, including the last (its response needs no later frame)`);
+      assert.deepEqual(dones, dones.slice().sort((a, b) => a - b), `${mode}: in frame order`);
+      assert.equal(new Set(dones).size, dones.length, `${mode}: no duplicate`);
+      for (const d of dones) assert.ok(marks.indexOf(`sr-frame-start:${d}`) < marks.indexOf(`sr-frame-done:${d}`), `${mode}: start before done of frame ${d}`);
+      if (!loop) {
+        // not synchronous: the callback that applies a fresh result has not marked when it returns, it has after the microtask checkpoint
+        const before = marks.length;
+        const f = r.ctx.frame(N + 20);
+        r.ctx.gpu(f);
+        assert.equal(marks.length, before + 1, 'the start mark is emitted at the entry of the callback');
+        assert.equal(marks.at(-1), `sr-frame-start:${N}`);
+        r.ctx.state.atlas = atlasFor(N + 20);
+        r.ctx.cpu(f);
+        assert.equal(marks.length, before + 1, 'the done mark is not emitted inside the callback');
+        await Promise.resolve();
+        assert.equal(marks.length, before + 2, 'it is emitted when the callback has returned');
+        assert.equal(marks.at(-1), `sr-frame-done:${N}`);
+      }
+      seqs[mode] = dones.slice(0, N - 2);
+    } finally { r.close(); }
+  }
+  assert.deepEqual(seqs.worker, seqs.main, 'the Worker mode marks the same source frames');
+});
+
+test('R1-C23: a repeated callback emits no start mark and no ordinal; with the option off nothing counts or marks', { skip }, async () => {
+  const r = await run({ steps: 5, extraOptions: { frameDoneMarks: true } });
+  try {
+    const n = r.ctx.g.marks.filter((m) => m.startsWith('sr-frame-start:')).length;
+    r.ctx.cpu(r.ctx.frame(99, true));
+    r.ctx.gpu(r.ctx.frame(99, true));
+    assert.equal(r.ctx.g.marks.filter((m) => m.startsWith('sr-frame-start:')).length, n);
+  } finally { r.close(); }
+});
+
+test('R1-C24: the page names the next frame ordinal (diag.setFrameOrdinal) so recorded frames are numbered 1, 2, 3 ...; the hook exists only with the option', { skip }, async () => {
+  const off = await run({ steps: 2 });
+  try { assert.equal(off.diag.setFrameOrdinal, undefined); } finally { off.close(); }
+  const r = await run({ steps: 2, extraOptions: { frameDoneMarks: true } });
+  try {
+    assert.equal(typeof r.diag.setFrameOrdinal, 'function');
+    r.diag.setFrameOrdinal(1000000);   // a frame fed outside the recording
+    const f1 = r.ctx.frame(10); r.ctx.gpu(f1); r.ctx.state.atlas = atlasFor(10); r.ctx.cpu(f1);
+    r.diag.setFrameOrdinal(1);         // the first recorded frame
+    const f2 = r.ctx.frame(11); r.ctx.gpu(f2); r.ctx.state.atlas = atlasFor(11); r.ctx.cpu(f2);
+    const f3 = r.ctx.frame(12); r.ctx.gpu(f3); r.ctx.state.atlas = atlasFor(12); r.ctx.cpu(f3);
+    await Promise.resolve();
+    const starts = r.ctx.g.marks.filter((m) => m.startsWith('sr-frame-start:')).slice(-3);
+    assert.deepEqual(starts, ['sr-frame-start:1000000', 'sr-frame-start:1', 'sr-frame-start:2']);
+    const dones = r.ctx.g.marks.filter((m) => m.startsWith('sr-frame-done:'));
+    assert.ok(dones.length > 0, 'results are marked under the named ordinals');
+  } finally { r.close(); }
+});
+
+test('R1-C25: a repeated response (startup recenter) still completes its frame: every frame 0 .. N-1 gets exactly one done mark; resultSeqs lists them for the page', { skip }, async () => {
+  const N = 12;
+  const createGlue = (M, config) => {
+    const glue = new M.SlamRefactGlue(config);
+    let calls = 0;
+    return new Proxy(glue, { get(target, name) {
+      const value = target[name];
+      if (name === 'processFramePyramid') return (...args) => { const pose = value.apply(target, args); return ++calls === 5 ? { ...pose, repeated: true } : pose; };
+      return typeof value === 'function' ? value.bind(target) : value;
+    } });
+  };
+  const r = await run({ steps: N, extraOptions: { frameDoneMarks: true, createGlue } });
+  try {
+    await Promise.resolve();
+    const dones = r.ctx.g.marks.filter((m) => m.startsWith('sr-frame-done:')).map((m) => Number(m.split(':')[1]));
+    assert.deepEqual(dones, Array.from({ length: N }, (_, k) => k));
+    assert.equal(r.diag.stats.freshResponses, N - 3, 'the first responses (no source frame yet) and the forced one are repeats');
+    assert.deepEqual(r.diag.resultSeqs, dones, 'the page can attribute every handled result to its frame');
+  } finally { r.close(); }
 });

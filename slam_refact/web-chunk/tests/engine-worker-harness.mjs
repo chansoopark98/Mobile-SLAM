@@ -59,7 +59,8 @@ export function installGlobals({ clock = { now: 1000 }, engineBase = null } = {}
     Object.defineProperty(globalThis, key, { configurable: true, writable: true, value }); };
   const url = { create: URL.createObjectURL, revoke: URL.revokeObjectURL };
   set('window', globalThis);
-  set('performance', { now: () => clock.now, timeOrigin: 1.7e12 });
+  const marks = [];
+  set('performance', { now: () => clock.now, timeOrigin: 1.7e12, mark: (name) => marks.push(name) });
   set('document', { visibilityState: 'visible', hasFocus: () => true });
   set('addEventListener', (name, cb) => { const a = listeners.get(name) ?? []; if (!a.includes(cb)) a.push(cb); listeners.set(name, a); });
   set('removeEventListener', (name, cb) => listeners.set(name, (listeners.get(name) ?? []).filter((f) => f !== cb)));
@@ -80,7 +81,7 @@ export function installGlobals({ clock = { now: 1000 }, engineBase = null } = {}
   set('require', createRequire(path.join(engineDir, 'slam_refact_engine.js'))); set('__dirname', engineDir);
   URL.createObjectURL = (blob) => `data:text/javascript;base64,${Buffer.concat(blob.parts.map((p) => Buffer.from(typeof p === 'string' ? p : new Uint8Array(p)))).toString('base64')}`;
   URL.revokeObjectURL = () => {};
-  return { clock, listeners, set,
+  return { clock, listeners, set, marks,
     dispatch: (e) => { for (const cb of listeners.get(e.type) ?? []) cb(e); },
     restore() {
       for (const [k, d] of saved) { if (d) Object.defineProperty(globalThis, k, d); else delete globalThis[k]; }

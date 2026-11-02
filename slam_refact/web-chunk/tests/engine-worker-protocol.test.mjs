@@ -83,15 +83,35 @@ test('R1-P3: load handshake returns the loader shape; engine output and compile 
   assert.deepEqual(w.loop.state.toWorker[0], { type: 'load', baseUrl: 'file:///engine/' });
 });
 
-test('R1-P4: the engine abort inside the Worker reaches onAbort and becomes a fatal error once', async () => {
+test('R1-P4: a post-load engine abort is ONE fatal report (onFatal), not also an onAbort call', async () => {
   const engine = fakeEngine();
   const w = await start({ engine });
   engine.abortNow('Aborted(boom)');
   await w.loop.idle();
-  assert.deepEqual(w.logs.filter((l) => l[0] === 'abort'), [['abort', 'Aborted(boom)']]);
+  assert.deepEqual(w.logs.filter((l) => l[0] === 'abort'), [], 'moduleArgs.onAbort is not called: the fatal report is the single report');
   assert.equal(w.fatals.length, 1);
   assert.equal(w.fatals[0].code, 'engine-worker-abort');
   assert.throws(() => new w.Module.SlamRefactGlue(config), /Aborted\(boom\)/, 'nothing more is posted to a dead Worker');
+});
+
+test('R1-P4b: a failure BEFORE the load completes only rejects the load: no onFatal, no onAbort (the chunk falls back quietly)', async () => {
+  for (const kind of ['script-error', 'abort-during-load', 'load-error']) {
+    const logs = [], fatals = [];
+    const base = fakeEngine();
+    const loadEngine = async (url, args) => {
+      if (kind === 'abort-during-load') { args.onAbort('Aborted(early)'); await new Promise((r) => setTimeout(r, 5)); }
+      if (kind === 'load-error') throw Object.assign(new Error('bad bytes'), { code: 'engine-simd-unsupported' });
+      return base.loadEngine(url, args);
+    };
+    const loop = loopbackWorker({ coreDeps: { loadEngine } });
+    const worker = kind === 'script-error'
+      ? { postMessage() { queueMicrotask(() => worker.onerror?.({ message: 'Failed to fetch module script' })); }, terminate() {} } : loop.worker;
+    await assert.rejects(loadEngineInWorker('file:///engine/', { onAbort: (w) => logs.push(w) }, { createWorker: () => worker, onFatal: (e) => fatals.push(e) }),
+      (e) => (kind === 'load-error' ? e.code === 'engine-simd-unsupported' : /Worker failed|aborted in the Worker/.test(e.message)), kind);
+    await loop.idle();
+    assert.deepEqual(logs, [], `${kind}: onAbort not called`);
+    assert.deepEqual(fatals, [], `${kind}: onFatal not called`);
+  }
 });
 
 test('R1-P5: the layout is probed once per capture; the glue answers it synchronously; a changed layout is detected', async () => {
@@ -270,4 +290,18 @@ test('R1-P14: the client works on any transport object (createEngineWorkerClient
   assert.deepEqual(posted[0].config, { captureWidth: 1, captureHeight: 2, rotationDeg: 90, manufacturer: '', model: '' });
   stub.onmessage({ data: { type: 'probed', id: posted[0].id, layout: { ok: 1 } } });
   assert.equal(client.hasLayout(1, 2, 90), true);
+});
+
+test('R1-P15: buffers smaller than the next request are dropped from the pool (a capture size change cannot clog it)', async () => {
+  const w = await start({ clientOptions: { maxInFlight: 4 } });
+  await w.worker.requestLayout(8, 4, 0);
+  const glue = new w.Module.SlamRefactGlue(config);
+  const small = glue.acquireAtlas(64); small.fill(1);
+  glue.submitFrame({ motion: [], orientation: [0, 0, 0, 0], timeNanos: 0, videoNs: 0, atlas: small.subarray(0, 8 * 4 * 4), size: 8, rows: 4 });
+  await w.loop.idle();
+  const big = glue.acquireAtlas(4096);
+  assert.equal(big.byteLength, 4096);
+  assert.equal(w.worker.stats.buffersDropped, 1, 'the 64-byte buffer was dropped, not kept');
+  assert.equal(w.worker.stats.buffersReused, 0);
+  assert.equal(w.worker.stats.buffersAllocated, 2);
 });

@@ -92,3 +92,184 @@ test('R1-M8: ABAB x3 aggregation takes per-arm medians and builds the identity m
   assert.equal(r.identity.workerVsMain.length, 3);
   assert.ok(r.identity.workerVsMain.every((x) => x.identicalFraction === 1));
 });
+
+// ---- preregistered R1 metrics ----
+import { aggregatePrimary, frameWindow, fullWindow, measuredFrameCount, percentileLinear, primaryOfRun, replayIdentity, scorerRun, topLevelBusy } from './engine-worker-ab-metrics.mjs';
+
+test('R1-M9: percentileLinear is numpy linear interpolation', () => {
+  assert.equal(percentileLinear([1, 2, 3, 4], 0.5), 2.5);
+  assert.equal(percentileLinear([10, 20, 30, 40, 50], 0.95), 48);
+  assert.equal(percentileLinear([5], 0.95), 5);
+  assert.equal(percentileLinear([], 0.95), null);
+  assert.equal(percentileLinear([3, NaN, 1], 0.5), 2);
+});
+
+const thread = (pid, tid, name) => ({ ph: 'M', name: 'thread_name', pid, tid, args: { name } });
+const mark = (name, ts, pid = 1, tid = 2) => ({ ph: 'R', name, ts, pid, tid, cat: 'blink.user_timing' });
+const task = (ts, dur, pid = 1, tid = 2) => ({ ph: 'X', name: 'RunTask', ts, dur, pid, tid, cat: 'disabled-by-default-devtools.timeline' });
+
+test('R1-M10: top-level busy time = union of RunTask on the marked main thread, clipped to the mark window, other threads and idle excluded', () => {
+  const trace = [thread(1, 2, 'CrRendererMain'), thread(1, 3, 'DedicatedWorker thread'),
+    task(0, 50_000),                       // ends 50 ms in, window starts at 40 ms: 10 ms inside
+    mark('w0', 40_000), task(60_000, 10_000), task(65_000, 10_000),   // overlap: union 60..75 = 15 ms
+    task(100_000, 20_000, 1, 3),           // the Worker thread: not counted
+    task(190_000, 30_000),                 // crosses the window end (200 ms): 10 ms inside
+    mark('w1', 200_000), task(300_000, 40_000)];
+  const r = topLevelBusy(trace, { startMark: 'w0', endMark: 'w1' });
+  assert.equal(r.windowMs, 160);
+  assert.equal(r.busyMs, 10 + 15 + 10);
+  assert.equal(r.boundaryClippedTasks, 2);
+  assert.equal(r.mainThreadVerified, true);
+  assert.equal(r.source, 'RunTask');
+  assert.match(topLevelBusy(trace, { startMark: 'nope', endMark: 'w1' }).error, /lacks the window mark nope/);
+  assert.match(topLevelBusy([mark('a', 0), mark('b', 5, 1, 9)], { startMark: 'a', endMark: 'b' }).error, /different threads/);
+  assert.match(topLevelBusy([mark('a', 0), mark('b', 5)], { startMark: 'a', endMark: 'b' }).error, /no top-level task/);
+});
+
+test('R1-M11: B/E task pairs and the ThreadControllerImpl::RunTask fallback are read too', () => {
+  const trace = [mark('a', 0), { ph: 'B', name: 'ThreadControllerImpl::RunTask', ts: 10, pid: 1, tid: 2 }, { ph: 'E', name: 'ThreadControllerImpl::RunTask', ts: 4010, pid: 1, tid: 2 }, mark('b', 10_000)];
+  const r = topLevelBusy(trace, { startMark: 'a', endMark: 'b' });
+  assert.equal(r.busyMs, 4);
+  assert.equal(r.source, 'ThreadControllerImpl::RunTask');
+});
+
+// A run of N = 30 + 2m frames (seq = index + 1), m = 2: the middle window is seq 30 .. 34 (5 frames), the measured segment 31..32, the trailing segment 33..34.
+// `boot` frame callbacks precede the recording in the page (capture index -1, seq 1e6 + n). Frame k: capture entry at k * 33, start mark 1 ms later,
+// the engine response to frame k is applied at callback k + lag (lag 0 = main thread, 1 = Worker; render exit +2 ms, done mark +3 ms).
+function fixtureRun({ N = 34, m = 2, lag = 0, boot = 3, full = false, mutate = () => {} }) {
+  const applied = [], marks = [], renders = [], captures = [], renderCallbacks = [];
+  for (let b = 0; b < boot; b++) { captures.push([-1, -100 + b]); marks.push([`sr-frame-start:${1000001 + b}`, -99 + b]); }
+  for (let k = 0; k < N; k++) {
+    captures.push([k, k * 33]);
+    marks.push([`sr-frame-start:${k + 1}`, k * 33 + 1]);
+    renderCallbacks.push([k, k * 33 + 20]);
+  }
+  for (let k = 0; k <= N - 1; k++) {
+    const cb = k + lag, t = cb * 33 + 20;
+    applied.push([k, t, cb, 0, k]);
+    renders.push([t + 2]);
+    marks.push([`sr-frame-done:${k + 1}`, t + 3]);
+  }
+  const run = { applied, marks, renders, captures, renderCallbacks, totalFrames: N, m };
+  mutate(run);
+  return full ? fullWindow({ ...run, n: 30 + 2 * m }) : frameWindow(run);
+}
+const setMark = (run, name, fn) => { const e = run.marks.find(([n]) => n === name); e[1] = fn(e[1]); };
+
+test('R1-M12: the window is frames 30 .. 30+2m (2m+1 frames, 1-based seq); a clean run is valid; boot frames do not matter', () => {
+  assert.equal(measuredFrameCount(120), 241);
+  const w = fixtureRun({});
+  assert.equal(w.windowFrames, 5);
+  assert.equal(w.startMark, 'sr-frame-start:30');
+  assert.equal(w.endMark, 'sr-frame-done:34');
+  assert.deepEqual(w.measuredSegment, [31, 32]);
+  assert.deepEqual(w.trailingSegment, [33, 34]);
+  assert.equal(w.valid, true, JSON.stringify(w));
+  assert.equal(w.latencyMs.n, 2);
+  assert.equal(w.latencyMs.p95, 20 + 3);   // capture k*33 -> done k*33 + 23 (lag 0)
+  assert.equal(fixtureRun({ boot: 0 }).latencyMs.p95, w.latencyMs.p95);
+});
+
+test('R1-M13: the Worker lag (one more callback) keeps the run valid; the same frames are measured; latency is larger', () => {
+  const a = fixtureRun({ lag: 0 }), b = fixtureRun({ lag: 1 });
+  assert.equal(b.valid, true);
+  assert.equal(b.windowFrames, a.windowFrames);
+  assert.ok(b.latencyMs.p95 > a.latencyMs.p95);
+});
+
+test('R1-M14: every registered mark rule is enforced (exactly one start and done per frame, strictly increasing, start_k < done_k, measured frames done before the window end, one render callback inside [start_k, done_k])', () => {
+  const bad = (mutate, key, frames) => { const w = fixtureRun({ mutate }); assert.equal(w.valid, false, key); assert.deepEqual(w[key], frames, key); };
+  bad((r) => setMark(r, 'sr-frame-done:33', (t) => t - 60), 'doneNotIncreasing', [33]);        // frame 33 done before frame 32 done
+  bad((r) => setMark(r, 'sr-frame-start:33', (t) => t - 40), 'startNotIncreasing', [33]);
+  bad((r) => setMark(r, 'sr-frame-done:33', () => 0), 'startNotBeforeDone', [33]);
+  bad((r) => { r.marks = r.marks.filter(([n]) => n !== 'sr-frame-start:32'); }, 'missingStart', [32]);
+  bad((r) => { r.marks = r.marks.filter(([n]) => n !== 'sr-frame-done:32'); }, 'missingDone', [32]);
+  bad((r) => r.marks.push(['sr-frame-start:31', 5000]), 'duplicateStart', [31]);
+  bad((r) => r.marks.push(['sr-frame-done:31', 5000]), 'duplicateDone', [31]);
+  bad((r) => setMark(r, 'sr-frame-done:32', () => 99999), 'measuredDoneAfterWindowEnd', [32]);   // measured frame finished after the window ended
+  bad((r) => r.applied.push([30, 999, 40, 1, 30]), 'renderCallbackNotOnce', [31]);              // the pose of seq 31 consumed twice
+  bad((r) => { r.applied = r.applied.filter(([i]) => i !== 31); }, 'renderCallbackNotOnce', [32]);
+  bad((r) => { r.applied.find(([i]) => i === 30)[1] = 10_000; }, 'renderCallbackNotInside', [31]);   // outside [start, done]
+  bad((r) => { r.applied.find(([i]) => i === 30)[1] = 0; }, 'renderCallbackNotInside', [31]);        // before its start mark
+  bad((r) => { const e = r.marks.find(([n]) => n === 'sr-frame-done:32'); e[1] = r.renders[31][0] - 1; }, 'markBeforeRenderReturned', [32]);
+  const short = fixtureRun({ N: 33 });
+  assert.equal(short.valid, false);
+  assert.match(short.errors[0], /input too short/);
+  assert.equal(fixtureRun({ N: 34 }).valid, true, 'frame 34 has its response with no later frame');
+});
+
+test('R1-M15: render callbacks of trailing frames are not part of rule (e) (only the measured segment is)', () => {
+  const w = fixtureRun({ mutate: (r) => r.applied.push([32, 999, 40, 1, 32]) });   // seq 33 is trailing
+  assert.equal(w.valid, true);
+});
+
+test('R1-M16: primaryOfRun (v4.5) sums the main-thread tasks from the trace start to sr-frame-done:N, divides by N, reports the middle window and the 3000 ms after', () => {
+  const w = fixtureRun({ N: 34, full: true }), mid = fixtureRun({ N: 35 });
+  assert.equal(w.n, 34);
+  assert.equal(w.valid, true, JSON.stringify(w.violations) + w.errors);
+  const trace = [thread(1, 2, 'CrRendererMain'), { ph: 'R', name: 'TracingStartedInBrowser', ts: 100, pid: 9, tid: 9 }, task(500, 10_000), mark('sr-frame-start:30', 20_000), task(20_000, 5000),
+    mark(mid.endMark, 70_000), mark(w.endMark, 90_000), task(60_000, 8000), task(95_000, 5000), task(3_200_000, 9000)];
+  const p = primaryOfRun({ trace, window: w, middle: mid });
+  assert.equal(p.busy.windowStart, 'trace-start');
+  assert.equal(p.busy.busyMs, 10 + 5 + 8);                     // everything from the trace start to done:34, the task at 95 ms is after
+  assert.equal(p.busyMsPerFrame, 23 / 34);
+  assert.equal(p.busy.afterWindow3000Ms, 5);                   // 95..100 ms is within 3000 ms after; the task at 3.2 s is not
+  assert.equal(p.measuredFrames, 34);
+  assert.equal(p.valid, true);
+  assert.equal(p.middle.reportOnly, true);
+  assert.equal(p.middle.busyMsPerFrame, (5 + 8) / 5);          // [sr-frame-start:30 @20ms, sr-frame-done:34] only... see the marks above
+  assert.equal(primaryOfRun({ trace: [thread(1, 2, 'Other'), ...trace.slice(1)], window: w, middle: mid }).valid, false);
+  assert.equal(primaryOfRun({ trace: [], window: w, middle: mid }).valid, false);
+  assert.equal(primaryOfRun({ trace, window: fixtureRun({ N: 34, full: true, mutate: (r) => setMark(r, 'sr-frame-done:10', () => 0) }), middle: mid }).valid, false);
+});
+
+test('R1-M19: fullWindow (v4.5) needs frames 1..N with exactly one start/done each, strictly increasing, start_k < done_k, one render callback inside [start_k, done_k], and nothing beyond N', () => {
+  const ok = fixtureRun({ N: 34, full: true });
+  assert.equal(ok.valid, true, JSON.stringify(ok.violations));
+  assert.equal(ok.endMark, 'sr-frame-done:34');
+  assert.equal(ok.startMark, null, 'the window starts at the trace start, not at a mark');
+  assert.equal(ok.latencyMs.n, 2, 'latency p95 over the measured segment 31..30+m');
+  assert.equal(ok.latencyAllFramesMs.n, 34);
+  const bad = (mutate, key, frames) => { const w = fixtureRun({ N: 34, full: true, mutate }); assert.equal(w.valid, false, key); assert.deepEqual(w[key], frames, key); };
+  bad((r) => { r.marks = r.marks.filter(([n]) => n !== 'sr-frame-start:1'); }, 'missingStart', [1]);   // a warm-up frame counts too
+  bad((r) => { r.marks = r.marks.filter(([n]) => n !== 'sr-frame-done:34'); }, 'missingDone', [34]);
+  bad((r) => r.marks.push(['sr-frame-start:5', 9999]), 'duplicateStart', [5]);
+  bad((r) => setMark(r, 'sr-frame-done:20', (t) => t - 80), 'doneNotIncreasing', [20]);
+  bad((r) => setMark(r, 'sr-frame-start:20', (t) => t - 80), 'startNotIncreasing', [20]);
+  bad((r) => r.applied.push([2, 5, 3, 1, 2]), 'renderCallbackNotOnce', [3]);
+  bad((r) => { r.applied = r.applied.filter(([i]) => i !== 8); }, 'renderCallbackNotOnce', [9]);
+  bad((r) => { r.applied.find(([i]) => i === 8)[1] = 99999; }, 'renderCallbackNotInside', [9]);
+  const beyond = fixtureRun({ N: 35, full: true });     // the input must END at N: a frame 35 has marks and a render callback
+  assert.equal(beyond.valid, false);
+  assert.deepEqual(beyond.framesBeyondN, [35]);
+  assert.equal(fixtureRun({ N: 33, full: true }).valid, false);
+});
+
+test('R1-M17: aggregatePrimary takes per-arm medians, B/A ratios and checks the measured frames are equal across runs; replayIdentity needs one digest and a count', () => {
+  const mk =(arm, busy, lat, frames = 5) => ({ arm, primary: { valid: true, busyMsPerFrame: busy, e2eLatencyP95Ms: lat, measuredFrames: frames } });
+  const r = aggregatePrimary([mk('main', 10, 100), mk('worker', 5, 105), mk('main', 12, 110), mk('worker', 6, 120), mk('main', 11, 90), mk('worker', 7, 100)]);
+  assert.equal(r.main.busyMsPerFrame, 11);
+  assert.equal(r.worker.busyMsPerFrame, 6);
+  assert.equal(r.framesEqualAcrossRuns, true);
+  assert.ok(Math.abs(r.ratios.busyWorkerOverMain - 6 / 11) < 1e-12);
+  assert.equal(aggregatePrimary([mk('main', 1, 1, 5), mk('worker', 1, 1, 6)]).framesEqualAcrossRuns, false);
+  assert.equal(replayIdentity([{ arm: 'main', digest: 'x', count: 3 }, { arm: 'worker', digest: 'x', count: 3 }]).allIdentical, true);
+  assert.equal(replayIdentity([{ arm: 'main', digest: 'x', count: 3 }, { arm: 'worker', digest: 'y', count: 3 }]).allIdentical, false);
+  assert.equal(replayIdentity([{ arm: 'main', digest: 'x', count: 0 }]).allIdentical, false, 'empty output is not identity');
+});
+
+test('R1-M18: scorerRun builds the r1_eval run record on one clock (marks and tasks from the trace, render times moved by the median mark offset, nested tasks merged)', () => {
+  const trace = [thread(1, 2, 'CrRendererMain'), mark('sr-frame-start:30', 1_000_000), mark('sr-frame-start:31', 1_033_000), mark('sr-frame-done:30', 1_050_000),
+    mark('sr-frame-start:1000001', 900_000), task(1_000_000, 10_000), task(1_002_000, 3_000), task(1_040_000, 5_000), task(1_040_000, 5_000, 1, 3)];
+  const r = scorerRun(trace, { pageMarks: [['sr-frame-start:30', 500], ['sr-frame-start:31', 533], ['sr-frame-done:30', 550]], applied: [[29, 549, 30, 0, 29]] });
+  assert.equal(r.offsetMs, 500);
+  assert.equal(r.offsetSpreadMs, 0);
+  assert.deepEqual(r.start, { 30: [1000], 31: [1033] });         // the page-fed frame (seq >= 1e6) is not a recorded frame
+  assert.deepEqual(r.done, { 30: [1050] });
+  assert.deepEqual(r.render, { 30: [1049] });
+  assert.deepEqual(r.tasks, [[1000, 1010], [1040, 1045]]);       // the nested task is merged, the other thread's is not included
+  assert.deepEqual(r.work, {});
+  assert.match(scorerRun([], { pageMarks: [], applied: [] }).error, /no sr-frame-start mark/);
+  assert.equal(r.trace_start, 900, 'no TracingStartedInBrowser event: the earliest event (the page-fed frame mark)');
+}
+);

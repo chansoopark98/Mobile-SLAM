@@ -222,6 +222,43 @@ const XrControllerFactory = singleton((runConfig, xrccPromise, logCallback, erro
   // (scc.GL.textures = xrcc.GL.textures); this chunk uses XR8's computeTexture objects directly.
   let engine_ = null;  // {Module, loaded}; the original's `scc_`
   let ew_ = null;      // R1: the engine Worker client when the engine runs in a Worker (opt-in), else null
+  // Measurement option (default OFF, SLAM_REFACT_CHUNK_OPTIONS.frameDoneMarks === true), same code in the main-thread and the Worker mode:
+  //   performance.mark('sr-frame-start:<n>')  at the FIRST main-thread work of the chunk for a camera frame: the entry of onProcessGpu, before
+  //                                           anything is staged or submitted. n = the frame's ordinal: 0, 1, 2, ... over the non-repeat frames the
+  //                                           chunk is called with, unless the page names the next one with diag.setFrameOrdinal(n) (the harness
+  //                                           numbers the recorded frames 1, 2, 3, ... and the frames it feeds before the recording apart).
+  //   performance.mark('sr-frame-done:<n>')   once ALL main-thread handling of the engine response to frame n has returned. The response to frame
+  //                                           n is what processing frame n returns (the pose of the frame before it, fresh, or a repeat of the
+  //                                           previous pose during the startup recenter): every processed frame has exactly one, including the
+  //                                           last one, so no extra frame is needed to complete it. The response is applied inside onProcessCpu
+  //                                           (the Worker mode: when the Worker's answer is drained, one callback later); XR8 then runs the other
+  //                                           modules' onUpdate / onRender synchronously in the same loop callback, so the mark is queued as a
+  //                                           microtask, which runs when that whole callback has returned. Nothing for the frame is scheduled
+  //                                           after the mark.
+  // Without the option: one boolean test per frame / response, no counter, no frame field, no performance.mark.
+  const frameDoneMarks = options.frameDoneMarks === true && typeof globalThis.performance?.mark === 'function';
+  const doneQueue = [];
+  let doneScheduled = false, frameOrdinal_ = 0;
+  if (frameDoneMarks) {
+    diag.setFrameOrdinal = (n) => { frameOrdinal_ = n; };
+    diag.resultSeqs = [];  // the ordinals whose results were handled since the page last drained this list (the harness attributes its update callbacks)
+  }
+  const markFrameStart = () => {
+    const n = frameOrdinal_++;
+    globalThis.performance.mark(`sr-frame-start:${n}`);
+    return n;
+  };
+  const noteFrameDone = (f) => {
+    if (!frameDoneMarks || f.seq === undefined) return;
+    diag.resultSeqs.push(f.seq);
+    doneQueue.push(f.seq);
+    if (doneScheduled) return;
+    doneScheduled = true;
+    queueMicrotask(() => {
+      doneScheduled = false;
+      for (const m of doneQueue.splice(0)) globalThis.performance.mark(`sr-frame-done:${m}`);
+    });
+  };
   // R1 (opt-in, default OFF): the engine in a dedicated Worker. Nothing of it runs, and engine-worker-client.js is not imported, unless
   // requested by SLAM_REFACT_CHUNK_OPTIONS.engineWorker (true / {enabled: true}) or ?engineWorker=1. Distinct from ?capture=worker.
   const engineWorkerAsked = options.engineWorker === true || options.engineWorker?.enabled === true
@@ -1057,6 +1094,7 @@ const XrControllerFactory = singleton((runConfig, xrccPromise, logCallback, erro
     const engineReturnedAtMs = performance.now();
     diag.stats.processedFrames++;
     const stageIndex = pose.videoFrameIndex;
+    noteFrameDone(f);  // measurement option only
     if (s.delivery) {
       const d = s.delivery;
       const inputTimeNanos = f.frameTime ? f.frameTime * 1e9 : f.timeNanos;
@@ -1158,7 +1196,8 @@ const XrControllerFactory = singleton((runConfig, xrccPromise, logCallback, erro
       if (token !== ewBuildToken_) return;
       try { run(); } catch (error) { session_ = null; errorCallback(error instanceof Error ? error : new Error(String(error))); }
     }, (error) => {
-      if (token === ewBuildToken_) errorCallback(error instanceof Error ? error : new Error(String(error)));
+      // a dead Worker was already reported by onFatal under the same key; reportOnce keeps it one report
+      if (token === ewBuildToken_) reportOnce('process', error);
     });
     return true;
   };
@@ -1214,6 +1253,7 @@ const XrControllerFactory = singleton((runConfig, xrccPromise, logCallback, erro
     // The glue's own stage index of this frame is the key (RM-4a2: a counter kept here drifted for good after one
     // transient exception); bounded, because a glue that never answers fresh would only add entries.
     const stageIndex = pose.videoFrameIndex;
+    noteFrameDone(f);  // measurement option only
     if (s.delivery) {
       const d = s.delivery;
       const inputTimeNanos = f.frameTime ? f.frameTime * 1e9 : f.timeNanos;
@@ -1291,6 +1331,7 @@ const XrControllerFactory = singleton((runConfig, xrccPromise, logCallback, erro
 
   const onProcessGpu = ({ framework, frameStartResult }) => {
     if (schedulerEnabled) return schedulerGpu({ framework, frameStartResult });
+    const frameSeq = frameDoneMarks && !frameStartResult.repeatFrame && !cameraProcessingDisabled_ ? markFrameStart() : -1;  // first work of the frame
     const { computeTexture, textureWidth, textureHeight, orientation, repeatFrame, videoTime, frameTime } = frameStartResult;
     if (repeatFrame || cameraProcessingDisabled_) return;
     maybeDispatchConfigChange(framework);
@@ -1310,7 +1351,7 @@ const XrControllerFactory = singleton((runConfig, xrccPromise, logCallback, erro
     }
     try {
       stageFrame(session_, { computeTexture, textureWidth, textureHeight, orientation, alpha, beta, gamma,
-        videoTime, frameTime, timeNanos, events });
+        videoTime, frameTime, timeNanos, events, ...(frameDoneMarks ? { seq: frameSeq } : {}) });
     } catch (error) {
       // xr.js runs processGpu inside post-render's try block; a throw would skip its frame bookkeeping.
       diag.stats.stageErrors++;

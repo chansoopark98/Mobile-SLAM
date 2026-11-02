@@ -48,19 +48,22 @@ const plainMotion = (e) => ({ acceleration: copyAxes(e.acceleration, ['x', 'y', 
 // worker: object with postMessage(message, transfer), onmessage, onerror (a real Worker, or a test transport).
 export function createEngineWorkerClient(worker, { moduleArgs = {}, maxInFlight = DEFAULT_MAX_IN_FLIGHT, warn = () => {}, onFatal = () => {} } = {}) {
   const stats = { framesSubmitted: 0, resultsReceived: 0, backpressureSkips: 0, opErrors: 0, hitTestMisses: 0, imageTargetRefusals: 0,
-    roiRequests: 0, layoutProbes: 0, layoutMismatches: 0, buffersAllocated: 0, buffersReused: 0, rttMs: [], workerEngineMs: [], submitMs: [], transitMs: [] };
+    roiRequests: 0, layoutProbes: 0, layoutMismatches: 0, buffersAllocated: 0, buffersReused: 0, buffersDropped: 0, rttMs: [], workerEngineMs: [], submitMs: [], transitMs: [] };
   const layouts = new Map(), probes = new Map(), glues = new Map();
   const pool = [];
   let nextId = 0, nextGlueId = 0, fatal = null, compileFeatures = null;
-  let onLoaded = null;
+  let onLoaded = null, loadComplete = false;
 
+  // A failure before the load completes only rejects the load (the chunk then falls back to the main-thread engine, which is not an
+  // error of the page). After the load, a failure is reported exactly once, through onFatal; the engine abort message is the same event
+  // and is not also sent to moduleArgs.onAbort.
   const fail = (error) => {
     if (fatal) return;
     fatal = error;
     for (const p of probes.values()) p.reject(error);
     probes.clear();
     onLoaded?.reject(error);
-    onFatal(error);
+    if (loadComplete) onFatal(error);
   };
   worker.onerror = (event) => fail(workerError(`[XR] slam_refact engine Worker failed: ${event && (event.message || event.error?.message) || 'script error'}`, 'engine-worker-error'));
   worker.onmessageerror = () => fail(workerError('[XR] slam_refact engine Worker sent a message that could not be deserialized', 'engine-worker-error'));
@@ -69,10 +72,10 @@ export function createEngineWorkerClient(worker, { moduleArgs = {}, maxInFlight 
     const m = event.data;
     switch (m.type) {
       case 'log': (m.err ? moduleArgs.printErr : moduleArgs.print)?.(m.text); break;
-      case 'abort': moduleArgs.onAbort?.(m.message); fail(workerError(`[XR] slam_refact engine aborted in the Worker: ${m.message}`, 'engine-worker-abort')); break;
-      case 'loaded': onLoaded?.resolve(m); break;
+      case 'abort': fail(workerError(`[XR] slam_refact engine aborted in the Worker: ${m.message}`, 'engine-worker-abort')); break;
+      case 'loaded': loadComplete = true; onLoaded?.resolve(m); break;
       case 'load-error': onLoaded?.reject(rebuildError(m.error, m.loaded)); break;
-      case 'probed': { const p = probes.get(m.id); probes.delete(m.id); stats.layoutProbes++; layouts.set(p.key, m.layout); p.resolve(m.layout); break; }
+      case 'probed': { const p = probes.get(m.id); probes.delete(m.id); if (!p) break; stats.layoutProbes++; layouts.set(p.key, m.layout); p.resolve(m.layout); break; }
       case 'probe-error': { const p = probes.get(m.id); probes.delete(m.id); p?.reject(rebuildError(m.error)); break; }
       case 'created': {
         const g = glues.get(m.glueId);
@@ -160,9 +163,9 @@ export function createEngineWorkerClient(worker, { moduleArgs = {}, maxInFlight 
     }
     // A buffer for the next pyramid readback: one the Worker handed back, else a new one.
     acquireAtlas(byteLength) {
-      for (let i = 0; i < pool.length; i++) {
-        if (pool[i].byteLength >= byteLength) { stats.buffersReused++; return pool.splice(i, 1)[0]; }
-      }
+      // Buffers smaller than the request (left over from a smaller capture) can never serve it or any later request of this size: drop them.
+      for (let i = pool.length - 1; i >= 0; i--) if (pool[i].byteLength < byteLength) { pool.splice(i, 1); stats.buffersDropped++; }
+      if (pool.length) { stats.buffersReused++; return pool.shift(); }
       stats.buffersAllocated++;
       return new Uint8Array(byteLength);
     }
