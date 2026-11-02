@@ -6,7 +6,8 @@
 add_library(sr_vio_tracker_core STATIC
   ${CMAKE_CURRENT_SOURCE_DIR}/motion.cc
   ${CMAKE_CURRENT_SOURCE_DIR}/vio_tracker.cc
-  ${CMAKE_CURRENT_SOURCE_DIR}/vi_prediction.cc)
+  ${CMAKE_CURRENT_SOURCE_DIR}/vi_prediction.cc
+  ${CMAKE_CURRENT_SOURCE_DIR}/span_velocity.cc)
 # sr_vendor_imagedetection: DetectionImageTracker of 938 (FULL-3, src/image_target/CMakeLists.txt).
 # sr_image_target: the US-015 image world tracker (994) behind the vendored hook (FULL-12, opt-in).
 target_link_libraries(sr_vio_tracker_core PUBLIC sr_frontend sr_metric_scale sr_map_tracker

@@ -9,3 +9,8 @@ target_compile_definitions(sr_tests_vio_tracker PRIVATE SR_TEST_DATA_DIR="${SLAM
 sr_add_unit_test(sr_tests_vi_prediction
   SOURCES vi_prediction_test.cc
   LIBS sr_vio_tracker_core)
+
+# P3 candidate R6: motion-prediction velocity over a time span.
+sr_add_unit_test(sr_p3_r6_test
+  SOURCES r6_span_velocity_test.cc
+  LIBS sr_vio_tracker_core)

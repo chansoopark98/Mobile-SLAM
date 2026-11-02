@@ -14,6 +14,7 @@
 #include "image_target/image_world_tracker.h"
 #include "metric_scale/metric_scale_estimator.h"
 #include "vio_tracker/tracker_modules.h"
+#include "vio_tracker/span_velocity.h"
 #include "vio_tracker/vi_prediction.h"
 #include "vio_tracker/vio_tracker.h"
 
@@ -71,6 +72,7 @@ struct VioTracker::Impl {
   FrameState prediction;                               // g+480 of the last Track
   ViPredictor vi;                                      // ACC-5 (accuracy mode only)
   int64_t vi_frames = 0;
+  SpanVelocity span;                                   // P3 R6 (accuracy mode only)
   c8::DetectionImageTracker image_tracker;             // +7248 (FULL-3, 938)
   std::vector<c8::LocatedImage> located;               // +7280 locatedImages_ (938 output)
   std::vector<c8::LocatedImage> located_out;           // after applyToLocatedImages

@@ -235,8 +235,13 @@ c8::HMatrix VioTracker::TrackWithTargets(const TrackingSensorFrame& frame,
   }
 
   // H. pose history and velocity (D:84939-85055).
-  UpdateHistory(s.hist, s.tam_extrinsic, s.now,
-                s.mb_out.world_transform_updated || s.mb_out.pose_correction_applied);
+  const bool world_transform_updated =
+      s.mb_out.world_transform_updated || s.mb_out.pose_correction_applied;
+  UpdateHistory(s.hist, s.tam_extrinsic, s.now, world_transform_updated);
+  if (acc.enabled && acc.r6_span_velocity) {  // P3 R6: velocity over a time span
+    ApplySpanVelocity(&s.span, s.hist, world_transform_updated || s.mb_out.map_reset,
+                      world_transform_updated);
+  }
   if (vi_on) {
     s.vi.Update(s.hist[0], s.hist[1].pose, s.now.time_ns, frame.metric_scale_hint,
                 acc.vi_velocity_gain,
