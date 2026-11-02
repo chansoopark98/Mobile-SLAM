@@ -3,6 +3,7 @@
 
 #include "map_builder/pose_graph.h"
 
+#include <algorithm>
 #include <array>
 #include <cstddef>
 #include <cstdint>
@@ -81,11 +82,14 @@ struct RelativePoseError {
 
 }  // namespace
 
-PoseGraphSummary OptimizePoseGraph(std::vector<Eigen::Isometry3d>* poses, size_t fixed,
+PoseGraphSummary OptimizePoseGraph(std::vector<Eigen::Isometry3d>* poses, const std::vector<size_t>& fixed,
                                    const std::vector<PoseGraphEdge>& edges) {
   PoseGraphSummary out;
   const size_t n = poses->size();
-  SR_CHECK(fixed < n, "[pose_graph] fixed node out of range");
+  SR_CHECK(!fixed.empty(), "[pose_graph] no fixed node (gauge)");
+  for (const size_t f : fixed) {
+    SR_CHECK(f < n, "[pose_graph] fixed node out of range");
+  }
   std::vector<std::array<double, 3>> p(n);
   std::vector<std::array<double, 4>> q(n);  // Eigen order x, y, z, w
   for (size_t i = 0; i < n; ++i) {
@@ -110,10 +114,14 @@ PoseGraphSummary OptimizePoseGraph(std::vector<Eigen::Isometry3d>* poses, size_t
             new RelativePoseError(e.a_from_b)),
         nullptr, p[e.a].data(), q[e.a].data(), p[e.b].data(), q[e.b].data());
   }
-  problem.SetParameterBlockConstant(p[fixed].data());
-  problem.SetParameterBlockConstant(q[fixed].data());
-  if (edges.empty()) {
-    out.usable = true;  // nothing constrains the nodes: the poses stay as they are
+  std::vector<bool> is_fixed(n, false);
+  for (const size_t f : fixed) {
+    problem.SetParameterBlockConstant(p[f].data());
+    problem.SetParameterBlockConstant(q[f].data());
+    is_fixed[f] = true;
+  }
+  if (edges.empty() || std::find(is_fixed.begin(), is_fixed.end(), false) == is_fixed.end()) {
+    out.usable = true;  // nothing to solve (no constraint or no free node): the poses stay as they are
     return out;
   }
 
@@ -155,8 +163,9 @@ KeyframeCorrectionResult ApplyKeyframeCorrections(
   std::vector<std::pair<map::PointId, c8::HPoint3>> placed;
   for (const map::PointId pid : wm.AllPointIds()) {
     const map::WorldPoint* p = wm.FindPoint(pid);
-    if (p == nullptr || p->state == map::PointState::kDead) {
-      continue;
+    if (p == nullptr || p->state == map::PointState::kDead ||
+        p->source != map::PointSource::kTriangulated) {
+      continue;  // ground / sky / depth points keep the original 655 + 1127 rule
     }
     bool found = false;
     bool affected = false;
@@ -237,19 +246,21 @@ bool CloseLoopWithPoseGraph(map::WorldMap& wm, map::KeyframeId cand, map::Keyfra
   }
   std::vector<PoseGraphEdge> edges;
   for (size_t i = 0; i + 1 < nodes.size(); ++i) {
-    edges.push_back({i, i + 1, poses[i].inverse() * poses[i + 1]});  // odometry
+    edges.push_back({i, i + 1, poses[i].inverse() * poses[i + 1]});  // odometry, poses before the loop
   }
-  edges.push_back({0, nodes.size() - 1, poses[0].inverse() * ToIsometry(newest_loop_pose)});  // loop
+  const size_t end = nodes.size() - 1;
+  poses[end] = ToIsometry(newest_loop_pose);  // loop end held at the loop close's pose
   report->nodes = static_cast<int>(nodes.size());
   report->edges = static_cast<int>(edges.size());
-  report->solve = OptimizePoseGraph(&poses, 0, edges);
+  report->solve = OptimizePoseGraph(&poses, {0, end}, edges);
   if (!report->solve.usable) {
     return false;
   }
   std::vector<std::pair<map::KeyframeId, c8::HMatrix>> corrected;
-  for (size_t i = 1; i < nodes.size(); ++i) {
+  for (size_t i = 1; i < end; ++i) {
     corrected.emplace_back(nodes[i], ToHMatrix(poses[i]));
   }
+  corrected.emplace_back(newest, newest_loop_pose);  // exactly the pose the original adopts
   report->points = ApplyKeyframeCorrections(wm, corrected);
   report->applied = true;
   return true;

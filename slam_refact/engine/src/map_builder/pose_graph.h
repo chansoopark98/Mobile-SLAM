@@ -6,11 +6,18 @@
 //           (WorldMap::AllKeyframesByCreation); poses world_from_camera
 //   fixed   the loop candidate (gauge: the older map region is the reference, as in VINS-Mono's
 //           4-DoF pose graph, which holds the first looped keyframe constant); keyframes older than
-//           the candidate are not in the graph and keep their poses
-//   edges   odometry: consecutive nodes, measured by their current relative pose;
-//           loop: candidate -> newest, measured by candidate^-1 * the loop close's PnP pose of the
-//           newest keyframe (that pose is solved against the candidate's map points)
+//           the candidate are not in the graph and keep their poses.
+//           The newest keyframe is held at the loop close's PnP pose (solved against the
+//           candidate's map points), the pose the original loop close adopts for it: the loop
+//           constraint is taken as exact, the limit of an infinitely weighted loop edge. A unit
+//           weighted loop edge would leave the newest keyframe part of the way (1 / number of
+//           edges of the misclosure), and the S12 merge then ties its off-pose observations to the
+//           candidate's points (p3_r7 test NextTrackerFrame...: 0.072 rotation error of the next
+//           tracked frame with a unit loop edge, 0.0033 with the original single-keyframe update).
+//   edges   odometry: consecutive nodes, measured by their relative pose before the loop close
 //   residual  [p_ab_est - p_ab; 2 vec(q_ab * q_ab_est^-1)], unit weight, no robust loss
+// So R7 = the original loop close of the newest keyframe + the misclosure spread over the
+// keyframes between the candidate and the newest one (and the triangulated points they anchor).
 //
 // SE(3), not Sim(3): the loop measurement is a 6-DoF PnP pose (scale 1) against the candidate's
 // points, so a scale ratio between the two loop ends is not measured; and the map scale is tied at
@@ -44,19 +51,20 @@ struct PoseGraphSummary {
   double final_cost = 0.0;
 };
 
-// Minimizes the sum of squared edge residuals over the poses (world_from_camera, in/out); node
-// `fixed` is held constant. The poses are written back only when the solution is usable.
-PoseGraphSummary OptimizePoseGraph(std::vector<Eigen::Isometry3d>* poses, size_t fixed,
+// Minimizes the sum of squared edge residuals over the poses (world_from_camera, in/out); the
+// nodes in `fixed` (at least one) are held constant. The poses are written back only when the
+// solution is usable.
+PoseGraphSummary OptimizePoseGraph(std::vector<Eigen::Isometry3d>* poses, const std::vector<size_t>& fixed,
                                    const std::vector<PoseGraphEdge>& edges);
 
 struct KeyframeCorrectionResult {
-  int checked_points = 0;         // live points observed by a corrected keyframe
+  int checked_points = 0;         // live TRIANGULATED points observed by a corrected keyframe
   int moved_points = 0;           // of those, points whose reference keyframe was corrected
   int unlinked_observations = 0;  // removed by 1150 on the corrected poses
 };
 
-// Gives each keyframe in `corrected` its new pose (655) and re-places every live point that a
-// corrected keyframe observes by its reference keyframe, the oldest keyframe (creation order)
+// Gives each keyframe in `corrected` its new pose (655) and re-places every live TRIANGULATED
+// point that a corrected keyframe observes by its reference keyframe, the oldest keyframe (creation order)
 // observing it: X' = P_new * P_old^-1 * X when the reference keyframe is corrected, X' = X when it
 // is not (e.g. the fixed loop candidate). The point keeps its coordinates in the reference camera.
 // X' is then set with 1150 (WorldMap::SetPointPosition) on the corrected poses: every observation
@@ -66,6 +74,9 @@ struct KeyframeCorrectionResult {
 // (AdjustDirtyPoints) does not re-average the observation rays into a position that neither the
 // reference nor the corrected keyframes see (local BA treats its solved positions the same way). A
 // point left without observations stays dirty so that 1127 retires it.
+// Ground and sky points are not touched here: the original engine derives their position from the
+// observing keyframes' poses (initialDepth on the plane y = -1 / the sky distance, 1127), so 655
+// leaves them dirty and the caller's 1127 re-places them from the corrected poses.
 KeyframeCorrectionResult ApplyKeyframeCorrections(
     map::WorldMap& wm, const std::vector<std::pair<map::KeyframeId, c8::HMatrix>>& corrected);
 

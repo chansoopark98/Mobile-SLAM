@@ -18,15 +18,18 @@
 #include <vector>
 
 #include "Eigen/Geometry"
+#include "c8/geometry/egomotion.h"
 #include "c8/hmatrix.h"
 #include "c8/hpoint.h"
 #include "c8/quaternion.h"
 #include "common/tracking_types.h"
+#include "compat/random_numbers.h"
 #include "config/accuracy.h"
 #include "config/params.h"
 #include "config/settings.h"
 #include "gtest/gtest.h"
 #include "map/world_map.h"
+#include "map/world_map_internal.h"
 #include "map_builder/loop_close.h"
 #include "map_builder/map_builder.h"
 #include "map_builder/pose_graph.h"
@@ -139,11 +142,13 @@ struct LoopScene {
   c8::HMatrix pose_stored = c8::HMatrixGen::translation(0.04f, -0.01f, 0.03f) * c8::HMatrixGen::xRadians(0.31f) *
                             c8::HMatrixGen::yRadians(-0.52f) * c8::HMatrixGen::zRadians(0.17f);
 
-  explicit LoopScene(bool loop, int n = 80) {
+  std::vector<c8::HPoint3> truth;
+  std::vector<map::PointId> extra_points;  // seen by the candidate only (no newest appearance)
+
+  explicit LoopScene(bool loop, int n = 80, int extra = 0) {
     map::WorldMap& w = maps.active();
     c8::FrameWithPoints fa(TestIntrinsics());
     c8::FrameWithPoints fb(TestIntrinsics());
-    std::vector<c8::HPoint3> truth;
     for (int i = 0; i < n; ++i) {
       const c8::HPoint3 x(-1.2f + 0.03f * static_cast<float>(i), -0.5f + 0.03f * static_cast<float>((i * 7) % 30),
                           2.0f + 0.06f * static_cast<float>((i * 11) % 30));
@@ -152,6 +157,13 @@ struct LoopScene {
       fa.addImageRayPoint(Project(pose_first, x), 1, 0.25f, 0.5f, OrbSet(d));
       fb.addImageRayPoint(Project(pose_true, x), 1, 0.25f, 0.5f, OrbSet(d));
     }
+    std::vector<c8::HPoint3> extra_x;
+    for (int i = 0; i < extra; ++i) {
+      const c8::HPoint3 x(-0.4f + 0.08f * static_cast<float>(i), 0.35f, 2.5f + 0.1f * static_cast<float>(i));
+      extra_x.push_back(x);
+      fa.addImageRayPoint(Project(pose_first, x), 1, 0.25f, 0.5f,
+                          OrbSet(testing::Descriptor(static_cast<uint32_t>(70000 + i))));
+    }
     first = w.AddKeyframe(fa, 0);
     w.SetKeyframePose(first, pose_first);
     for (int i = 0; i < n; ++i) {
@@ -159,6 +171,12 @@ struct LoopScene {
                                         map::PointSource::kTriangulated);
       w.AddObservation(p, static_cast<uint32_t>(i), first);
       points.push_back(p);
+    }
+    for (int i = 0; i < extra; ++i) {
+      const map::PointId p = w.AddPoint(w.GetKeyframe(first).seq, extra_x[static_cast<size_t>(i)],
+                                        map::PointSource::kTriangulated);
+      w.AddObservation(p, static_cast<uint32_t>(n + i), first);
+      extra_points.push_back(p);
     }
     for (int k = 1; k <= 4; ++k) {
       c8::FrameWithPoints ff(TestIntrinsics());
@@ -181,7 +199,8 @@ struct LoopScene {
   map::WorldMap& wm() { return maps.active(); }
 };
 
-// 1. A drifted loop (biased odometry, exact loop edge) is pulled back towards the ground truth.
+// 1. A drifted loop (biased odometry; the loop end held at its exact loop pose, as R7 holds the
+// newest keyframe at the loop close's pose) is pulled back towards the ground truth.
 TEST(P3R7PoseGraph, SyntheticLoopDriftIsReduced) {
   constexpr int kNodes = 12;
   std::vector<Eigen::Isometry3d> gt(kNodes);
@@ -203,10 +222,10 @@ TEST(P3R7PoseGraph, SyntheticLoopDriftIsReduced) {
     est[i + 1] = est[i] * z;
     edges.push_back({i, i + 1, z});
   }
-  edges.push_back({0, static_cast<size_t>(kNodes - 1), gt[0].inverse() * gt[static_cast<size_t>(kNodes - 1)]});
   const double before = TranslationRmse(est, gt);
   const double end_before = (est.back().translation() - gt.back().translation()).norm();
-  const PoseGraphSummary s = OptimizePoseGraph(&est, 0, edges);
+  est.back() = est[0] * (gt[0].inverse() * gt.back());  // loop end at the loop measurement
+  const PoseGraphSummary s = OptimizePoseGraph(&est, {0, static_cast<size_t>(kNodes - 1)}, edges);
   ASSERT_TRUE(s.usable);
   EXPECT_LT(s.final_cost, s.initial_cost);
   const double after = TranslationRmse(est, gt);
@@ -229,7 +248,7 @@ TEST(P3R7PoseGraph, NoLoopGraphIsUnchanged) {
   std::vector<PoseGraphEdge> edges;
   for (size_t i = 0; i + 1 < poses.size(); ++i) edges.push_back({i, i + 1, poses[i].inverse() * poses[i + 1]});
   const std::vector<Eigen::Isometry3d> before = poses;
-  const PoseGraphSummary s = OptimizePoseGraph(&poses, 0, edges);
+  const PoseGraphSummary s = OptimizePoseGraph(&poses, {0}, edges);
   ASSERT_TRUE(s.usable);
   EXPECT_LT(s.initial_cost, 1e-20);
   for (size_t i = 0; i < poses.size(); ++i) EXPECT_TRUE(poses[i].isApprox(before[i], 1e-9)) << i;
@@ -275,7 +294,7 @@ TEST(P3R7PoseGraph, LoopCloseSuccessPathRunsWithThePoseGraph) {
   EXPECT_GE(rep.num_matches, 75u);  // WorldMaps.loopClosingMatchesRequired
   ASSERT_TRUE(rep.pose_graph.applied);
   EXPECT_EQ(rep.pose_graph.nodes, 6);
-  EXPECT_EQ(rep.pose_graph.edges, 6);
+  EXPECT_EQ(rep.pose_graph.edges, 5);  // odometry only; the loop end is held at the PnP pose
   EXPECT_LT(rep.pose_graph.solve.final_cost, rep.pose_graph.solve.initial_cost);
   EXPECT_TRUE(out.world_transform_updated);
   EXPECT_TRUE(SameBits(wm.GetKeyframe(scene.first).frame.extrinsic(), scene.pose_first));  // gauge
@@ -288,6 +307,15 @@ TEST(P3R7PoseGraph, LoopCloseSuccessPathRunsWithThePoseGraph) {
   EXPECT_LT(MaxAbsDiff(old_newest * out.world_correction, now), 1e-5f);
   // the candidate's points are referenced by the fixed candidate: not moved by the graph
   EXPECT_EQ(rep.pose_graph.points.moved_points, 0);
+  {  // the newest keyframe and C are exactly those of the original loop close (R7 off)
+    const ScopedAccuracy off(false);
+    LoopScene orig(true);
+    LoopCloseState st_o;
+    MapBuilderOutput out_o;
+    ASSERT_TRUE(LoopClose(orig.wm(), &st_o, &out_o));
+    EXPECT_TRUE(SameBits(now, orig.wm().GetKeyframe(orig.newest).frame.extrinsic()));
+    EXPECT_TRUE(SameBits(out.world_correction, out_o.world_correction));
+  }
   // a second attempt with the same newest keyframe: the ring holds the candidate, no new loop
   MapBuilderOutput out2;
   LoopCloseReport rep2;
@@ -468,6 +496,9 @@ TEST(P3R7PoseGraph, SharedPointStaysInTheUncorrectedReferenceFrameAfterAdjust) {
 // 7. The tracker frame after the loop close starts from the corrected newest keyframe pose: the
 // MapTracker holds the old newest pose on the keyframe frame, applies the MapBuilderOutput (664),
 // and its pose (the next Track's start pose) equals the pose-graph pose of the newest keyframe.
+// Then one real Track() of the next frame (camera at the true newest pose, seeing the candidate's
+// points) runs from there; pre-declared: its pose is within 0.02 (translation and rotation matrix
+// elements) of the true pose.
 TEST(P3R7PoseGraph, NextTrackerFrameStartsFromTheCorrectedNewestPose) {
   const ScopedAccuracy r7(true);
   LoopScene scene(true);
@@ -475,6 +506,7 @@ TEST(P3R7PoseGraph, NextTrackerFrameStartsFromTheCorrectedNewestPose) {
   const c8::HMatrix old_newest = wm.GetKeyframe(scene.newest).frame.extrinsic();
   map_tracker::MapTracker tracker;
   MapBuilderOutput prime;
+  prime.keyframe_created = true;  // the map is initialized (tracking, not relocalization)
   prime.pose_correction_applied = true;
   prime.pose_correction = old_newest;  // identity start pose -> old newest pose
   tracker.ApplyMapBuilderOutput(prime);
@@ -490,6 +522,118 @@ TEST(P3R7PoseGraph, NextTrackerFrameStartsFromTheCorrectedNewestPose) {
   EXPECT_LT(MaxAbsDiff(next_start, corrected), 1e-5f);
   EXPECT_LT(MaxAbsDiff(tracker.pose(), corrected), 1e-5f);
   EXPECT_GT(MaxAbsDiff(next_start, old_newest), 1e-2f);  // the correction is not hidden
+
+  TrackerInput in(TestIntrinsics(), c8::rotation(scene.pose_true), 33333333);
+  for (size_t i = 0; i < scene.truth.size(); ++i) {
+    in.frame_points.addImageRayPoint(Project(scene.pose_true, scene.truth[i]), 1, 0.25f, 0.5f,
+                                     OrbSet(testing::Descriptor(static_cast<uint32_t>(100 + i))));
+  }
+  FrameState pred;
+  pred.pose = tracker.pose();
+  pred.time_ns = 33333333;
+  pred.xr_device_rotation = c8::rotation(scene.pose_true);
+  MapTrackerOutput trk;
+  compat::RandomNumbers rng(compat::kEngineRngSeed);
+  tracker.Track(wm, &in, pred, &trk, &rng);
+  float max_t = 0.0f;
+  float max_r = 0.0f;
+  for (int r = 0; r < 3; ++r) {
+    max_t = std::max(max_t, std::fabs(trk.pose(r, 3) - scene.pose_true(r, 3)));
+    for (int c = 0; c < 3; ++c) max_r = std::max(max_r, std::fabs(trk.pose(r, c) - scene.pose_true(r, c)));
+  }
+  EXPECT_LE(max_t, 0.02f) << "state " << trk.state;
+  EXPECT_LE(max_r, 0.02f) << "state " << trk.state;
+}
+
+// Restated LC merge of the loop scene on a map built without R7: keyframes set directly to the
+// given poses, the candidate's points settled (not dirty), then the newest keyframe's matched
+// observations added in match order and the original 1127/1150 run.
+void ReferenceMerge(LoopScene* ref, const std::vector<c8::HMatrix>& middle_poses, const c8::HMatrix& newest_pose) {
+  map::WorldMap& w = ref->wm();
+  for (size_t k = 0; k < ref->middle.size(); ++k) w.SetKeyframePose(ref->middle[k], middle_poses[k]);
+  w.SetKeyframePose(ref->newest, newest_pose);
+  map::WorldMapAccess::impl(w).dirty.clear();
+  for (size_t i = 0; i < ref->points.size(); ++i) {
+    w.AddObservation(ref->points[i], static_cast<uint32_t>(i), ref->newest);
+  }
+  w.AdjustDirtyPoints();
+  w.AdjustDirtyPoints();
+}
+
+// 10. Full LoopClose success path with R7 and the following 1127: the graph corrects the poses
+// first, then the newest keyframe's matched observations are added and the points re-placed. The
+// candidate's matched points end where the original 1127/1150 puts them from the corrected poses
+// (a map built without R7 and set to those poses), with the same observation links; the
+// candidate's other points are bit-identical and keep only the candidate's observation.
+TEST(P3R7PoseGraph, LoopCloseFullPathPlacesMatchedPointsByTheOriginalRule) {
+  const ScopedAccuracy r7(true);
+  LoopScene scene(true, 80, 6);
+  map::WorldMap& wm = scene.wm();
+  map::WorldMapAccess::impl(wm).dirty.clear();  // a settled map: positions as built
+  std::vector<c8::HPoint3> extra_before;
+  for (const map::PointId p : scene.extra_points) extra_before.push_back(wm.Point(p).position);
+  LoopCloseState st;
+  MapBuilderOutput out;
+  LoopCloseReport rep;
+  ASSERT_TRUE(LoopClose(wm, &st, &out, &rep));
+  ASSERT_TRUE(rep.pose_graph.applied);
+  ASSERT_EQ(rep.num_matches, 80u);
+  ASSERT_EQ(rep.num_correspondences, 80u);
+  wm.AdjustDirtyPoints();  // the common 1127 of MapBuilder::Update
+
+  std::vector<c8::HMatrix> middle_poses;
+  for (const map::KeyframeId kf : scene.middle) middle_poses.push_back(wm.GetKeyframe(kf).frame.extrinsic());
+  LoopScene ref(true, 80, 6);
+  ReferenceMerge(&ref, middle_poses, wm.GetKeyframe(scene.newest).frame.extrinsic());
+
+  int both = 0;
+  for (size_t i = 0; i < scene.points.size(); ++i) {
+    const map::WorldPoint& a = wm.Point(scene.points[i]);
+    const map::WorldPoint& b = ref.wm().Point(ref.points[i]);
+    EXPECT_EQ(a.state == map::PointState::kDead, b.state == map::PointState::kDead) << i;
+    EXPECT_NEAR(a.position.x(), b.position.x(), 1e-6f) << i;
+    EXPECT_NEAR(a.position.y(), b.position.y(), 1e-6f) << i;
+    EXPECT_NEAR(a.position.z(), b.position.z(), 1e-6f) << i;
+    EXPECT_EQ(a.observations.count(scene.first), b.observations.count(ref.first)) << i;
+    EXPECT_EQ(a.observations.count(scene.newest), b.observations.count(ref.newest)) << i;
+    EXPECT_EQ(a.observations.size(), b.observations.size()) << i;
+    both += a.observations.size() == 2 ? 1 : 0;
+  }
+  ::testing::Test::RecordProperty("matched_points_linked_to_both", both);
+  for (size_t k = 0; k < scene.extra_points.size(); ++k) {
+    EXPECT_TRUE(SameBits(wm.Point(scene.extra_points[k]).position, extra_before[k])) << k;
+    EXPECT_EQ(Observers(wm, scene.extra_points[k]), std::vector<map::KeyframeId>{scene.first}) << k;
+  }
+}
+
+// 11. Ground points keep the original placement rule: a lone ground point whose keyframe is
+// corrected upwards by 0.5 is re-placed by 1127 on the plane y = -1 along its ray from the corrected
+// camera, not carried rigidly to y = -0.5.
+TEST(P3R7PoseGraph, GroundPointIsRePlacedOnThePlaneFromTheCorrectedKeyframe) {
+  map::WorldMaps maps;
+  map::WorldMap& wm = maps.active();
+  const c8::HMatrix pose = Pose(0.0f, 0.0f, 0.0f, 0.0f);
+  const c8::HPoint3 g(0.3f, -1.0f, 3.0f);
+  c8::FrameWithPoints f(TestIntrinsics());
+  f.addImageRayPoint(Project(pose, g), 1, 0.25f, 0.5f, OrbSet(testing::Descriptor(7)));
+  const map::KeyframeId kf = wm.AddKeyframe(f, 0);
+  wm.SetKeyframePose(kf, pose);
+  const map::PointId pid = wm.AddPoint(0, g, map::PointSource::kGround);
+  wm.AddObservation(pid, 0, kf);
+  wm.AdjustDirtyPoints();
+  ASSERT_NEAR(wm.Point(pid).position.y(), -1.0f, 1e-4f);  // the ground rule before the correction
+
+  const c8::HMatrix up = c8::HMatrixGen::translation(0.0f, 0.5f, 0.0f) * pose;
+  const KeyframeCorrectionResult res = ApplyKeyframeCorrections(wm, {{kf, up}});
+  wm.AdjustDirtyPoints();
+  EXPECT_EQ(res.checked_points, 0);  // not placed by R7
+  // ray (0.1, -1/3, 1) from the camera at (0, 0.5, 0) meets y = -1 at s = 4.5
+  const c8::HPoint2 ray = Project(pose, g);
+  const float s = (-1.0f - 0.5f) / ray.y();
+  EXPECT_NEAR(wm.Point(pid).position.x(), s * ray.x(), 1e-4f);
+  EXPECT_NEAR(wm.Point(pid).position.y(), -1.0f, 1e-4f);
+  EXPECT_NEAR(wm.Point(pid).position.z(), s, 1e-4f);
+  EXPECT_EQ(Observers(wm, pid), std::vector<map::KeyframeId>{kf});
 }
 
 // 8. Graphs without a cycle are refused and leave the map untouched: the candidate equal to the
@@ -527,7 +671,7 @@ TEST(P3R7PoseGraph, UnusableSolveChangesNothing) {
   const std::vector<PoseGraphEdge> edges = {{0, 1, poses[0].inverse() * poses[1]},
                                             {1, 2, poses[1].inverse() * poses[2]},
                                             {0, 2, bad}};
-  const PoseGraphSummary s = OptimizePoseGraph(&poses, 0, edges);
+  const PoseGraphSummary s = OptimizePoseGraph(&poses, {0}, edges);
   EXPECT_FALSE(s.usable);
   for (size_t i = 0; i < poses.size(); ++i) EXPECT_TRUE(poses[i].isApprox(before[i], 0.0)) << i;
 

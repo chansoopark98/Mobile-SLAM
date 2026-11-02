@@ -80,8 +80,8 @@ void ComputeKeyframeGlobalDescriptor(LoopCloseState* state, map::Keyframe* kf);
 // AdjustDirtyPoints afterwards). Sets out->world_transform_updated and, on success,
 // out->world_correction. Returns true when a loop close was applied.
 // With R7 on (config::Accuracy().enabled && r7_pose_graph) an accepted loop (same acceptance) is
-// closed by CloseLoopWithPoseGraph before the S12 point merge; world_correction is then
-// P_old^-1 * P_new of the newest keyframe with P_new its pose-graph pose.
+// closed by CloseLoopWithPoseGraph before the S12 point merge; the newest keyframe still gets the
+// PnP pose, so world_correction is the original P_old^-1 * P_new.
 bool LoopClose(map::WorldMap& wm, LoopCloseState* state, MapBuilderOutput* out,
                LoopCloseReport* report = nullptr);
 

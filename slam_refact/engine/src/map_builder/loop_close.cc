@@ -247,10 +247,13 @@ void ApplyResult(map::WorldMap& wm, map::KeyframeId newest, map::KeyframeId cand
   // a non-invertible P_old.
   const c8::HMatrix old_pose = wm.GetKeyframe(newest).frame.extrinsic();
   // P3 candidate R7 (default off; not part of the original): the accepted loop is closed by a
-  // keyframe pose-graph optimization that moves every keyframe from the candidate to the newest
-  // one and the points they anchor (pose_graph.h). The newest keyframe then has its pose-graph pose
-  // and C carries the tracker onto it. Without a usable graph the original single-keyframe update
-  // below is kept.
+  // keyframe pose-graph optimization that spreads the misclosure over the keyframes between the
+  // candidate and the newest one and the points they anchor (pose_graph.h). The newest keyframe
+  // gets exactly result.pose, as below, so C is the original one. Without a usable graph the
+  // original single-keyframe update below is kept. Either way the merge / associate / unlink below and the closing 1127 run after
+  // the keyframe poses are final (R7: correction -> observations added -> adjust), so the points
+  // that receive newest-keyframe observations are re-placed by the original rule from the
+  // corrected poses.
   const bool graph = config::Accuracy().enabled && config::Accuracy().r7_pose_graph &&
                      CloseLoopWithPoseGraph(wm, cand, newest, result.pose, &rep->pose_graph);
   const c8::HMatrix new_pose = graph ? wm.GetKeyframe(newest).frame.extrinsic() : result.pose;
