@@ -21,6 +21,11 @@ cc_end(0xf3e507b0);
 #include "reality/engine/geometry/bundle-residual-analytic.h"
 
 namespace c8 {
+// P4 candidate V1 (opt-in, default off; not part of the reference runtime): see
+// PoseEstimationAnalytic::Evaluate below.
+static bool g_poseEstimationAnalyticExactLimit = false;
+void setPoseEstimationAnalyticExactLimit(bool on) { g_poseEstimationAnalyticExactLimit = on; }
+bool poseEstimationAnalyticExactLimit() { return g_poseEstimationAnalyticExactLimit; }
 namespace {
 constexpr double SMALL_FLOAT = 1e-12;
 constexpr double SMALL_DOUBLE = 1e-40;
@@ -1128,7 +1133,13 @@ bool PoseEstimationAnalytic::Evaluate(
   const double x62 = 2 * x61;
   const double x63 = x27 * x62;
   const double x64 = 0.017677669529663688 * x23;
-  const double x65 = x29 / (x30 * x31);
+  // V1: x31 == 0 (sqrt of a cancelled x30 - 0.005) makes x30 * x31 zero and x65 +-inf (NaN for
+  // x29 == 0). Exactly, x31 = sqrt(x23) * |x29| / sqrt(x30 + 0.005), so x65 = x29 / (x30 * x31) =
+  // sign(x29) * sqrt(x30 + 0.005) / (x30 * sqrt(x23)): finite wherever x30 is. Only with the
+  // switch on and only where the original divides by zero; residuals are never touched.
+  const double x65 = (g_poseEstimationAnalyticExactLimit && (x30 * x31) <= SMALL_DOUBLE)
+    ? std::copysign(std::sqrt(x30 + 0.0050000000000000001) / (x30 * std::sqrt(x23)), x29)
+    : x29 / (x30 * x31);
   const double x66 = x64 * x65;
   const double x69 = x68 * y;
   const double x71 = -x68 * z;
@@ -1146,7 +1157,9 @@ bool PoseEstimationAnalytic::Evaluate(
   const double x85 = x28 * x84;
   const double x86 = x61 * x84;
   const double x87 = x35 * x62;
-  const double x88 = x36 / (x37 * x38);
+  const double x88 = (g_poseEstimationAnalyticExactLimit && (x37 * x38) <= SMALL_DOUBLE)
+    ? std::copysign(std::sqrt(x37 + 0.0050000000000000001) / (x37 * std::sqrt(x23)), x36)
+    : x36 / (x37 * x38);
   const double x89 = x64 * x88;
 
   residuals[0] = 0.070710678118654752 * x31 + 1.0e-10;
