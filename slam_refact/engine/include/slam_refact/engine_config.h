@@ -80,6 +80,15 @@ struct AccuracyConfig {
   bool r6_span_velocity = false;
   // R7: a detected loop is closed with a keyframe pose-graph optimization.
   bool r7_pose_graph = false;
+  // P4 candidates (build/xr-drift-p4-20261103/lc-selfloop-analysis.md plan A, v1-vendor-denominator-
+  // analysis.md V1-a). Default off; off leaves the engine output bit-identical. They need `enabled`.
+  // R7P: the loop close candidate selection judges every distance-list entry by its own slot (the
+  // original reads the compressed list at slot indices, which selects the newest keyframe itself
+  // whenever a free slot precedes it). Refines R7: has no effect unless r7_pose_graph is on too.
+  bool r7p_loop_select = false;
+  // V1: the vendored pose-estimation Jacobian takes the exact limit of its pseudo-Huber derivative
+  // where the original divides by zero (x30 * x31 == 0), instead of becoming +-inf.
+  bool v1_exact_limit = false;
 };
 
 struct EngineConfig {
