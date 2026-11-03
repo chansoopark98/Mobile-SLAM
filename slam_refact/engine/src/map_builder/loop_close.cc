@@ -366,9 +366,12 @@ void ApplyResult(map::WorldMap& wm, map::KeyframeId newest, map::KeyframeId cand
   wm.AdjustDirtyPoints();  // 1127 (the common one follows in MapBuilder::Update)
   if (R7pSelectActive()) {
     // Diagnostic only (stderr, no effect on the engine output): one line per accepted loop.
+    // gap = creation-order distance (Keyframe::seq, the keyframe sequence counter at creation).
+    const long long gap =
+        static_cast<long long>(wm.GetKeyframe(newest).seq) - static_cast<long long>(wm.GetKeyframe(cand).seq);
     std::fprintf(stderr, "[r7p-loop] newest=%u cand=%u gap=%lld nodes=%d merges=%zu applied=%d\n",
-                 newest.id(), cand.id(), static_cast<long long>(newest.id()) - static_cast<long long>(cand.id()),
-                 rep->pose_graph.nodes, rep->num_merges, rep->pose_graph.applied ? 1 : 0);
+                 newest.id(), cand.id(), gap, rep->pose_graph.nodes, rep->num_merges,
+                 rep->pose_graph.applied ? 1 : 0);
   }
 }
 

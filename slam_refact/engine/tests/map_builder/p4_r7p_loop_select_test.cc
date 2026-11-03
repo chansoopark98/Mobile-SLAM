@@ -297,7 +297,11 @@ TEST(P4R7pLoopSelect, DiagnosticLinesOnStderr) {
     ASSERT_TRUE(std::regex_match(err, m, line)) << err;
     EXPECT_EQ(std::stoul(m[1]), scene.newest.id());
     EXPECT_EQ(std::stoul(m[2]), scene.first.id());
-    EXPECT_EQ(std::stol(m[3]), static_cast<long>(scene.newest.id()) - static_cast<long>(scene.first.id()));
+    // gap = creation-order distance (Keyframe::seq): first is created first, newest five keyframes later
+    // (four middle keyframes in between; a removed one keeps its sequence number).
+    EXPECT_EQ(std::stol(m[3]), static_cast<long>(scene.wm().GetKeyframe(scene.newest).seq) -
+                                   static_cast<long>(scene.wm().GetKeyframe(scene.first).seq));
+    EXPECT_EQ(std::stol(m[3]), 5);
     EXPECT_EQ(std::stoi(m[4]), a.rep.pose_graph.nodes);
     EXPECT_EQ(std::stoul(m[5]), a.rep.num_merges);
     EXPECT_EQ(std::stoi(m[6]), a.rep.pose_graph.applied ? 1 : 0);
