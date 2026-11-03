@@ -12,6 +12,7 @@
 #include <algorithm>
 #include <cfloat>
 #include <cstdint>
+#include <cstdio>
 #include <cstring>
 #include <deque>
 #include <set>
@@ -55,6 +56,26 @@ float Hamming256(const std::array<uint8_t, 32>& a, const std::array<uint8_t, 32>
     bits += __builtin_popcountll(x ^ y);
   }
   return static_cast<float>(bits);
+}
+
+// P4 candidate R7P (AccuracyConfig::r7p_loop_select): the candidate-selection rule of FindTarget
+// S5 judges every list entry by its own slot. It refines R7, so it needs R7 on as well.
+bool R7pSelectActive() {
+  const AccuracyConfig& acc = config::Accuracy();
+  return acc.enabled && acc.r7_pose_graph && acc.r7p_loop_select;
+}
+
+const char* OutcomeName(LoopCloseOutcome o) {
+  switch (o) {
+    case LoopCloseOutcome::kTooFewSlots: return "too_few_slots";
+    case LoopCloseOutcome::kNoCandidate: return "no_candidate";
+    case LoopCloseOutcome::kInvalidHandle: return "invalid_handle";
+    case LoopCloseOutcome::kTooFewMatches: return "too_few_matches";
+    case LoopCloseOutcome::kTooFewCorrespondences: return "too_few_correspondences";
+    case LoopCloseOutcome::kPoseEstimationFailed: return "pose_estimation_failed";
+    case LoopCloseOutcome::kApplied: return "applied";
+  }
+  return "unknown";
 }
 
 // ---- find-loop-close-target (S1..S6) -------------------------------------------------------------
@@ -120,26 +141,52 @@ bool FindTarget(map::WorldMap& wm, LoopCloseState* st, LoopCloseReport* rep,
   // and `m == newest.index` / S2 are applied to that position (spec §0 3, U2); strict `<`.
   float best = config::WorldMapsSettings::Get().loop_closing_distance_threshold;
   map::KeyframeId cand;
-  const size_t iterations = std::max<size_t>(n_slots, 1);
-  for (size_t m = 0; m < iterations; ++m) {
-    if (m == newest.index()) {
-      continue;
+  if (R7pSelectActive()) {
+    // P4 candidate R7P (AccuracyConfig::r7p_loop_select; not part of the original): every entry of
+    // the compressed list is judged by its own slot (e.index), not by its list position. The
+    // newest keyframe's own entry is the one with e.index == newest.index() (S2 above checked that
+    // slot holds newest, and each slot appears once), so it is never a candidate, and S2 excludes
+    // the 2-hop covisible slots it was meant to. The list is read only up to `live`, so the U2
+    // tail is never read. ring (ids) and the strict `<` are as in the original loop.
+    for (size_t p = 0; p < live; ++p) {
+      const Entry e = dist[p];
+      if (e.index == newest.index()) {
+        continue;
+      }
+      if (!(e.distance < best)) {
+        continue;
+      }
+      if (s2.count(e.index) != 0) {
+        continue;
+      }
+      if (e.id == st->ring[0] || e.id == st->ring[1] || e.id == st->ring[2]) {
+        continue;
+      }
+      best = e.distance;
+      cand = map::KeyframeId(e.index, e.id);
     }
-    const Entry e = dist[m];
-    if (e.id == 0) {
-      continue;
+  } else {
+    const size_t iterations = std::max<size_t>(n_slots, 1);
+    for (size_t m = 0; m < iterations; ++m) {
+      if (m == newest.index()) {
+        continue;
+      }
+      const Entry e = dist[m];
+      if (e.id == 0) {
+        continue;
+      }
+      if (!(e.distance < best)) {
+        continue;
+      }
+      if (s2.count(static_cast<uint32_t>(m)) != 0) {
+        continue;
+      }
+      if (e.id == st->ring[0] || e.id == st->ring[1] || e.id == st->ring[2]) {
+        continue;
+      }
+      best = e.distance;
+      cand = map::KeyframeId(e.index, e.id);
     }
-    if (!(e.distance < best)) {
-      continue;
-    }
-    if (s2.count(static_cast<uint32_t>(m)) != 0) {
-      continue;
-    }
-    if (e.id == st->ring[0] || e.id == st->ring[1] || e.id == st->ring[2]) {
-      continue;
-    }
-    best = e.distance;
-    cand = map::KeyframeId(e.index, e.id);
   }
 
   // S6: the threshold is read again (G936:4817-4819); the ring advances before the pose stage.
@@ -293,6 +340,7 @@ void ApplyResult(map::WorldMap& wm, map::KeyframeId newest, map::KeyframeId cand
       if (eb != db) {
         if (k_new.frame.worldPointIndices().count(o) != 0) {
           wm.MergePoint(eb, db);  // 1124: eb -> db
+          ++rep->num_merges;
         } else {
           wm.AddObservation(db, static_cast<uint32_t>(o), newest);  // 658
         }
@@ -316,6 +364,12 @@ void ApplyResult(map::WorldMap& wm, map::KeyframeId newest, map::KeyframeId cand
     }
   }
   wm.AdjustDirtyPoints();  // 1127 (the common one follows in MapBuilder::Update)
+  if (R7pSelectActive()) {
+    // Diagnostic only (stderr, no effect on the engine output): one line per accepted loop.
+    std::fprintf(stderr, "[r7p-loop] newest=%u cand=%u gap=%lld nodes=%d merges=%zu applied=%d\n",
+                 newest.id(), cand.id(), static_cast<long long>(newest.id()) - static_cast<long long>(cand.id()),
+                 rep->pose_graph.nodes, rep->num_merges, rep->pose_graph.applied ? 1 : 0);
+  }
 }
 
 }  // namespace
@@ -342,11 +396,19 @@ bool LoopClose(map::WorldMap& wm, LoopCloseState* state, MapBuilderOutput* out,
 
   map::KeyframeId cand;
   if (!FindTarget(wm, state, rep, &cand)) {
+    if (R7pSelectActive()) {
+      std::fprintf(stderr, "[r7p-attempt] outcome=%s\n", OutcomeName(rep->outcome));
+    }
     return false;
   }
   const map::KeyframeId newest = wm.newest();
   PoseResult result;
   if (!FindPose(wm, newest, cand, rep, &result)) {
+    if (R7pSelectActive()) {
+      std::fprintf(stderr, "[r7p-attempt] outcome=%s newest=%u cand=%u matches=%zu correspondences=%zu\n",
+                   OutcomeName(rep->outcome), newest.id(), cand.id(), rep->num_matches,
+                   rep->num_correspondences);
+    }
     return false;
   }
   ApplyResult(wm, newest, cand, result, out, rep);

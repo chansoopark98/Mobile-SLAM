@@ -64,3 +64,12 @@ if(SLAM_REFACT_LOOP_CLOSE)
     LIBS sr_map_builder sr_map_tracker sr_config
     LABELS unit)
 endif()
+
+# P4 candidate R7P: loop close candidate selection by slot (map_builder/loop_close.cc FindTarget S5).
+# Only with SLAM_REFACT_LOOP_CLOSE; the binary hash is recorded as for the P3 suites.
+if(SLAM_REFACT_LOOP_CLOSE)
+  sr_add_unit_test(sr_p4_r7p_test
+    SOURCES p4_r7p_loop_select_test.cc map_builder_test_util.h
+    LIBS sr_map_builder sr_map_tracker sr_config
+    LABELS unit)
+endif()
