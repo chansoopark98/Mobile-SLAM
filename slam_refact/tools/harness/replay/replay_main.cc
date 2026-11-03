@@ -67,7 +67,9 @@ void PushSensor(const SensorRow& row, GlueRunner* glue) {
 }
 
 // SLAM_REFACT_ACCURACY="key=value,..." (accuracy mode, ACC-1): enabled, tri, local_ba, window,
-// iterations, seconds, huber, tilt, imu, acc_noise, acc_walk, and the P2 candidates f1, f2.
+// iterations, seconds, huber, tilt, imu, acc_noise, acc_walk, the P2 candidates f1, f2, the P3
+// candidates r6, r7 and the P4 candidates r7p (R7 candidate selection by slot, needs r7) and v1
+// (vendored pose-estimation Jacobian limit).
 // Unknown keys abort.
 void ApplyAccuracyEnv(EngineConfig* cfg) {
   const char* env = std::getenv("SLAM_REFACT_ACCURACY");
@@ -102,6 +104,8 @@ void ApplyAccuracyEnv(EngineConfig* cfg) {
     else if (k == "f2") a.f2_ground_confirmation = d != 0.0;
     else if (k == "r6") a.r6_span_velocity = d != 0.0;
     else if (k == "r7") a.r7_pose_graph = d != 0.0;
+    else if (k == "r7p") a.r7p_loop_select = d != 0.0;
+    else if (k == "v1") a.v1_exact_limit = d != 0.0;
     else if (k == "vi") a.vi_prediction = d != 0.0;
     else if (k == "vi_gain") a.vi_velocity_gain = d;
     else if (k == "metric_window") a.metric_window_s = d;
@@ -269,7 +273,7 @@ int Run(int argc, char** argv) {
                  "\"ba_window\":%d,\"ba_ground_points\":%d,\"vi_prediction\":%s,"
                  "\"vi_velocity_gain\":%.17g,\"metric_low_band\":%s,\"metric_fixed_lag_s\":%s,"
                  "\"detect_surfaces\":%s,\"f1_ground_plane\":%s,\"f2_ground_confirmation\":%s,"
-                 "\"r6_span_velocity\":%s,\"r7_pose_graph\":%s}\n",
+                 "\"r6_span_velocity\":%s,\"r7_pose_graph\":%s%s}\n",
                  a.enabled ? "true" : "false", a.metric_output ? "true" : "false", a.metric_window_s,
                  a.metric_prior_scale, a.local_ba ? "true" : "false",
                  a.multiview_triangulation ? "true" : "false", a.ba_window, a.ba_ground_points,
@@ -278,7 +282,10 @@ int Run(int argc, char** argv) {
                  std::isfinite(a.metric_fixed_lag_s) ? std::to_string(a.metric_fixed_lag_s).c_str() : "null",
                  glue_config.detect_surfaces ? "true" : "false",
                  a.f1_ground_plane ? "true" : "false", a.f2_ground_confirmation ? "true" : "false",
-                 a.r6_span_velocity ? "true" : "false", a.r7_pose_graph ? "true" : "false");
+                 a.r6_span_velocity ? "true" : "false", a.r7_pose_graph ? "true" : "false",
+                 // P4 keys appear only when set, so an all-off run writes the same bytes as before.
+                 (std::string(a.r7p_loop_select ? ",\"r7p_loop_select\":true" : "") +
+                  (a.v1_exact_limit ? ",\"v1_exact_limit\":true" : "")).c_str());
     std::fclose(f);
   }
   const auto wall_start = std::chrono::steady_clock::now();

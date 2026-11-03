@@ -19,6 +19,7 @@
 #include "c8/pixels/gr8-pyramid.h"
 #include "common/c8_adapters.h"
 #include "common/check.h"
+#include "common/vendor_switches.h"
 #include "compat/random_numbers.h"
 #include "config/accuracy.h"
 #include "config/params.h"
@@ -267,6 +268,7 @@ Engine::Engine(const EngineConfig& cfg) {
     config::ApplyParamOverrides(cfg.param_overrides);
   }
   config::SetAccuracy(cfg.accuracy);
+  ApplyVendorAccuracy(cfg.accuracy);
   impl_ = std::make_unique<Impl>(cfg);
 }
 

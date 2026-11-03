@@ -52,6 +52,9 @@ PATCH_ORDER = [
     # US-015 (contract FULL-12): the closed world tracker member and call site of the released binary's
     # ImageTrackingState (xr-slam.wasm func938/994); nullptr hook (the default) = public behavior.
     'us015-image-world-tracker.patch',
+    # P4 candidate V1 (opt-in, default off): exact limit of the pose-estimation Jacobian where the
+    # reference divides by zero (bundle-residual-analytic.cc); the switch off = reference bytes' behavior.
+    'v1-pose-estimation-exact-limit.patch',
 ]
 # Patches that the docs describe as "include lines only" (PROVENANCE.md): every added or removed line
 # of their hunks must be an #include.

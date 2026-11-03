@@ -68,6 +68,7 @@ struct LoopCloseReport {
   size_t num_matches = 0;
   size_t num_correspondences = 0;
   size_t num_unlinked = 0;         // S12 final loop
+  size_t num_merges = 0;           // S12 MergePoint calls (R7P diagnostics)
   // P3 candidate R7 (AccuracyConfig::r7_pose_graph, pose_graph.h); untouched while R7 is off.
   LoopPoseGraphReport pose_graph;
 };
