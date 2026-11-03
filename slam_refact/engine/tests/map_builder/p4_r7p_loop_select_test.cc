@@ -13,6 +13,7 @@
 
 #include <algorithm>
 #include <array>
+#include <cmath>
 #include <cstdint>
 #include <cstdlib>
 #include <random>
@@ -92,15 +93,23 @@ Desc DescriptorAtDistance(int bits) {
 //  - the middle keyframes in `remove` (indices 0..3) removed again, which leaves a free slot in
 //    front of the newest keyframe;
 //  - `covisible` (middle index or -1): 12 world points seen by that middle keyframe and by the
-//    newest one, which makes it a 1-hop covisible neighbour of the newest keyframe (S2).
+//    newest one, which makes it a 1-hop covisible neighbour of the newest keyframe (S2);
+//  - `own` (newest-only points): that many world points seen by the newest keyframe alone, at the
+//    observations 0..own-1 that the loop close matches to the first keyframe's points, so the S12
+//    merge takes the MergePoint path (the newest keyframe's point is merged into the first one's);
+//  - `shared`: that many further observations (own..own+shared-1) of the newest keyframe already
+//    link to the first keyframe's own points (eb == db: nothing to merge). Fewer than the 10 points
+//    that make a keyframe covisible, so the first keyframe stays a loop candidate.
 struct Scene {
   map::WorldMaps maps;
   map::KeyframeId first;
   std::vector<map::KeyframeId> middle;
   map::KeyframeId newest;
+  std::vector<map::PointId> first_points;  // the first keyframe's points, observation i = point i
+  std::vector<map::PointId> own_points;    // newest-only points, observation i = point i
 
   Scene(int first_bits, const std::vector<int>& middle_bits, const std::vector<int>& remove,
-        int covisible = -1) {
+        int covisible = -1, int own = 0, int shared = 0) {
     map::WorldMap& w = maps.active();
     const c8::HMatrix pose_first = Pose(0.0f, 0.0f, 0.0f, 0.0f);
     const c8::HMatrix pose_true = Pose(0.01f, 0.03f, 0.005f, 0.02f);
@@ -127,6 +136,7 @@ struct Scene {
       const map::PointId p =
           w.AddPoint(w.GetKeyframe(first).seq, truth[static_cast<size_t>(i)], map::PointSource::kTriangulated);
       w.AddObservation(p, static_cast<uint32_t>(i), first);
+      first_points.push_back(p);
     }
     for (int k = 1; k <= 4; ++k) {
       c8::FrameWithPoints ff(TestIntrinsics());
@@ -146,6 +156,19 @@ struct Scene {
     }
     newest = w.AddKeyframe(fb, 30);
     w.SetKeyframePose(newest, pose_stored);  // descriptor stays all zero
+    for (int i = 0; i < own; ++i) {
+      // The point as the newest keyframe's stored (drifted) pose sees it on the ray of appearance i:
+      // its coordinates in the newest camera are those of the true point in the true camera. After
+      // the pose graph moves the newest keyframe to the loop pose (about pose_true) the point is back
+      // on the ray, so the engine's own residual test keeps the observation.
+      const c8::HPoint3 x_new = pose_stored * (pose_true.inv() * truth[static_cast<size_t>(i)]);
+      const map::PointId p = w.AddPoint(w.GetKeyframe(first).seq, x_new, map::PointSource::kTriangulated);
+      w.AddObservation(p, static_cast<uint32_t>(i), newest);
+      own_points.push_back(p);
+    }
+    for (int i = own; i < own + shared; ++i) {
+      w.AddObservation(first_points[static_cast<size_t>(i)], static_cast<uint32_t>(i), newest);
+    }
     if (covisible >= 0) {
       for (uint32_t i = 0; i < 12; ++i) {
         const map::PointId p = w.AddPoint(w.GetKeyframe(first).seq,
@@ -362,6 +385,94 @@ TEST(P4R7pLoopSelect, SelectsTheNearestNonNewestSlotForRandomLayouts) {
     } else {
       EXPECT_EQ(a.rep.outcome, LoopCloseOutcome::kNoCandidate) << "trial " << trial;
     }
+  }
+}
+
+bool PoseFinite(const c8::HMatrix& m) {
+  for (size_t i = 0; i < 16; ++i) {
+    if (!std::isfinite(m.data()[i])) return false;
+  }
+  return true;
+}
+
+// Fixed before the first run. 20 newest-only points sit on the observations that match the first
+// keyframe's points 0..19 (MergePoint path), 5 observations already link to the first keyframe's own
+// points 20..24 (eb == db, skipped), the other 55 matches are associated.
+constexpr int kOwn = 20;
+constexpr int kShared = 5;
+
+// 8. The S12 merge path of a non-self loop (contract 3a (c)): MergePoint runs once per newest-only
+// match, `merges` counts exactly those, the observation handles end up on the first keyframe's
+// points, and points and poses stay finite after the common 1127.
+TEST(P4R7pLoopSelect, NonSelfLoopMergesAndKeepsPointsAndPosesFinite) {
+  const ScopedAccuracy on(true, true, true);
+  Scene scene(8, {}, {0}, /*covisible=*/-1, kOwn, kShared);
+  map::WorldMap& wm = scene.wm();
+  ::testing::internal::CaptureStderr();
+  const Attempt a = Close(&scene);
+  const std::string err = ::testing::internal::GetCapturedStderr();
+  ASSERT_TRUE(a.applied);
+  wm.AdjustDirtyPoints();  // the common 1127 of MapBuilder::Update
+  EXPECT_TRUE(a.rep.candidate == scene.first);
+  EXPECT_EQ(a.rep.num_matches, 80u);
+  EXPECT_EQ(a.rep.num_correspondences, 80u);
+  EXPECT_EQ(a.rep.num_merges, static_cast<size_t>(kOwn));  // associate and eb == db are not counted
+  EXPECT_TRUE(a.rep.pose_graph.applied);
+  EXPECT_EQ(a.rep.pose_graph.nodes, 5);
+  const std::regex line(R"(^\[r7p-loop\] newest=\d+ cand=\d+ gap=5 nodes=5 merges=20 applied=1\n$)");
+  EXPECT_TRUE(std::regex_match(err, line)) << err;
+
+  const map::Keyframe& kn = wm.GetKeyframe(scene.newest);
+  for (size_t o = 0; o < 80; ++o) {
+    const map::PointId db = scene.first_points[o];
+    EXPECT_TRUE(kn.frame.points()[o].id() == db) << o;  // handle of observation o is the first's point
+    const map::WorldPoint& pd = wm.Point(db);
+    EXPECT_EQ(pd.observations.size(), 2u) << o;  // the first keyframe and the newest one
+    EXPECT_EQ(pd.observations.count(scene.first), 1u) << o;
+    EXPECT_EQ(pd.observations.count(scene.newest), 1u) << o;
+    EXPECT_NE(pd.state, map::PointState::kDead) << o;
+  }
+  for (const map::PointId eb : scene.own_points) {
+    EXPECT_EQ(wm.Point(eb).state, map::PointState::kDead);  // merged away
+  }
+  for (const map::PointId p : wm.AllPointIds()) {
+    const map::WorldPoint& wp = wm.Point(p);
+    for (size_t i = 0; i < 4; ++i) EXPECT_TRUE(std::isfinite(wp.position.raw()[i]));
+  }
+  for (const map::KeyframeId kf : wm.AllKeyframesByCreation()) {
+    EXPECT_TRUE(PoseFinite(wm.GetKeyframe(kf).frame.extrinsic()));
+  }
+}
+
+// 9. `applied` and `nodes` of the loop line (the NO-TRIGGER inputs): an adjacent candidate (every
+// keyframe between it and the newest one removed) is a two node graph that is applied; a loop
+// whose graph is refused (a non-finite middle keyframe pose) falls back to the original single
+// keyframe update with `applied=0` and the full node count.
+TEST(P4R7pLoopSelect, LoopLineReportsAppliedAndNodes) {
+  const ScopedAccuracy on(true, true, true);
+  {
+    Scene scene(8, {}, {0, 1, 2, 3});
+    ::testing::internal::CaptureStderr();
+    const Attempt a = Close(&scene);
+    const std::string err = ::testing::internal::GetCapturedStderr();
+    ASSERT_TRUE(a.applied);
+    EXPECT_TRUE(a.rep.candidate == scene.first);
+    EXPECT_TRUE(a.rep.pose_graph.applied);
+    EXPECT_EQ(a.rep.pose_graph.nodes, 2);
+    EXPECT_NE(err.find(" nodes=2 merges=0 applied=1\n"), std::string::npos) << err;
+  }
+  {
+    Scene scene(8, {}, {});
+    const float nan = std::nanf("");
+    scene.wm().SetKeyframePose(scene.middle[1], c8::HMatrixGen::translation(nan, 0.0f, 0.0f));
+    ::testing::internal::CaptureStderr();
+    const Attempt a = Close(&scene);
+    const std::string err = ::testing::internal::GetCapturedStderr();
+    ASSERT_TRUE(a.applied);  // the original single keyframe update still closes the loop
+    EXPECT_TRUE(a.rep.candidate == scene.first);
+    EXPECT_FALSE(a.rep.pose_graph.applied);
+    EXPECT_EQ(a.rep.pose_graph.nodes, 6);
+    EXPECT_NE(err.find(" nodes=6 merges=0 applied=0\n"), std::string::npos) << err;
   }
 }
 

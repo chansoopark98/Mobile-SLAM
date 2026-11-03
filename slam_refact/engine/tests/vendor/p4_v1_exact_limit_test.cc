@@ -15,9 +15,8 @@
 //  - v1 on: residuals bit-identical to off for every input, Jacobian bit-identical wherever off is finite;
 //  - non-degenerate Jacobian against central differences (h = 1e-7): 1e-6 * (1 + |J|); against automatic
 //    differentiation of the unrationalized residual: 1e-9;
-//  - the limit +-1/sqrt(2) of dr/ds through the whole Jacobian chain (about ten roundings and a
-//    reference camera depth that is itself off by an ulp or two): 5e-15. The document's 1e-15 is the
-//    figure for the isolated factor x65, which the evaluation does not expose.
+//  - the limit +-1/sqrt(2) of dr/ds through the whole Jacobian chain: 1e-15, the analysis section 5
+//    figure (measured relative errors: 1.96e-16 at depth +2.5, 0 at depth -2.5).
 
 #include <algorithm>
 #include <cmath>
@@ -325,7 +324,7 @@ TEST(P4V1ExactLimit, LimitIsContinuousWithTheGeneralFormula) {
     double z;
     ErrorsJet(in, &eu, &ev, &z);
     const double expected = kInvSqrt2 * std::sqrt(WeightSquared(in, z)) / z;
-    EXPECT_LT(std::fabs(on.jac[3] - expected) / std::fabs(expected), 5e-15) << "depth " << depth;
+    EXPECT_LT(std::fabs(on.jac[3] - expected) / std::fabs(expected), 1e-15) << "depth " << depth;
   }
 }
 
