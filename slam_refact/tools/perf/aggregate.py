@@ -1,8 +1,10 @@
 #!/usr/bin/env python3
 """Aggregates the xr-perf runs into REPORT.json sections. Nearest-rank percentiles; first WARMUP processed frames of every run excluded;
 pre/post init split at the first frame with keyframes > 0 (native/WASM) or worldPoints > 0 (8th Wall reference traces, browser).
-usage: aggregate.py <raw dir> <out json>"""
+usage: aggregate.py <raw dir> <out json> [--reference-runs <dir>]"""
 import glob, json, math, os, re, sys
+
+REPO_ROOT = os.path.abspath(os.path.join(os.path.dirname(os.path.abspath(__file__)), '..', '..', '..'))
 WARMUP = 3
 STAGES = ['frontend', 'mapTracker', 'mapBuilder', 'metricScale', 'glue']
 
@@ -80,7 +82,11 @@ def ref_run(d):
     return meta, summarize_rows(use)
 
 def main():
-    raw, out = sys.argv[1:3]
+    args = sys.argv[1:]
+    R = os.path.join(REPO_ROOT, 'build/slam-refact-20261015/reference/runs')
+    if '--reference-runs' in args:
+        i = args.index('--reference-runs'); R = args[i + 1]; del args[i:i + 2]
+    raw, out = args[:2]
     rep = {'schema': 'xr-perf-report-v1', 'warmup_frames_excluded': WARMUP, 'percentile': 'nearest-rank'}
     nat = {}
     for n in ('s2', 's3', 'l1'):
@@ -96,7 +102,6 @@ def main():
         res = [wasm_run(f) for f in fs]
         w[n] = {'runs': [{'file': os.path.basename(f), 'meta': m, 'stats': s} for f, (m, s) in zip(fs, res)], 'median_of_repeats': across_repeats([s for _, s in res])}
     rep['wasm_node'] = w
-    R = '/home/park-ubuntu/park/SOLUTION/Mobile-SLAM/build/slam-refact-20261015/reference/runs'
     ref = {}
     for sc in ('flip6-s2', 'flip6-n1', 'flip6-s3-lowtex', 'tum-room1-full'):
         ds = [d for d in sorted(glob.glob(f'{R}/{sc}/*')) if re.search(r'/(r\d|pmr\d)$', d) and os.path.exists(d + '/trace.jsonl')]

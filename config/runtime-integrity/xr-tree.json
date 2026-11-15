@@ -1,13 +1,13 @@
 {
   "schema": "slam-refact-runtime-integrity-v1",
   "record_kind": "source-artifact-index",
-  "bundle_sha256": "62e45f24ba23ff7045e8fcc3df563b9a6a824f66bbda842c452ba180f9081b93",
+  "bundle_sha256": "008665e2809fa84ae45e2a695690b0e1d7aa32998c37f25645e2e88f1e1901a2",
   "bundle_digest_rule": "sha256 over \"served path\\0sha256(content)\\n\", sorted, excluding slam-refact-xr/deploy.json",
   "files": [
     {
       "path": "slam-refact-xr.html",
-      "sha256": "c4e2c649044eb426e4718b0d40d0ff6cde7546512a3c8c45c3cdc1614759db70",
-      "bytes": 4411
+      "sha256": "d3eedf9b0053cdda81c28889087ea5629632006871aaa88982dc3920134b9e30",
+      "bytes": 4735
     },
     {
       "path": "slam-refact-xr/aframe/aframe-v1.5.0.min.js",
@@ -81,8 +81,13 @@
     },
     {
       "path": "slam-refact-xr/samples/aframe/index.html",
-      "sha256": "e22c3baabd87b82228d2e261403dc712d29afc522b596512b48e7f79e56b8e5b",
-      "bytes": 1899
+      "sha256": "8eb10211b88689d669181a752520a730e396997de1c887dbf36d010c93384b37",
+      "bytes": 1967
+    },
+    {
+      "path": "slam-refact-xr/samples/common/camera-resolution.js",
+      "sha256": "1ab042bdf54cad82c20962179f20dae795b8d1e2625cfbbd66aeb729a53ce932",
+      "bytes": 3490
     },
     {
       "path": "slam-refact-xr/samples/common/probe.js",
@@ -91,8 +96,8 @@
     },
     {
       "path": "slam-refact-xr/samples/phone/app.js",
-      "sha256": "4092f74289fcd64762d6866807cd613cdc29cbc32bd5c1573739b290ee2362d0",
-      "bytes": 17797
+      "sha256": "8c3840270a782591465cb7c6ef156d5a8ea08787271a547b6cdbbd21d4bbad08",
+      "bytes": 19647
     },
     {
       "path": "slam-refact-xr/samples/phone/metrics.js",
@@ -101,8 +106,8 @@
     },
     {
       "path": "slam-refact-xr/samples/phone/style.css",
-      "sha256": "8471dc452a4b47c818f849ac537f3c71294d1130d43e4ce68ad22e01275bc114",
-      "bytes": 2852
+      "sha256": "806326a18a312da7b4813e1480e856714d798de69a6e388a69b46da762e06391",
+      "bytes": 7771
     },
     {
       "path": "slam-refact-xr/samples/phone/targets.js",
@@ -161,8 +166,8 @@
     },
     {
       "path": "slam-refact-xr/samples/threejs/index.html",
-      "sha256": "b9b73d25e3ec100b83a19dfbe4c74a950b3e2d35e964d86001b471d64ab184c4",
-      "bytes": 1159
+      "sha256": "1dd1520ced39f8338be75d1472fa6622a10cf589942ae44fb3185400f3b5c05a",
+      "bytes": 1227
     },
     {
       "path": "slam-refact-xr/three/three.core.min.js",
