@@ -52,9 +52,19 @@ def main():
     gaps = [(imu[i + 1][0] - imu[i][0]) * 1000 for i in range(len(imu) - 1)]
     span = frames[-1]['timestamp'] - frames[0]['timestamp']
     initialized = [row for row in results if row.get('initialized')]
-    poses = [row['pose'] for row in results if row.get('poseFresh') and row.get('pose')]
+    pose_rows = [row for row in results if row.get('poseFresh') and row.get('pose')]
     # Row-major 4x4: translation is elements 3, 7, 11.
-    jumps = [math.dist(a[3:12:4], b[3:12:4]) for a, b in zip(poses, poses[1:]) if len(a) == 16 and len(b) == 16]
+    # A step is only meaningful inside one engine epoch; pairs across an engine reset are reported separately.
+    epoch_aware = bool(pose_rows) and all(row.get('engineEpoch') is not None for row in pose_rows)
+    jumps, cross_epoch = [], []
+    for a, b in zip(pose_rows, pose_rows[1:]):
+        if len(a['pose']) != 16 or len(b['pose']) != 16:
+            continue
+        step = math.dist(a['pose'][3:12:4], b['pose'][3:12:4])
+        if epoch_aware and a['engineEpoch'] != b['engineEpoch']:
+            cross_epoch.append(step)
+        else:
+            jumps.append(step)
     pixel = [f['sourceTiming']['pixelReadEndMs'] - f['sourceTiming']['pixelReadStartMs'] for f in frames
              if f.get('sourceTiming') and isinstance(f['sourceTiming'].get('pixelReadStartMs'), (int, float))]
     summary = {
@@ -73,6 +83,8 @@ def main():
         'engineProcessingMs': quantiles([r.get('engineProcessingMs') for r in results]),
         'workerProcessingMs': quantiles([r.get('workerProcessingMs') for r in results]),
         'pixelReadMs': quantiles(pixel), 'freshPoseStepM': quantiles(jumps),
+        'epochAware': epoch_aware,
+        'crossEpochSteps': {'count': len(cross_epoch), 'maxM': max(cross_epoch) if cross_epoch else None},
         'featureCount': quantiles([r.get('featureCount') for r in results]),
     }
     staged = [r for r in results if isinstance(r.get('pipeline'), dict)]

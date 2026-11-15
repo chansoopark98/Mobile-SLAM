@@ -98,6 +98,24 @@ class LeanToolsTest(unittest.TestCase):
         self.assertEqual(summary['pipeline']['beforeInit']['frames'], 1)
         self.assertEqual(summary['pipeline']['afterInit']['ceresMs']['max'], 9)
 
+    def test_summary_separates_cross_engine_epoch_steps(self):
+        results = [{'clientEpoch': 2, 'engineEpoch': 0, 'initialized': True, 'statusCode': 2, 'arrivalMs': 1100 + i,
+                    'poseFresh': True, 'pose': pose(0.02 * i)} for i in range(4)]
+        results += [{'clientEpoch': 2, 'engineEpoch': 1, 'initialized': True, 'statusCode': 2, 'arrivalMs': 1200 + i,
+                     'poseFresh': True, 'pose': pose(10.0 + 0.03 * i)} for i in range(4)]
+        capture = os.path.join(self.temp.name, 'epoch-capture')
+        write_capture(capture, [0.10, 0.20, 0.30, 0.40, 0.50], [0.15, 0.25, 0.35, 0.45], results)
+        summary = json.loads(self.run_tool(os.path.join(DEV, 'summarize-lean-record.py'), capture))
+        self.assertTrue(summary['epochAware'])
+        self.assertAlmostEqual(summary['freshPoseStepM']['max'], 0.03)
+        self.assertEqual(summary['crossEpochSteps']['count'], 1)
+        self.assertAlmostEqual(summary['crossEpochSteps']['maxM'], 10.0 - 0.06, places=6)
+
+    def test_summary_without_engine_epoch_keeps_legacy_behavior(self):
+        summary = json.loads(self.run_tool(os.path.join(DEV, 'summarize-lean-record.py'), self.capture))
+        self.assertFalse(summary['epochAware'])
+        self.assertEqual(summary['crossEpochSteps']['count'], 0)
+
 
 class SuiteCompareTest(unittest.TestCase):
     def setUp(self):
