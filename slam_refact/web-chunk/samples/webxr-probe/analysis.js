@@ -49,7 +49,7 @@ export function fpsStats(timesMs) {
   const p95 = percentile(dt, 95);
   return {
     frames: timesMs.length,
-    dtP50Ms: p50, dtP95Ms: p95, dtP99Ms: percentile(dt, 99), dtMaxMs: dt.length ? Math.max(...dt) : NaN,
+    dtP50Ms: p50, dtP95Ms: p95, dtP99Ms: percentile(dt, 99), dtMaxMs: dt.length ? maxOf(dt) : NaN,
     fpsP50: 1000 / p50, fpsAtP95Dt: 1000 / p95,
   };
 }
@@ -325,3 +325,7 @@ export function analyzeRun({ frames, gyro = null, fxSmallPx = null, fs = 30, seg
   out.durationS = t1 - t0;
   return out;
 }
+
+// Iterative max/min (a spread into Math.max/min throws RangeError on large arrays and gives -/+Infinity on empty ones). Empty input -> null.
+function maxOf(xs) { if (!xs.length) return null; let m = xs[0]; for (const x of xs) if (x > m || Number.isNaN(x)) m = x; return m; }
+function minOf(xs) { if (!xs.length) return null; let m = xs[0]; for (const x of xs) if (x < m || Number.isNaN(x)) m = x; return m; }

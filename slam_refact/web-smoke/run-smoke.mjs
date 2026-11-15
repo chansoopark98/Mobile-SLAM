@@ -103,7 +103,7 @@ try {
     checks: { finitePoses: finite, p5FramesZeroToFourAtOrigin: p5, frame5Repeated: r.rows[5]?.pose?.repeated === true,
       statuses: [...new Set(fresh.map((x) => x.pose.status))], externalRequestsBlocked: blocked.length,
       consoleErrors },
-    vsNative: { rotMaxDeg: Math.max(...diffs.map((d) => d.rot)), posMax: Math.max(...diffs.map((d) => d.pos)),
+    vsNative: { rotMaxDeg: maxOf(diffs.map((d) => d.rot)), posMax: maxOf(diffs.map((d) => d.pos)),
       exactFrames: diffs.filter((d) => d.rot === 0 && d.pos === 0).length },
     wallMsPerFrame: { p50: pct(50), p95: pct(95), p99: pct(99), note: 'headless desktop Chromium, not a phone' },
     totalMs: r.totalMs,
@@ -117,3 +117,7 @@ fs.mkdirSync(outDir, { recursive: true });
 fs.writeFileSync(path.join(outDir, 'result.json'), JSON.stringify(result, null, 1) + '\n', { flag: 'wx' });
 console.log(JSON.stringify({ pass: result.pass, out: path.join(outDir, 'result.json'), vsNative: result.vsNative, wall: result.wallMsPerFrame }));
 process.exit(result.pass ? 0 : 1);
+
+// Iterative max/min (a spread into Math.max/min throws RangeError on large arrays and gives -/+Infinity on empty ones). Empty input -> null.
+function maxOf(xs) { if (!xs.length) return null; let m = xs[0]; for (const x of xs) if (x > m || Number.isNaN(x)) m = x; return m; }
+function minOf(xs) { if (!xs.length) return null; let m = xs[0]; for (const x of xs) if (x < m || Number.isNaN(x)) m = x; return m; }

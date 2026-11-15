@@ -105,7 +105,7 @@ export function umeyama(src, dst, withScale) {
     [xy - yx, zx + xz, yz + zy, -xx - yy + zz],
   ];
   const { values, vectors } = jacobiEigen(N);
-  const q = vectors[values.indexOf(Math.max(...values))];
+  const q = vectors[values.indexOf(maxOf(values))];
   const R = qToMat(q);
   let s = 1;
   if (withScale) {
@@ -192,3 +192,7 @@ export function compareTrajectories(pairs, { refFrames = pairs.length, rpeDelta 
     ate: absoluteErrors(pairs, sim3), rpe: relativeErrors(pairs, { delta: rpeDelta, scale: sim3.s }) };
   return out;
 }
+
+// Iterative max/min (a spread into Math.max/min throws RangeError on large arrays and gives -/+Infinity on empty ones). Empty input -> null.
+function maxOf(xs) { if (!xs.length) return null; let m = xs[0]; for (const x of xs) if (x > m || Number.isNaN(x)) m = x; return m; }
+function minOf(xs) { if (!xs.length) return null; let m = xs[0]; for (const x of xs) if (x < m || Number.isNaN(x)) m = x; return m; }

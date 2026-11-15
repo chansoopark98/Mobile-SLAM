@@ -273,3 +273,28 @@ test('R1-M18: scorerRun builds the r1_eval run record on one clock (marks and ta
   assert.equal(r.trace_start, 900, 'no TracingStartedInBrowser event: the earliest event (the page-fed frame mark)');
 }
 );
+
+test('FX-C2a: topLevelBusy finishes on 300,000 events (no spread RangeError) and traceEnd matches a plain loop', () => {
+  const trace = [{ ...thread(1, 2, 'CrRendererMain'), ts: 0 }, mark('w0', 0), mark('w1', 1_000_000)];  // real metadata events carry ts: 0
+  let expectedEnd = 0;
+  for (let i = 0; i < 300_000; i++) {
+    const ts = i * 10, dur = i % 7;
+    trace.push(task(ts, dur));
+    if (ts + dur > expectedEnd) expectedEnd = ts + dur;
+  }
+  expectedEnd = Math.max(expectedEnd, 1_000_000);
+  let r;
+  assert.doesNotThrow(() => { r = topLevelBusy(trace, { startMark: 'w0', endMark: 'w1' }); });
+  assert.equal(r.error, undefined);
+  assert.equal(r.taskCount > 0, true);
+  // afterWindowCovered is traceEnd >= t1 + 3 s; with the real traceEnd (3,000,000-ish) it is false, with an end past that it is true.
+  assert.equal(r.afterWindowCovered, false);
+  trace.push(task(4_100_000, 5));
+  assert.equal(topLevelBusy(trace, { startMark: 'w0', endMark: 'w1' }).afterWindowCovered, true);
+  assert.ok(expectedEnd >= 1_000_000);
+});
+
+test('FX-C2a: an empty trace window reports an explicit error, never -Infinity', () => {
+  const r = topLevelBusy([thread(1, 2, 'CrRendererMain'), mark('w0', 0), mark('w1', 10)], { startMark: 'w0', endMark: 'w1' });
+  assert.match(r.error, /no top-level task/);
+});

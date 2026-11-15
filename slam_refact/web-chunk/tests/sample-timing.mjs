@@ -20,7 +20,7 @@ export function timingSummary({ sample, input, chunkDiag }) {
   const firstWp = sample.firstReal ?? null;  // v3: initialization = the first fresh response with a non-padding world point (v2 used any world point)
   const t0 = updates[0].wall, t1 = updates.at(-1).wall;
   const tReady = firstWp ? firstWp.wall : null;
-  const longtasks = (a, b) => { const l = (sample.longtasks ?? []).filter((x) => x.start >= a && x.start <= b); return { count: l.length, totalMs: l.reduce((s, x) => s + x.duration, 0), maxMs: l.length ? Math.max(...l.map((x) => x.duration)) : 0 }; };
+  const longtasks = (a, b) => { const l = (sample.longtasks ?? []).filter((x) => x.start >= a && x.start <= b); return { count: l.length, totalMs: l.reduce((s, x) => s + x.duration, 0), maxMs: l.length ? maxOf(l.map((x) => x.duration)) : 0 }; };
   const phase = (a, b, freshRows, procRange, stagedRange) => ({
     raf: rafStats(sample.rafTimes ?? [], a, b), longtasks: longtasks(a, b),
     xrGpuMs: stats(freshRows.map((u) => u.xrGpuMs)), xrCpuMs: stats(freshRows.map((u) => u.xrCpuMs)),
@@ -47,3 +47,7 @@ export function timingSummary({ sample, input, chunkDiag }) {
   // mainThreadChunkMs pairs stage[i], read[i], engine[i] by frame index (one entry per processed frame)
   return out;
 }
+
+// Iterative max/min (a spread into Math.max/min throws RangeError on large arrays and gives -/+Infinity on empty ones). Empty input -> null.
+function maxOf(xs) { if (!xs.length) return null; let m = xs[0]; for (const x of xs) if (x > m || Number.isNaN(x)) m = x; return m; }
+function minOf(xs) { if (!xs.length) return null; let m = xs[0]; for (const x of xs) if (x < m || Number.isNaN(x)) m = x; return m; }

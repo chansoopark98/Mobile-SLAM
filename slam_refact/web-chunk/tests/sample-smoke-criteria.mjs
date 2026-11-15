@@ -10,7 +10,7 @@ export const WASM_SHA256 = 'c03977a1cd3e05db9c6f135773c2eda5851f1042b4603f3f6033
 const HIT_KEYS = 'distance,position,rotation,type';
 
 const check = (pass, detail) => ({ pass: !!pass, detail });
-const max = (xs) => xs.length ? Math.max(...xs) : null;
+const max = (xs) => xs.length ? maxOf(xs) : null;
 
 // report: { kind, pageErrors: [], consoleErrors: number, blockedExternal: number, requestsOffOrigin: [], requests: [{url,status}],
 //   chunkDiag: {engine}|null, input: window.__input, sample: window.__xrSample, screenshots: {pre, post} }
@@ -37,7 +37,7 @@ export function evaluate(report) {
   checks.S5 = check(fresh.length >= MIN.fresh && updates.length >= MIN.updates, { freshUpdates: fresh.length, realityUpdates: updates.length });
 
   const P = fresh.map((u) => u.pos);
-  const diag = P.length ? Math.hypot(...[0, 1, 2].map((k) => Math.max(...P.map((p) => p[k])) - Math.min(...P.map((p) => p[k])))) : 0;
+  const diag = P.length ? Math.hypot(...[0, 1, 2].map((k) => maxOf(P.map((p) => p[k])) - minOf(P.map((p) => p[k])))) : 0;
   const normalFraction = fresh.length ? fresh.filter((u) => u.status === 'NORMAL').length / fresh.length : 0;
   checks.S6 = check(diag >= MIN.bboxDiag && normalFraction >= MIN.normalFraction, { bboxDiagonal: diag, normalFraction });
 
@@ -134,3 +134,7 @@ export function controlOutcome({ checks, failed, expectations, control }) {
     controlDetected: expected ? expected.every((k) => failed.includes(k)) && passViolations.length === 0 : null,
     controlMissed: expected ? expected.filter((k) => !failed.includes(k)) : null };
 }
+
+// Iterative max/min (a spread into Math.max/min throws RangeError on large arrays and gives -/+Infinity on empty ones). Empty input -> null.
+function maxOf(xs) { if (!xs.length) return null; let m = xs[0]; for (const x of xs) if (x > m || Number.isNaN(x)) m = x; return m; }
+function minOf(xs) { if (!xs.length) return null; let m = xs[0]; for (const x of xs) if (x < m || Number.isNaN(x)) m = x; return m; }

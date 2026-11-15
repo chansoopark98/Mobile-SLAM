@@ -129,7 +129,7 @@ const rafStats = (rafTimes, from, to) => {
   const iv = t.slice(1).map((x, i) => x - t[i]);
   return { ...stats(iv), over25: iv.filter((x) => x > 25).length, over50: iv.filter((x) => x > 50).length };
 };
-const longtasks = (lt, a, b) => { const l = lt.filter((x) => x.start >= a && x.start <= b); return { count: l.length, totalMs: l.reduce((s, x) => s + x.duration, 0), maxMs: l.length ? Math.max(...l.map((x) => x.duration)) : 0 }; };
+const longtasks = (lt, a, b) => { const l = lt.filter((x) => x.start >= a && x.start <= b); return { count: l.length, totalMs: l.reduce((s, x) => s + x.duration, 0), maxMs: l.length ? maxOf(l.map((x) => x.duration)) : 0 }; };
 
 function summarize(rep, firstWp, split) {
   // v3 initialization: the first replayed frame whose answer has a non-padding world point (engine runs); idle uses the split of the capture
@@ -201,3 +201,7 @@ async function replayPhase() {
 if (values.phase === 'capture') await capturePhase();
 else if (values.phase === 'replay') await replayPhase();
 else throw new Error('--phase capture|replay');
+
+// Iterative max/min (a spread into Math.max/min throws RangeError on large arrays and gives -/+Infinity on empty ones). Empty input -> null.
+function maxOf(xs) { if (!xs.length) return null; let m = xs[0]; for (const x of xs) if (x > m || Number.isNaN(x)) m = x; return m; }
+function minOf(xs) { if (!xs.length) return null; let m = xs[0]; for (const x of xs) if (x < m || Number.isNaN(x)) m = x; return m; }

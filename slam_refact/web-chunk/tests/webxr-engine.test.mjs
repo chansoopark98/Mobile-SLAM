@@ -51,7 +51,7 @@ test('quaternion conventions: wxyz, matrix round trip, WebXR xyzw, rotation of a
   near(qangle(qmul(qconj(q), q)), 0, 1e-12);
   near(qangle(axisAngle([1, 1, 0], 33)) * 180 / Math.PI, 33, 1e-9);
   const { values } = jacobiEigen([[4, 1, 0], [1, 3, 0], [0, 0, 1]]);
-  near(Math.max(...values), (7 + Math.sqrt(5)) / 2, 1e-12);
+  near(maxOf(values), (7 + Math.sqrt(5)) / 2, 1e-12);
 });
 
 test('umeyama / compareTrajectories: exact SE(3) recovers the transform with ~0 ATE and RPE', () => {
@@ -306,3 +306,7 @@ test('deployed engine WASM: plan capture is level 0, the glue takes the config, 
     } finally { glue.delete(); }
   }
 });
+
+// Iterative max/min (a spread into Math.max/min throws RangeError on large arrays and gives -/+Infinity on empty ones). Empty input -> null.
+function maxOf(xs) { if (!xs.length) return null; let m = xs[0]; for (const x of xs) if (x > m || Number.isNaN(x)) m = x; return m; }
+function minOf(xs) { if (!xs.length) return null; let m = xs[0]; for (const x of xs) if (x < m || Number.isNaN(x)) m = x; return m; }

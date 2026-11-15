@@ -28,7 +28,7 @@ const stat = (rows) => {
   const fresh = rows.filter((r) => r.fresh);
   const count = (k) => fresh.reduce((m, r) => { m[r.raw[k]] = (m[r.raw[k]] ?? 0) + 1; return m; }, {});
   const pos = fresh.map((r) => r.raw.position), q = new Set(fresh.map((r) => r.raw.rotationWxyz.join(',')));
-  const range = (i) => (pos.length ? [Math.min(...pos.map((p) => p[i])), Math.max(...pos.map((p) => p[i]))] : null);
+  const range = (i) => (pos.length ? [minOf(pos.map((p) => p[i])), maxOf(pos.map((p) => p[i]))] : null);
   return { rows: rows.length, fresh: fresh.length, status: count('status'), reason: count('reason'), repeated: fresh.filter((r) => r.raw.repeated).length,
     distinctRotations: q.size, positionRange: [0, 1, 2].map(range) };
 };
@@ -173,3 +173,7 @@ export function aggregateGate(bundles) {
 }
 
 export const summarize = (g) => Object.entries(g.verdict).map(([k, v]) => `${k}: ${v === undefined ? '-' : v ? 'identical' : 'DIFFERENT'}`).join('  ');
+
+// Iterative max/min (a spread into Math.max/min throws RangeError on large arrays and gives -/+Infinity on empty ones). Empty input -> null.
+function maxOf(xs) { if (!xs.length) return null; let m = xs[0]; for (const x of xs) if (x > m || Number.isNaN(x)) m = x; return m; }
+function minOf(xs) { if (!xs.length) return null; let m = xs[0]; for (const x of xs) if (x < m || Number.isNaN(x)) m = x; return m; }

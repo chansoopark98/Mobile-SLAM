@@ -20,7 +20,7 @@ export async function loadFixture(scenarioName = 'flip6-s2', maxFrames = 300) {
   if (record.schema !== 'mobile-slam-android-input-v1') throw new Error('unexpected record schema');
   const rec = record.recording;
   const firstFrame = rec.frames[0].timestamp;
-  const t0 = Math.max(...rec.imu.filter((r) => r[0] <= firstFrame).map((r) => r[0]));
+  const t0 = maxOf(rec.imu.filter((r) => r[0] <= firstFrame).map((r) => r[0]));
   if (!Number.isFinite(t0)) throw new Error('no IMU sample precedes the first frame');
   const lastFrame = rec.frames.at(-1).timestamp;
   const all = rec.frames.map((f, i) => ({ index: i, t: +(f.timestamp - t0).toFixed(9), file: path.join(dir, 'mav0/cam0/data', f.file), sha256: f.sha256 }));
@@ -51,3 +51,7 @@ export const UA = {
   pixel7: 'Mozilla/5.0 (Linux; Android 13; Pixel 7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/140.0.0.0 Mobile Safari/537.36',
   reduced: 'Mozilla/5.0 (Linux; Android 10; K) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/140.0.0.0 Mobile Safari/537.36',
 };
+
+// Iterative max/min (a spread into Math.max/min throws RangeError on large arrays and gives -/+Infinity on empty ones). Empty input -> null.
+function maxOf(xs) { if (!xs.length) return null; let m = xs[0]; for (const x of xs) if (x > m || Number.isNaN(x)) m = x; return m; }
+function minOf(xs) { if (!xs.length) return null; let m = xs[0]; for (const x of xs) if (x < m || Number.isNaN(x)) m = x; return m; }

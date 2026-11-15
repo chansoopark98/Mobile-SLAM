@@ -56,7 +56,7 @@ function run(T, name) {
     }
   }
   const rev = T.REVISION;
-  const mm = (a) => ({ min: Math.min(...a), max: Math.max(...a) });
+  const mm = (a) => ({ min: a.reduce((m, v) => (v < m ? v : m), a[0]), max: a.reduce((m, v) => (v > m ? v : m), a[0]) });
   return { name, revision: rev, poses: n, maxPosErr: maxPos, maxRotErr: maxRot, maxProjErr: maxProj, sensitivity: { pos1e6: mm(sens.pos), rot1e6: mm(sens.rot), proj1e6: mm(sens.proj) } };
 }
 window.__nullrun = [run(THREE3, 'three.module.min.js (sample three.js)'), run(AFRAME.THREE, 'AFRAME.THREE (' + AFRAME.version + ')')];
@@ -74,7 +74,7 @@ try {
   await page.goto(srv.origin + '/__nullrun/index.html?probe=1');
   await page.waitForFunction(() => window.__nullrunDone === true, null, { timeout: 60000 });
   const runs = await page.evaluate(() => window.__nullrun);
-  const R = Math.max(...runs.flatMap((r) => [r.maxPosErr, r.maxRotErr, r.maxProjErr]));
+  const R = maxOf(runs.flatMap((r) => [r.maxPosErr, r.maxRotErr, r.maxProjErr]));
   result = { schema: 'us010-pose-nullrun-v1', label: values.label, at: new Date().toISOString(), browser: browser.version(), runs, pageErrors: errors,
     resolutionR: R, tolerance: 1e-6, threeTimesRule: 3 * R <= 1e-6, tolerance_over_R: R > 0 ? 1e-6 / R : null,
     note: 'R is the largest error of the comparison on objects set from known poses; the floor of the IEEE double representation of the compared values is ~2.2e-16 relative (about 4e-15 at |value| 20), so R = 0 is reported as the representation floor, not as zero' };
@@ -85,3 +85,7 @@ try {
 await fs.writeFile(outFile, JSON.stringify(result, null, 1) + '\n');
 console.log(JSON.stringify(result, null, 1));
 process.exitCode = result.threeTimesRule && result.pageErrors.length === 0 ? 0 : 1;
+
+// Iterative max/min (a spread into Math.max/min throws RangeError on large arrays and gives -/+Infinity on empty ones). Empty input -> null.
+function maxOf(xs) { if (!xs.length) return null; let m = xs[0]; for (const x of xs) if (x > m || Number.isNaN(x)) m = x; return m; }
+function minOf(xs) { if (!xs.length) return null; let m = xs[0]; for (const x of xs) if (x < m || Number.isNaN(x)) m = x; return m; }

@@ -112,7 +112,7 @@ export function summarizeRun({ updates, frames, responses, chunkStats, longtasks
     xrCpuMs: stats(fresh.map((u) => u.xrCpuMs)), xrGpuMs: stats(fresh.map((u) => u.xrGpuMs)),
     poseLatencyMs: latency.latencyMs, poseAgeFrames: latency.ageFrames, latencyMatched: latency.matched, latencyMapping: latency.mapping,
     raf: { ...stats(iv), over25: iv.filter((x) => x > 25).length, over50: iv.filter((x) => x > 50).length },
-    longtasks: { count: lt.length, totalMs: lt.reduce((s, l) => s + l.duration, 0), maxMs: lt.length ? Math.max(...lt.map((l) => l.duration)) : 0 },
+    longtasks: { count: lt.length, totalMs: lt.reduce((s, l) => s + l.duration, 0), maxMs: lt.length ? maxOf(lt.map((l) => l.duration)) : 0 },
     timeToFirstWorldPointMs: firstWorld ? firstWorld.wall - t0 : null,
     counts: { staged: chunkStats?.stagedFrames ?? null, processed: chunkStats?.processedFrames ?? null, freshResponses: chunkStats?.freshResponses ?? null,
       droppedStaged: chunkStats?.droppedStaged ?? null, processErrors: chunkStats?.processErrors ?? null, stageErrors: chunkStats?.stageErrors ?? null,
@@ -172,7 +172,7 @@ export function traceStartUs(traceEvents) {
   const e = traceEvents.find((x) => x.name === 'TracingStartedInBrowser');
   if (e && Number.isFinite(e.ts)) return e.ts;
   const ts = traceEvents.filter((x) => x.ph !== 'M' && Number.isFinite(x.ts)).map((x) => x.ts);
-  return ts.length ? Math.min(...ts) : null;
+  return ts.length ? minOf(ts) : null;
 }
 
 // startMark: a mark name, or null with fromTraceStart: true = the window starts when the trace starts (v4.5: the trace is started before the session start).
@@ -215,7 +215,7 @@ export function topLevelBusy(traceEvents, { startMark = null, endMark, fromTrace
   }
   let afterUs = 0;
   for (const [a, b] of union) { const lo = Math.max(a, t1), hi = Math.min(b, t1 + 3_000_000); if (hi > lo) afterUs += hi - lo; }
-  const traceEnd = Math.max(...onThread.map((e) => e.ts + (e.dur || 0)));
+  const traceEnd = maxOf(onThread.map((e) => e.ts + (e.dur || 0)));
   return { windowStart: fromTraceStart ? 'trace-start' : startMark, windowEnd: endMark, busyMs: busyUs / 1000, windowMs: (t1 - t0) / 1000, afterWindow3000Ms: afterUs / 1000, afterWindowCovered: traceEnd >= t1 + 3_000_000, taskCount: count, boundaryClippedTasks: clipped, largestTaskMs: largestUs / 1000, source, threadName,
     mainThreadVerified: threadName === 'CrRendererMain' };
 }
@@ -276,8 +276,8 @@ export function fullWindow({ applied, marks, renders, captures, totalFrames, n }
     all.push(lat);
     if (k >= 31 && k <= 30 + m) measured.push(lat);
   }
-  out.latencyMs = { n: measured.length, p50: percentileLinear(measured, 0.5), p95: percentileLinear(measured, 0.95), max: measured.length ? Math.max(...measured) : null };
-  out.latencyAllFramesMs = { n: all.length, p50: percentileLinear(all, 0.5), p95: percentileLinear(all, 0.95), max: all.length ? Math.max(...all) : null };
+  out.latencyMs = { n: measured.length, p50: percentileLinear(measured, 0.5), p95: percentileLinear(measured, 0.95), max: measured.length ? maxOf(measured) : null };
+  out.latencyAllFramesMs = { n: all.length, p50: percentileLinear(all, 0.5), p95: percentileLinear(all, 0.95), max: all.length ? maxOf(all) : null };
   out.violations = Object.fromEntries(Object.entries(v).map(([k, x]) => [k, x.length]));
   out.valid = out.errors.length === 0 && Object.values(v).every((x) => x.length === 0);
   return out;
@@ -346,7 +346,7 @@ export function frameWindow({ applied, marks, renders, captures, renderCallbacks
   captures.forEach(([index, t]) => { if (index >= 0 && !captureAt.has(index + 1)) captureAt.set(index + 1, t); });
   const values = [];
   for (let k = first + 1; k <= first + m; k++) if (captureAt.has(k) && doneAt.get(k) !== undefined) values.push(doneAt.get(k) - captureAt.get(k));
-  out.latencyMs = { n: values.length, p50: percentileLinear(values, 0.5), p95: percentileLinear(values, 0.95), max: values.length ? Math.max(...values) : null };
+  out.latencyMs = { n: values.length, p50: percentileLinear(values, 0.5), p95: percentileLinear(values, 0.95), max: values.length ? maxOf(values) : null };
   out.violations = Object.fromEntries(Object.entries(v).map(([k, x]) => [k, x.length]));
   out.valid = out.errors.length === 0 && Object.values(v).every((x) => x.length === 0);
   return out;
@@ -420,5 +420,9 @@ export function scorerRun(traceEvents, { pageMarks, applied }) {
   for (const [b, e] of raw) { const last = tasks.at(-1); if (last && b <= last[1]) last[1] = Math.max(last[1], e); else tasks.push([b, e]); }
   const render = {};
   for (const row of applied) (render[row[0] + 1] ??= []).push(row[1] + offsetMs);
-  return { clock: 'chrome trace, ms', trace_start: traceStartUs(traceEvents) / 1000, offsetMs, offsetSpreadMs: Math.max(...offsets) - Math.min(...offsets), start, done, render, work: {}, tasks };
+  return { clock: 'chrome trace, ms', trace_start: traceStartUs(traceEvents) / 1000, offsetMs, offsetSpreadMs: offsets.length ? maxOf(offsets) - minOf(offsets) : null, start, done, render, work: {}, tasks };
 }
+
+// Iterative max/min (a spread into Math.max/min throws RangeError on large arrays and gives -/+Infinity on empty ones). Empty input -> null.
+function maxOf(xs) { if (!xs.length) return null; let m = xs[0]; for (const x of xs) if (x > m || Number.isNaN(x)) m = x; return m; }
+function minOf(xs) { if (!xs.length) return null; let m = xs[0]; for (const x of xs) if (x < m || Number.isNaN(x)) m = x; return m; }

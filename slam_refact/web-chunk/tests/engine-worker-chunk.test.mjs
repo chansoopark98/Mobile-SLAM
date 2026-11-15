@@ -179,7 +179,7 @@ test('R1-C10: a Worker that falls behind is back-pressured through the existing 
     const submitted = loop.state.toWorker.filter((m) => m.type === 'frame').map((m) => m.seq);
     assert.deepEqual(submitted, submitted.slice().sort((a, b) => a - b));
     assert.deepEqual(w.errors, []);
-    assert.ok(Math.max(...loop.state.fromWorker.filter((m) => m.type === 'frame-result').map((m) => m.seq)) <= stats.framesSubmitted);
+    assert.ok(maxOf(loop.state.fromWorker.filter((m) => m.type === 'frame-result').map((m) => m.seq)) <= stats.framesSubmitted);
   } finally { w.close(); }
 });
 
@@ -390,3 +390,7 @@ test('R1-C25: a repeated response (startup recenter) still completes its frame: 
     assert.deepEqual(r.diag.resultSeqs, dones, 'the page can attribute every handled result to its frame');
   } finally { r.close(); }
 });
+
+// Iterative max/min (a spread into Math.max/min throws RangeError on large arrays and gives -/+Infinity on empty ones). Empty input -> null.
+function maxOf(xs) { if (!xs.length) return null; let m = xs[0]; for (const x of xs) if (x > m || Number.isNaN(x)) m = x; return m; }
+function minOf(xs) { if (!xs.length) return null; let m = xs[0]; for (const x of xs) if (x < m || Number.isNaN(x)) m = x; return m; }

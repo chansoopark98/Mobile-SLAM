@@ -26,7 +26,7 @@ export function rateStats(timesMs, windowMs = null) {
   for (let i = 1; i < t.length; i++) dt.push(t[i] - t[i - 1]);
   const span = windowMs ?? (t.length > 1 ? t[t.length - 1] - t[0] : 0);
   return { count: t.length, rateHz: span > 0 ? (windowMs ? t.length : t.length - 1) / (span / 1000) : 0,
-    dtP50Ms: percentile(dt, 50), dtP95Ms: percentile(dt, 95), dtMaxMs: dt.length ? Math.max(...dt) : NaN };
+    dtP50Ms: percentile(dt, 50), dtP95Ms: percentile(dt, 95), dtMaxMs: dt.length ? maxOf(dt) : NaN };
 }
 
 export const gyroToRotationRate = (g) => ({ alpha: g.z * RAD_TO_DEG, beta: g.x * RAD_TO_DEG, gamma: g.y * RAD_TO_DEG });
@@ -102,3 +102,7 @@ export function chooseImuSource(report, { force = 'auto', minHz = 5 } = {}) {
   if (orientation === 'none') reasons.push('no orientation source: (0, 0, 0) is pushed, as xr-slam.js does before the first deviceorientation event');
   return { motion, orientation, disableVio: motion === 'none', reasons };
 }
+
+// Iterative max/min (a spread into Math.max/min throws RangeError on large arrays and gives -/+Infinity on empty ones). Empty input -> null.
+function maxOf(xs) { if (!xs.length) return null; let m = xs[0]; for (const x of xs) if (x > m || Number.isNaN(x)) m = x; return m; }
+function minOf(xs) { if (!xs.length) return null; let m = xs[0]; for (const x of xs) if (x < m || Number.isNaN(x)) m = x; return m; }
