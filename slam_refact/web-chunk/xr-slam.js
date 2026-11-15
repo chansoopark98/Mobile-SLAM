@@ -166,6 +166,11 @@ async function resolveDeviceIdentity({ timeoutMs, fallback }) {
 
 const XrControllerFactory = singleton((runConfig, xrccPromise, logCallback, errorCallback) => {
   const options = (typeof window !== 'undefined' && window.SLAM_REFACT_CHUNK_OPTIONS) || {};
+  // FX-E3 (opt-in): validated here, before the engine load starts, so a malformed value leaves nothing running.
+  const trustedMessageOrigins = options.trustedMessageOrigins;
+  if (trustedMessageOrigins !== undefined && (!Array.isArray(trustedMessageOrigins) || !trustedMessageOrigins.every((o) => typeof o === 'string'))) {
+    throw new Error('[XR] SLAM_REFACT_CHUNK_OPTIONS.trustedMessageOrigins must be an array of origin strings');
+  }
   const schedulerRequested = options.frameScheduler?.enabled === true && options.frameScheduler.mode === 'gpu-task-owned-v1';
   let schedulerEnabled = schedulerRequested;
   let schedulerFallbackReason = null;
@@ -910,6 +915,33 @@ const XrControllerFactory = singleton((runConfig, xrccPromise, logCallback, erro
   const sameCoords = (a, b) => a.origin.x === b.origin.x && a.origin.y === b.origin.y && a.origin.z === b.origin.z
     && a.facing.w === b.facing.w && a.facing.x === b.facing.x && a.facing.y === b.facing.y && a.facing.z === b.facing.z;
 
+  // A-1a: validates options.engineConfig (only `intrinsics` and `accuracy` are accepted; null / undefined values are skipped) and copies
+  // it into the glue constructor config. Returns the applied keys. A malformed value is a `[XR]` error, never silently dropped.
+  const ENGINE_CONFIG_KEYS = ['intrinsics', 'accuracy'];
+  const isPlainObject = (v) => v !== null && typeof v === 'object' && !Array.isArray(v);
+  const applyEngineConfig = (glueConfig, engineConfig) => {
+    if (!isPlainObject(engineConfig)) throw new Error('[XR] SLAM_REFACT_CHUNK_OPTIONS.engineConfig must be an object {intrinsics, accuracy}');
+    const unknown = Object.keys(engineConfig).filter((k) => !ENGINE_CONFIG_KEYS.includes(k));
+    if (unknown.length) throw new Error(`[XR] SLAM_REFACT_CHUNK_OPTIONS.engineConfig: unsupported key(s) ${unknown.join(', ')} (supported: ${ENGINE_CONFIG_KEYS.join(', ')})`);
+    const { intrinsics, accuracy } = engineConfig;
+    const applied = [];
+    if (intrinsics !== undefined && intrinsics !== null) {
+      if (!Array.isArray(intrinsics) || intrinsics.length !== 4 || !intrinsics.every((x) => typeof x === 'number' && Number.isFinite(x))) {
+        throw new Error('[XR] SLAM_REFACT_CHUNK_OPTIONS.engineConfig.intrinsics must be [fx, fy, cx, cy], four finite numbers');
+      }
+      glueConfig.intrinsics = [...intrinsics];
+      applied.push('intrinsics');
+    }
+    if (accuracy !== undefined && accuracy !== null) {
+      if (!isPlainObject(accuracy)) throw new Error('[XR] SLAM_REFACT_CHUNK_OPTIONS.engineConfig.accuracy must be an object');
+      try { glueConfig.accuracy = structuredClone(accuracy); } catch (error) {
+        throw new Error(`[XR] SLAM_REFACT_CHUNK_OPTIONS.engineConfig.accuracy cannot be copied: ${error && error.message || error}`);
+      }
+      applied.push('accuracy');
+    }
+    return applied;
+  };
+
   // coords: the coordinate system the engine starts with. engineInit -> rebuildEngine applies configuredCoordinateSystem
   // (C), so the first attach and a video size change start with `configured_`; an orientation change starts with the JS state
   // (P, l) because the configureXr that follows it sends P. When C differs from P the glue's live system differs from the JS
@@ -931,7 +963,10 @@ const XrControllerFactory = singleton((runConfig, xrccPromise, logCallback, erro
       leftHandedAxes: leftHandedAxes_, mirroredDisplay: mirroredDisplay_,
     };
     if (framesUntilRecenter !== null) glueConfig.framesUntilRecenter = framesUntilRecenter;
-    const sentGlueConfig = { ...glueConfig };  // diagnostic copy; never passed back to the engine
+    // A-1a (opt-in, default OFF): SLAM_REFACT_CHUNK_OPTIONS.engineConfig = {intrinsics: [fx, fy, cx, cy], accuracy: {...}} goes to the
+    // glue constructor unchanged (the engine binding validates the values). Without the option glueConfig is exactly as before.
+    const engineConfigKeys = options.engineConfig === undefined ? null : applyEngineConfig(glueConfig, options.engineConfig);
+    const sentGlueConfig = engineConfigKeys ? structuredClone(glueConfig) : { ...glueConfig };  // diagnostic copy; never passed back to the engine
     // options.createGlue is a test hook (chunk-contract.test.mjs wraps or replaces the engine glue). Whether a replaced glue was
     // used is decided here, for every session, not once at engine load (RM-4c m-F): once true it stays true.
     const createGlue = options.createGlue;
@@ -995,6 +1030,7 @@ const XrControllerFactory = singleton((runConfig, xrccPromise, logCallback, erro
       diag.session = { videoWidth, videoHeight, rotation,
         device: { manufacturer: sentGlueConfig.manufacturer, model: sentGlueConfig.model, source: deviceSource },
         glueConfig: sentGlueConfig,
+        ...(engineConfigKeys ? { engineConfig: { keys: engineConfigKeys, transport: ew_ ? 'engine-worker' : 'main-thread' } } : {}),
         engineManifest: { jsSha256: engine_.loaded.manifest.jsSha256, wasmSha256: engine_.loaded.manifest.wasmSha256,
           matchesLoadedBytes: engine_.loaded.matchesManifest, glueReplaced: engine_.loaded.glueReplaced },
         configurationReadback: readback,
@@ -1971,7 +2007,13 @@ const XrControllerFactory = singleton((runConfig, xrccPromise, logCallback, erro
   hitTest.type = hitTestTypeEnum;
 
   const dispatchToFramework = (name, detail) => { framework_.dispatchEvent(name, detail); };
+  // FX-E3: a message whose data is not an object is ignored (event.data can be null or a string). Opt-in, default OFF:
+  // SLAM_REFACT_CHUNK_OPTIONS.trustedMessageOrigins (array of origin strings) drops messages from other origins and counts them in
+  // diag.trustedMessageOrigins.dropped. Unset = every origin is accepted, as in the original simulator hook.
+  if (trustedMessageOrigins) diag.trustedMessageOrigins = { origins: [...trustedMessageOrigins], dropped: 0 };
   addWindowListener('message', (event) => {
+    if (event.data === null || typeof event.data !== 'object') return;
+    if (trustedMessageOrigins && !trustedMessageOrigins.includes(event.origin)) { diag.trustedMessageOrigins.dropped++; return; }
     if (event.data.deviceOrientation8w) window.dispatchEvent(new CustomEvent('deviceorientation8w', { detail: event.data.deviceOrientation8w }));
     if (event.data.deviceMotion8w) window.dispatchEvent(new CustomEvent('devicemotion8w', { detail: event.data.deviceMotion8w }));
     if (event.data.gps8w) window.dispatchEvent(new CustomEvent('gps8w', { detail: event.data.gps8w }));
