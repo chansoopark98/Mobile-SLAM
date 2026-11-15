@@ -3,9 +3,11 @@
 import argparse,hashlib,json,os,shutil,tempfile,time
 from pathlib import Path
 ROOT=Path(__file__).resolve().parents[2]
+LEGACY_AUTHORIZATION=ROOT/'build/refactor-orchestration/deploy-authorized.json'
 def sha(path):return hashlib.sha256(path.read_bytes()).hexdigest()
 def main():
-    p=argparse.ArgumentParser();p.add_argument('--candidate',type=Path,required=True);p.add_argument('--manifest',type=Path,required=True);p.add_argument('--authorization',type=Path,default=ROOT/'build/refactor-orchestration/deploy-authorized.json');args=p.parse_args()
+    p=argparse.ArgumentParser();p.add_argument('--candidate',type=Path,required=True);p.add_argument('--manifest',type=Path,required=True);p.add_argument('--authorization',type=Path,required=True);args=p.parse_args()
+    if args.authorization.resolve()==LEGACY_AUTHORIZATION.resolve():p.error('--authorization must not be the legacy past-approval file; use a new lane path')
     candidate=args.candidate.resolve();manifest=json.loads(args.manifest.read_text());authorization=json.loads(args.authorization.read_text())
     digest=sha(candidate)
     if authorization.get('candidate_sha256')!=digest or not authorization.get('authorized'):raise ValueError('Parent deployment gate does not authorize this candidate hash')
