@@ -1,0 +1,11 @@
+{
+  "schema": "slam-refact-known-failures-v1",
+  "label": "unit",
+  "source": "DEF-10; failure set of the linked baseline unit.junit.xml (ctest -L '^unit$')",
+  "failures": [
+    {
+      "name": "FrameFrameTrackerVfft.AcceptedMotionAccuracy",
+      "fingerprint": "Expected: (rot) <= (0.05), actual:"
+    }
+  ]
+}

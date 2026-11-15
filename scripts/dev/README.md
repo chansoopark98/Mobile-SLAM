@@ -23,11 +23,17 @@ npm ci --prefix scripts/dev
 | `bash scripts/dev/check.sh browser-contracts` | browser·Worker·sensor·transport·exporter 계약 |
 | `bash scripts/dev/check.sh eval` | 궤적 평가·합성 입력·recording 도구 |
 | `bash scripts/dev/check.sh native` | 기존 VIO headless build와 native CTest |
+| `bash scripts/dev/check.sh refact-native` | slam_refact 엔진 구성·빌드·`ctest -L '^unit$'`(출력 `build/dev-refact-native`), 알려진 실패 지문 대조 후 원장 기록 |
+| `bash scripts/dev/check.sh refact-web` | `slam_refact/web-chunk/tests`·`web-smoke` node 시험, 통과·skip 수를 원장에 기록 |
+| `bash scripts/dev/check.sh refact-tools` | `check_vendor.py --data`, `check_std_algos.py` |
 | `bash scripts/dev/check.sh wasm-build` | 별도 VIO WASM build; `web/`는 수정하지 않음 |
 | `node --test tests/server/server.test.cjs` | read-only server·TLS·경로 허용 목록 |
 | `python3 -m unittest discover -s tests -p 'test_*.py'` | top-level Python 회귀 |
 
 - 기본 compile jobs는 2, `MOBILE_SLAM_JOBS=1..4`로 변경할 수 있습니다.
+- `refact-native`는 의존성·증거 경로를 환경변수 `SLAM_REFACT_CERES_SOURCE_DIR`, `SLAM_REFACT_GTEST_SOURCE_DIR`, `SLAM_REFACT_EVIDENCE_ROOT`에서만 받습니다(없으면 엔진 CMake 기본값). 앞의 둘을 지정하면 `FETCHCONTENT_FULLY_DISCONNECTED=ON`이 켜집니다. 빌드 디렉터리는 `SLAM_REFACT_NATIVE_BUILD_DIR`로 바꿀 수 있습니다.
+- `scripts/dev/ci-ledger.py`는 JUnit을 `slam_refact/engine/tests/known-failures.json`(이름과 메시지 지문)과 대조해 실패 집합이 같을 때만 0으로 끝나며, 알려진 실패가 통과로 바뀐 경우도 불일치로 봅니다. 결과 한 줄을 append-only `build/ci-ledger/ledger.jsonl`에 남깁니다.
+- `check.sh all`은 doctor, quick, native, browser-contracts, refact-tools, refact-web, refact-native를 순서대로 실행합니다.
 - `MOBILE_SLAM_TIMEOUT`은 build/test subprocess timeout(초), `MOBILE_SLAM_PYTHON`은 Python 실행 파일입니다.
 - 원본 데이터·추가 모델이 필요한 시험과 self-contained unit을 구분합니다. skip·missing input·실패를 PASS에 포함하지 않습니다.
 - JavaScript syntax 검사는 ESLint나 TypeScript typecheck가 아닙니다.

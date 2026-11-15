@@ -50,9 +50,43 @@ check_mode() {
       [[ -f "$db_dir/compile_commands.json" ]] || { echo "Missing compile database: $db_dir" >&2; return 2; }
       timeout 75 "$python_path" scripts/dev/clangd-probe.py --compile-db "$db_dir"
       ;;
+    refact-native)
+      # Dependency and evidence paths come only from the environment; unset values fall back to the engine CMake defaults.
+      local rn_dir="${SLAM_REFACT_NATIVE_BUILD_DIR:-build/dev-refact-native}"
+      local -a rn_cfg=(-G Ninja -DCMAKE_BUILD_TYPE=Release -DSLAM_REFACT_WERROR=ON -DSLAM_REFACT_LOOP_CLOSE=ON
+        -DSLAM_REFACT_BUILD_TESTS=ON -DSLAM_REFACT_BUILD_HARNESS=ON)
+      if [[ -n "${SLAM_REFACT_CERES_SOURCE_DIR:-}" ]]; then rn_cfg+=("-DSLAM_REFACT_CERES_SOURCE_DIR=$SLAM_REFACT_CERES_SOURCE_DIR"); fi
+      if [[ -n "${SLAM_REFACT_GTEST_SOURCE_DIR:-}" ]]; then rn_cfg+=("-DSLAM_REFACT_GTEST_SOURCE_DIR=$SLAM_REFACT_GTEST_SOURCE_DIR"); fi
+      if [[ -n "${SLAM_REFACT_CERES_SOURCE_DIR:-}${SLAM_REFACT_GTEST_SOURCE_DIR:-}" ]]; then rn_cfg+=(-DFETCHCONTENT_FULLY_DISCONNECTED=ON); fi
+      if [[ -n "${SLAM_REFACT_EVIDENCE_ROOT:-}" ]]; then rn_cfg+=("-DSLAM_REFACT_EVIDENCE_ROOT=$SLAM_REFACT_EVIDENCE_ROOT"); fi
+      timeout "$duration" cmake -S slam_refact/engine -B "$rn_dir" "${rn_cfg[@]}" || return "$?"
+      timeout "$duration" cmake --build "$rn_dir" --parallel "$jobs" || return "$?"
+      rm -f "$rn_dir/unit.junit.xml"
+      # ctest exits nonzero for the known failure; the ledger decides from the JUnit file.
+      timeout "$duration" ctest --test-dir "$rn_dir" --no-tests=error -L '^unit$' --parallel "$jobs" \
+        --output-junit "$PWD/$rn_dir/unit.junit.xml" || true
+      "$python_path" scripts/dev/ci-ledger.py --junit "$rn_dir/unit.junit.xml" --mode refact-native \
+        --known slam_refact/engine/tests/known-failures.json \
+        --tool-version "cmake=$(cmake --version | head -n1)" --tool-version "node=$(node --version)"
+      ;;
+    refact-web)
+      local web_status=0
+      mkdir -p build/dev-refact-web
+      rm -f build/dev-refact-web/web.junit.xml
+      node --test --test-reporter=spec --test-reporter-destination=stdout \
+        --test-reporter=junit --test-reporter-destination=build/dev-refact-web/web.junit.xml \
+        slam_refact/web-chunk/tests/*.test.mjs slam_refact/web-smoke/*.test.mjs || web_status=$?
+      "$python_path" scripts/dev/ci-ledger.py --junit build/dev-refact-web/web.junit.xml --mode refact-web \
+        --tool-version "node=$(node --version)" || return "$?"
+      return "$web_status"
+      ;;
+    refact-tools)
+      "$python_path" slam_refact/engine/tools/check_vendor.py --data || return "$?"
+      "$python_path" slam_refact/engine/tools/check_std_algos.py
+      ;;
     mcp) timeout 120 node scripts/dev/mcp-probe.mjs ;;
     browser) timeout "$duration" node scripts/dev/browser-baseline.mjs ;;
-    *) echo 'Usage: scripts/dev/check.sh {doctor|syntax|eval|quick|browser-contracts|mobile-contracts|native|wasm-build|clangd|mcp|browser|all}' >&2; return 2 ;;
+    *) echo 'Usage: scripts/dev/check.sh {doctor|syntax|eval|quick|browser-contracts|mobile-contracts|native|refact-native|refact-web|refact-tools|wasm-build|clangd|mcp|browser|all}' >&2; return 2 ;;
   esac
 }
 
@@ -61,6 +95,10 @@ if [[ "${1:-all}" == all ]]; then
   check_mode doctor || status=1
   check_mode quick || status=1
   check_mode native || status=1
+  check_mode browser-contracts || status=1
+  check_mode refact-tools || status=1
+  check_mode refact-web || status=1
+  check_mode refact-native || status=1
   exit "$status"
 fi
 check_mode "$1"
