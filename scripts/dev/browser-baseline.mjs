@@ -18,11 +18,11 @@ if (!Number.isInteger(replayTimeout) || replayTimeout < 1000 || replayTimeout > 
 const wasmVariant = process.env.BROWSER_AUDIT_WASM || 'active';
 const freshRoot = path.resolve(process.env.BROWSER_AUDIT_FRESH_DIR || path.join(root, 'build/audit-wasm'));
 if (!['active', 'fresh'].includes(wasmVariant)) throw new Error('BROWSER_AUDIT_WASM must be active or fresh');
-const wasmPath = wasmVariant === 'fresh' ? '/__audit-wasm__/vio_engine.js' : '/vio_engine.js';
-const artifacts = ['web/vio_engine.js', 'web/js/vio_engine_worker.js', 'wasm/build/vio_engine.js', 'wasm/build/vio_engine_worker.js', 'wasm/dist/vio_engine.js', 'web/js/app.js', 'web/js/vio-wrapper.js', 'web/js/vio-worker.js', 'web/js/test-tumvi-app.js', 'src/vio_engine.cpp', 'src/backend/estimator.cpp', 'wasm/vio_bindings.cpp', 'wasm/CMakeLists.txt'];
+const wasmPath = wasmVariant === 'fresh' ? '/__audit-wasm__/vio_engine.js' : '/legacy/vio_engine.js';
+const artifacts = ['web/legacy/vio_engine.js', 'web/legacy/js/vio_engine_worker.js', 'legacy/vins-mono/wasm/build/vio_engine.js', 'legacy/vins-mono/wasm/build/vio_engine_worker.js', 'legacy/vins-mono/wasm/dist/vio_engine.js', 'web/legacy/js/app.js', 'web/legacy/js/vio-wrapper.js', 'web/legacy/js/vio-worker.js', 'web/legacy/js/test-tumvi-app.js', 'legacy/vins-mono/src/vio_engine.cpp', 'legacy/vins-mono/src/backend/estimator.cpp', 'legacy/vins-mono/wasm/vio_bindings.cpp', 'legacy/vins-mono/wasm/CMakeLists.txt'];
 if (wasmVariant === 'fresh') artifacts.push(path.relative(root, path.join(freshRoot, 'vio_engine.js')));
-const optionalArtifacts = new Set(['web/js/vio_engine_worker.js', 'wasm/build/vio_engine.js',
-    'wasm/build/vio_engine_worker.js', 'wasm/dist/vio_engine.js']);
+const optionalArtifacts = new Set(['web/legacy/js/vio_engine_worker.js', 'legacy/vins-mono/wasm/build/vio_engine.js',
+    'legacy/vins-mono/wasm/build/vio_engine_worker.js', 'legacy/vins-mono/wasm/dist/vio_engine.js']);
 const fingerprints = {};
 for (const file of artifacts) {
     try {
@@ -34,7 +34,7 @@ for (const file of artifacts) {
         fingerprints[file] = { available: false, optional: true, reason: 'legacy build output not included in this source checkout' };
     }
 }
-const classicWorkerAvailable = fingerprints['web/js/vio_engine_worker.js'].available;
+const classicWorkerAvailable = fingerprints['web/legacy/js/vio_engine_worker.js'].available;
 const requests = [];
 const mime = { '.html': 'text/html', '.js': 'application/javascript', '.mjs': 'application/javascript', '.csv': 'text/csv', '.png': 'image/png', '.wasm': 'application/wasm' };
 const server = http.createServer(async (req, res) => {
@@ -76,7 +76,7 @@ try {
     page.on('pageerror', error => consoleLog.push({ type: 'pageerror', text: error.message }));
     await page.goto(baseUrl + '/__audit__');
     report.synthetic = await page.evaluate(async ({ frames, wasmPath, classicWorkerAvailable }) => {
-        const { VIOWrapper } = await import('/js/vio-wrapper.js');
+        const { VIOWrapper } = await import('/legacy/js/vio-wrapper.js');
         const vio = new VIOWrapper();
         const bounded = (promise, ms = 15000) => Promise.race([promise, new Promise((_, reject) => setTimeout(() => reject(new Error('audit operation timed out')), ms))]);
         const result = { crossOriginIsolated, secureContext: isSecureContext, frameResults: [], parameterResults: {} };
@@ -113,7 +113,7 @@ try {
         vio.dispose();
         if (classicWorkerAvailable) {
             const classic = new VIOWrapper();
-            try { await bounded(classic.load('/js/vio_engine_worker.js')); result.classicWorkerBuild = { available: true, loaded: true }; }
+            try { await bounded(classic.load('/legacy/js/vio_engine_worker.js')); result.classicWorkerBuild = { available: true, loaded: true }; }
             catch (error) { result.classicWorkerBuild = { available: true, loaded: false, error: error.message }; }
             finally { classic.dispose(); }
         } else {
@@ -129,14 +129,14 @@ try {
     report.synthetic.coverage = { load: true, configure: report.synthetic.configured, parameterMethods: Object.values(report.synthetic.parameterResults).every(Boolean), completeFrames: report.synthetic.frameResults.length === frames, initializedTracking: report.synthetic.initializedFrames > 0, finitePoseOutputs: report.synthetic.poseFrames > 0 && report.synthetic.frameResults.filter(row => row.hasPose).every(row => row.finitePose) };
     report.synthetic.console = consoleLog.splice(0);
     report.pages = [];
-    for (const pathname of ['/', '/test-tumvi.html']) {
-        await page.goto(baseUrl + pathname + (wasmVariant === 'fresh' ? '?wasm=__audit-wasm__/vio_engine.js' : ''));
+    for (const pathname of ['/legacy/index.html', '/legacy/test-tumvi.html']) {
+        await page.goto(baseUrl + pathname + (wasmVariant === 'fresh' ? '?wasm=../__audit-wasm__/vio_engine.js' : ''));
         let ready = false;
         try { await page.waitForFunction(() => /WASM loaded/.test(document.getElementById('status')?.textContent) && !document.getElementById('btn-start')?.disabled, null, { timeout: 15000 }); ready = true; } catch {}
         const record = { pathname, ready, status: await page.locator('#status').textContent() };
-        if (pathname === '/test-tumvi.html' && ready) {
+        if (pathname === '/legacy/test-tumvi.html' && ready) {
             await page.evaluate(async () => {
-                const { VIOWrapper } = await import('/js/vio-wrapper.js');
+                const { VIOWrapper } = await import('/legacy/js/vio-wrapper.js');
                 const send = VIOWrapper.prototype.sendFrame;
                 const receive = VIOWrapper.prototype._handleWorkerMessage;
                 window.__auditFrames = [];

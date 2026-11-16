@@ -3,7 +3,7 @@
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-PROJECT_ROOT="$(dirname "$SCRIPT_DIR")"
+PROJECT_ROOT="$(cd "$SCRIPT_DIR/../../.." && pwd)"
 OPENCV_VERSION="4.5.5"
 OPENCV_COMMIT="dad26339a975b49cfb6c7dbe4bd5276c9dcb36e2"
 OPENCV_CACHE="${PROJECT_ROOT}/build/_deps/opencv-${OPENCV_VERSION}-src"

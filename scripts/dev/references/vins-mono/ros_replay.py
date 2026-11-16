@@ -71,7 +71,7 @@ def main():
         "images": len(images), "imu_samples": len(imus), "first_image_ns": first,
         "last_image_ns": last, "duration_s": (last - first) * 1e-9,
         "selected_png_bytes_sha256": selected_images.hexdigest(),
-        "calibration": "current config/tum_vi_room1.yaml; camchain inverse, fixed extrinsic",
+        "calibration": "current legacy/vins-mono/config/tum_vi_room1.yaml; camchain inverse, fixed extrinsic",
     }
     with open("/output/input-summary.json", "w") as output:
         json.dump(input_summary, output, indent=2)

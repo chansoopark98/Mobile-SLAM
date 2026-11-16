@@ -14,7 +14,7 @@ const output = path.resolve(process.env.MOBILE_RENDERER_TEST_OUTPUT || 'build/tr
 const label = baseline ? 'before' : 'after';
 await fs.mkdir(output, { recursive: true });
 const fingerprints = {};
-for (const filename of ['web/js/renderer.js', 'web/js/app.js', 'web/js/test-tumvi-app.js', 'web/index.html']) {
+for (const filename of ['web/legacy/js/renderer.js', 'web/legacy/js/app.js', 'web/legacy/js/test-tumvi-app.js', 'web/legacy/index.html']) {
     fingerprints[filename] = createHash('sha256').update(await fs.readFile(filename)).digest('hex');
 }
 const browser = await chromium.launch({ executablePath: process.env.BROWSER_EXECUTABLE || '/usr/bin/google-chrome',
@@ -125,7 +125,7 @@ try {
             const replayContext = await browser.newContext({ viewport: { width: 1280, height: 800 }, deviceScaleFactor: dpr });
             const replay = await replayContext.newPage();
             replay.on('pageerror', error => report.failures.push(`TUM/DPR${dpr}: ${error.message}`));
-            await replay.goto(origin + '/test-tumvi.html');
+            await replay.goto(origin + '/legacy/test-tumvi.html');
             await replay.waitForFunction(() => window.__tumviReplay?.app?.renderer, null, { timeout: 30000 });
             await injectTrajectory(replay);
             await snapshot(replay, 'tum-factory', dpr);

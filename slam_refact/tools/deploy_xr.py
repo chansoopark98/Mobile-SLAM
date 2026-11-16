@@ -20,7 +20,7 @@ The engine/chunk artifacts are PARAMETERS: --engine-dir (a dir with manifest.jso
   python3 slam_refact/tools/deploy_xr.py --label <new label> --execute --authorization build/<lane>/deploy-authorized.json --evidence-dir build/<lane>/deploy-<label>
 
 Authorization JSON: {"authorized": true, "candidate_sha256": <wasm sha>, "bundle_sha256": <tree digest printed by the dry run>,
-"approved_by": <user, chat date, verbatim quote>, "reason": ...}. The historical VINS-Mono approval is refused. web/vio_engine.* is never touched.
+"approved_by": <user, chat date, verbatim quote>, "reason": ...}. The historical VINS-Mono approval is refused. web/legacy/vio_engine.* is never touched.
 Rollback: git (web/slam-refact-xr* tracked after the deploy commit) or the backup in <evidence-dir>/replaced/.
 """
 import argparse
@@ -55,7 +55,7 @@ SERVED_FIXED = frozenset(
     + [f'slam-refact-xr/three/{n}' for n in THREE_FILES] + [f'slam-refact-xr/aframe/{AFRAME_FILE}'])
 SERVED_SAMPLE = re.compile(r'slam-refact-xr/samples/(?:(?:phone|threejs|aframe|common)/[A-Za-z0-9_-]+\.(?:html|js|css)'
                            r'|phone/targets/(?:print/)?[A-Za-z0-9_-][A-Za-z0-9_.-]*\.(?:json|png|pdf))')
-FORBIDDEN_BASENAMES = ('vio_engine',)  # web/vio_engine.js, vio_engine.wasm, vio_engine.manifest.json are never a write target
+FORBIDDEN_BASENAMES = ('vio_engine',)  # web/legacy/vio_engine.js, vio_engine.wasm, vio_engine.manifest.json are never a write target
 LABEL_RE = re.compile(r'^[a-z0-9][a-z0-9-]*$')
 ROOT_ABSOLUTE = re.compile(r'''(["'`])/(engine|three|aframe|samples)/''')
 ANY_ROOT_ABSOLUTE = re.compile(r'''(?:src|href)\s*=\s*["']/|from\s+["']/|import\s*\(\s*["']/|import\s+["']/''')
@@ -286,7 +286,7 @@ def provenance(args, b, engine_dir, blobs, manifest, mode, authorization):
         'files': [{'path': n, 'sha256': sha256_bytes(d), 'bytes': len(d), 'source': s, 'transform': t} for n, (d, s, t) in sorted(b.files.items())],
         'tool': {'file': rel(Path(__file__)), 'sha256': sha256_file(__file__)},
         'authorization': authorization,
-        'note': 'XR8 chunk entry page; independent of web/vio_engine.* (VINS-Mono) and of web/slam-refact.html (measurement page)',
+        'note': 'XR8 chunk entry page; independent of web/legacy/vio_engine.* (VINS-Mono) and of web/slam-refact.html (measurement page)',
     }
 
 

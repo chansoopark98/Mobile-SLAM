@@ -3,6 +3,9 @@
 import argparse, hashlib, json, subprocess, re
 from pathlib import Path
 
+REPO=Path(__file__).resolve().parents[2]
+LEGACY_ROOT=REPO/'legacy/vins-mono'
+
 def sha(path):
     digest=hashlib.sha256()
     with path.open('rb') as source:
@@ -35,9 +38,11 @@ def record(build,artifact,source_root=None,native_ceres_archives=None):
     core=[entry for entry in commands if compiled_source(entry).is_relative_to(root/'src')]
     dependencies={str(p.relative_to(root)):sha(p) for folder in ('wasm/libs/ceres/lib','wasm/libs/opencv/lib') for p in (root/folder).glob('*.a')}
     head=diff_hash=None
-    if (root/'.git').exists():
-        head=subprocess.check_output(['git','rev-parse','HEAD'],cwd=root,text=True).strip()
-        diff_hash=hashlib.sha256(subprocess.check_output(['git','diff','--binary'],cwd=root)).hexdigest()
+    # The live legacy tree has no .git of its own; its Git context is this repository.
+    git_root=root if (root/'.git').exists() else REPO if root==LEGACY_ROOT else None
+    if git_root is not None:
+        head=subprocess.check_output(['git','rev-parse','HEAD'],cwd=git_root,text=True).strip()
+        diff_hash=hashlib.sha256(subprocess.check_output(['git','diff','--binary'],cwd=git_root)).hexdigest()
     ceres_source=Path(cache['Ceres_SOURCE_DIR']) if cache.get('Ceres_SOURCE_DIR') else None
     ceres_version=None
     if ceres_source and (header:=ceres_source/'include/ceres/version.h').is_file():

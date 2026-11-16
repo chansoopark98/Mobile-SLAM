@@ -12,7 +12,7 @@ const output = path.resolve(process.env.CAPTURE_WORKER_OUTPUT || path.join(root,
 await fs.mkdir(output, { recursive: true });
 const { chromium } = createRequire(path.join(root, 'scripts/dev/package.json'))('playwright');
 const files = Object.fromEntries(await Promise.all(['camera.js', 'capture-worker.js', 'app.js'].map(async name =>
-    [name, await fs.readFile(path.join(root, 'web/js', name), 'utf8')])));
+    [name, await fs.readFile(path.join(root, 'web/legacy/js', name), 'utf8')])));
 const report = { scope: 'Desktop capture contracts only; no WASM estimator, phone capability/performance or exposure verification',
     physicalTargetVerified: false, defaultPromotion: false, hashes: Object.fromEntries(Object.entries(files).map(([name, source]) =>
         [name, createHash('sha256').update(source).digest('hex')])) };

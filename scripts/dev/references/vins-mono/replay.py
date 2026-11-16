@@ -27,7 +27,7 @@ def main():
         parser.error("frames must be 1..3000 and rate must be in (0, 1]")
     dataset = args.dataset.resolve()
     output = args.output.resolve()
-    config_path = ROOT / "config/tum_vi_room1.yaml"
+    config_path = ROOT / "legacy/vins-mono/config/tum_vi_room1.yaml"
     camchain = dataset / "dso/camchain.yaml"
     if digest(camchain) != digest(ROOT / "assets/datasets/tum/dataset-room1_512_16/dso/camchain.yaml"):
         raise SystemExit("Only the matching TUM-VI room1 calibration is supported.")
@@ -56,7 +56,7 @@ visualize_imu_forward: 0
 visualize_camera_size: 0.4
 """
     (output / "config.yaml").write_text(config)
-    sources = subprocess.check_output(["git", "ls-files", "src", "include", "config", "CMakeLists.txt"], cwd=ROOT, text=True).splitlines()
+    sources = subprocess.check_output(["git", "ls-files", "legacy/vins-mono/src", "legacy/vins-mono/include", "legacy/vins-mono/config", "legacy/vins-mono/CMakeLists.txt"], cwd=ROOT, text=True).splitlines()
     manifest = {
         "image_id": image_info["Id"], "upstream_revision": REVISION,
         "current_head": subprocess.check_output(["git", "rev-parse", "HEAD"], cwd=ROOT, text=True).strip(),

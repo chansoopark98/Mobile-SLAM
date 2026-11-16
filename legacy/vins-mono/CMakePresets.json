@@ -10,7 +10,7 @@
       "name": "native-dev",
       "displayName": "Native development and regression tests",
       "generator": "Ninja",
-      "binaryDir": "${sourceDir}/build/dev-native",
+      "binaryDir": "${sourceDir}/../../build/dev-native",
       "cacheVariables": {
         "CMAKE_BUILD_TYPE": "Release",
         "CMAKE_EXPORT_COMPILE_COMMANDS": true,

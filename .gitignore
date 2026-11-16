@@ -1,11 +1,9 @@
 web/datasets
 build_wasm/
-wasm/dist/
-wasm/libs/opencv_build/
-/wasm/libs/ceres_build/
-/wasm/libs/
+/legacy/vins-mono/wasm/dist/
+/legacy/vins-mono/wasm/libs/
 /third_party/eigen/
-/web/js/vio_engine_worker.js
+/web/legacy/js/vio_engine_worker.js
 
 # Host-local runtime captures; audit evidence under docs/ remains versioned.
 /mobile_web_log.txt

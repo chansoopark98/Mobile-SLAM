@@ -14,11 +14,11 @@ const source = fs.readFileSync(serverFile, 'utf8');
 function fixture() {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), 'mobile-slam-server-'));
   const web = path.join(root, 'web');
-  for (const folder of ['web/js', 'web/public', 'web/.certs', 'web/.private', 'assets/keys', 'logs', 'room1/cam0/data', 'room4/imu0']) fs.mkdirSync(path.join(root, folder), { recursive: true });
-  for (const [name, body] of Object.entries({ 'web/index.html': '<h1>fixture</h1>', 'web/js/app.js': 'export const fixture = 1;', 'web/vio_engine.js': 'var fixture=1;', 'web/vio_engine.wasm': 'wasm-fixture', 'web/public/profile.json': '{"camera":"fixture"}', 'web/server.js': 'PRIVATE_SERVER_SENTINEL', 'web/.certs/key.pem': 'SECRET_SENTINEL', 'web/.private/hidden.js': 'SECRET_SENTINEL', 'web/package.json': '{"secret":"SECRET_SENTINEL"}', 'assets/keys/serdic_com_cert.crt': 'FAKE_CERT', 'assets/keys/serdic_com.key': 'FAKE_KEY', 'logs/test-tumvi.log': 'PRESERVE_OLD_LOG', 'room1/cam0/data/1.png': 'image-fixture', 'room1/cam0/data.csv': '#time,file\n1,1.png', 'room4/imu0/data.csv': '#imu\n1,0,0,0,0,0,0' })) fs.writeFileSync(path.join(root, name), body);
-  fs.symlinkSync(path.join(root, 'assets/keys/serdic_com.key'), path.join(web, 'js/outside.js'));
-  fs.symlinkSync(path.join(web, '.private/hidden.js'), path.join(web, 'js/hidden.js'));
-  fs.symlinkSync(path.join(web, 'server.js'), path.join(web, 'js/server-alias.js'));
+  for (const folder of ['web/js', 'web/legacy/js', 'web/public', 'web/.certs', 'web/.private', 'assets/keys', 'logs', 'room1/cam0/data', 'room4/imu0']) fs.mkdirSync(path.join(root, folder), { recursive: true });
+  for (const [name, body] of Object.entries({ 'web/slam-refact-xr.html': '<h1>xr fixture</h1>', 'web/legacy/index.html': '<h1>fixture</h1>', 'web/legacy/js/app.js': 'export const fixture = 1;', 'web/js/slam-refact-app.js': 'export const refact = 1;', 'web/legacy/vio_engine.js': 'var fixture=1;', 'web/legacy/vio_engine.wasm': 'wasm-fixture', 'web/public/profile.json': '{"camera":"fixture"}', 'web/server.js': 'PRIVATE_SERVER_SENTINEL', 'web/.certs/key.pem': 'SECRET_SENTINEL', 'web/.private/hidden.js': 'SECRET_SENTINEL', 'web/package.json': '{"secret":"SECRET_SENTINEL"}', 'assets/keys/serdic_com_cert.crt': 'FAKE_CERT', 'assets/keys/serdic_com.key': 'FAKE_KEY', 'logs/test-tumvi.log': 'PRESERVE_OLD_LOG', 'room1/cam0/data/1.png': 'image-fixture', 'room1/cam0/data.csv': '#time,file\n1,1.png', 'room4/imu0/data.csv': '#imu\n1,0,0,0,0,0,0' })) fs.writeFileSync(path.join(root, name), body);
+  fs.symlinkSync(path.join(root, 'assets/keys/serdic_com.key'), path.join(web, 'js/slam-refact-outside.js'));
+  fs.symlinkSync(path.join(web, '.private/hidden.js'), path.join(web, 'js/slam-refact-hidden.js'));
+  fs.symlinkSync(path.join(web, 'server.js'), path.join(web, 'js/slam-refact-server-alias.js'));
   return { root, web, cleanup: () => fs.rmSync(root, { recursive: true, force: true }) };
 }
 
@@ -65,7 +65,7 @@ test('Import has no log/TLS/listener startup side effects and exports factories'
 test('Public JS/profile and HEAD have MIME/security/cache headers and no HEAD body', async () => {
   const f = fixture();
   try { await running(f, async port => {
-    const script = await request(port, '/js/app.js?v=11');
+    const script = await request(port, '/legacy/js/app.js?v=11');
     assert.equal(script.status, 200);
     assert.match(script.headers['content-type'], /javascript/);
     assert.equal(script.headers['cross-origin-opener-policy'], 'same-origin');
@@ -73,7 +73,7 @@ test('Public JS/profile and HEAD have MIME/security/cache headers and no HEAD bo
     assert.match(script.headers['permissions-policy'], /camera=\(self\)/);
     assert.match(script.headers['cache-control'], /no-store/);
     const profile = await request(port, '/public/profile.json'); assert.equal(profile.status, 200);
-    const head = await request(port, '/js/app.js', 'HEAD');
+    const head = await request(port, '/legacy/js/app.js', 'HEAD');
     assert.equal(head.status, 200); assert.equal(head.body, '');
     assert.equal(Number(head.headers['content-length']), Buffer.byteLength('export const fixture = 1;'));
   }); } finally { f.cleanup(); }
@@ -82,7 +82,7 @@ test('Public JS/profile and HEAD have MIME/security/cache headers and no HEAD bo
 test('GET and HEAD reject private, encoded traversal, NUL and hidden/outside/server symlink targets', async () => {
   const f = fixture();
   try { await running(f, async port => {
-    for (const pathname of ['/server.js', '/package.json', '/.certs/key.pem', '/%2ecerts/key.pem', '/js/../server.js', '/js/%2e%2e/server.js', '/js/%252e%252e/server.js', '/js/%00app.js', '/js/outside.js', '/js/hidden.js', '/js/server-alias.js', '/public/a.key', '/public/a.crt', '/datasets/tum/dataset-room1_512_16/mav0/../archive.tar']) {
+    for (const pathname of ['/server.js', '/package.json', '/.certs/key.pem', '/%2ecerts/key.pem', '/js/../server.js', '/js/%2e%2e/server.js', '/js/%252e%252e/server.js', '/js/%00app.js', '/js/slam-refact-outside.js', '/js/slam-refact-hidden.js', '/js/slam-refact-server-alias.js', '/js/app.js', '/legacy/js/../server.js', '/legacy/server.js', '/public/a.key', '/public/a.crt', '/datasets/tum/dataset-room1_512_16/mav0/../archive.tar']) {
       for (const method of ['GET', 'HEAD']) {
         const response = await request(port, pathname, method);
         assert.ok([400, 403].includes(response.status), `${method} ${pathname}: ${response.status}`);
@@ -142,15 +142,15 @@ test('Strict TLS loads a provisioned trusted leaf and two intermediates; missing
 
 test('Embedded single-file mode never advertises or serves an unused legacy external WASM', async () => {
   const f = fixture();
-  fs.symlinkSync(path.join(f.web, 'vio_engine.wasm'), path.join(f.web, 'public/legacy.json'));
+  fs.symlinkSync(path.join(f.web, 'legacy/vio_engine.wasm'), path.join(f.web, 'public/legacy.json'));
   try { await running(f, async port => {
     const health = JSON.parse((await request(port, '/__health__')).body);
     assert.equal(health.wasmMode, 'single-file-embedded');
     assert.equal(health.artifactSnapshot['vio_engine.wasm'].active, false);
     assert.equal(health.artifactSnapshot['vio_engine.wasm'].available, false);
     assert.equal(health.artifactSnapshot['vio_engine.wasm'].sha256, undefined);
-    assert.equal((await request(port, '/vio_engine.js')).status, 200);
-    assert.equal((await request(port, '/vio_engine.wasm')).status, 403);
+    assert.equal((await request(port, '/legacy/vio_engine.js')).status, 200);
+    assert.equal((await request(port, '/legacy/vio_engine.wasm')).status, 403);
     assert.equal((await request(port, '/public/legacy.json')).status, 403);
   }, { singleFileEmbeddedWasm: true }); } finally { f.cleanup(); }
 });
@@ -196,8 +196,8 @@ test('slam_refact measurement page serves only its page and the three deployed e
       assert.ok([400, 403].includes(response.status), `${name}: ${response.status}`);
       assert.ok(!response.body.includes('SECRET_SENTINEL') && !response.body.includes('FAKE_KEY'));
     }
-    // The VINS-Mono product routes are unchanged.
-    assert.equal((await request(port, '/vio_engine.js')).status, 200);
+    // The legacy VINS-Mono routes are served under /legacy/.
+    assert.equal((await request(port, '/legacy/vio_engine.js')).status, 200);
   }); } finally { f.cleanup(); }
 });
 
@@ -259,7 +259,14 @@ test('slam_refact XR entry page serves only its fixed file tree; aliases redirec
       }
     }
     assert.equal((await request(port, '/slam-refact-xr/engine/xr.js', 'POST', 'x')).status, 405);
-    // The VINS-Mono product routes and the measurement page are unchanged.
-    assert.equal((await request(port, '/vio_engine.js')).status, 200);
+    // The legacy VINS-Mono routes are served under /legacy/; old root URLs redirect.
+    assert.equal((await request(port, '/legacy/vio_engine.js')).status, 200);
+    for (const [from, to] of [['/vio_engine.js', '/legacy/vio_engine.js'], ['/test-tumvi.html', '/legacy/test-tumvi.html'], ['/audit-mobile.html', '/legacy/audit-mobile.html'], ['/legacy', '/legacy/']]) {
+      const redirect = await request(port, `${from}?wasm=x`);
+      assert.equal(redirect.status, 301, from);
+      assert.equal(redirect.headers.location, `${to}?wasm=x`);
+    }
+    assert.equal((await request(port, '/legacy/')).body, '<h1>fixture</h1>');
+    assert.equal((await request(port, '/')).body, '<h1>xr</h1>');
   }); } finally { f.cleanup(); }
 });

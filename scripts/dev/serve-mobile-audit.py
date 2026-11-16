@@ -19,7 +19,7 @@ def resolve_public_file(request_path, web=WEB):
     route = unquote(urlsplit(request_path).path)
     if "\0" in route or any(part.startswith(".") for part in route.split("/") if part):
         return None
-    requested = web / (route.lstrip("/") or "audit-mobile.html")
+    requested = web / (route.lstrip("/") or "legacy/audit-mobile.html")
     if requested.suffix.lower() not in PUBLIC_EXTENSIONS:
         return None
     path = requested.resolve()
@@ -106,7 +106,7 @@ def main():
         context.load_cert_chain(args.cert, args.key)
         server.socket = context.wrap_socket(server.socket, server_side=True)
     scheme = "http" if args.http else "https"
-    print(json.dumps({"service": "mobile-slam-read-only-audit", "url": f"{scheme}://{args.host}:{server.server_port}/audit-mobile.html", "writes": "disabled", "certificate": "explicit existing pair" if not args.generate_dev_cert else "isolated self-signed localhost pair; not trusted phone TLS"}), flush=True)
+    print(json.dumps({"service": "mobile-slam-read-only-audit", "url": f"{scheme}://{args.host}:{server.server_port}/legacy/audit-mobile.html", "writes": "disabled", "certificate": "explicit existing pair" if not args.generate_dev_cert else "isolated self-signed localhost pair; not trusted phone TLS"}), flush=True)
     try:
         server.serve_forever()
     except KeyboardInterrupt:

@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { createRecorder, poseDelta } from '../../web/js/audit-mobile.js';
+import { createRecorder, poseDelta } from '../../web/legacy/js/audit-mobile.js';
 
 test('Bounded recorder stops accepting samples after stop and reports discarded rows', () => {
     let now = 1000;

@@ -1,6 +1,6 @@
 # slam_refact
 
-별도 C++17 SLAM 엔진과 WebAssembly·XR 연결 코드입니다. 공개 소스 재사용과 reference binary 관찰 기반 구현을 포함하며 출처·개별 라이선스는 [루트 README](../README.md#external-code)와 [제3자 고지](engine/third_party/THIRD_PARTY_NOTICES.md)를 확인합니다.
+Mobile-SLAM의 기준(baseline) C++17 SLAM 엔진과 WebAssembly·XR 연결 코드입니다. VINS-Mono 기반 엔진은 `legacy/vins-mono/`의 legacy입니다. 공개 소스 재사용과 reference binary 관찰 기반 구현을 포함하며 출처·개별 라이선스는 [루트 README](../README.md#external-code)와 [제3자 고지](engine/third_party/THIRD_PARTY_NOTICES.md)를 확인합니다.
 
 ## Structure and API
 
@@ -46,11 +46,11 @@ ctest --test-dir build/slam-refact-native --no-tests=error -L '^unit$' --paralle
 
 ## WASM build
 
-Ceres의 WASM 설치를 먼저 준비합니다. OpenCV는 이 엔진에 필요하지 않습니다.
+Ceres의 WASM 설치를 먼저 준비합니다. OpenCV는 이 엔진에 필요하지 않습니다. 설치 script와 결과(`legacy/vins-mono/wasm/libs/ceres`)는 legacy 트리에 있고, 엔진 CMake의 `SLAM_REFACT_WASM_CERES_DIR` 기본값이 이 경로를 가리킵니다.
 
 ```bash
 source "$EMSDK/emsdk_env.sh"
-bash wasm/build_ceres.sh
+bash legacy/vins-mono/wasm/build_ceres.sh
 emcmake cmake -S slam_refact/engine -B build/slam-refact-wasm -G Ninja \
   -DCMAKE_BUILD_TYPE=Release -DSLAM_REFACT_BUILD_TESTS=OFF -DSLAM_REFACT_BUILD_HARNESS=OFF
 cmake --build build/slam-refact-wasm --parallel 2
@@ -69,7 +69,7 @@ node slam_refact/web-chunk/tools/make-manifest.mjs --engine-dir build/slam-refac
 
 - `build/slam-refact-native/harness/slam_refact_replay`는 engine config·IMU·frame 목록으로 구성된 replay bundle을 읽습니다.
 - bundle 준비·평가는 `tools/harness/`, 독립 평가 기준은 [개발 도구 안내](../scripts/dev/README.md)를 참고합니다.
-- 측정 페이지: `/slam-refact.html`. XR 샘플: `/slam-refact-xr.html`.
+- 측정 페이지: `/slam-refact`(→ `/slam-refact.html`). XR 페이지: `/`(= `/slam-refact-xr.html`). VINS 웹은 `/legacy/`입니다.
 - 엔진 loader는 JS·WASM의 SHA와 manifest를 검증합니다. 같은 디렉터리에서 온 manifest는 무결성 대조이며 배포자 인증을 대신하지 않습니다.
 - 새 artifact는 먼저 isolated staging에서 검사합니다. `tools/deploy_xr.py --label <unique-label> --engine-dir <build-dir>`의 기본 동작은 dry-run입니다.
 - 실시간 추적·map point 표시·metric scale·surface/hit-test 결과는 각각 검증해야 합니다. desktop smoke는 실제 전화의 camera/IMU·GPU·발열·장시간 정확도를 보증하지 않습니다.

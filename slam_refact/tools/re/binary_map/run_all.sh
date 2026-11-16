@@ -6,7 +6,7 @@ T=slam_refact/tools/re/binary_map
 W=build/slam-refact-20261015/inputs/xr-slam.wasm
 mkdir -p "$B/binary_map"
 sha256sum "$W"
-python3 -I "$T/libmatch.py" --wasm "$W" --archive wasm/libs/ceres/lib/libceres.a --out "$B/binary_map/libmatch.json"
+python3 -I "$T/libmatch.py" --wasm "$W" --archive legacy/vins-mono/wasm/libs/ceres/lib/libceres.a --out "$B/binary_map/libmatch.json"
 python3 -I "$T/classify.py" --wasm "$W" --dcmp "$B/wabt/xr-slam.dcmp" \
   --public-src assets/references/xr_reference/official/xr_reference \
   --ghidra-export "$B/ghidra/export" --ghidra-extra "$B/ghidra-laneA/export" \

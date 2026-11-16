@@ -560,7 +560,7 @@ class App {
             const urlParams = new URLSearchParams(window.location.search);
             const wasmFile = urlParams.get('wasm') || 'vio_engine.js';
             console.log(`Loading WASM: ${wasmFile}`);
-            await this.vio.load('/' + wasmFile);
+            await this.vio.load('/legacy/' + wasmFile);
             this.updateStatus('WASM loaded. Ready to start.');
             this.startBtn.disabled = false;
         } catch (e) {

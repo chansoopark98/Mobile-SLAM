@@ -13,7 +13,7 @@ from scipy.spatial.transform import Rotation
 def export(report_path, output_path):
     raw = report_path.read_bytes()
     report = json.loads(raw)
-    pages = [page for page in report.get("pages", []) if page["pathname"] == "/test-tumvi.html"]
+    pages = [page for page in report.get("pages", []) if page["pathname"] == "/legacy/test-tumvi.html"]
     if len(pages) != 1:
         raise ValueError("Need exactly one TUM replay page")
     frames = pages[0].get("replayFrames", [])

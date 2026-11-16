@@ -1039,7 +1039,7 @@ TEST(EngineContracts, DiagnosticCaptureIsOptInAndEmitsJsonFixtureWithoutChanging
     EXPECT_NE(snapshot.find("\"gftt_new\""),std::string::npos);
     EXPECT_NE(snapshot.find("projection_sqrt_info_00"),std::string::npos);
     EXPECT_FALSE(engine.getPoseValid());
-    const auto directory=std::filesystem::path(__FILE__).parent_path().parent_path()/"build/refactor-evidence/engine-green";
+    const auto directory=std::filesystem::path(__FILE__).parent_path().parent_path().parent_path().parent_path()/"build/refactor-evidence/engine-green";
     std::filesystem::create_directories(directory);
     std::ofstream(directory/"diagnostic-fixture.json")<<snapshot;
     engine.setDiagnosticCapture(false);

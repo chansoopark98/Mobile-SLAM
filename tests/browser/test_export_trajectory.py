@@ -17,7 +17,7 @@ class ExportTrajectoryTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as directory:
             report = Path(directory) / "report.json"
             output = Path(directory) / "camera.tum"
-            report.write_text(json.dumps({"wasmVariant": "active", "pages": [{"pathname": "/test-tumvi.html", "replayFrames": rows}]}))
+            report.write_text(json.dumps({"wasmVariant": "active", "pages": [{"pathname": "/legacy/test-tumvi.html", "replayFrames": rows}]}))
             metadata = exporter.export(report, output)
             data = [line for line in output.read_text().splitlines() if not line.startswith("#")]
             return metadata, data

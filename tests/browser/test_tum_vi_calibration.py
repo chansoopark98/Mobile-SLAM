@@ -92,12 +92,12 @@ class PrimaryCam0Calibration(unittest.TestCase):
             self.assertIn("rostopic: /cam1/image_raw", text.split("cam1:", 1)[1])
 
     def test_native_yaml_matches_primary_cam0_inverse(self):
-        text = (ROOT / "config/tum_vi_room1.yaml").read_text()
+        text = (ROOT / "legacy/vins-mono/config/tum_vi_room1.yaml").read_text()
         self.assert_matches_primary(config_array(text, "extrinsicRotation"),
                                     config_array(text, "extrinsicTranslation"))
 
     def test_actual_browser_constant_matches_primary_cam0_inverse(self):
-        text = (ROOT / "web/js/test-tumvi-app.js").read_text()
+        text = (ROOT / "web/legacy/js/test-tumvi-app.js").read_text()
         self.assert_matches_primary(browser_array(text, "r_ic"), browser_array(text, "t_ic"))
 
 

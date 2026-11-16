@@ -14,7 +14,7 @@ const browser = await chromium.launch({ executablePath: '/usr/bin/google-chrome'
 try {
     report.browser = browser.version();
     report.sources = {};
-    for (const file of ['web/js/app.js', 'web/js/imu.js', 'web/js/vio-worker.js', 'web/vio_engine.js']) {
+    for (const file of ['web/legacy/js/app.js', 'web/legacy/js/imu.js', 'web/legacy/js/vio-worker.js', 'web/legacy/vio_engine.js']) {
         report.sources[file] = createHash('sha256').update(await fs.readFile(file)).digest('hex');
     }
     for (const offsetMs of [0, 3_600_000]) {

@@ -7,7 +7,7 @@
 
 namespace {
 constexpr const char* dataset="./assets/datasets/tum/dataset-room1_512_16";
-constexpr const char* config="./config/tum_vi_room1.yaml";
+constexpr const char* config="./legacy/vins-mono/config/tum_vi_room1.yaml";
 struct Pose {double time; Eigen::Vector3d p; Eigen::Matrix3d r;};
 std::vector<Pose> run(bool raw_adapter,int frames) {
     utility::MeasurementProcessor data;

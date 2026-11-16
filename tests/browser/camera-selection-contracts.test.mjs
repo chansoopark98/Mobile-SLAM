@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import fs from 'node:fs/promises';
 import vm from 'node:vm';
 
-const source = await fs.readFile(new URL('../../web/js/camera.js', import.meta.url), 'utf8');
+const source = await fs.readFile(new URL('../../web/legacy/js/camera.js', import.meta.url), 'utf8');
 const devices = [
     { kind: 'videoinput', label: 'camera 1, facing front', deviceId: 'fixture-front-one' },
     { kind: 'videoinput', label: 'camera 3, facing front', deviceId: 'fixture-front-three' },

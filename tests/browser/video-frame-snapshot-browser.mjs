@@ -9,8 +9,8 @@ import { createHash } from 'node:crypto';
 const root=process.cwd();
 const output=path.resolve(process.env.VIDEO_SNAPSHOT_OUTPUT || 'build/mobile-web-20261009/phase-c/actual-video');
 const {chromium}=createRequire(path.join(root,'scripts/dev/package.json'))('playwright');
-const cameraSource=await fs.readFile(path.join(root,'web/js/camera.js'),'utf8');
-const appSource=await fs.readFile(path.join(root,'web/js/app.js'),'utf8');
+const cameraSource=await fs.readFile(path.join(root,'web/legacy/js/camera.js'),'utf8');
+const appSource=await fs.readFile(path.join(root,'web/legacy/js/app.js'),'utf8');
 const report={scope:'Actual desktop HTMLVideoElement/canvas and App callback/processLoop; deterministic withheld B metadata, no engine or physical exposure/phone accuracy claim',
     hashes:Object.fromEntries([['camera',cameraSource],['app',appSource]].map(([name,source])=>[name,createHash('sha256').update(source).digest('hex')]))};
 const server=http.createServer((request,response)=>{

@@ -166,12 +166,12 @@ export async function main(argv = process.argv.slice(2)) {
             'mobile_default solver/tracking parameters reconstructed from app defaults; recorder did not persist parameter RPCs.',
             'Heuristic camera calibration, physical exposure timing, sensor synchronization and independent trajectory accuracy remain unverified.'] };
     const routes = new Map([['/', { mime: 'text/html', bytes: Buffer.from('<!doctype html><title>Preserved Android input replay</title>') }]]);
-    for (const [url, file] of [['/candidate/vio_engine.js', loaderPath], ...['vio-worker.js','vio-wrapper.js','low-feature.mjs'].map(name => [`/js/${name}`, path.join(root, 'web/js', name)])]) {
+    for (const [url, file] of [['/candidate/vio_engine.js', loaderPath], ...['vio-worker.js','vio-wrapper.js','low-feature.mjs'].map(name => [`/legacy/js/${name}`, path.join(root, 'web/legacy/js', name)])]) {
         const bytes = await fs.readFile(file);
         report.fingerprints[url] = { path: file, bytes: bytes.length, sha256: sha256(bytes) };
         routes.set(url, { bytes, mime: 'application/javascript' });
     }
-    for (const file of [fileURLToPath(import.meta.url), path.join(root, 'web/js/app.js')]) {
+    for (const file of [fileURLToPath(import.meta.url), path.join(root, 'web/legacy/js/app.js')]) {
         const bytes = await fs.readFile(file);
         report.fingerprints[path.relative(root, file)] = { path: file, bytes: bytes.length, sha256: sha256(bytes) };
     }
@@ -208,7 +208,7 @@ export async function main(argv = process.argv.slice(2)) {
         page.on('pageerror', error => report.pageErrors.push(error.message));
         await page.goto(`http://127.0.0.1:${server.address().port}/`);
         report.replay = await Promise.race([page.evaluate(async ({ frames, imu, imuBatches, config, parameters }) => {
-            const { VIOWrapper } = await import('/js/vio-wrapper.js');
+            const { VIOWrapper } = await import('/legacy/js/vio-wrapper.js');
             const vio = new VIOWrapper({ frameTimeoutMs: 60000 });
             const rows = [];
             let imuCursor = 0;

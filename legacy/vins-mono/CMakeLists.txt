@@ -90,6 +90,9 @@ include_directories(include
 
 include(cmake/SLAMCoreSources.cmake)
 
+# Tests run from the repository root (assets/, build/ evidence paths) after the legacy move.
+get_filename_component(MOBILE_SLAM_REPO_ROOT "${CMAKE_CURRENT_SOURCE_DIR}/../.." ABSOLUTE)
+
 # Libraries 
 add_library(utility ${MOBILE_SLAM_UTILITY_SOURCES})
 target_link_libraries(utility PUBLIC ${YAML_CPP_LIBRARIES} ${OpenCV_LIBS})
@@ -295,7 +298,7 @@ add_test(NAME GeometryReuseTest COMMAND test_geometry_reuse)
 add_executable(test_synthetic_estimator tests/test_synthetic_estimator.cpp)
 target_link_libraries(test_synthetic_estimator PRIVATE estimator gtest_main ${YAML_CPP_LIBRARIES})
 add_test(NAME SyntheticEstimatorTest COMMAND test_synthetic_estimator)
-set_tests_properties(SyntheticEstimatorTest PROPERTIES WORKING_DIRECTORY "${CMAKE_CURRENT_SOURCE_DIR}" TIMEOUT 300)
+set_tests_properties(SyntheticEstimatorTest PROPERTIES WORKING_DIRECTORY "${MOBILE_SLAM_REPO_ROOT}" TIMEOUT 300)
 
 add_executable(test_initial_sfm_contracts tests/test_initial_sfm_contracts.cpp)
 target_link_libraries(test_initial_sfm_contracts PRIVATE initializer gtest_main)
@@ -308,6 +311,6 @@ add_test(NAME NativeAdapterTest COMMAND test_native_adapter)
 
 set_tests_properties(IntegrationBaseTest SlidingWindowTest TrajectoryEvaluatorTest ConfigValidationTest
     MeasurementRobustnessTest VIOEngineParityTest EngineContractsTest NumericalContractsTest ProjectionTrialContractsTest MathGeometryContractsTest InitialSFMContractsTest NativeAdapterTest
-    PROPERTIES WORKING_DIRECTORY "${CMAKE_CURRENT_SOURCE_DIR}" TIMEOUT 180)
+    PROPERTIES WORKING_DIRECTORY "${MOBILE_SLAM_REPO_ROOT}" TIMEOUT 180)
 
 set_tests_properties(NativeAdapterTest PROPERTIES WORKING_DIRECTORY "${PROJECT_BINARY_DIR}")

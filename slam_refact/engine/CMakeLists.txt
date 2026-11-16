@@ -66,7 +66,7 @@ elseif(SLAM_REFACT_CERES_VERSION STREQUAL "2.2")
                         "SLAM_REFACT_CERES_VERSION=2.0")
   endif()
   set(_sr_ceres_src_default "${SLAM_REFACT_REPO_ROOT}/build/_deps/ceres-solver-src")
-  set(_sr_wasm_ceres_default "${SLAM_REFACT_REPO_ROOT}/wasm/libs/ceres/lib/cmake/Ceres")
+  set(_sr_wasm_ceres_default "${SLAM_REFACT_REPO_ROOT}/legacy/vins-mono/wasm/libs/ceres/lib/cmake/Ceres")
 else()
   message(FATAL_ERROR
     "slam_refact: SLAM_REFACT_CERES_VERSION='${SLAM_REFACT_CERES_VERSION}' (expected 2.2 or 2.0)")

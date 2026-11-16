@@ -11,13 +11,13 @@ cd "$(dirname "$0")/../../../.."
 OUT=${1:?usage: build-pair.sh <out dir under build/>}
 case "$OUT" in build/*) ;; *) echo "out must be under build/" >&2; exit 2;; esac
 [ ! -e "$OUT" ] || { echo "refusing to overwrite $OUT" >&2; exit 2; }
-mkdir -p "$OUT/snapshot/slam_refact/tools/harness" "$OUT/snapshot/build" "$OUT/snapshot/wasm/libs"
+mkdir -p "$OUT/snapshot/slam_refact/tools/harness" "$OUT/snapshot/build" "$OUT/snapshot/legacy/vins-mono/wasm/libs"
 SNAP=$OUT/snapshot
 date -Is > "$OUT/freeze-at.txt"
 tar -C slam_refact -cf - --exclude='.omc' --exclude='__pycache__' --exclude='node_modules' engine | tar -C "$SNAP/slam_refact" -xf -
 tar -C slam_refact/tools/harness -cf - --exclude='__pycache__' replay | tar -C "$SNAP/slam_refact/tools/harness" -xf -
 ln -s "$PWD/build/_deps" "$SNAP/build/_deps"
-ln -s "$PWD/wasm/libs/ceres" "$SNAP/wasm/libs/ceres"
+ln -s "$PWD/legacy/vins-mono/wasm/libs/ceres" "$SNAP/legacy/vins-mono/wasm/libs/ceres"
 (cd "$SNAP" && find slam_refact -type f -print0 | sort -z | xargs -0 sha256sum) > "$OUT/snapshot-sources.sha256"
 TREE_SHA=$(sha256sum "$OUT/snapshot-sources.sha256" | cut -d' ' -f1)
 echo "snapshot tree sha $TREE_SHA" | tee "$OUT/build.log"

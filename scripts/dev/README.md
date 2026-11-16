@@ -4,8 +4,8 @@
 
 ## Environment
 
-- Native: C++17 compiler, CMake 3.21+, Ninja, Eigen, OpenCV, yaml-cpp, pkg-config. Pangolin은 viewer를 켤 때만 필요합니다.
-- WASM: Emscripten 5.0.0, 로컬에서 빌드한 OpenCV 4.5.5·Ceres 2.2.0. 공식 source cache는 ignored `build/_deps/`에 두며 `OPENCV_SOURCE_DIR`·`CERES_SOURCE_DIR`로 기존 소스를 지정할 수 있습니다.
+- Native (legacy VINS, `legacy/vins-mono`): C++17 compiler, CMake 3.21+, Ninja, Eigen, OpenCV, yaml-cpp, pkg-config. Pangolin은 viewer를 켤 때만 필요합니다. slam_refact native는 Eigen·Ceres(GTest는 시험, zlib은 replay)만 필요하며 [slam_refact 안내](../../slam_refact/README.md)를 확인합니다.
+- WASM (legacy VINS): Emscripten 5.0.0, 로컬에서 빌드한 OpenCV 4.5.5·Ceres 2.2.0. 빌드 script는 `legacy/vins-mono/wasm/build_{opencv,ceres}.sh`이고 설치 결과는 ignored `legacy/vins-mono/wasm/libs/`에 생깁니다. 공식 source cache는 ignored `build/_deps/`에 두며 `OPENCV_SOURCE_DIR`·`CERES_SOURCE_DIR`로 기존 소스를 지정할 수 있습니다. slam_refact WASM은 같은 Ceres 설치만 씁니다.
 - 검증: Node 22+, Python 3, NumPy·SciPy·Pillow. 일부 영상 도구에는 Python OpenCV가 필요합니다.
 - browser harness는 `scripts/dev/package-lock.json`의 고정 의존성을 사용합니다.
 
@@ -22,22 +22,23 @@ npm ci --prefix scripts/dev
 | `bash scripts/dev/check.sh syntax` | web JS·개발 script 구문 |
 | `bash scripts/dev/check.sh browser-contracts` | browser·Worker·sensor·transport·exporter 계약 |
 | `bash scripts/dev/check.sh eval` | 궤적 평가·합성 입력·recording 도구 |
-| `bash scripts/dev/check.sh native` | 기존 VIO headless build와 native CTest |
+| `bash scripts/dev/check.sh native` | legacy VINS headless build와 native CTest (`legacy/vins-mono`에서 preset 실행, 출력 `build/dev-native`) |
 | `bash scripts/dev/check.sh refact-native` | slam_refact 엔진 구성·빌드·`ctest -L '^unit$'`(출력 `build/dev-refact-native`), 알려진 실패 지문 대조 후 원장 기록 |
 | `bash scripts/dev/check.sh refact-web` | `slam_refact/web-chunk/tests`·`web-smoke` node 시험, 통과·skip 수를 원장에 기록 |
 | `bash scripts/dev/check.sh refact-tools` | `check_vendor.py --data`, `check_std_algos.py` |
-| `bash scripts/dev/check.sh wasm-build` | 별도 VIO WASM build; `web/`는 수정하지 않음 |
+| `bash scripts/dev/check.sh wasm-build` | legacy VINS WASM build (`-S legacy/vins-mono/wasm`, 출력 `build/dev-wasm`); `web/`는 수정하지 않음 |
 | `node --test tests/server/server.test.cjs` | read-only server·TLS·경로 허용 목록 |
 | `python3 -m unittest discover -s tests -p 'test_*.py'` | top-level Python 회귀 |
 
 - 기본 compile jobs는 2, `MOBILE_SLAM_JOBS=1..4`로 변경할 수 있습니다.
+- `check.sh native`는 `ceres-solver-src`, `googletest-src`가 `build/_deps`(`MOBILE_SLAM_DEPS_DIR`로 변경)에 있으면 `FETCHCONTENT_SOURCE_DIR_CERES-SOLVER`·`FETCHCONTENT_SOURCE_DIR_GOOGLETEST`로 연결합니다. 이동 전 소스 루트로 구성한 `build/dev-native`는 다시 만들어야 합니다.
 - `refact-native`는 의존성·증거 경로를 환경변수 `SLAM_REFACT_CERES_SOURCE_DIR`, `SLAM_REFACT_GTEST_SOURCE_DIR`, `SLAM_REFACT_EVIDENCE_ROOT`에서만 받습니다(없으면 엔진 CMake 기본값). 앞의 둘을 지정하면 `FETCHCONTENT_FULLY_DISCONNECTED=ON`이 켜집니다. 빌드 디렉터리는 `SLAM_REFACT_NATIVE_BUILD_DIR`로 바꿀 수 있습니다.
 - `scripts/dev/ci-ledger.py`는 JUnit을 `slam_refact/engine/tests/known-failures.json`(이름과 메시지 지문)과 대조해 실패 집합이 같을 때만 0으로 끝나며, 알려진 실패가 통과로 바뀐 경우도 불일치로 봅니다. 결과 한 줄을 append-only `build/ci-ledger/ledger.jsonl`에 남깁니다.
 - `check.sh all`은 doctor, quick, native, browser-contracts, refact-tools, refact-web, refact-native를 순서대로 실행합니다.
 - `MOBILE_SLAM_TIMEOUT`은 build/test subprocess timeout(초), `MOBILE_SLAM_PYTHON`은 Python 실행 파일입니다.
 - 원본 데이터·추가 모델이 필요한 시험과 self-contained unit을 구분합니다. skip·missing input·실패를 PASS에 포함하지 않습니다.
 - JavaScript syntax 검사는 ESLint나 TypeScript typecheck가 아닙니다.
-- 별도 SLAM 엔진의 build·unit·WASM 명령은 [slam_refact 안내](../../slam_refact/README.md)를 확인합니다.
+- 기준 엔진 slam_refact의 build·unit·WASM 명령은 [slam_refact 안내](../../slam_refact/README.md)를 확인합니다.
 
 - `refact-native`의 ctest 동시 실행 수는 `MOBILE_SLAM_TEST_JOBS`(기본 16, 1..32)입니다. compile jobs와 별개입니다. 같은 g2 build의 unit 877건에서 `-j2` 369 s → `-j16` 116 s, 실패·skip 집합 동일(알려진 실패 1건, skip 2건). 하한은 가장 긴 test(약 94 s)입니다.
 
@@ -68,6 +69,8 @@ python3 scripts/dev/rs0-gate.py --tier fast --new-native <bin> --out build/<lane
 
 ## Reproducible input and replay
 
+아래 명령은 legacy VINS의 native·WASM 출력(`build/dev-native`, `build/dev-wasm`)을 씁니다.
+
 ```bash
 python3 scripts/dev/generate-synthetic-vio.py --output build/synthetic-example --seed 101 --scenario clean
 python3 scripts/dev/pc-entry-check.py --dataset build/synthetic-example \
@@ -86,6 +89,8 @@ python3 scripts/dev/evaluate-synthetic-vio.py --dataset build/synthetic-example 
 - 처리 frame 수, initialized/pose coverage, reset, stale pose, capture-to-pose latency를 분리합니다. 누락 frame을 평가 분모에서 숨기지 않습니다.
 
 ## Artifacts and browser checks
+
+첫 명령은 legacy VINS WASM의 provenance이고, 나머지 세 명령은 slam_refact 도구·시험입니다.
 
 ```bash
 python3 scripts/dev/build-provenance.py --build build/dev-wasm \

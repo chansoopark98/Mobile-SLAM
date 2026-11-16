@@ -1,73 +1,58 @@
 # Mobile-SLAM
 
-C++17 Visual-Inertial Odometry와 WebAssembly 브라우저 SLAM 연구 프로젝트입니다.
+C++17 SLAM 연구 프로젝트입니다. 기준(baseline) 엔진은 `slam_refact`이고, VINS-Mono 기반 VIO는 legacy입니다.
 
-| 엔진 | 용도 | 주요 의존성 |
-|---|---|---|
-| VIO / VINS-Mono 기반 | native 영상·IMU 처리와 모바일 웹 VIO | Eigen, OpenCV, Ceres, yaml-cpp |
-| [slam_refact](slam_refact/README.md) | 별도 SLAM 코어, 이미지 타깃, 브라우저 XR 연결 | Eigen, Ceres; native replay는 zlib |
+| 엔진 | 위치 | 상태 | 주요 의존성 |
+|---|---|---|---|
+| [slam_refact](slam_refact/README.md) | `slam_refact/` | 기준 엔진. 이미지 타깃, 브라우저 XR 연결 포함 | Eigen, Ceres; native replay는 zlib |
+| VINS-Mono 기반 VIO | `legacy/vins-mono/`, `web/legacy/` | legacy. 이전 `main`은 branch `legacy/vins-mono`, tag `vins-mono-final`(`6567d8a`)에 보존 | Eigen, OpenCV, Ceres, yaml-cpp |
 
 - 테스트·재생 도구는 [개발 도구 안내](scripts/dev/README.md)를 참고합니다.
 - 데이터셋·모델·키·소스 의존성 캐시·빌드 출력은 저장소에 포함하지 않습니다.
 
-## Native VIO
+## slam_refact (baseline)
 
-- 필요: CMake 3.21+, Ninja, C++17 compiler, Eigen 3.4, OpenCV 4.x, yaml-cpp, pkg-config.
-- Ceres 2.2.0과 GoogleTest 1.14.0은 CMake가 고정 버전으로 확보합니다.
-- Pangolin은 `MOBILE_SLAM_BUILD_VIEWER=ON`일 때만 필요합니다. 기본 빌드는 headless입니다.
-
-```bash
-cmake --preset native-dev
-cmake --build --preset native-tests --parallel 2
-ctest --preset native-tests
-```
-
-TUM-VI를 실행하려면 먼저 입력 데이터와 calibration을 준비하고 YAML의 `dataset_path`를 맞춥니다.
+- 필요: CMake 3.21+, Ninja, C++17 compiler, Eigen 3.4, Ceres 2.2.0. GTest 1.14.0은 시험 전용, zlib은 replay 전용입니다.
+- 엔진 CMake는 기본 offline 모드입니다. 처음에는 Ceres·GTest 소스 cache를 `build/_deps/`에 준비합니다.
 
 ```bash
-build/dev-native/tiny_vins_mono config/tum_vi_room1.yaml --headless --seed 19 --cv-threads 1
+mkdir -p build/_deps
+git clone --depth 1 --branch 2.2.0 https://github.com/ceres-solver/ceres-solver.git build/_deps/ceres-solver-src
+git clone --depth 1 --branch v1.14.0 https://github.com/google/googletest.git build/_deps/googletest-src
+cmake -S slam_refact/engine -B build/slam-refact-native -G Ninja -DCMAKE_BUILD_TYPE=Release
+cmake --build build/slam-refact-native --parallel 2
+ctest --test-dir build/slam-refact-native --no-tests=error -L '^unit$' --parallel 2 --output-on-failure
 ```
 
-- 출력: ignored `logs/`의 궤적·평가 파일.
-- IMU 단위: timestamp 초, 가속도 m/s², 각속도 rad/s. 영상과 IMU는 같은 시간축이어야 합니다.
-- camera/body extrinsic 방향과 crop·회전 후 intrinsics를 확인해야 합니다.
-
-## WASM VIO
-
-Emscripten 5.0.0을 활성화한 셸에서 실행합니다. OpenCV 4.5.5·Ceres 2.2.0의 소스와 설치 결과는 로컬 `wasm/libs/`에 생성됩니다.
+개발 점검 명령은 저장소 루트에서 실행합니다.
 
 ```bash
-source "$EMSDK/emsdk_env.sh"
-bash wasm/build_opencv.sh
-bash wasm/build_ceres.sh
-emcmake cmake -S wasm -B build/vio-wasm -G Ninja -DCMAKE_EXPORT_COMPILE_COMMANDS=ON
-cmake --build build/vio-wasm --parallel 2
-node scripts/dev/wasm-smoke.mjs build/vio-wasm/vio_engine.js build/vio-wasm/smoke.json
+bash scripts/dev/check.sh refact-native   # 엔진 구성·빌드·unit ctest, 알려진 실패 대조
+bash scripts/dev/check.sh refact-web      # slam_refact/web-chunk/tests·web-smoke
+bash scripts/dev/check.sh refact-tools    # vendor·std algorithm 점검
 ```
 
-- 출력: embedded WASM을 포함한 ES module `build/vio-wasm/vio_engine.js`와 classic Worker용 별도 target.
-- 브라우저 VIO는 `web/js/vio-wrapper.js`의 `VIOWrapper`, native API는 `include/vio_engine.h`, 바인딩은 `wasm/vio_bindings.cpp`를 확인합니다.
-- pose의 timestamp·epoch·fresh/valid 상태를 함께 읽어야 합니다. 유한한 pose만으로 추적 성공을 판단하지 않습니다.
-- 새 빌드는 배포 파일을 자동 교체하지 않습니다. artifact SHA와 manifest를 확인한 후 배포해야 합니다.
+- WASM build, replay bundle, XR 배포(`slam_refact/tools/deploy_xr.py`)는 [slam_refact 안내](slam_refact/README.md)를 확인합니다.
+- 브라우저 페이지에서는 `/`(XR 페이지)와 `/slam-refact`(측정·녹화)가 이 엔진을 씁니다.
 
 ## Browser pages
 
-`web/`를 HTTPS로 제공하고 camera·motion sensor 권한을 허용합니다. 개발용 localhost mock 서버는 다음과 같이 실행할 수 있습니다.
+`web/`를 HTTPS로 제공하고 camera·motion sensor 권한을 허용합니다. 서버(`web/server.js`, 시작·중지는 `scripts/ops/serve.sh`)의 경로는 다음과 같습니다.
 
-```bash
-python3 scripts/dev/serve-mobile-audit.py --generate-dev-cert --host 127.0.0.1 --port 8766
-```
+| 경로 | 기능 | 엔진 |
+|---|---|---|
+| `/` | `web/slam-refact-xr.html` — XR phone·Three.js·A-Frame 샘플("공간 살펴보기") | slam_refact |
+| `/slam-refact-xr` | `/slam-refact-xr.html`로 302. `/`와 같은 페이지 | slam_refact |
+| `/slam-refact` | `/slam-refact.html`로 302. 엔진 측정·녹화 | slam_refact |
+| `/legacy/` | VIO camera·IMU·trajectory viewer (`web/legacy/index.html`) | VINS legacy |
+| `/legacy/test-tumvi.html` | 준비된 TUM-VI 입력 replay | VINS legacy |
+| `/legacy/audit-mobile.html` | 제한된 sensor·timing 관측 | VINS legacy |
 
-| 경로 | 기능 |
-|---|---|
-| `/` | VIO camera·IMU·trajectory viewer |
-| `/test-tumvi.html` | 준비된 TUM-VI 입력 replay |
-| `/audit-mobile.html` | 제한된 sensor·timing 관측 |
-| `/slam-refact.html` | 별도 SLAM 엔진 측정·녹화 |
-| `/slam-refact-xr.html` | XR phone·Three.js·A-Frame 샘플 |
-
+- 이전 주소 `/index.html`, `/test-tumvi.html`, `/audit-mobile.html`, `/vio_engine.js`는 `/legacy/...`로 301 redirect합니다.
+- `/js/`에서는 `slam-refact-*.js`만 제공합니다. VINS 브라우저 코드는 `/legacy/js/`입니다.
+- 개발용 localhost 정적 서버: `python3 scripts/dev/serve-mobile-audit.py --generate-dev-cert --host 127.0.0.1 --port 8766`. 이 서버는 `/`를 `/legacy/audit-mobile.html`로 연결하고 위의 alias·redirect가 없으므로 `/slam-refact-xr.html`, `/slam-refact.html`을 파일 이름으로 지정합니다.
 - self-signed localhost 인증서는 실제 휴대전화의 trusted HTTPS를 대체하지 않습니다.
-- VIO와 별도 SLAM 엔진은 서로 다른 artifact·manifest를 사용합니다.
+- VINS와 slam_refact는 서로 다른 artifact·manifest를 사용합니다(`web/legacy/vio_engine.*`, `web/slam-refact/`, `web/slam-refact-xr/`).
 - XR 파일 무결성 정보는 `config/runtime-integrity/xr-tree.json`에서 관리합니다.
 
 ## Validation and limits
@@ -84,6 +69,55 @@ bash scripts/dev/check.sh eval
 - 별도 SLAM unit에는 알려진 `FrameFrameTrackerVfft.AcceptedMotionAccuracy` 실패 1개와 optional 입력에 따른 skip 2개가 남아 있습니다. 시험 임계값을 완화해 통과시키지 않습니다.
 - 공개 artifact metadata는 포함된 실행 파일의 실제 hash·크기만 기록합니다. 재빌드 결과의 provenance와 배포 동작은 별도로 검증해야 합니다.
 - low-feature 예측·바닥 후보는 실험 옵션이며 기본 OFF입니다. 실제 Android/iOS 센서·기기 GPU·현장 GT·장시간 연속 실행은 별도 검증 대상입니다.
+
+## Legacy: VINS-Mono
+
+`legacy/vins-mono/`(`src/ include/ cmake/ wasm/ config/ tests/ third_party/licenses`)와 `web/legacy/`는 기준 엔진이 아니며 보조·동결 상태입니다(`docs/STATUS.md`). 이전 `main`의 전체 상태는 branch `legacy/vins-mono` 또는 tag `vins-mono-final`로 꺼냅니다. 이전 경로(`src/`, `wasm/`, `web/vio_engine.js` 등)를 쓰는 과거 문서는 이 tag 기준입니다.
+
+### Native VIO
+
+- 필요: CMake 3.21+, Ninja, C++17 compiler, Eigen 3.4, OpenCV 4.x, yaml-cpp, pkg-config.
+- Ceres 2.2.0과 GoogleTest 1.14.0은 CMake가 고정 버전으로 확보합니다.
+- Pangolin은 `MOBILE_SLAM_BUILD_VIEWER=ON`일 때만 필요합니다. 기본 빌드는 headless입니다.
+- preset은 `legacy/vins-mono`에서 실행하며 binaryDir은 저장소 루트의 `build/dev-native`입니다. 저장소 루트에서는 `bash scripts/dev/check.sh native`가 같은 절차를 실행합니다.
+
+```bash
+cd legacy/vins-mono
+cmake --preset native-dev
+cmake --build --preset native-tests --parallel 2
+ctest --preset native-tests
+```
+
+- `build/_deps`에 `ceres-solver-src`, `googletest-src`가 있으면 `check.sh native`가 `FETCHCONTENT_SOURCE_DIR_*`로 연결합니다. 다른 위치는 `MOBILE_SLAM_DEPS_DIR`로 지정합니다.
+- 예전 소스 루트(저장소 루트의 `CMakeLists.txt`)로 구성한 `build/dev-native` 등은 다시 만들어야 합니다.
+
+TUM-VI를 실행하려면 먼저 입력 데이터와 calibration을 준비하고 YAML의 `dataset_path`를 맞춥니다. 저장소 루트에서 실행합니다.
+
+```bash
+build/dev-native/tiny_vins_mono legacy/vins-mono/config/tum_vi_room1.yaml --headless --seed 19 --cv-threads 1
+```
+
+- 출력: ignored `logs/`의 궤적·평가 파일.
+- IMU 단위: timestamp 초, 가속도 m/s², 각속도 rad/s. 영상과 IMU는 같은 시간축이어야 합니다.
+- camera/body extrinsic 방향과 crop·회전 후 intrinsics를 확인해야 합니다.
+
+### WASM VIO
+
+Emscripten 5.0.0을 활성화한 셸에서 실행합니다. OpenCV 4.5.5·Ceres 2.2.0의 소스와 설치 결과는 로컬 `legacy/vins-mono/wasm/libs/`에 생성됩니다.
+
+```bash
+source "$EMSDK/emsdk_env.sh"
+bash legacy/vins-mono/wasm/build_opencv.sh
+bash legacy/vins-mono/wasm/build_ceres.sh
+emcmake cmake -S legacy/vins-mono/wasm -B build/vio-wasm -G Ninja -DCMAKE_EXPORT_COMPILE_COMMANDS=ON
+cmake --build build/vio-wasm --parallel 2
+node scripts/dev/wasm-smoke.mjs build/vio-wasm/vio_engine.js build/vio-wasm/smoke.json
+```
+
+- 출력: embedded WASM을 포함한 ES module `build/vio-wasm/vio_engine.js`와 classic Worker용 별도 target.
+- 브라우저 VIO는 `web/legacy/js/vio-wrapper.js`의 `VIOWrapper`, native API는 `legacy/vins-mono/include/vio_engine.h`, 바인딩은 `legacy/vins-mono/wasm/vio_bindings.cpp`를 확인합니다.
+- pose의 timestamp·epoch·fresh/valid 상태를 함께 읽어야 합니다. 유한한 pose만으로 추적 성공을 판단하지 않습니다.
+- 새 빌드는 배포 파일(`web/legacy/vio_engine.js`, `web/legacy/vio_engine.manifest.json`)을 자동 교체하지 않습니다. artifact SHA와 manifest를 확인한 후 `scripts/dev/deploy-candidate.py`로만 배포합니다.
 
 ## External code
 

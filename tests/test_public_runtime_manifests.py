@@ -39,10 +39,10 @@ class PublicRuntimeManifestsTest(unittest.TestCase):
         self.assertEqual(entry['bytes'], len(data))
 
     def test_vio_manifest_matches_the_actual_embedded_artifact(self):
-        manifest = load('web/vio_engine.manifest.json')
+        manifest = load('web/legacy/vio_engine.manifest.json')
         self.assertEqual(manifest['record_kind'], 'source-artifact-index')
         self.assertTrue(manifest['single_file_embedded_wasm'])
-        self.assert_artifact('web', manifest['artifact'])
+        self.assert_artifact('web/legacy', manifest['artifact'])
         self.assert_public(manifest)
 
     def test_refact_manifest_pairs_keep_runtime_schemas_and_hashes(self):
@@ -84,7 +84,7 @@ class PublicRuntimeManifestsTest(unittest.TestCase):
         spec.loader.exec_module(tool)
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
-            (root / 'web').mkdir()
+            (root / 'web/legacy').mkdir(parents=True)
             candidate = root / 'candidate.js'
             candidate.write_bytes(b'fixture embedded module')
             digest = hashlib.sha256(candidate.read_bytes()).hexdigest()
@@ -97,7 +97,7 @@ class PublicRuntimeManifestsTest(unittest.TestCase):
                     '--authorization', str(authorization)]
             with mock.patch.object(tool, 'ROOT', root), mock.patch.object(sys, 'argv', args), contextlib.redirect_stdout(io.StringIO()):
                 tool.main()
-            public = json.loads((root / 'web/vio_engine.manifest.json').read_text())
+            public = json.loads((root / 'web/legacy/vio_engine.manifest.json').read_text())
             self.assertEqual(public['record_kind'], 'source-artifact-index')
             self.assertEqual(public['artifact']['sha256'], digest)
             self.assert_public(public)

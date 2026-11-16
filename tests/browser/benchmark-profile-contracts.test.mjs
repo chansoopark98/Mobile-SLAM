@@ -6,7 +6,7 @@ import vm from 'node:vm';
 import { Worker } from 'node:worker_threads';
 
 const workerSource = await loadBrowserSource('vio-worker');
-const replaySource = await fs.readFile(new URL('../../web/js/test-tumvi-app.js', import.meta.url), 'utf8');
+const replaySource = await fs.readFile(new URL('../../web/legacy/js/test-tumvi-app.js', import.meta.url), 'utf8');
 const asModule = source => 'data:text/javascript;base64,' + Buffer.from(source).toString('base64');
 const request = (type, data, sequence, clientEpoch) => ({ type, data, sequence, requestId: sequence, clientEpoch });
 

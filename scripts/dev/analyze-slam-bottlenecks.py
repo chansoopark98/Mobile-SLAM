@@ -46,7 +46,7 @@ output = {'schema':'mobile-slam-input-timing-recompute-v1','quantile':'linear in
           'scope':'Historic numeric phone data; no pixels, GT, live capture, product edits, or causal identification',
           'analyzerSha256':hashlib.sha256(Path(__file__).read_bytes()).hexdigest(),
           'currentHead':subprocess.check_output(['git','rev-parse','HEAD'],cwd=ROOT,text=True).strip(), 'sourceHashes':{}, 'records':[]}
-for relative in ['web/js/imu.js','web/js/app.js','web/js/vio-wrapper.js','web/js/vio-worker.js','src/vio_engine.cpp','src/backend/estimator.cpp','src/backend/optimizer.cpp','include/backend/factor/integration_base.h','web/vio_engine.js']:
+for relative in ['web/legacy/js/imu.js','web/legacy/js/app.js','web/legacy/js/vio-wrapper.js','web/legacy/js/vio-worker.js','legacy/vins-mono/src/vio_engine.cpp','legacy/vins-mono/src/backend/estimator.cpp','legacy/vins-mono/src/backend/optimizer.cpp','legacy/vins-mono/include/backend/factor/integration_base.h','web/legacy/vio_engine.js']:
     p=ROOT/relative
     output['sourceHashes'][relative]={'bytes':p.stat().st_size,'sha256':hashlib.sha256(p.read_bytes()).hexdigest()}
 for path in paths:
