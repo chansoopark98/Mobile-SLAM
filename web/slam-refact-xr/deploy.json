@@ -10,7 +10,7 @@
   "sha256": "1e4c00ab32d0eef25110891ef2aba6ad41cac76fac5e27f1361fd694a5c05563",
   "bytes": 1020612
  },
- "bundle_sha256": "a50783ead7da450ed7dbe2b22c6eada09883fc99da04b9d440975a1c500af71b",
+ "bundle_sha256": "c1d03d1d76817b121dcd7e8834b34c570e41911588d36e161b03c4cdf31346cd",
  "bundle_digest_rule": "sha256 over \"served path\\0sha256(content)\\n\", sorted, excluding slam-refact-xr/deploy.json",
  "files": [
   {
@@ -70,8 +70,8 @@
   },
   {
    "path": "slam-refact-xr/engine/xr-slam.js",
-   "sha256": "ca58cecc91ccf6b4b9af5d676967ce8ec68d22247dad9f987c285beaa2c110db",
-   "bytes": 126897
+   "sha256": "dcdeea5bfc134948fa2dfb99201e9d0761c6d5266433ab655745c0a1d153cd5c",
+   "bytes": 132315
   },
   {
    "path": "slam-refact-xr/engine/xr.js",
@@ -110,8 +110,8 @@
   },
   {
    "path": "slam-refact-xr/samples/phone/app.js",
-   "sha256": "1bde7d221152a6fa902892222b2f67679caf6041a81de7e811fe6f4d11a728a5",
-   "bytes": 25358
+   "sha256": "cd9bc3a865ee417e9e198bc1eb3beb0c2e38037744d7239d0a489cd1f8855dbe",
+   "bytes": 26393
   },
   {
    "path": "slam-refact-xr/samples/phone/guidance.js",
@@ -125,8 +125,8 @@
   },
   {
    "path": "slam-refact-xr/samples/phone/metrics.js",
-   "sha256": "dccccbbfbef9ac1bc9831bb23ae9c4391a2b1bd15bcd9761065d01542699d1ad",
-   "bytes": 12527
+   "sha256": "000e59194e0ba0ca762f448a696a7c4198b81f67c1b3aebcf49491bdc26242a4",
+   "bytes": 15677
   },
   {
    "path": "slam-refact-xr/samples/phone/start-flow.js",

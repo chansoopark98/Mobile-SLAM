@@ -21,6 +21,11 @@ const RECORD = new URLSearchParams(window.location.search).get('record') === '1'
 // diagnostics' own cost can be measured (ABBA). The option is read when the chunk factory is created, i.e. after Start.
 const DELIVERY = RECORD && new URLSearchParams(window.location.search).get('delivery') !== '0';
 if (DELIVERY) window.SLAM_REFACT_CHUNK_OPTIONS = { ...(window.SLAM_REFACT_CHUNK_OPTIONS || {}), deliveryDiagnostics: { enabled: true, maxEntries: 256 } };
+// Tracker diagnostics (opt-in, default off, only with record=1): &diag=1 turns on the chunk's trackerDiagnostics, so every pose row also
+// carries the engine tracker state (map tracked / map discarded / keyframe created) and the per-frame DeviceMotion summary the engine's
+// motion rules compare (event count, peak gyro and linear-acceleration magnitude; no raw sample). Without it nothing changes.
+const TRACKER_DIAG = RECORD && new URLSearchParams(window.location.search).get('diag') === '1';
+if (TRACKER_DIAG) window.SLAM_REFACT_CHUNK_OPTIONS = { ...(window.SLAM_REFACT_CHUNK_OPTIONS || {}), trackerDiagnostics: { enabled: true } };
 // Diagnostic focal A/B (opt-in, default off): ?fx=&cx=&cy= (capture pixels, all three) passes engineConfig.intrinsics =
 // [fx, fx, cx, cy] through the A-1a chunk option, replacing the engine's device rule. Partial or invalid values start nothing
 // with an override and show an error instead. The values go into the metrics JSON as intrinsicsOverride.
@@ -41,7 +46,7 @@ if (intrinsicsQuery.override) {
 const hud = createHud();
 $('start-note').setAttribute('role', 'status');  // not in the HTML: deploy_xr.py anchors on the exact <p id="start-note"> tag
 const platform = detectPlatform(navigator);
-const metrics = createMetrics(() => performance.now(), { record: RECORD });
+const metrics = createMetrics(() => performance.now(), { record: RECORD, trackerDiag: TRACKER_DIAG });
 let cameraTrack = null;  // the live camera video track (record=1 only: its getSettings() go into the receipt)
 const MAX_OBJECTS = 20;
 const XR_SRC = '../../engine/xr.js';  // loaded only after the Start click (the chunk registers sensor listeners when it loads)
@@ -232,7 +237,9 @@ if (RECORD) {
 const updateRecHud = () => {
   if (!recHud) return;
   const c = metrics.poseLogCounts();
-  recHud.textContent = `기록 중 (record=1): ${c.rows}행${c.droppedRows ? `, 한도 초과로 ${c.droppedRows}행 버려짐` : ''}. 메모리에만 있고, 지표 JSON 받기를 눌러야 내려받습니다.`;
+  const td = TRACKER_DIAG && window.__slamRefactChunk ? window.__slamRefactChunk.trackerDiag : null;
+  const diagText = !TRACKER_DIAG ? '' : td ? ` 진단(diag=1): 지도 reset ${td.totalMapResets}회(첫 지도 생성 포함), keyframe ${td.numKeyframes}개.` : ' 진단(diag=1): 아직 값 없음.';
+  recHud.textContent = `기록 중 (record=1): ${c.rows}행${c.droppedRows ? `, 한도 초과로 ${c.droppedRows}행 버려짐` : ''}. 메모리에만 있고, 지표 JSON 받기를 눌러야 내려받습니다.${diagText}`;
 };
 
 // ---- XR8 pipeline ----------------------------------------------------------------------------------------------------------------------
@@ -289,7 +296,8 @@ const pageModule = () => ({
     const r = processCpuResult && processCpuResult.reality;
     const pts = r && r.worldPoints ? r.worldPoints.length : 0;
     const chunk = window.__slamRefactChunk;  // sourceTiming: latest-only scalar copy (null when delivery diagnostics are off)
-    metrics.update(r || null, pts, frameStartResult, chunk && chunk.stats ? chunk.stats.lastSourceFrameIndex : null, RECORD && chunk ? chunk.sourceTiming : null);
+    metrics.update(r || null, pts, frameStartResult, chunk && chunk.stats ? chunk.stats.lastSourceFrameIndex : null, RECORD && chunk ? chunk.sourceTiming : null,
+      TRACKER_DIAG && chunk ? chunk.trackerDiag : null);
     if (!r) return;
     if (r.trackingStatus !== state.status || r.trackingReason !== state.reason) {
       state.status = r.trackingStatus; state.reason = r.trackingReason;
