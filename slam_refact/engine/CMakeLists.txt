@@ -28,6 +28,10 @@ option(SLAM_REFACT_LOOP_CLOSE "Compile the agate descriptor / loop close sources
   ${_sr_default_host_only})
 option(SLAM_REFACT_ALLOW_MISSING_VENDOR
   "Configure without third_party/ (WP0a): only c8-free contract checks are built" OFF)
+# FX-C5: without Python3 the image target test directory stops the configure; ON registers the
+# always-failing test sr_image_target_python_missing in place of its Python-dependent tests.
+option(SLAM_REFACT_ALLOW_NO_PYTHON
+  "Configure without Python3: register sr_image_target_python_missing (always fails) instead" OFF)
 set(SLAM_REFACT_EVIDENCE_ROOT "${SLAM_REFACT_REPO_ROOT}/build/slam-refact-20261015"
   CACHE PATH "Evidence-tier inputs; evidence tests are registered only if this exists")
 # Ceres release the engine links (SlamRefactDeps.cmake). 2.2 = 2.2.0, 2.0 = 2.0.0, the release

@@ -40,9 +40,21 @@ sr_engine_warnings(sr_iwt_offpath_dump)
 # dependency); the gate tests read it from SLAM_REFACT_IT_SYNTH_DIR.
 find_package(Python3 COMPONENTS Interpreter)
 if(NOT Python3_Interpreter_FOUND)
-  # Only this gate needs Python; everything above builds and runs without it (RM-2).
-  message(STATUS "slam_refact: Python3 not found: sr_image_target_synth_render and "
-                 "sr_tests_image_target_synth are NOT registered (BLOCKED, not skipped)")
+  # Everything above builds and runs without Python (RM-2); every test below needs it (synthetic
+  # render fixtures, numpy oracles, HELD tools). FX-C5: without Python the configure stops, unless
+  # SLAM_REFACT_ALLOW_NO_PYTHON=ON, which registers one always-failing unit test in their place so
+  # that the missing tests are counted as a failure, not as passes or skips.
+  if(NOT SLAM_REFACT_ALLOW_NO_PYTHON)
+    message(FATAL_ERROR "slam_refact: Python3 not found: the image target tests after "
+                        "sr_image_target_synth_render (synthetic render, ROI / curvy oracles, RM-6 and curvy "
+                        "gates) cannot be registered. Install python3 (with numpy) or configure with "
+                        "-DSLAM_REFACT_ALLOW_NO_PYTHON=ON to register the failing test "
+                        "sr_image_target_python_missing instead.")
+  endif()
+  message(WARNING "slam_refact: Python3 not found: the Python-dependent image target tests are NOT "
+                  "registered; sr_image_target_python_missing fails in their place (BLOCKED)")
+  add_test(NAME sr_image_target_python_missing COMMAND "${CMAKE_COMMAND}" -E false)
+  set_tests_properties(sr_image_target_python_missing PROPERTIES LABELS unit)
   return()
 endif()
 set(_sr_it_synth_dir "${CMAKE_CURRENT_BINARY_DIR}/image-target-synth")
