@@ -12,7 +12,7 @@
 namespace slam_refact {
 
 // Bumped by every approved contract change (contract-changes.md). 1 = initial freeze (WP0b).
-inline constexpr int kContractVersion = 10;
+inline constexpr int kContractVersion = 11;
 
 // Target of the reimplementation: xr-slam.wasm (architecture.md header).
 inline constexpr char kTargetWasmSha256[] =

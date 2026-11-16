@@ -5,8 +5,10 @@
 #include <array>
 #include <cstdint>
 #include <map>
+#include <cstddef>
 #include <set>
 #include <type_traits>
+#include <utility>
 #include <vector>
 
 #include "c8/geometry/pixel-pinhole-camera-model.h"
@@ -20,6 +22,7 @@
 #include "map_builder/map_builder.h"
 #include "map_tracker/map_tracker.h"
 #include "metric_scale/metric_scale_estimator.h"
+#include "slam_refact/engine_config.h"
 #include "slam_refact/types.h"
 #include "vio_tracker/vio_tracker.h"
 
@@ -246,6 +249,66 @@ TEST(ContractInternal, OutputDefaultsAreInert) {
   EXPECT_TRUE(mt.depth_kf_reloc_id == map::KeyframeId::nullId());
   const RelocResult reloc;
   EXPECT_FALSE(reloc.success);
+}
+
+// ---- engine_config.h AccuracyConfig field fingerprint (FX-D1) ----
+// P2-P4 added AccuracyConfig fields without a kContractVersion bump. The member count (aggregate
+// brace-init arity) and every member's name and type are pinned here, so adding, removing or
+// retyping a field fails this test until the fingerprint, kContractVersion and
+// contract-changes.md are updated together.
+struct AnyField {
+  template <typename T>
+  operator T() const;  // NOLINT(google-explicit-constructor): unevaluated arity probe only
+};
+template <typename T, typename Seq, typename = void>
+struct BraceInitializable : std::false_type {};
+template <typename T, std::size_t... I>
+struct BraceInitializable<T, std::index_sequence<I...>,
+                          std::void_t<decltype(T{(static_cast<void>(I), AnyField{})...})>>
+    : std::true_type {};
+template <typename T, std::size_t N = 0>
+constexpr std::size_t AggregateFieldCount() {
+  if constexpr (!BraceInitializable<T, std::make_index_sequence<N + 1>>::value) {
+    return N;
+  } else {
+    return AggregateFieldCount<T, N + 1>();
+  }
+}
+
+static_assert(std::is_aggregate_v<AccuracyConfig>);
+#define SR_ACC_FIELD(name, type) \
+  static_assert(std::is_same_v<decltype(AccuracyConfig::name), type>, #name)
+SR_ACC_FIELD(enabled, bool);
+SR_ACC_FIELD(multiview_triangulation, bool);
+SR_ACC_FIELD(local_ba, bool);
+SR_ACC_FIELD(ba_window, int);
+SR_ACC_FIELD(ba_max_iterations, int);
+SR_ACC_FIELD(ba_max_seconds, double);
+SR_ACC_FIELD(ba_huber_px, double);
+SR_ACC_FIELD(ba_cauchy, bool);
+SR_ACC_FIELD(ba_outlier_px, double);
+SR_ACC_FIELD(ba_tilt_sigma_rad, double);
+SR_ACC_FIELD(ba_ground_points, int);
+SR_ACC_FIELD(ba_min_parallax_deg, double);
+SR_ACC_FIELD(metric_output, bool);
+SR_ACC_FIELD(vi_prediction, bool);
+SR_ACC_FIELD(vi_velocity_gain, double);
+SR_ACC_FIELD(metric_window_s, double);
+SR_ACC_FIELD(metric_prior_scale, double);
+SR_ACC_FIELD(metric_low_band, bool);
+SR_ACC_FIELD(metric_fixed_lag_s, double);
+SR_ACC_FIELD(f1_ground_plane, bool);
+SR_ACC_FIELD(f2_ground_confirmation, bool);
+SR_ACC_FIELD(r6_span_velocity, bool);
+SR_ACC_FIELD(r7_pose_graph, bool);
+SR_ACC_FIELD(r7p_loop_select, bool);
+SR_ACC_FIELD(v1_exact_limit, bool);
+#undef SR_ACC_FIELD
+
+TEST(ContractInternal, AccuracyConfigFieldFingerprint) {
+  EXPECT_EQ(AggregateFieldCount<AccuracyConfig>(), 25u)
+      << "AccuracyConfig fields changed: update this fingerprint, kContractVersion and "
+         "contract-changes.md together";
 }
 
 }  // namespace
