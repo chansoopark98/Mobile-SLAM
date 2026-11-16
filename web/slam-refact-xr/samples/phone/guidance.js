@@ -4,13 +4,37 @@
 export const POINTS_FULL_BAR = 40;      // display scale of the progress bar
 export const SLOW_INIT_MS = 12000;      // after this long without tracking, suggest the recenter tool
 
-export const STATUS_LABEL = Object.freeze({ normal: '추적 중', searching: '주변을 찾는 중', idle: '준비 중', error: '시작할 수 없음', stopped: '종료됨' });
+// The hint appears once the engine's map tracker has been lost for this many consecutive tracked frames (one lost frame must not flash the card);
+// it clears on the first tracked frame. About 0.1 s at 30 Hz, so it never hides the state for long.
+export const MAP_LOST_FRAMES = 3;
+
+export const STATUS_LABEL = Object.freeze({ normal: '추적 중', searching: '주변을 찾는 중', idle: '준비 중', error: '시작할 수 없음', stopped: '종료됨', mapLost: '주변을 다시 찾는 중' });
+
+// chunk diag.trackerDiag (latest-only; null/undefined when unavailable) -> mapLost boolean. Stateful per page: counts distinct tracked frames
+// (session, sourceFrameIndex), only after the map was tracked once in that chunk session. Unavailable state resets and never guesses.
+export function createMapLostFilter() {
+  let session = null, seenMap = false, lost = 0, lastIndex = null;
+  const reset = () => { session = null; seenMap = false; lost = 0; lastIndex = null; };
+  return {
+    update(td) {
+      if (!td || typeof td.mapTrackerState !== 'number') { reset(); return false; }
+      if (td.session !== session) { reset(); session = td.session; }
+      if (td.sourceFrameIndex !== lastIndex) {
+        lastIndex = td.sourceFrameIndex;
+        if (td.mapTrackerState === 1) { seenMap = true; lost = 0; } else if (seenMap) lost++;
+      }
+      return seenMap && lost >= MAP_LOST_FRAMES;
+    },
+  };
+}
 
 // -> { tone: 'wait' | 'warn' | 'ok' | 'error', pill: keyof STATUS_LABEL, title, body, progress: number | null }
-export function trackingGuide({ phase, status, reason, points = 0, objectCount = 0, landscape = false, notTrackingMs = 0 }) {
+export function trackingGuide({ phase, status, reason, points = 0, objectCount = 0, landscape = false, notTrackingMs = 0, mapLost = false }) {
   if (phase === 'error') return { tone: 'error', pill: 'error', title: '시작하지 못했어요', body: '권한과 연결을 확인한 뒤 다시 시작해 주세요.', progress: null };
   if (phase === 'stopped') return { tone: 'wait', pill: 'stopped', title: '카메라를 껐어요', body: '도구에서 다시 시작할 수 있어요.', progress: null };
   if (status === 'NORMAL') {
+    // Engine status stays NORMAL while the map tracker is lost (frame-to-frame tracking goes on): text only, the pose is never touched.
+    if (mapLost) return { tone: 'warn', pill: 'mapLost', progress: null, title: '주변을 다시 찾는 중', body: '천천히 움직이거나 처음 보던 곳을 다시 비춰 주세요.' };
     return { tone: 'ok', pill: 'normal', progress: 1,
       title: objectCount ? `물체 ${objectCount}개를 놓았어요` : '준비됐어요',
       body: objectCount ? '다시 탭하면 하나 더 놓아요. 지우려면 도구를 열어 주세요.' : '놓고 싶은 곳을 탭해 보세요. 바닥이나 책상처럼 무늬가 있는 면이 잘 잡혀요.' };

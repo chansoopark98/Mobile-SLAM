@@ -10,8 +10,8 @@
     },
     "wasm": {
       "file": "slam_refact_engine.wasm",
-      "sha256": "682acf17a5ab5a6ba97f35db9bc17b139c7a2e63382fde0786f254ee7dd60566",
-      "bytes": 3736457
+      "sha256": "0714b7f7db92f3431baec0d24edc51c948b3eabd692359a565ca14f5a856f2d0",
+      "bytes": 3736880
     }
   }
 }

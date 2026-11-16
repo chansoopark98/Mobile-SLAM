@@ -1,9 +1,12 @@
 // slam_refact phone page: Start button -> XR8 (deployed SDK + the slam_refact chunk) -> status panel, tap-to-place (hitTest), image targets,
 // orientation display, error display, opt-in metrics download. Nothing is stored; nothing leaves the page. The chunk and engine are used as they are.
+// Query options (all opt-in): ?keepmap=1|fast 실험용: 지도 유지 엔진 옵션, gate 미통과 | ?record=1&diag=1 위치 기록과 추적 진단 |
+// ?fx=&cx=&cy= 초점 거리 진단 override.
 import * as THREE from '../../three/three.module.min.js';
-import { createMetrics, buildReceipt } from './metrics.js';
+import { createMetrics, buildReceipt, readEngineConfigReadback, effectiveMode } from './metrics.js';
 import { loadBundledManifest, loadBundledTarget, loadPickedTarget, MAX_TARGETS } from './targets.js';
-import { trackingGuide, tapOutcome } from './guidance.js';
+import { trackingGuide, tapOutcome, createMapLostFilter } from './guidance.js';
+import { resolveEngineOptions } from './product-config.js';
 import { createHud } from './hud.js';
 import { runStartFlow, StartError } from './start-flow.js';
 import { detectPlatform, preflight, describeCameraFailure } from '../common/platform.js';
@@ -43,6 +46,15 @@ if (intrinsicsQuery.override) {
   const prev = window.SLAM_REFACT_CHUNK_OPTIONS || {};
   window.SLAM_REFACT_CHUNK_OPTIONS = { ...prev, engineConfig: { ...(prev.engineConfig || {}), intrinsics: intrinsicsQuery.override } };
 }
+// Experimental engine configuration (samples/phone/product-config.js; ?keepmap=1|fast, default = none, both REJECTED by the gate: build/xr-commercial-20261116/verdict-K1-final.json, verdict-K1F-final.json). The only other place
+// engineConfig is set is the focal query above. The opt-in modes also turn on the chunk's trackerDiagnostics (latest-only scalar state) so the page can
+// tell when the map tracker is lost; &record=1&diag=1 alone does not drive the hint.
+const ENGINE_OPT = resolveEngineOptions(window.location.search);
+if (ENGINE_OPT.accuracy) {
+  const prev = window.SLAM_REFACT_CHUNK_OPTIONS || {};
+  window.SLAM_REFACT_CHUNK_OPTIONS = { ...prev, engineConfig: { ...(prev.engineConfig || {}), accuracy: ENGINE_OPT.accuracy }, trackerDiagnostics: prev.trackerDiagnostics || { enabled: true } };
+}
+const mapLostFilter = createMapLostFilter();
 const hud = createHud();
 $('start-note').setAttribute('role', 'status');  // not in the HTML: deploy_xr.py anchors on the exact <p id="start-note"> tag
 const platform = detectPlatform(navigator);
@@ -59,8 +71,15 @@ const state = {
   seenTargets: {},         // name -> 'found' | 'lost'
   errors: [], chunkWarnings: [], objectCount: 0,
   notTrackingSince: null,  // performance.now() of the last moment tracking was not NORMAL (page guidance only; not in the metrics JSON)
+  mapLost: false,          // keepmap opt-in modes only: the engine map tracker has been lost for a few tracked frames (guidance text only; never touches pose or objects)
 };
-window.__phoneApp = { hud, getState: () => JSON.parse(JSON.stringify({ ...state, targets: state.targets.map((t) => ({ id: t.id, source: t.source, label: t.label, name: t.entry.name })) })) };
+// Which engine configuration this page ran with (same data as the metrics JSON): engineReadback is what the engine itself reports it uses.
+// engineMode = what was requested; engineModeEffective = the same name only when the engine read every sent flag back as effective and not ignored.
+const engineInfo = () => {
+  const engineReadback = readEngineConfigReadback(window.__slamRefactChunk, ENGINE_OPT.accuracy);
+  return { engineMode: ENGINE_OPT.mode, engineModeEffective: effectiveMode(ENGINE_OPT, engineReadback), engineAccuracy: ENGINE_OPT.accuracy, engineReadback };
+};
+window.__phoneApp = { hud, getEngineInfo: engineInfo, getState: () => JSON.parse(JSON.stringify({ ...state, targets: state.targets.map((t) => ({ id: t.id, source: t.source, label: t.label, name: t.entry.name })) })) };
 
 // ---- errors ----------------------------------------------------------------------------------------------------------------------------
 const showError = (where, message) => {
@@ -73,6 +92,7 @@ const showError = (where, message) => {
 };
 $('error-dismiss').addEventListener('click', () => { state.errors = []; ui.errors.textContent = ''; ui.errorBox.hidden = true; });
 if (intrinsicsQuery.error) showError('초점', intrinsicsQuery.error);
+if (ENGINE_OPT.error) showError('keepmap', ENGINE_OPT.error);
 window.addEventListener('error', (e) => showError('오류', e.message));
 window.addEventListener('unhandledrejection', (e) => showError('오류', String(e.reason && e.reason.message || e.reason)));
 // The chunk reports unsupported cases with console.warn ("[XR] ..."); keep the original behaviour and also show it.
@@ -305,6 +325,7 @@ const pageModule = () => ({
     }
     if (state.status === 'NORMAL') state.notTrackingSince = null; else if (state.notTrackingSince === null) state.notTrackingSince = performance.now();
     state.worldPoints = pts;
+    state.mapLost = !!ENGINE_OPT.accuracy && mapLostFilter.update(chunk && chunk.trackerDiag);  // default mode or no tracker state (Worker / scheduler path): no hint
     upsCount++;
     const t = performance.now();
     if (t - upsWindowStart >= 1000) { updateRecHud(); ui.ups.textContent = String(Math.round(upsCount * 1000 / (t - upsWindowStart))); upsCount = 0; upsWindowStart = t; }
@@ -318,7 +339,7 @@ const pageModule = () => ({
 function renderGuide() {
   hud.render(trackingGuide({
     phase: state.phase, status: state.status, reason: state.reason, points: state.worldPoints, objectCount: state.objectCount,
-    landscape: !!(state.screenOrientation && /landscape/.test(state.screenOrientation.type)),
+    landscape: !!(state.screenOrientation && /landscape/.test(state.screenOrientation.type)), mapLost: state.mapLost,
     notTrackingMs: state.notTrackingSince === null ? 0 : performance.now() - state.notTrackingSince,
   }));
 }
@@ -401,7 +422,8 @@ ui.recenter.addEventListener('click', () => { try { XR8.XrController.recenter();
 // The only place data leaves the page: the user clicks, the browser downloads a small JSON file to the user's own device.
 ui.metrics.addEventListener('click', async () => {
   const receiptNow = RECORD ? await makeReceipt().catch((e) => ({ unavailable: String(e && e.message || e) })) : null;  // receipt again at download: the session may have changed since the start
-  const json = metrics.snapshot({ createdAtMs: Date.now(), userAgent: navigator.userAgent, screen: state.screenOrientation, video: state.videoSize, camera: window.XrCameraResolution || null, finalStatus: state.status, finalReason: state.reason, chunkWarnings: state.chunkWarnings, intrinsicsOverride: intrinsicsQuery.override }, receiptNow);
+  const json = metrics.snapshot({ createdAtMs: Date.now(), userAgent: navigator.userAgent, screen: state.screenOrientation, video: state.videoSize, camera: window.XrCameraResolution || null, finalStatus: state.status, finalReason: state.reason, chunkWarnings: state.chunkWarnings, intrinsicsOverride: intrinsicsQuery.override,
+    ...engineInfo() }, receiptNow);
   const url = URL.createObjectURL(new Blob([JSON.stringify(json, null, 1)], { type: 'application/json' }));
   const a = document.createElement('a');
   a.href = url; a.download = `slam-refact-phone-metrics-${new Date().toISOString().replace(/[:.]/g, '-')}.json`;
