@@ -3,8 +3,8 @@ import assert from 'node:assert/strict';
 import fs from 'node:fs/promises';
 import vm from 'node:vm';
 
-const source = await fs.readFile(new URL('../../web/js/app.js', import.meta.url), 'utf8');
-const cameraSource = await fs.readFile(new URL('../../web/js/camera.js', import.meta.url), 'utf8');
+const source = await fs.readFile(new URL('../../web/legacy/js/app.js', import.meta.url), 'utf8');
+const cameraSource = await fs.readFile(new URL('../../web/legacy/js/camera.js', import.meta.url), 'utf8');
 const { processingDimensions } = await import('data:text/javascript;base64,' + Buffer.from(cameraSource).toString('base64'));
 
 function fixture({ callbacks = true, now = 1337516.710, search = '', transferFrames = false } = {}) {

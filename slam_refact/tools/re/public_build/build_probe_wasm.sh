@@ -4,7 +4,7 @@
 # Compiles the same closure as build_probe.sh (no cvlite) with em++ -std=c++20 -O2 -msimd128
 # -DJAVASCRIPT (the define reference runtime's WASM build uses: single-threaded keypoint path, threadCount 0),
 # using the UNMODIFIED public sources (clang accepts frame-point.h, so no overlay) plus the probe
-# shims, links against the repo's WASM Ceres (wasm/libs/ceres, 2.2.0) and runs the result in node.
+# shims, links against the repo's WASM Ceres (legacy/vins-mono/wasm/libs/ceres, 2.2.0) and runs the result in node.
 # Requires build_probe.sh to have generated <out_dir>/gen first.
 #
 # Env WASM_STACK_SIZE (bytes, default 65536 = emscripten default) sets -sSTACK_SIZE.
@@ -18,7 +18,7 @@ JOBS="${2:-4}"
 if (( JOBS < 1 || JOBS > 4 )); then echo "jobs must be 1..4" >&2; exit 2; fi
 # shellcheck disable=SC1091
 source "${HOME}/emsdk/emsdk_env.sh" >/dev/null 2>&1
-CERES_WASM="${ROOT_REPO}/wasm/libs/ceres"
+CERES_WASM="${ROOT_REPO}/legacy/vins-mono/wasm/libs/ceres"
 
 mapfile -t SRCS < <(awk -F'\t' '$1=="OK" && $2=="cxx20" && $3 !~ /^link/ {print $3}' "${OUT}/build-status.tsv")
 OBJ="${OUT}/obj/wasm"

@@ -12,9 +12,9 @@ def main():
     digest=sha(candidate)
     if authorization.get('candidate_sha256')!=digest or not authorization.get('authorized'):raise ValueError('Parent deployment gate does not authorize this candidate hash')
     if manifest['artifact']['sha256']!=digest or not manifest.get('single_file_embedded_wasm'):raise ValueError('Expected verified embedded-WASM single-file artifact')
-    destination=ROOT/'web/vio_engine.js';backup=ROOT/'build/refactor-deploy'/str(time.time_ns());backup.mkdir(parents=True)
+    destination=ROOT/'web/legacy/vio_engine.js';backup=ROOT/'build/refactor-deploy'/str(time.time_ns());backup.mkdir(parents=True)
     if destination.exists():shutil.copy2(destination,backup/'vio_engine.js')
-    sidecar=ROOT/'web/vio_engine.manifest.json'
+    sidecar=ROOT/'web/legacy/vio_engine.manifest.json'
     if sidecar.exists():shutil.copy2(sidecar,backup/sidecar.name)
     fd,name=tempfile.mkstemp(prefix='.vio-candidate-',dir=destination.parent)
     try:

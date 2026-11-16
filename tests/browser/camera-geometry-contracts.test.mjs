@@ -3,8 +3,8 @@ import assert from 'node:assert/strict';
 import fs from 'node:fs/promises';
 import vm from 'node:vm';
 
-const cameraSource = await fs.readFile(new URL('../../web/js/camera.js', import.meta.url), 'utf8');
-const appSource = await fs.readFile(new URL('../../web/js/app.js', import.meta.url), 'utf8');
+const cameraSource = await fs.readFile(new URL('../../web/legacy/js/camera.js', import.meta.url), 'utf8');
+const appSource = await fs.readFile(new URL('../../web/legacy/js/app.js', import.meta.url), 'utf8');
 const portraitRIC = [1,0,0,0,0,1,0,-1,0];
 const info = (type = 'portrait-primary', r_ic = portraitRIC) => ({ type, r_ic });
 

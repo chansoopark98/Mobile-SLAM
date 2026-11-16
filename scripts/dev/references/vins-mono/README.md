@@ -30,7 +30,7 @@ python3 scripts/dev/references/vins-mono/replay.py \
 
 # fresh native_replay, yaml profile, 동일600frame·고유IMU·실제 입력 dump
 build/new-current-native/native_replay \
-  assets/datasets/tum/dataset-room1_512_16 config/tum_vi_room1.yaml \
+  assets/datasets/tum/dataset-room1_512_16 legacy/vins-mono/config/tum_vi_room1.yaml \
   build/new-current-room1-600 600 bracket 0 1 10 0.1 1 0 0 600 yaml 0 0
 
 python3 scripts/dev/references/vins-mono/verify_inputs.py \
@@ -39,7 +39,7 @@ python3 scripts/dev/references/vins-mono/verify_inputs.py \
 python3 scripts/dev/references/vins-mono/evaluate.py \
   --vins build/new-vins-room1-600 --native build/new-current-room1-600 \
   --ground-truth assets/datasets/tum/dataset-room1_512_16/dso/gt_imu.csv \
-  --config config/tum_vi_room1.yaml --output build/new-reference-metrics.json
+  --config legacy/vins-mono/config/tum_vi_room1.yaml --output build/new-reference-metrics.json
 ```
 
 - 실제 실행·hash·결과: [2026-10-13 reference execution](../../../../docs/research/2026-10-13-reference-execution.md)

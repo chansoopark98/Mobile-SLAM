@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import fs from 'node:fs/promises';
 import vm from 'node:vm';
 
-const source = await fs.readFile(new URL('../../web/js/app.js', import.meta.url), 'utf8');
+const source = await fs.readFile(new URL('../../web/legacy/js/app.js', import.meta.url), 'utf8');
 const start = source.indexOf('function estimateFocalLength(');
 const end = source.indexOf('\n/**', start);
 assert.ok(start >= 0 && end > start, 'Actual focal length estimator must be present');

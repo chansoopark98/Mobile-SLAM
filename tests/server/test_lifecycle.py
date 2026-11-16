@@ -147,16 +147,16 @@ class LifecycleTest(unittest.TestCase):
         ops.ROOT = fixture
         with self.assertRaisesRegex(RuntimeError, 'absent'):
             ops.authorization(7002)
-        (fixture / 'web').mkdir(parents=True)
-        (fixture / 'web/vio_engine.js').write_bytes(b'known-loader')
-        (fixture / 'web/vio_engine.wasm').write_bytes(b'known-wasm')
+        (fixture / 'web/legacy').mkdir(parents=True)
+        (fixture / 'web/legacy/vio_engine.js').write_bytes(b'known-loader')
+        (fixture / 'web/legacy/vio_engine.wasm').write_bytes(b'known-wasm')
         directory = fixture / 'build/refactor-orchestration'
         directory.mkdir(parents=True)
         record = {'authorized': True, 'js_sha256': hashlib.sha256(b'known-loader').hexdigest(),
                   'wasm_sha256': hashlib.sha256(b'known-wasm').hexdigest(), 'deployment_id': 'test'}
         (directory / 'server-start-authorized.json').write_text(json.dumps(record))
         self.assertEqual(ops.authorization(7002), ('test', None, False))
-        (fixture / 'web/vio_engine.wasm').write_bytes(b'wrong-pair')
+        (fixture / 'web/legacy/vio_engine.wasm').write_bytes(b'wrong-pair')
         with self.assertRaisesRegex(RuntimeError, 'hash mismatch'):
             ops.authorization(7002)
 
@@ -166,8 +166,8 @@ class LifecycleTest(unittest.TestCase):
         spec.loader.exec_module(ops)
         fixture = Path(self.temporary.name) / 'single-file'
         ops.ROOT = fixture
-        (fixture / 'web').mkdir(parents=True)
-        (fixture / 'web/vio_engine.js').write_bytes(b'known-embedded-loader')
+        (fixture / 'web/legacy').mkdir(parents=True)
+        (fixture / 'web/legacy/vio_engine.js').write_bytes(b'known-embedded-loader')
         directory = fixture / 'build/refactor-orchestration'
         directory.mkdir(parents=True)
         record = {'authorized': True, 'single_file_embedded_wasm': True,
@@ -176,7 +176,7 @@ class LifecycleTest(unittest.TestCase):
         flag = directory / 'server-start-authorized.json'
         flag.write_text(json.dumps(record))
         self.assertEqual(ops.authorization(7002), ('embedded', None, True))
-        (fixture / 'web/vio_engine.wasm').write_bytes(b'old-unused-artifact')
+        (fixture / 'web/legacy/vio_engine.wasm').write_bytes(b'old-unused-artifact')
         self.assertEqual(ops.authorization(7002), ('embedded', None, True))
         record['wasm_sha256'] = hashlib.sha256(b'old-unused-artifact').hexdigest()
         flag.write_text(json.dumps(record))
@@ -184,7 +184,7 @@ class LifecycleTest(unittest.TestCase):
             ops.authorization(7002)
         record['wasm_sha256'] = None
         flag.write_text(json.dumps(record))
-        (fixture / 'web/vio_engine.js').write_bytes(b'wrong-loader')
+        (fixture / 'web/legacy/vio_engine.js').write_bytes(b'wrong-loader')
         with self.assertRaisesRegex(RuntimeError, 'hash mismatch'):
             ops.authorization(7002)
 

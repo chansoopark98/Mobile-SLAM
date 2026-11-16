@@ -29,7 +29,7 @@ const report = { schema: 'mobile-slam-android-cdp-v1', startedAt: new Date().toI
     scope: 'Read-only numeric observations of one existing real-device tab; no image capture or independent accuracy ground truth', samples: [] };
 const targets = await (await fetch(new URL('/json/list', endpoint), { signal: AbortSignal.timeout(5000) })).json();
 const matches = targets.filter(target => {
-    try { const url = new URL(target.url); return target.type === 'page' && url.origin === origin && ['/', '/index.html'].includes(url.pathname); }
+    try { const url = new URL(target.url); return target.type === 'page' && url.origin === origin && ['/legacy/', '/legacy/index.html'].includes(url.pathname); }
     catch { return false; }
 });
 if (matches.length !== 1) throw new Error(`Expected one Mobile-SLAM tab, found ${matches.length}`);

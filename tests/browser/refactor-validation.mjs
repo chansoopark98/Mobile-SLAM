@@ -14,7 +14,7 @@ const options = { phase: 'preflight', origin: 'https://dev.serdic.com:7002', out
     nativeProvenance: 'build/refactor-native/native-replay-provenance.json', contract: null, pacedFrames: 300,
     benchmarkZeroTolerances: process.env.MOBILE_SLAM_BENCHMARK_ZERO_TOLERANCES ?? '0',
     room1: 'assets/datasets/tum/dataset-room1_512_16', room4: 'build/refactor-data/tum/dataset-room4_512_16',
-    config: 'config/tum_vi_room1.yaml' };
+    config: 'legacy/vins-mono/config/tum_vi_room1.yaml' };
 const keys = { '--phase': 'phase', '--origin': 'origin', '--output': 'output', '--native-build': 'nativeBuild',
     '--wasm-provenance': 'wasmProvenance', '--native-provenance': 'nativeProvenance', '--contract': 'contract',
     '--paced-frames': 'pacedFrames', '--benchmark-zero-tolerances': 'benchmarkZeroTolerances', '--room1': 'room1', '--room4': 'room4', '--config': 'config' };
@@ -194,7 +194,7 @@ async function preflight() {
                     secureContext: isSecureContext, crossOriginIsolated });
             }
             return records;
-        }, ['/vio_engine.js', '/js/vio-worker.js', '/js/vio-wrapper.js', '/js/app.js', '/js/test-tumvi-app.js', '/js/imu.js', '/js/camera.js', '/js/orientation.js']);
+        }, ['/legacy/vio_engine.js', '/legacy/js/vio-worker.js', '/legacy/js/vio-wrapper.js', '/legacy/js/app.js', '/legacy/js/test-tumvi-app.js', '/legacy/js/imu.js', '/legacy/js/camera.js', '/legacy/js/orientation.js']);
         for (const item of served) {
             assert.equal(item.status, 200); assert.equal(item.headStatus, 200); assert.equal(item.headBytes, 0);
             assert.equal(item.secureContext, true); assert.equal(item.crossOriginIsolated, true);
@@ -202,13 +202,13 @@ async function preflight() {
             assert.equal(item.headers['cross-origin-embedder-policy'], 'credentialless');
             assert.match(item.headers['cache-control'], /no-store/);
             assert.match(item.headers['content-type'], /javascript/);
-            assert.equal(item.sha256, item.pathname === '/vio_engine.js' ? wasm.artifact.sha256 : sha(await fs.readFile(path.join(root, 'web', item.pathname.slice(1)))));
+            assert.equal(item.sha256, item.pathname === '/legacy/vio_engine.js' ? wasm.artifact.sha256 : sha(await fs.readFile(path.join(root, 'web', item.pathname.slice(1)))));
         }
         const pages = [];
-        for (const pathname of ['/', '/test-tumvi.html', '/audit-mobile.html']) {
+        for (const pathname of ['/legacy/', '/legacy/test-tumvi.html', '/legacy/audit-mobile.html']) {
             const response = await page.goto(options.origin + pathname);
             assert.equal(response.status(), 200);
-            if (pathname !== '/audit-mobile.html') await page.waitForFunction(() => /WASM loaded/.test(document.getElementById('status')?.textContent) && !document.getElementById('btn-start')?.disabled, null, { timeout: 30000 });
+            if (pathname !== '/legacy/audit-mobile.html') await page.waitForFunction(() => /WASM loaded/.test(document.getElementById('status')?.textContent) && !document.getElementById('btn-start')?.disabled, null, { timeout: 30000 });
             pages.push({ pathname, status: response.status(), secureContext: await page.evaluate(() => isSecureContext), security: await response.securityDetails() });
         }
         assertNetwork(watched.events);
@@ -245,7 +245,7 @@ async function browserReplay(dataset, frames, directory, { paced = false, loss =
         const parameters = new URLSearchParams({ dataset, frames: String(frames), speed: paced ? '1' : '-1',
             solverTime: paired ? '10' : '0.1', iterations: '10', features: '150',
             benchmarkZeroTolerances: benchmarkProfile ? '1' : '0', inputHash: paced ? '0' : '1' });
-        await page.goto(`${options.origin}/test-tumvi.html?${parameters}`);
+        await page.goto(`${options.origin}/legacy/test-tumvi.html?${parameters}`);
         await page.waitForFunction(() => window.__tumviReplay && !document.getElementById('btn-start').disabled, null, { timeout: 30000 });
         if (loss) await page.evaluate(() => {
             const app = window.__tumviReplay.app;

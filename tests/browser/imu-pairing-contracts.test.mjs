@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import fs from 'node:fs/promises';
 import vm from 'node:vm';
 
-const source = await fs.readFile(new URL('../../web/js/imu.js', import.meta.url), 'utf8');
+const source = await fs.readFile(new URL('../../web/legacy/js/imu.js', import.meta.url), 'utf8');
 function fixture() {
     const listeners = new Map();
     class Sensor {

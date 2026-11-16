@@ -9,7 +9,7 @@ import { createHash } from 'node:crypto';
 const root = process.cwd();
 const { chromium } = createRequire(path.join(root, 'scripts/dev/package.json'))('playwright');
 const output = path.resolve(process.env.CAMERA_GEOMETRY_OUTPUT || 'build/mobile-web-20261009/path-audit/camera-geometry-browser');
-const source = await fs.readFile(path.join(root, 'web/js/camera.js'), 'utf8');
+const source = await fs.readFile(path.join(root, 'web/legacy/js/camera.js'), 'utf8');
 const report = { scope: 'Desktop synthetic canvas captureStream, actual HTMLVideoElement and Camera CPU/WebGL pixels; physical device calibration unverified',
     cameraSha256: createHash('sha256').update(source).digest('hex'), scenarios: [], errors: [] };
 const server = http.createServer((request, response) => {

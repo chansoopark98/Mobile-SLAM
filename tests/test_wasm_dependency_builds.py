@@ -8,7 +8,7 @@ import tempfile
 import unittest
 
 ROOT = Path(__file__).resolve().parents[1]
-SCRIPTS = ROOT / 'wasm'
+SCRIPTS = ROOT / 'legacy/vins-mono/wasm'
 PINS = {'opencv': 'dad26339a975b49cfb6c7dbe4bd5276c9dcb36e2',
         'ceres': '85331393dc0dff09f6fb9903ab0c4bfa3e134b01'}
 VERSIONS = {'opencv': '4.5.5', 'ceres': '2.2.0'}
@@ -41,9 +41,9 @@ class DependencyBuildTests(unittest.TestCase):
     def setUp(self):
         self.tmp = tempfile.TemporaryDirectory()
         self.root = Path(self.tmp.name)
-        (self.root/'wasm').mkdir()
+        (self.root/'legacy/vins-mono/wasm').mkdir(parents=True)
         for kind in PINS:
-            shutil.copyfile(SCRIPTS/f'build_{kind}.sh', self.root/'wasm'/f'build_{kind}.sh')
+            shutil.copyfile(SCRIPTS/f'build_{kind}.sh', self.root/'legacy/vins-mono/wasm'/f'build_{kind}.sh')
         sdk = self.root/'sdk/upstream/emscripten/cmake/Modules/Platform'
         sdk.mkdir(parents=True)
         (sdk/'Emscripten.cmake').write_text('# mock SDK\n')
@@ -78,7 +78,7 @@ class DependencyBuildTests(unittest.TestCase):
         for key in ('OPENCV_SOURCE_DIR','CERES_SOURCE_DIR','MOBILE_SLAM_JOBS'): env.pop(key,None)
         if source is not None: env[kind.upper()+'_SOURCE_DIR']=str(source)
         if jobs is not None: env['MOBILE_SLAM_JOBS']=jobs
-        r = subprocess.run(['bash',str(self.root/'wasm'/f'build_{kind}.sh')],env=env,capture_output=True,text=True,cwd=self.root)
+        r = subprocess.run(['bash',str(self.root/'legacy/vins-mono/wasm'/f'build_{kind}.sh')],env=env,capture_output=True,text=True,cwd=self.root)
         calls = [json.loads(s) for s in self.log.read_text().splitlines()] if self.log.exists() else []
         return r,calls
 

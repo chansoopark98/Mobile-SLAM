@@ -234,7 +234,7 @@ async function main() {
     try {
         await fs.mkdir(cameraDirectory, { recursive: true }); await fs.mkdir(imuDirectory, { recursive: true });
         const list = await (await fetch(new URL('/json/list', endpoint), { signal: AbortSignal.timeout(8000) })).json();
-        const targets = list.filter(target => { try { return target.type === 'page' && new URL(target.url).origin === 'https://dev.serdic.com:7002' && ['/', '/index.html'].includes(new URL(target.url).pathname); } catch { return false; } });
+        const targets = list.filter(target => { try { return target.type === 'page' && new URL(target.url).origin === 'https://dev.serdic.com:7002' && ['/legacy/', '/legacy/index.html'].includes(new URL(target.url).pathname); } catch { return false; } });
         if (targets.length !== 1) throw new Error('Expected one Mobile-SLAM tab');
         socket = new WebSocket(targets[0].webSocketDebuggerUrl);
         await new Promise((resolve, reject) => {

@@ -15,7 +15,7 @@ check_mode() {
   case "$1" in
     doctor) "$python_path" scripts/dev/doctor.py --strict --output build/dev-tools/doctor.json ;;
     syntax)
-      for file in web/server.js web/js/*.js scripts/dev/*.mjs; do
+      for file in web/server.js web/js/*.js web/legacy/js/*.js scripts/dev/*.mjs; do
         node --check "$file" || return "$?"
       done
       for file in scripts/dev/*.sh; do bash -n "$file" || return "$?"; done
@@ -36,16 +36,25 @@ check_mode() {
       check_mode eval
       ;;
     native)
-      timeout "$duration" cmake --preset native-dev || return "$?"
-      timeout "$duration" cmake --build --preset native-tests --parallel "$jobs" || return "$?"
-      timeout "$duration" ctest --preset native-tests --parallel "$jobs"
+      # Presets live with the legacy VINS-Mono tree; binaryDir stays build/dev-native at the repo root.
+      # MOBILE_SLAM_DEPS_DIR (default build/_deps) supplies cached FetchContent sources when present.
+      local -a deps=()
+      local deps_dir dependency
+      deps_dir="$(realpath -m "${MOBILE_SLAM_DEPS_DIR:-build/_deps}")"
+      for dependency in ceres-solver googletest; do
+        if [[ -f "$deps_dir/$dependency-src/CMakeLists.txt" ]]; then deps+=("-DFETCHCONTENT_SOURCE_DIR_${dependency^^}=$deps_dir/$dependency-src"); fi
+      done
+      (cd legacy/vins-mono &&
+        timeout "$duration" cmake --preset native-dev "${deps[@]}" &&
+        timeout "$duration" cmake --build --preset native-tests --parallel "$jobs" &&
+        timeout "$duration" ctest --preset native-tests --parallel "$jobs")
       ;;
     wasm-build)
       sdk_env="${EMSDK:-$HOME/emsdk}/emsdk_env.sh"
       [[ -f "$sdk_env" ]] || { echo "Missing Emscripten environment: $sdk_env" >&2; return 2; }
       # Emsdk activation is scoped to this subprocess. Outputs stay out of web/.
       (set +u; source "$sdk_env" >/dev/null 2>&1; set -u
-        timeout "$duration" emcmake cmake -S wasm -B build/dev-wasm -G Ninja -DCMAKE_EXPORT_COMPILE_COMMANDS=ON &&
+        timeout "$duration" emcmake cmake -S legacy/vins-mono/wasm -B build/dev-wasm -G Ninja -DCMAKE_EXPORT_COMPILE_COMMANDS=ON &&
         timeout "$duration" cmake --build build/dev-wasm --target vio_engine --parallel "$jobs")
       ;;
     clangd)

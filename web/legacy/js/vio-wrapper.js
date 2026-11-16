@@ -126,11 +126,11 @@ export class VIOWrapper {
         this._finishFrame(error);
     }
 
-    async load(wasmPath = '/vio_engine.js') {
+    async load(wasmPath = '/legacy/vio_engine.js') {
         this._invalidate(new Error('Worker replaced'));
         this.configured = false;
         if (this.worker) this.worker.terminate();
-        const worker = new Worker('/js/vio-worker.js?v=14', { type: 'module' });
+        const worker = new Worker('/legacy/js/vio-worker.js?v=14', { type: 'module' });
         this.worker = worker;
         worker.onmessage = event => {
             if (this.worker === worker) this._handleWorkerMessage(event.data);

@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import {validateInertialPrediction, validateGroundPlane, fitGroundPlane, GroundPlaneTracker, isCleanVisualContext} from '../../web/js/low-feature.mjs';
+import {validateInertialPrediction, validateGroundPlane, fitGroundPlane, GroundPlaneTracker, isCleanVisualContext} from '../../web/legacy/js/low-feature.mjs';
 
 const pose = [1,0,0,0,0,1,0,0,0,0,1,1.5,0,0,0,1];
 const context = (extra={}) => ({inputTimestamp:2,engineFrameTimestamp:2,engineEpoch:3,clientEpoch:4,sequence:10,statusCode:2,initialized:true,reason:'tracking',solverQualityReason:'',pose:pose.slice(),...extra});

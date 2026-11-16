@@ -8,7 +8,7 @@ worker refuses to run bytes that do not match it.
 
 Every write needs --authorization <json> with {"authorized": true, "candidate_sha256": <wasm sha>}
 (optional "candidate_js_sha256" is checked too). The historical VINS-Mono approval
-build/refactor-orchestration/deploy-authorized.json is refused. web/vio_engine.* is never touched:
+build/refactor-orchestration/deploy-authorized.json is refused. web/legacy/vio_engine.* is never touched:
 the destination must be a directory named slam-refact directly under the web root.
 
   python3 slam_refact/tools/deploy_web.py --authorization build/<lane>/deploy-authorized.json \
@@ -135,7 +135,7 @@ def main(argv=None):
         'deployed_at': datetime.datetime.now(datetime.timezone.utc).isoformat(timespec='seconds'),
         'authorization': authorization,
         'page': 'web/slam-refact.html',
-        'note': 'measurement page engine; independent of web/vio_engine.* (VINS-Mono)',
+        'note': 'measurement page engine; independent of web/legacy/vio_engine.* (VINS-Mono)',
     }
 
     manifest = {'schema': SCHEMA, 'record_kind': 'source-artifact-index', 'engine': 'slam_refact',

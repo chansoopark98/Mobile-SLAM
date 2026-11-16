@@ -19,6 +19,9 @@ const MIME = {
 };
 const SLAM_REFACT_PAGE_ALIASES = new Set(['/slam-refact', '/slam-refact/', '/slam_refact', '/slam_refact/', '/slam_refact.html']);
 const SLAM_REFACT_XR_PAGE_ALIASES = new Set(['/slam-refact-xr', '/slam-refact-xr/']);
+// The VINS-Mono web app is legacy and lives under /legacy/. Old root URLs redirect to their /legacy/ path.
+const LEGACY_REDIRECTS = new Map([['/legacy', '/legacy/'], ['/test-tumvi.html', '/legacy/test-tumvi.html'], ['/audit-mobile.html', '/legacy/audit-mobile.html'],
+  ['/vio_engine.js', '/legacy/vio_engine.js'], ['/index.html', '/legacy/index.html']]);
 // slam_refact XR entry page tree (slam_refact/tools/deploy_xr.py): fixed file names for the engine/chunk/vendor files, a closed set of sample
 // directories, and image-target data/print sheets. Anything else under slam-refact-xr/ is not served.
 const SLAM_REFACT_XR_FILES = new Set([
@@ -35,11 +38,14 @@ function allowedFile(relative, dataset = false) {
   if (parts.some(part => !part || part.startsWith('.') || PRIVATE_NAMES.has(part.toLowerCase()))) return false;
   const route = parts.join('/');
   if (dataset) return /^(?:cam[01]|imu[01]|mocap0)\/(?:data\.csv|sensor\.yaml|data\/\d+\.png)$/.test(route);
-  if (['index.html', 'test-tumvi.html', 'audit-mobile.html', 'vio_engine.js', 'vio_engine.wasm', 'favicon.ico'].includes(route)) return true;
+  if (['slam-refact-xr.html', 'favicon.ico'].includes(route)) return true;
+  // Legacy VINS-Mono web app (web/legacy/).
+  if (['legacy/index.html', 'legacy/test-tumvi.html', 'legacy/audit-mobile.html', 'legacy/vio_engine.js', 'legacy/vio_engine.wasm'].includes(route)) return true;
+  if (/^legacy\/js\/[^/]+\.(?:js|mjs)$/.test(route)) return true;
   // slam_refact measurement page and its deployed engine (slam_refact/tools/deploy_web.py).
   if (['slam-refact.html', 'slam-refact/slam_refact_engine.js', 'slam-refact/slam_refact_engine.wasm', 'slam-refact/manifest.json'].includes(route)) return true;
   if (SLAM_REFACT_XR_FILES.has(route) || SLAM_REFACT_XR_SAMPLE.test(route)) return true;
-  if (/^js\/.+\.(?:js|mjs)$/.test(route)) return true;
+  if (/^js\/slam-refact-[A-Za-z0-9-]+\.js$/.test(route)) return true;
   if (/^css\/.+\.css$/.test(route)) return true;
   if (/^(?:images|public)\/.+\.(?:json|css|png|jpg|jpeg|webp|svg|ico)$/.test(route)) return true;
   return false;
@@ -53,7 +59,7 @@ function decodeRoute(raw) {
   catch { throw Object.assign(new Error('Bad Request'), { status: 400 }); }
   if (/[\x00-\x1f\x7f%\\]/.test(route)) throw Object.assign(new Error('Bad Request'), { status: 400 });
   if (route.split('/').some(part => part.startsWith('.'))) throw Object.assign(new Error('Forbidden'), { status: 403 });
-  return route === '/' ? '/index.html' : route;
+  return route === '/' ? '/slam-refact-xr.html' : route === '/legacy/' ? '/legacy/index.html' : route;
 }
 
 function hashArtifact(filename, root) {
@@ -83,9 +89,9 @@ function createApp(options = {}) {
   const sourceManifestSha256 = process.env.MOBILE_SLAM_SOURCE_MANIFEST_SHA256 || null;
   if (sourceManifestSha256 && !/^[a-f0-9]{64}$/.test(sourceManifestSha256)) throw new Error('Invalid source manifest digest');
   const serverSourceSha256 = crypto.createHash('sha256').update(fs.readFileSync(__filename)).digest('hex');
-  const artifactSnapshot = { 'vio_engine.js': hashArtifact(path.join(webRoot, 'vio_engine.js'), webRoot),
+  const artifactSnapshot = { 'vio_engine.js': hashArtifact(path.join(webRoot, 'legacy/vio_engine.js'), webRoot),
     'vio_engine.wasm': singleFileEmbeddedWasm ? { available: false, active: false, reason: 'embedded-in-loader' }
-      : hashArtifact(path.join(webRoot, 'vio_engine.wasm'), webRoot) };
+      : hashArtifact(path.join(webRoot, 'legacy/vio_engine.wasm'), webRoot) };
   const headers = {
     'Cross-Origin-Opener-Policy': 'same-origin', 'Cross-Origin-Embedder-Policy': 'credentialless',
     'Permissions-Policy': 'camera=(self), accelerometer=(self), gyroscope=(self)',
@@ -135,6 +141,13 @@ function createApp(options = {}) {
         res.end();
         return;
       }
+      const legacyTarget = LEGACY_REDIRECTS.get(route);
+      if (legacyTarget) {
+        const query = String(req.url).includes('?') ? '?' + String(req.url).split('?').slice(1).join('?') : '';
+        res.writeHead(301, { ...headers, Location: legacyTarget + query, 'Content-Length': 0 });
+        res.end();
+        return;
+      }
       let requestedRoot = webRoot;
       let relative = route.slice(1);
       let dataset = false;
@@ -144,7 +157,7 @@ function createApp(options = {}) {
         requestedRoot = path.resolve(datasetRoots[match[1]]); relative = match[2]; dataset = true;
       }
       if (!allowedFile(relative, dataset)) throw Object.assign(new Error('Forbidden'), { status: 403 });
-      if (!dataset && relative === 'vio_engine.wasm' && singleFileEmbeddedWasm) throw Object.assign(new Error('Forbidden'), { status: 403 });
+      if (!dataset && relative === 'legacy/vio_engine.wasm' && singleFileEmbeddedWasm) throw Object.assign(new Error('Forbidden'), { status: 403 });
       const realRoot = await fs.promises.realpath(requestedRoot);
       if (dataset && options.datasetBoundary) {
         const local = path.relative(options.datasetBoundary, realRoot);
@@ -153,7 +166,7 @@ function createApp(options = {}) {
       const filename = await fs.promises.realpath(path.join(realRoot, relative));
       const actual = path.relative(realRoot, filename);
       if (actual.startsWith('..') || path.isAbsolute(actual) || !allowedFile(actual, dataset)
-          || (!dataset && singleFileEmbeddedWasm && actual === 'vio_engine.wasm')) {
+          || (!dataset && singleFileEmbeddedWasm && actual === 'legacy/vio_engine.wasm')) {
         throw Object.assign(new Error('Forbidden'), { status: 403 });
       }
       handle = await fs.promises.open(filename, fs.constants.O_RDONLY | fs.constants.O_NOFOLLOW);
@@ -161,7 +174,7 @@ function createApp(options = {}) {
       const opened = await fs.promises.realpath(`/proc/self/fd/${handle.fd}`);
       const openedRelative = path.relative(realRoot, opened);
       if (openedRelative.startsWith('..') || path.isAbsolute(openedRelative) || !allowedFile(openedRelative, dataset)
-          || (!dataset && singleFileEmbeddedWasm && openedRelative === 'vio_engine.wasm')) {
+          || (!dataset && singleFileEmbeddedWasm && openedRelative === 'legacy/vio_engine.wasm')) {
         throw Object.assign(new Error('Forbidden'), { status: 403 });
       }
       const stat = await handle.stat();

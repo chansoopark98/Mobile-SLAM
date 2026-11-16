@@ -41,17 +41,17 @@ try {
     const requests = [];
     page.on('pageerror', error => errors.push(error.message));
     page.on('request', request => requests.push({ method: request.method(), url: request.url() }));
-    await page.goto(origin + '/audit-mobile.html');
+    await page.goto(origin + '/legacy/audit-mobile.html');
     await page.locator('#seconds').fill('10');
     await page.locator('#open').click();
     await page.waitForFunction(() => window.__mobileAudit?.ready, null, { timeout: 20000 });
     await page.locator('#record').click();
-    const frame = page.frames().find(frame => new URL(frame.url()).pathname === '/index.html');
+    const frame = page.frames().find(frame => new URL(frame.url()).pathname === '/legacy/index.html');
     assert.ok(frame, 'Existing live index iframe loaded');
     await frame.locator('#btn-start').click();
     await page.waitForFunction(() => (window.__mobileAudit?.summary()?.completed || 0) >= 12, null, { timeout: 12000 });
     const permissionChecks = await frame.evaluate(async () => {
-        const { IMU } = await import('/js/imu.js?v=14');
+        const { IMU } = await import('/legacy/js/imu.js?v=14');
         window.__mockPermissionMode = 'denied';
         const denied = await new IMU().requestPermission();
         window.__mockPermissionMode = 'error';
@@ -91,7 +91,7 @@ try {
     assert.ok(report.samples.permission_native.some(row => row.permission === 'denied'));
     assert.ok(report.samples.permission_native.some(row => row.phase === 'error' && row.name === 'NotAllowedError'));
     assert.ok(report.samples.permission_native.some(row => row.phase === 'error' && row.synchronous === true));
-    assert.equal(report.metadata.moduleUrls.wrapper, origin + '/js/vio-wrapper.js?v=14');
+    assert.equal(report.metadata.moduleUrls.wrapper, origin + '/legacy/js/vio-wrapper.js?v=14');
     assert.ok(report.totalSamples <= report.limits.maxTotal);
     for (const rows of Object.values(report.samples)) assert.ok(rows.length <= report.limits.maxSamplesPerChannel);
     for (const [file, fingerprint] of Object.entries(report.metadata.manifest)) {

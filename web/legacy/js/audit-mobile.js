@@ -214,7 +214,7 @@ export async function installInRealm(win, recorder) {
     hook(VIOWrapper.prototype, 'reset', original => function (...args) { const current = wrapperState(this); current.generation++; current.previousPose = null; current.previousFrameTimestamp = null; record('resets', { method: 'wrapper.reset', generation: current.generation, pendingSequences: current.pending.map(row => row.sequence) }); current.pending = []; current.previousEngineEpoch = null; return original.apply(this, args); });
     const manifest = {};
     const wasmFile = new URL(win.location.href).searchParams.get('wasm') || 'vio_engine.js';
-    if (win.crypto?.subtle) for (const url of [new URL('/index.html', win.location.href).href, appUrl.href, moduleUrl('camera.js'), moduleUrl('imu.js'), moduleUrl('vio-wrapper.js'), new URL('/js/vio-worker.js?v=14', win.location.href).href, new URL('/' + wasmFile, win.location.href).href]) {
+    if (win.crypto?.subtle) for (const url of [new URL('/legacy/index.html', win.location.href).href, appUrl.href, moduleUrl('camera.js'), moduleUrl('imu.js'), moduleUrl('vio-wrapper.js'), new URL('/legacy/js/vio-worker.js?v=14', win.location.href).href, new URL('/legacy/' + wasmFile, win.location.href).href]) {
         try { const bytes = await (await win.fetch(url)).arrayBuffer(); manifest[new URL(url).pathname + new URL(url).search] = { bytes: bytes.byteLength, sha256: [...new Uint8Array(await win.crypto.subtle.digest('SHA-256', bytes))].map(byte => byte.toString(16).padStart(2, '0')).join('') }; } catch (error) { manifest[url] = { error: error.message }; }
     }
     return { moduleUrls: { app: appUrl.href, camera: moduleUrl('camera.js'), imu: moduleUrl('imu.js'), wrapper: moduleUrl('vio-wrapper.js') }, manifest, overhead, get blockedLogWrites() { return blockedLogWrites; }, stopResources, detach };
@@ -252,11 +252,11 @@ async function setupPage() {
         ui.app.style.pointerEvents = 'none';
         ui.status.textContent = '기존 앱과 관측 모듈 로딩…';
         try {
-            await new Promise(resolve => { ui.app.onload = resolve; ui.app.src = '/index.html' + window.location.search; });
+            await new Promise(resolve => { ui.app.onload = resolve; ui.app.src = '/legacy/index.html' + window.location.search; });
             const child = ui.app.contentWindow;
             recorder = createRecorder({ maxDurationMs: Math.min(120, Math.max(10, Number(ui.seconds.value) || 60)) * 1000, onStop: finish });
             child.__mobileAuditRecorder = { push: (...args) => recorder.push(...args) };
-            bridge = await child.eval("import('/js/audit-mobile.js?audit-realm=1').then(module => module.installInRealm(window, window.__mobileAuditRecorder))");
+            bridge = await child.eval("import('/legacy/js/audit-mobile.js?audit-realm=1').then(module => module.installInRealm(window, window.__mobileAuditRecorder))");
         } catch (error) { bridge?.stopResources(); bridge?.detach(); bridge = null; clearInterval(timer); clearTimeout(durationTimer); ui.app.src = 'about:blank'; ui.status.textContent = `로딩 실패: ${error.message}`; ui.open.disabled = false; return; }
         ui.record.disabled = false;
         ui.status.textContent = '기록 시작 → 아래 기존 앱의 Start → 기기 권한 허용.';

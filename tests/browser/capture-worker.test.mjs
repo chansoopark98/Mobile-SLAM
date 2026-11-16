@@ -2,7 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import fs from 'node:fs/promises';
 
-const source = await fs.readFile(new URL('../../web/js/capture-worker.js', import.meta.url), 'utf8');
+const source = await fs.readFile(new URL('../../web/legacy/js/capture-worker.js', import.meta.url), 'utf8');
 const { CaptureWorker, createCaptureWorkerHandler } = await import('data:text/javascript;base64,' + Buffer.from(source).toString('base64'));
 
 function fixture(options = {}) {

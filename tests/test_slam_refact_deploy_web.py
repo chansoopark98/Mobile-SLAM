@@ -29,7 +29,8 @@ class DeployWebTest(unittest.TestCase):
         (self.build / 'slam_refact_engine.wasm').write_bytes(b'\0asm-fixture')
         self.web = t / 'web'
         self.web.mkdir()
-        (self.web / 'vio_engine.js').write_bytes(b'VINS')
+        (self.web / 'legacy').mkdir()
+        (self.web / 'legacy/vio_engine.js').write_bytes(b'VINS')
         self.wasm_sha = hashlib.sha256(b'\0asm-fixture').hexdigest()
         self.js_sha = hashlib.sha256(b'var SlamRefactEngine;').hexdigest()
 
@@ -83,8 +84,8 @@ class DeployWebTest(unittest.TestCase):
         self.assertEqual(private['git']['head'], '1' * 40)
         self.assertEqual(private['authorization']['approved_by'], 'user (test)')
         self.assertEqual((evidence / 'manifest.json').read_text(), (dest / 'manifest.json').read_text())
-        self.assertEqual((self.web / 'vio_engine.js').read_bytes(), b'VINS')
-        self.assertEqual(sorted(p.name for p in self.web.iterdir()), ['slam-refact', 'vio_engine.js'])
+        self.assertEqual((self.web / 'legacy/vio_engine.js').read_bytes(), b'VINS')
+        self.assertEqual(sorted(p.name for p in self.web.iterdir()), ['legacy', 'slam-refact'])
         # A second deploy keeps a backup of the replaced files and refuses a reused evidence dir.
         with self.assertRaises(SystemExit):
             self.run_deploy(auth, '--evidence-dir', str(evidence))

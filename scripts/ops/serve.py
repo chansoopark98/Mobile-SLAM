@@ -123,7 +123,7 @@ def authorization(port):
     if not single_file:
         artifacts.append(('vio_engine.wasm', 'wasm_sha256'))
     for name, key in artifacts:
-        with (ROOT / 'web' / name).open('rb') as source:
+        with (ROOT / 'web/legacy' / name).open('rb') as source:
             actual = hashlib.file_digest(source, 'sha256').hexdigest()
         if not data.get(key) or data[key] != actual:
             raise RuntimeError(f'Deployed candidate hash mismatch: {name}')

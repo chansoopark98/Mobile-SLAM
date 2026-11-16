@@ -52,13 +52,13 @@ try {
         page.on('pageerror', error => errors.push(error.message));
         if (scenario.profile && !realProfile) await context.route(url => url.pathname === profilePath,
             route => route.fulfill({ contentType: 'application/json', body: JSON.stringify(profileFixture(profileOrientation)) }));
-        const pageResponse = await page.goto(origin + '/audit-mobile.html' + (scenario.profile ? `?config=mobile_highend&rotate=ccw&crop=landscape_4_3&cameraProfile=${encodeURIComponent(profilePath)}` : ''));
+        const pageResponse = await page.goto(origin + '/legacy/audit-mobile.html' + (scenario.profile ? `?config=mobile_highend&rotate=ccw&crop=landscape_4_3&cameraProfile=${encodeURIComponent(profilePath)}` : ''));
         const security = await pageResponse.securityDetails();
         await page.locator('#seconds').fill('10');
         await page.locator('#open').click();
         await page.waitForFunction(() => window.__mobileAudit?.ready, null, { timeout: 20000 });
         await page.locator('#record').click();
-        const frame = page.frames().find(frame => new URL(frame.url()).pathname === '/index.html');
+        const frame = page.frames().find(frame => new URL(frame.url()).pathname === '/legacy/index.html');
         assert.ok(frame);
         profileOrientation = await frame.evaluate(() => screen.orientation.type);
         let profileHTTP = null;
@@ -168,10 +168,10 @@ try {
     }
     const context = await browser.newContext({ viewport: { width: 412,height: 915 } });
     const page = await context.newPage();
-    await page.goto(origin + '/test-tumvi.html?frames=5&speed=-1');
+    await page.goto(origin + '/legacy/test-tumvi.html?frames=5&speed=-1');
     await page.waitForFunction(() => window.__tumviReplay && !document.getElementById('btn-start').disabled, null, { timeout: 15000 });
     const rotations = await page.evaluate(async () => {
-        const { Camera } = await import('/js/camera.js?v=14');
+        const { Camera } = await import('/legacy/js/camera.js?v=14');
         const source = document.createElement('canvas'); source.width = 2; source.height = 3;
         const ctx = source.getContext('2d'); const rgba = ctx.createImageData(2,3);
         [10,20,30,40,50,60].forEach((value,i) => { rgba.data.set([value,value,value,255],i*4); }); ctx.putImageData(rgba,0,0);

@@ -82,7 +82,7 @@ def main():
         actual = json.loads(installed.read_text())["version"] if installed.is_file() else None
         packages[name] = {"expected": expected, "installed": actual, "status": "VERIFIED" if expected == actual else "BLOCKED"}
     hashes = {}
-    for relative in ("CMakeLists.txt", "wasm/CMakeLists.txt", "src/vio_engine.cpp", "src/backend/estimator.cpp", "web/js/app.js", "web/vio_engine.js", "web/vio_engine.wasm"):
+    for relative in ("legacy/vins-mono/CMakeLists.txt", "legacy/vins-mono/wasm/CMakeLists.txt", "legacy/vins-mono/src/vio_engine.cpp", "legacy/vins-mono/src/backend/estimator.cpp", "web/legacy/js/app.js", "web/legacy/vio_engine.js", "web/legacy/vio_engine.wasm"):
         path = ROOT / relative
         if path.is_file():
             with path.open("rb") as source:

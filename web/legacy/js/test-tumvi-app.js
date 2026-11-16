@@ -472,7 +472,7 @@ class TUMVITestApp {
             const urlParams = new URLSearchParams(window.location.search);
             const wasmFile = urlParams.get('wasm') || 'vio_engine.js';
             this.log(`Loading WASM: ${wasmFile}`);
-            await this.vio.load('/' + wasmFile);
+            await this.vio.load('/legacy/' + wasmFile);
 
             // Forward C++ stdout/stderr to log, filtering Ceres miniglog noise
             const _ceresNoise = /detect_structure|block_sparse_matrix|schur_eliminator|callbacks\.cc|trust_region_minimizer|Schur complement|Dynamic .* block size|Allocating values array|Terminating:/;

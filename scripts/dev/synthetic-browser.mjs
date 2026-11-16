@@ -218,11 +218,11 @@ async function rendererAssets() {
 
 async function rawReplay(page, input, frames, batches, imuPolicy) {
     return page.evaluate(async ({ input, frames, batches, imuPolicy }) => {
-        const { VIOWrapper } = await import('/js/vio-wrapper.js');
+        const { VIOWrapper } = await import('/legacy/js/vio-wrapper.js');
         const vio = new VIOWrapper({ frameTimeoutMs: 60000 });
         const rows = [], accepted = [];
         try {
-            await vio.load('/candidate/vio_engine.js');
+            await vio.load('/legacy/candidate/vio_engine.js');
             const p = input.parameters;
             const config = { ...input.config, execution_seed: p.execution[0], cv_threads: p.execution[1] };
             if (!await vio.configure(config)) throw new Error('Synthetic config rejected');
@@ -624,10 +624,10 @@ export async function main(argv = process.argv.slice(2)) {
         : 'IMU future-bracket: mathematical input replay with endpoint samples supplied before each frame; not-live-schedule. Recorded arrival timing and live wall latency are not reproduced.');
     const routes = new Map();
     const addFile = async (url, file, mime) => { const bytes=await fs.readFile(file); routes.set(url,{bytes,mime}); report.fingerprints[url]={path:file,bytes:bytes.length,sha256:sha(bytes)}; };
-    await addFile('/candidate/vio_engine.js', loaderFile, 'application/javascript');
+    await addFile('/legacy/candidate/vio_engine.js', loaderFile, 'application/javascript');
     report.fingerprints['scripts/dev/synthetic-browser.mjs']={sha256:sha(await fs.readFile(fileURLToPath(import.meta.url)))};
-    await addFile('/', path.join(root, 'web/index.html'), 'text/html');
-    for (const name of ['app.js','vio-wrapper.js','vio-worker.js','low-feature.mjs','capture-worker.js','camera.js','imu.js','orientation.js','renderer.js']) await addFile(`/js/${name}`, path.join(root,'web/js',name), 'application/javascript');
+    await addFile('/legacy/', path.join(root, 'web/legacy/index.html'), 'text/html');
+    for (const name of ['app.js','vio-wrapper.js','vio-worker.js','low-feature.mjs','capture-worker.js','camera.js','imu.js','orientation.js','renderer.js']) await addFile(`/legacy/js/${name}`, path.join(root,'web/legacy/js',name), 'application/javascript');
     for (const [index, frame] of frames.entries()) {
         const file = await fs.realpath(path.join(imageRoot, frame.file)); if (!inside(imageRoot,file)) throw new Error('Frame link escapes input directory');
         const bytes = await fs.readFile(file), gray = parsePGM(bytes, input.config.width, input.config.height);
@@ -678,7 +678,7 @@ export async function main(argv = process.argv.slice(2)) {
         if(values.mode!=='raw'&&requestedRotationRescue!==null)query.set('rotation-rescue',requestedRotationRescue?'1':'0');
         if(values.mode!=='raw'&&values.capture==='worker')query.set('capture','worker');
         if(values.mode!=='raw'&&input.config.lowFeature===true)query.set('low-feature','1');
-        await page.goto(`http://127.0.0.1:${server.address().port}/${values.mode==='raw'?'':`?${query}`}`);
+        await page.goto(`http://127.0.0.1:${server.address().port}/${values.mode==='raw'?'':`legacy/?${query}`}`);
         report.replay=await Promise.race([values.mode==='raw'?rawReplay(page,input,frames,imuBatches,imuPolicy):liveReplay(page,input,frames,values.mode,values.capture),
             new Promise((_,reject)=>{timer=setTimeout(()=>reject(new Error('Bounded synthetic browser timeout')),timeoutMs);})]);
         validateResultIdentity(report.replay.rows,report.replay.accepted);
