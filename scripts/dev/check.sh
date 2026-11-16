@@ -6,6 +6,9 @@ jobs="${MOBILE_SLAM_JOBS:-2}"
 duration="${MOBILE_SLAM_TIMEOUT:-900}"
 python_path="${MOBILE_SLAM_PYTHON:-python3}"
 [[ "$jobs" =~ ^[1-4]$ ]] || { echo 'MOBILE_SLAM_JOBS must be 1..4' >&2; exit 2; }
+# Test processes run at once by refact-native ctest (not compile jobs; those stay at MOBILE_SLAM_JOBS).
+test_jobs="${MOBILE_SLAM_TEST_JOBS:-16}"
+[[ "$test_jobs" =~ ^([1-9]|[12][0-9]|3[0-2])$ ]] || { echo 'MOBILE_SLAM_TEST_JOBS must be 1..32' >&2; exit 2; }
 [[ "$duration" =~ ^[1-9][0-9]*$ ]] || { echo 'MOBILE_SLAM_TIMEOUT must be positive seconds' >&2; exit 2; }
 
 check_mode() {
@@ -63,7 +66,7 @@ check_mode() {
       timeout "$duration" cmake --build "$rn_dir" --parallel "$jobs" || return "$?"
       rm -f "$rn_dir/unit.junit.xml"
       # ctest exits nonzero for the known failure; the ledger decides from the JUnit file.
-      timeout "$duration" ctest --test-dir "$rn_dir" --no-tests=error -L '^unit$' --parallel "$jobs" \
+      timeout "$duration" ctest --test-dir "$rn_dir" --no-tests=error -L '^unit$' --parallel "$test_jobs" \
         --output-junit "$PWD/$rn_dir/unit.junit.xml" || true
       "$python_path" scripts/dev/ci-ledger.py --junit "$rn_dir/unit.junit.xml" --mode refact-native \
         --known slam_refact/engine/tests/known-failures.json \
@@ -84,9 +87,26 @@ check_mode() {
       "$python_path" slam_refact/engine/tools/check_vendor.py --data || return "$?"
       "$python_path" slam_refact/engine/tools/check_std_algos.py
       ;;
+    rs0-fast|rs0-full)
+      # RS-0 parity gate (scripts/dev/rs0-gate.py): parallel replays + replay cache. rs0-full is the merge gate.
+      local tier="${1#rs0-}"
+      local rs_native="${SLAM_REFACT_RS0_NEW_NATIVE:-${SLAM_REFACT_NATIVE_BUILD_DIR:-build/dev-refact-native}/harness/slam_refact_replay}"
+      local -a rs_args=(--tier "$tier" --new-native "$rs_native" --label "check-$1"
+        --out "build/rs0-gate/$1-$(date +%Y%m%dT%H%M%S)")
+      if [[ -n "${SLAM_REFACT_RS0_ROOT:-}" ]]; then rs_args+=(--root "$SLAM_REFACT_RS0_ROOT"); fi
+      if [[ -n "${SLAM_REFACT_RS0_JOBS:-}" ]]; then rs_args+=(--jobs "$SLAM_REFACT_RS0_JOBS"); fi
+      if [[ -n "${SLAM_REFACT_RS0_NEW_WASM:-}" ]]; then
+        rs_args+=(--new-wasm "$SLAM_REFACT_RS0_NEW_WASM")
+      elif [[ "$tier" == full ]]; then
+        echo 'rs0-full needs SLAM_REFACT_RS0_NEW_WASM (dir with slam_refact_engine.js/.wasm)' >&2; return 2
+      else
+        rs_args+=(--sections parity,off,exact)
+      fi
+      "$python_path" scripts/dev/rs0-gate.py "${rs_args[@]}"
+      ;;
     mcp) timeout 120 node scripts/dev/mcp-probe.mjs ;;
     browser) timeout "$duration" node scripts/dev/browser-baseline.mjs ;;
-    *) echo 'Usage: scripts/dev/check.sh {doctor|syntax|eval|quick|browser-contracts|mobile-contracts|native|refact-native|refact-web|refact-tools|wasm-build|clangd|mcp|browser|all}' >&2; return 2 ;;
+    *) echo 'Usage: scripts/dev/check.sh {doctor|syntax|eval|quick|browser-contracts|mobile-contracts|native|refact-native|refact-web|refact-tools|rs0-fast|rs0-full|wasm-build|clangd|mcp|browser|all}' >&2; return 2 ;;
   esac
 }
 

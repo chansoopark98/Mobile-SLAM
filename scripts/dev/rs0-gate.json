@@ -1,0 +1,43 @@
+{
+ "schema": "slam-refact-rs0-gate-v1",
+ "note": "RS-0 items, same as build/audit-run1-20261115/rs0/scripts/run-rs0.sh (RS-0a..d). Paths are relative to --root.",
+ "parity": {
+  "bundle_root": "build/slam-refact-f3-20261025/parity/bundles",
+  "items": [["tum-room1-full", "par"], ["tum-room1-lowtex", "par"], ["flip6-s2", "par"], ["flip6-s3-lowtex", "par"],
+            ["flip6-n1", "par"], ["flip6-s2-absolute", "par"], ["tum-room1-full-absolute", "par"],
+            ["flip6-s2", "inj"], ["tum-room1-full", "inj"]]
+ },
+ "off": {
+  "reps": ["a", "b"],
+  "items": [["s2", "build/xr-drift-trace-20261030/bundles/flip6-arcore-s2/k425"],
+            ["s3", "build/xr-drift-trace-20261030/bundles/flip6-arcore-s3/k425"],
+            ["l1", "build/xr-drift-trace-20261030/bundles/flip6-arcore-l1/k425"],
+            ["tum-room1", "build/xr-drift-p2-20261031/bundles/tum-room1-full/e0"],
+            ["tum-room2", "build/xr-drift-p2-20261031/bundles/tum-room2-full/e0"],
+            ["tum-room4", "build/xr-drift-p2-20261031/bundles/tum-room4-full/e0"]]
+ },
+ "wasm": {
+  "bundle_root": "build/slam-refact-f3-20261025/parity/bundles",
+  "items": [["tum-room1-full", "par", 400], ["flip6-s2", "par", 400], ["flip6-s2-absolute", "par", 400],
+            ["tum-room1-full", "inj", 22], ["flip6-s3-lowtex", "par", 380]]
+ },
+ "exact": {
+  "lists": ["build/slam-refact-full-20261019/us026/fix-cc1/verify/parity/list1.txt",
+            "build/slam-refact-full-20261019/us026/fix-cc1/verify/parity/list2.txt"]
+ },
+ "fast": {
+  "note": "Fast tier: every native bundle cut to its first native_frames input frames (frozen and new replay the same cut bundle), WASM items capped at wasm_frames. Not a merge gate.",
+  "native_frames": 300,
+  "wasm_frames": 120
+ },
+ "defaults": {
+  "frozen_native": "build/slam-refact-full-c2-20261020-or1pair/native/harness/slam_refact_replay",
+  "frozen_wasm": "build/slam-refact-full-c2-20261020-or1pair/wasm/wasm",
+  "frozen_pins": {"native": "24fdba2a2b0da97d2f9c12770b19abf12a5f50d42fcc73359b699b47705000a2",
+                  "wasm_js": "e59c52fd33ad7f5810fc5fe146b28753d624a6c3360ea27ed3967571dcb3d885",
+                  "wasm_wasm": "3ed13678fb75333ddb2fd37dd9e4ad5bec7fce7998b91f573be84bc8d4cbbbe6"},
+  "quarantine_links": ["slam-refact-20261015", "slam-refact-20261016", "flip6-20261015", "slam-refact-f3-20261025",
+                       "slam-refact-full-c2-20261020-or1pair", "slam-refact-full-20261019", "xr-drift-trace-20261030",
+                       "xr-drift-p2-20261031"]
+ }
+}

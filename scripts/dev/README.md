@@ -39,6 +39,33 @@ npm ci --prefix scripts/dev
 - JavaScript syntax 검사는 ESLint나 TypeScript typecheck가 아닙니다.
 - 별도 SLAM 엔진의 build·unit·WASM 명령은 [slam_refact 안내](../../slam_refact/README.md)를 확인합니다.
 
+- `refact-native`의 ctest 동시 실행 수는 `MOBILE_SLAM_TEST_JOBS`(기본 16, 1..32)입니다. compile jobs와 별개입니다. 같은 g2 build의 unit 877건에서 `-j2` 369 s → `-j16` 116 s, 실패·skip 집합 동일(알려진 실패 1건, skip 2건). 하한은 가장 긴 test(약 94 s)입니다.
+
+## slam_refact RS-0 parity gate (fast / full)
+
+```bash
+SLAM_REFACT_RS0_NEW_NATIVE=<build>/harness/slam_refact_replay bash scripts/dev/check.sh rs0-fast
+SLAM_REFACT_RS0_NEW_NATIVE=<build>/harness/slam_refact_replay SLAM_REFACT_RS0_NEW_WASM=<wasm build>/wasm \
+  bash scripts/dev/check.sh rs0-full
+python3 scripts/dev/rs0-gate.py --tier fast --new-native <bin> --out build/<lane>/rs0-fast --plan-only
+```
+
+| tier | 용도 | 내용 |
+|---|---|---|
+| `rs0-full` | merge gate | RS-0a exact-input 24건, RS-0b native parity 9건(frozen or1pair vs new), RS-0c WASM parity 5건, RS-0d OFF 결정성 6건 × 2회. 항목·비교 field·제외 항목(trace `srStageMs`, meta `wallSeconds`·`contractVersion`, WASM `wallMs`·`pose.stageMs`)은 `build/audit-run1-20261115/rs0/scripts/run-rs0.sh`와 같음 |
+| `rs0-fast` | 일상 반복 | 같은 항목을 native bundle 앞 300 input frame, WASM 120 frame으로 자름(frozen과 new가 같은 잘린 bundle 재생). merge gate가 아님. WASM은 `SLAM_REFACT_RS0_NEW_WASM`이 있을 때만 |
+
+- 항목 목록은 `scripts/dev/rs0-gate.json`, 결과는 `build/rs0-gate/<mode>-<time>/SUMMARY.json`(구간별 verdict, 단계별 시간, 실행·재사용 replay 수, 평균 사용 core 수)입니다. 기록 한 줄이 `build/rs0-cache/ledger.jsonl`에 추가됩니다.
+- 모든 replay(native·WASM)는 독립 process로 한 pool에서 긴 것부터 실행합니다. 기본 `--jobs`는 `min(24, nproc×3/4)`(i9-13900K: 8 P-core + 16 E-core에서 16 → 24로 cold full 11m19s → 9m53s), `SLAM_REFACT_RS0_JOBS`로 바꿉니다. 이것은 replay 실행 수이며 build jobs(1–4) 규칙과 별개입니다. 엔진 solver는 thread 1개이고 `iterative_bundle_adjustment.cc`의 `max_solver_time_in_seconds=0.2`(1점 문제)가 있으므로 core 수보다 많은 jobs는 쓰지 않습니다.
+- replay 결과는 `build/rs0-cache/runs/<key>`에 저장합니다. key는 binary sha256(+ `ldd` shared library sha256), `--bundle` 인자 문자열(meta.json에 기록됨), bundle 파일과 `frames.tsv`가 가리키는 image·pyramid 파일의 내용 hash, frame 상한, 반복 tag(RS-0d a/b), 환경 scrub 규칙입니다. 같은 key의 성공한 run이 있으면 재실행하지 않습니다. frozen 기준 결과는 한 번만 계산되고, 바뀌지 않은 new binary의 parity·exact·WASM replay도 다시 돌지 않습니다. 실패한 run은 cache하지 않습니다(`build/rs0-cache/failed/`).
+- RS-0d(OFF 결정성)의 rep a·b는 cache와 무관하게 gate를 돌릴 때마다 두 번 새로 실행합니다(`run-rs0.sh`와 같음). `--fresh`는 new binary·WASM replay도 모두 다시 실행합니다. 다시 실행한 run이 cache 항목을 대체하고, 이전 항목은 `build/rs0-cache/superseded/`로 옮깁니다. gate 출력 디렉터리에는 run 파일의 hardlink 복사본이 들어가므로 cache가 바뀌어도 이전 증거는 그대로입니다.
+- frozen 기준은 `defaults.frozen_pins`(native·WASM js·wasm sha256)로 고정합니다. 다르면 실행을 거부하고, `--allow-unpinned-frozen`이면 실행하되 `merge_gate: false`입니다. new가 frozen과 같은 sha256이면 거부합니다. `merge_gate: true`는 full tier, 네 구간 모두, pin 일치일 때만입니다.
+- 엔진에는 wall-clock 상한이 있는 solve가 있습니다(원본 그대로인 vendored `bundle.cc` pose estimation 1.0 s, mapTracker 단계; `iterative_bundle_adjustment.cc` 0.2 s, mapBuilder 단계). process가 그보다 오래 멈추면(메모리 부족·swap, 과부하) 결과가 바뀔 수 있습니다. 2026-11-16 14:10 전역 OOM(다른 작업의 compile 중, swap 0) 동안 실행한 full run은 mapTracker 최대 8.1 s 정지와 함께 FAIL했고, 부하 없는 run은 모든 단계 0.45 s 미만이었습니다. 그래서 단계 시간이 그 상한에 닿은 frame이 있는 replay는 `stalled_replays`로 보고하고 cache하지 않습니다(`build/rs0-cache/unstable/`). verdict는 바꾸지 않습니다. 그런 FAIL은 부하 없는 상태에서 다시 실행한 뒤 판단합니다. replay는 `MemAvailable`이 `--min-free-gb`(기본 4) 이상일 때만 시작합니다.
+- 병렬 실행이 결과를 바꾸지 않음: 같은 binary로 16 jobs·24 jobs cold full 두 번의 trace·worldpoints·exact·WASM 출력이 순차 실행 증거(`build/audit-run1-20261115/rs0`)와 `wallSeconds` 외 동일했습니다. accuracy OFF에서 시간 상한이 있는 solver는 `iterative_bundle_adjustment.cc`(1점 문제, 0.2 s)뿐이고 `local_bundle_adjustment`는 accuracy mode에서만 실행됩니다.
+- replay 환경에서 `SLAM_REFACT_*`, `SR_*`, `TRKPROBE_*` 변수를 모두 제거합니다(accuracy mode OFF).
+- 끝에 quarantine symlink(`defaults.quarantine_links`)에서 시작 marker보다 새 파일을 찾고, 하나라도 있으면 FAIL입니다.
+- 이 checkout에 `build/`가 없으면(worktree) `SLAM_REFACT_RS0_ROOT`로 data root를 지정합니다.
+
 ## Reproducible input and replay
 
 ```bash
