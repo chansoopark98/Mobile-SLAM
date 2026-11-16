@@ -27,7 +27,7 @@
 // runs onProcessCpu inside the pre-render try block, and one throw there skips onUpdate and the camera texture
 // upload of every later frame.
 import { ENGINE_DIR, loadEngine } from './engine-loader.js';
-import { Gr8ComputePyramid } from './gr8-compute-pyramid.js';
+import { Gr8ComputePyramid, OwnedDisplaySnapshots } from './gr8-compute-pyramid.js';
 import { dispatchImageEvents } from './image-events.js';
 import { createImageTargets } from './image-targets.js';
 import { createSensors, pushMotion } from './sensors.js';
@@ -115,8 +115,73 @@ function captureRoiSlots(s, atlas, rois, stageIndex) {
     }) };
 }
 
+// P1-I1 is constructor-only and opt-in. Identity is not a calibration profile or an accuracy switch.
+function deviceIdentityOptions(value) {
+  if (!value || value.enabled !== true) return null;
+  const timeoutMs = value.timeoutMs ?? 1000;
+  if (!Number.isFinite(timeoutMs) || timeoutMs < 1 || timeoutMs > 5000) {
+    throw new Error('[XR] deviceIdentity.timeoutMs must be between 1 and 5000');
+  }
+  let fallback = null;
+  if (value.fallback !== undefined) {
+    const input = value.fallback;
+    if (!input || typeof input.model !== 'string' || !input.model.trim()) {
+      throw new Error('[XR] deviceIdentity.fallback.model must be a non-empty string');
+    }
+    const text = (name, def = '') => {
+      const v = input[name] ?? def;
+      if (typeof v !== 'string' || v.length > 128 || /[\x00-\x1f\x7f]/.test(v)) {
+        throw new Error(`[XR] deviceIdentity.fallback.${name} must be a string of at most 128 printable characters`);
+      }
+      return v.trim();
+    };
+    fallback = { model: text('model'), manufacturer: text('manufacturer'), profileId: text('profileId'), source: 'explicit-fallback' };
+  }
+  return { timeoutMs, fallback };
+}
+
+async function resolveDeviceIdentity({ timeoutMs, fallback }) {
+  let timer;
+  let highEntropyStatus = 'unavailable';
+  const expired = Symbol('timeout');
+  try {
+    const uaData = globalThis.navigator?.userAgentData;
+    if (typeof uaData?.getHighEntropyValues === 'function') {
+      const result = await Promise.race([
+        Promise.resolve().then(() => uaData.getHighEntropyValues(['model'])),
+        new Promise((resolve) => { timer = setTimeout(() => resolve(expired), timeoutMs); }),
+      ]);
+      if (result === expired) highEntropyStatus = 'timed-out';
+      else if (typeof result?.model === 'string' && result.model.trim()
+          && result.model.length <= 128 && !/[\x00-\x1f\x7f]/.test(result.model)) {
+        // UA-CH supplies model, not manufacturer. Let the engine's existing model resolver use it.
+        return { selected: { manufacturer: '', model: result.model.trim(), source: 'userAgentData.model' }, highEntropyStatus: 'available' };
+      } else highEntropyStatus = 'empty-or-invalid-model';
+    }
+  } catch (_) {
+    highEntropyStatus = 'rejected';
+  } finally { clearTimeout(timer); }
+  return { selected: fallback, highEntropyStatus };
+}
+
 const XrControllerFactory = singleton((runConfig, xrccPromise, logCallback, errorCallback) => {
   const options = (typeof window !== 'undefined' && window.SLAM_REFACT_CHUNK_OPTIONS) || {};
+  // FX-E3 (opt-in): validated here, before the engine load starts, so a malformed value leaves nothing running.
+  const trustedMessageOrigins = options.trustedMessageOrigins;
+  if (trustedMessageOrigins !== undefined && (!Array.isArray(trustedMessageOrigins) || !trustedMessageOrigins.every((o) => typeof o === 'string'))) {
+    throw new Error('[XR] SLAM_REFACT_CHUNK_OPTIONS.trustedMessageOrigins must be an array of origin strings');
+  }
+  const schedulerRequested = options.frameScheduler?.enabled === true && options.frameScheduler.mode === 'gpu-task-owned-v1';
+  let schedulerEnabled = schedulerRequested;
+  let schedulerFallbackReason = null;
+  const identityOptions = deviceIdentityOptions(options.deviceIdentity);  // value copy before any await
+  let resolvedIdentity = null;
+  const deliveryOptions = options.deliveryDiagnostics?.enabled === true || schedulerEnabled
+    ? { enabled: true, maxEntries: Number.isInteger(options.deliveryDiagnostics?.maxEntries)
+      && options.deliveryDiagnostics.maxEntries >= 1 && options.deliveryDiagnostics.maxEntries <= 1024
+      ? options.deliveryDiagnostics.maxEntries : 256 } : null;
+  const responseEntries = [];
+  let responseNext = 0, responseTotal = 0, publication = null, nextSessionEpoch = 0, lastPublishedSource = null;
   const diag = window.__slamRefactChunk = {
     chunk: 'slam_refact', engine: null, error: null, session: null, gpuCheck: [], roiCheck: [], warnings: [], sessionLog: [],
     stats: { stagedFrames: 0, processedFrames: 0, freshResponses: 0, droppedStaged: 0, motionEventsPushed: 0,
@@ -161,10 +226,82 @@ const XrControllerFactory = singleton((runConfig, xrccPromise, logCallback, erro
   // xrccPromise is not used: the original only needs XRCC to share its Emscripten GL texture table
   // (scc.GL.textures = xrcc.GL.textures); this chunk uses XR8's computeTexture objects directly.
   let engine_ = null;  // {Module, loaded}; the original's `scc_`
-  const enginePromise = loadEngine(new URL(ENGINE_DIR, import.meta.url),
-    { print: logCallback(false), printErr: logCallback(true), onAbort: errorCallback })
+  let ew_ = null;      // R1: the engine Worker client when the engine runs in a Worker (opt-in), else null
+  // Measurement option (default OFF, SLAM_REFACT_CHUNK_OPTIONS.frameDoneMarks === true), same code in the main-thread and the Worker mode:
+  //   performance.mark('sr-frame-start:<n>')  at the FIRST main-thread work of the chunk for a camera frame: the entry of onProcessGpu, before
+  //                                           anything is staged or submitted. n = the frame's ordinal: 0, 1, 2, ... over the non-repeat frames the
+  //                                           chunk is called with, unless the page names the next one with diag.setFrameOrdinal(n) (the harness
+  //                                           numbers the recorded frames 1, 2, 3, ... and the frames it feeds before the recording apart).
+  //   performance.mark('sr-frame-done:<n>')   once ALL main-thread handling of the engine response to frame n has returned. The response to frame
+  //                                           n is what processing frame n returns (the pose of the frame before it, fresh, or a repeat of the
+  //                                           previous pose during the startup recenter): every processed frame has exactly one, including the
+  //                                           last one, so no extra frame is needed to complete it. The response is applied inside onProcessCpu
+  //                                           (the Worker mode: when the Worker's answer is drained, one callback later); XR8 then runs the other
+  //                                           modules' onUpdate / onRender synchronously in the same loop callback, so the mark is queued as a
+  //                                           microtask, which runs when that whole callback has returned. Nothing for the frame is scheduled
+  //                                           after the mark.
+  // Without the option: one boolean test per frame / response, no counter, no frame field, no performance.mark.
+  const frameDoneMarks = options.frameDoneMarks === true && typeof globalThis.performance?.mark === 'function';
+  const doneQueue = [];
+  let doneScheduled = false, frameOrdinal_ = 0;
+  if (frameDoneMarks) {
+    diag.setFrameOrdinal = (n) => { frameOrdinal_ = n; };
+    diag.resultSeqs = [];  // the ordinals whose results were handled since the page last drained this list (the harness attributes its update callbacks)
+  }
+  const markFrameStart = () => {
+    const n = frameOrdinal_++;
+    globalThis.performance.mark(`sr-frame-start:${n}`);
+    return n;
+  };
+  const noteFrameDone = (f) => {
+    if (!frameDoneMarks || f.seq === undefined) return;
+    diag.resultSeqs.push(f.seq);
+    doneQueue.push(f.seq);
+    if (doneScheduled) return;
+    doneScheduled = true;
+    queueMicrotask(() => {
+      doneScheduled = false;
+      for (const m of doneQueue.splice(0)) globalThis.performance.mark(`sr-frame-done:${m}`);
+    });
+  };
+  // R1 (opt-in, default OFF): the engine in a dedicated Worker. Nothing of it runs, and engine-worker-client.js is not imported, unless
+  // requested by SLAM_REFACT_CHUNK_OPTIONS.engineWorker (true / {enabled: true}) or ?engineWorker=1. Distinct from ?capture=worker.
+  const engineWorkerAsked = options.engineWorker === true || options.engineWorker?.enabled === true
+    || (options.engineWorker !== false && options.engineWorker?.enabled !== false
+      && (() => { try { return new URLSearchParams(globalThis.location?.search ?? '').get('engineWorker') === '1'; } catch (_) { return false; } })());
+  if (engineWorkerAsked) diag.engineWorker = { requested: true, active: false, fallback: null, stats: null, compileFeatures: null,
+    maxInFlight: Math.max(1, options.engineWorker?.maxInFlight | 0 || 4), pendingBuilds: 0, deferredBuilds: 0,
+    engineMsMeaning: 'main-thread cost of submitting the frame (stats.workerEngineMs is the Worker-side engine time)',
+    limits: ['no frameScheduler', 'no createGlue hook', 'no gpuCheck/roiCheck', 'image targets refused', 'hitTest answers no hit',
+      'pose answers lag the main-thread mode by the frames in flight', 'framesUntilRecenter carried over a rebuild lags by the frames in flight'] };
+  const loadMainEngine = () => loadEngine(new URL(ENGINE_DIR, import.meta.url),
+    { print: logCallback(false), printErr: logCallback(true), onAbort: errorCallback });
+  // Worker first; any failure (no Worker, script error, engine/WASM failure with its classified code) is recorded and the engine is
+  // loaded on the main thread exactly as without the option. If that fails too, its error is the one the chunk reports.
+  const loadWorkerEngine = async () => {
+    const unsupported = options.frameScheduler?.enabled === true ? 'frameScheduler (B1prime) is not supported with engineWorker'
+      : options.createGlue ? 'the createGlue test hook cannot run in a Worker'
+        : options.gpuCheck || options.roiCheck ? 'gpuCheck / roiCheck need the engine on the main thread' : null;
+    try {
+      if (unsupported) throw Object.assign(new Error(`[XR] engineWorker not used: ${unsupported}`), { code: 'engine-worker-unsupported-option' });
+      const client = await import('./engine-worker-client.js');
+      return await client.loadEngineInWorker(new URL(ENGINE_DIR, import.meta.url),
+        { print: logCallback(false), printErr: logCallback(true), onAbort: errorCallback },
+        { maxInFlight: diag.engineWorker.maxInFlight, warn: (m) => warnOnce(m), onFatal: (error) => reportOnce('process', error),  // same key as the frame path's throw of it: one report
+          createWorker: options.engineWorker?.createWorker, workerUrl: options.engineWorker?.workerUrl });
+    } catch (error) {
+      diag.engineWorker.fallback = { code: error && error.code || 'engine-worker-failed', message: String(error && error.message || error) };
+      warnOnce(`[XR] slam_refact engineWorker unavailable (${diag.engineWorker.fallback.code}); the engine runs on the main thread: ${diag.engineWorker.fallback.message}`);
+      return loadMainEngine();
+    }
+  };
+  const enginePromise = (engineWorkerAsked ? loadWorkerEngine() : loadMainEngine())
     .then((r) => {
       engine_ = r;
+      if (r.worker) {
+        ew_ = r.worker;
+        Object.assign(diag.engineWorker, { active: true, stats: ew_.stats, compileFeatures: r.Module.SlamRefactGlue.getCompileFeatures() });
+      }
       // A test hook that replaces the engine glue must not leave the evidence "engine = manifest bytes" looking untouched.
       r.loaded.glueReplaced = !!options.createGlue;
       diag.engine = r.loaded;
@@ -172,7 +309,520 @@ const XrControllerFactory = singleton((runConfig, xrccPromise, logCallback, erro
     },
       (error) => { diag.error = String(error && error.message || error); diag.engineLoad = error.loaded ?? null; throw error; });
 
-  const sensors = createSensors(() => !engine_ || !window.XR8 || window.XR8.isPaused());
+  // No UA access, new promise or extra wait in the default parity arm. In the opt-in arm the
+  // controller is not exposed until this bounded request settles; late UA answers cannot change it.
+  const identityPromise = identityOptions ? resolveDeviceIdentity(identityOptions).then((result) => {
+    resolvedIdentity = result;
+    diag.deviceIdentity = { enabled: true, timeoutMs: identityOptions.timeoutMs,
+      highEntropyStatus: result.highEntropyStatus, selected: result.selected ? { ...result.selected } : null };
+  }) : null;
+
+  const sensors = createSensors(() => !engine_ || !window.XR8 || window.XR8.isPaused(), deliveryOptions);
+  // Per-frame recorder path: copy only the latest scalar receipt, not the full history rings.
+  const latestSourceTiming = () => publication ? { ...publication } : null;
+  Object.defineProperty(diag, 'sourceTiming', { enumerable: true, get: latestSourceTiming });
+  if (deliveryOptions) Object.defineProperty(diag, 'delivery', { enumerable: true, get: () => ({
+    schema: 'xr-passive-delivery-v1', mode: 'passive', enabled: true, physicalExposureVerified: false,
+    sourceTimeMeaning: 'WASM frame-time argument, not physical exposure',
+    publishTimeMeaning: 'not sampled here; recorder callback arrival is separate',
+    sourceTiming: latestSourceTiming(),
+    responses: { total: responseTotal, overwritten: Math.max(0, responseTotal - deliveryOptions.maxEntries),
+      entries: (responseTotal < deliveryOptions.maxEntries ? responseEntries
+        : responseEntries.slice(responseNext).concat(responseEntries.slice(0, responseNext))).map((e) => ({ ...e })) },
+    sensors: sensors.delivery.snapshot(),
+    stages: { stageMs: diag.stats.stageMs.slice(-deliveryOptions.maxEntries),
+      readMs: diag.stats.readMs.slice(-deliveryOptions.maxEntries), engineMs: diag.stats.engineMs.slice(-deliveryOptions.maxEntries) },
+    sourceMetadata: { entries: session_?.delivery?.sourceFrames.size ?? 0, evicted: session_?.delivery?.evicted ?? 0 },
+    maxSourceFrames: 64, maxEntries: deliveryOptions.maxEntries,
+  }) });
+
+  // B1′ owns one staged packet and one CPU mailbox. Native work runs only in a real task.
+  // The legacy path never constructs this state, its MessageChannel, or its GL allocations.
+  let schedulerEpoch = 0, schedulerControlledBytes = 0, schedulerPeakBytes = 0;
+  let schedulerSnapshotSlots = 0, schedulerSnapshotBytes = 0, schedulerSnapshotPeakBytes = 0;
+  let schedulerRebuilding = false, activePublication = null;
+  // D1's frozen frame schedule is 30 Hz; D2's longest synthetic task delay is 250 ms.
+  // 32 GPU ticks allow 1067 ms at 30 Hz (533 ms at 60 Hz, 267 ms at 120 Hz).
+  // Higher refresh rates are unverified. This recovery limit does not change D2's gate.
+  const MAX_STALLED_GPU_TICKS = 32;
+  let retireStallTicks = 0, retireWatchdogReported = false;
+  let glErrorStreak = 0;  // consecutive frames dropped for a preexisting GL error
+  const retiredSnapshotPools = [];
+  const MAX_DISCARD_MOTION_SEQS = 128;
+  const schedulerCounts = { admitted: 0, primingAcked: 0, processed: 0, publications: 0,
+    droppedBusy: 0, droppedCapacity: 0, droppedTargetWarmup: 0, discardedAdmissions: 0,
+    discardedReadyReceipts: 0, preAdmissionDiscards: 0, acceptedMotionSeqOverflow: 0,
+    lifecycleResets: 0, waits: 0, barrierResets: 0, errors: 0, errorCallbackErrors: 0, watchdogResets: 0,
+    droppedGlError: 0, hitTests: 0, hitMisses: 0,
+    partialDispatchCount: 0, startupDiscardedAdmissions: 0, staleTasks: 0, queryRejected: 0 };
+  const schedulerFailures = [];
+  const schedulerDiscards = [];
+  const reportSchedulerError = (where, error) => {
+    try { reportOnce(where, error); }
+    catch (callbackError) {
+      // An application error handler cannot be allowed to skip native recovery
+      // or escape from an XR8 GPU/CPU/MessageChannel callback.
+      schedulerCounts.errorCallbackErrors++;
+      pushEntry(schedulerFailures, { where: 'scheduler-error-callback', source: where,
+        message: String(callbackError?.message || callbackError),
+        epoch: session_?.scheduler ? { ...session_.scheduler.epoch } : null });
+    }
+  };
+  const schedulerCurrent = (s) => session_ === s && !!s?.scheduler && !s.scheduler.disposed;
+  const schedulerBusyReason = () => {
+    const q = session_?.scheduler;
+    return schedulerRebuilding ? 'rebuilding' : !q ? 'no-session' : q.nativeCallDepth ? 'native-call' : q.nativeAdvanced ? 'native-unpublished'
+      : q.publishing ? 'publishing' : q.queryNeedsFreshState ? 'await-first-publication' : null;
+  };
+  const schedulerDispatch = (framework, name, detail) => {
+    const tx = activePublication;
+    if (tx && !schedulerCurrent(tx.session)) throw new Error('[XR] B1prime stale publication');
+    if (tx) tx.dispatches++;
+    framework.dispatchEvent(name, detail);
+    if (tx && !schedulerCurrent(tx.session)) throw new Error('[XR] B1prime publication epoch changed in callback');
+  };
+  const makeScheduler = (s) => {
+    const q = { epoch: { sessionEpoch: s.delivery.epoch, schedulerEpoch: ++schedulerEpoch }, captureSeq: 0,
+      pending: null, ready: null, nativeAdvanced: false, nativeCallDepth: 0, publishing: false,
+      queryNeedsFreshState: true, expectNativePriming: true, admissions: new Map(), displayKey: null,
+      pollsThisTick: 0, taskQueued: false, disposed: false, controlledBytes: 0, peakBytes: 0,
+      tokens: new Set(), lastAdmission: null, lastSource: null, reentrantError: null,
+      busyState: null, busyTicks: 0 };
+    q.reserveBytes = (kind, bytes) => {
+      if (!Number.isSafeInteger(bytes) || bytes < 0 || schedulerControlledBytes + bytes > 64 * 1024 * 1024
+        || (kind === 'draw-snapshot' && schedulerSnapshotSlots >= 4)) return null;
+      const token = { kind, bytes }; q.tokens.add(token); q.controlledBytes += bytes; schedulerControlledBytes += bytes;
+      if (kind === 'draw-snapshot') {
+        schedulerSnapshotSlots++; schedulerSnapshotBytes += bytes;
+        schedulerSnapshotPeakBytes = Math.max(schedulerSnapshotPeakBytes, schedulerSnapshotBytes);
+      }
+      q.peakBytes = Math.max(q.peakBytes, q.controlledBytes);
+      schedulerPeakBytes = Math.max(schedulerPeakBytes, schedulerControlledBytes); return token;
+    };
+    q.releaseBytes = (token) => { if (q.tokens.delete(token)) {
+      q.controlledBytes -= token.bytes; schedulerControlledBytes -= token.bytes;
+      if (token.kind === 'draw-snapshot') { schedulerSnapshotSlots--; schedulerSnapshotBytes -= token.bytes; }
+    } };
+    const atlasBytes = s.layout.textureSize * Math.max(s.layout.rows, s.layout.roiAtlasRows || 0) * 4;
+    // Reserve the maximum owned atlas plus baseline PBO/read view conservatively before new allocations.
+    q.buffersToken = q.reserveBytes('atlas+pbo+read-view+control-reserve', 3 * atlasBytes + 1024 * 1024);
+    if (!q.buffersToken) throw new Error('[XR] B1prime 64MiB capacity exceeded');
+    try {
+      q.atlas = new Uint8Array(atlasBytes);
+      q.snapshots = new OwnedDisplaySnapshots(drawCtx_, { maxSlots: 4, reserveBytes: q.reserveBytes, releaseBytes: q.releaseBytes });
+      q.channel = new MessageChannel();
+      q.channel.port1.onmessage = () => {
+        q.taskQueued = false;
+        if (!schedulerCurrent(s)) { schedulerCounts.staleTasks++; return; }
+        schedulerTask(s);
+      };
+      // Node contract fixtures must not keep the process alive solely for an idle scheduler.
+      q.channel.port1.unref?.(); q.channel.port2.unref?.();
+      return q;
+    } catch (error) { q.snapshots?.dispose(); q.releaseBytes(q.buffersToken); throw error; }
+  };
+  const queueSchedulerTask = (s) => {
+    const q = s.scheduler;
+    if (schedulerCurrent(s) && q.pending && !q.taskQueued && q.pollsThisTick < 2) {
+      q.taskQueued = true; q.channel.port2.postMessage(0);
+    }
+  };
+  const schedulerNative = (s, fn) => {
+    const q = s.scheduler; q.nativeCalls = (q.nativeCalls || 0) + 1; q.nativeCallDepth++;
+    try {
+      const value = fn();
+      if (q.reentrantError) throw q.reentrantError;
+      return value;
+    } finally { q.nativeCallDepth--; }
+  };
+  const disposeScheduler = (s, reason = 'session-discard') => {
+    const q = s.scheduler;
+    if (!q || q.disposed) return;
+    if (q.nativeCallDepth) { q.reentrantError = new Error('[XR] B1prime cannot destroy an executing native call'); throw q.reentrantError; }
+    q.disposed = true;
+    q.channel.port1.close(); q.channel.port2.close();
+    if (q.nativeAdvanced && q.pending && ![...q.admissions.values()].includes(q.pending)) {
+      schedulerCounts.preAdmissionDiscards++;
+      pushEntry(schedulerDiscards, { reason, kind: 'unknown-native-admission',
+        captureSeq: q.pending.snapshotKey?.captureSeq ?? null, sourceVideoTimeS: q.pending.videoTime,
+        acceptedMotionSeqs: q.pending.acceptedMotionSeqs?.slice() ?? [],
+        acceptedMotionSeqOverflow: q.pending.acceptedMotionSeqOverflow ?? 0, epoch: { ...q.epoch } });
+    }
+    for (const [index, frame] of q.admissions) if (index !== q.lastSource) {
+      schedulerCounts.discardedAdmissions++;
+      pushEntry(schedulerDiscards, { reason, admissionFrameIndex: index, captureSeq: frame.snapshotKey?.captureSeq ?? null,
+        sourceVideoTimeS: frame.videoTime, acceptedMotionSeqs: frame.acceptedMotionSeqs?.slice() ?? [],
+        acceptedMotionSeqOverflow: frame.acceptedMotionSeqOverflow ?? 0, epoch: { ...q.epoch } });
+    }
+    if (q.ready?.kind === 'processed') {
+      schedulerCounts.discardedReadyReceipts++;
+      pushEntry(schedulerDiscards, { reason, kind: 'unpublished-processed',
+        sourceFrameIndex: q.ready.descriptor.sourceTiming.sourceFrameIndex, epoch: { ...q.epoch } });
+    }
+    sensors.delivery?.drop(q.pending?.events || [], 'scheduler-epoch-discard');
+    q.pending = null; q.ready = null; q.admissions.clear();
+    if (q.displayKey && !drawCtx_?.isContextLost?.()) {
+      // The renderer may still hold the committed texture during this CPU callback.
+      // Reject old-epoch lookups now, then free its GL allocation after a post-render fence.
+      q.snapshots.invalidateEpoch(q.epoch, 'scheduler-disposed');
+      retiredSnapshotPools.push(q.snapshots);
+    } else q.snapshots.dispose();
+    q.atlas = null; q.releaseBytes(q.buffersToken);
+  };
+  const drainRetiredSnapshotPools = (final = false) => {
+    for (let i = retiredSnapshotPools.length - 1; i >= 0; i--) {
+      const pool = retiredSnapshotPools[i];
+      try {
+        if (!pool.gl.isContextLost?.()) {
+          if (final) {
+            // Teardown has no later render callback; finish the draw stream before deletion.
+            pool.gl.finish();
+            pool.dispose();
+            retiredSnapshotPools.splice(i, 1);
+            continue;
+          }
+          pool.fenceRetiredAfterRender();
+          pool.pollRetired();
+          if (pool.stats().pendingRetire) continue;
+        }
+        pool.dispose();
+        retiredSnapshotPools.splice(i, 1);
+      } catch (error) {
+        schedulerCounts.errors++;
+        reportSchedulerError('scheduler-retired-snapshot', error);
+        if (final) {
+          // Stop has no later post-render callback. Release logical ownership even if
+          // the driver cannot confirm the fence; preserve the failure diagnostic.
+          try { pool.dispose(); } catch (disposeError) {
+            schedulerCounts.errors++;
+            reportSchedulerError('scheduler-retired-snapshot-dispose', disposeError);
+          }
+          retiredSnapshotPools.splice(i, 1);
+        }
+      }
+    }
+  };
+  const schedulerBarrier = (reason) => {
+    const s = session_;
+    if (!schedulerEnabled || !s) return;
+    if (schedulerRebuilding || s.scheduler?.nativeCallDepth) {
+      const error = new Error('[XR] B1prime mutator is busy during native call or rebuild');
+      if (s.scheduler) s.scheduler.reentrantError = error;
+      throw error;
+    }
+    const geometry = { videoWidth: s.videoWidth, videoHeight: s.videoHeight, rotation: diag.session.rotation, computeCtx: computeCtx_ };
+    schedulerRebuilding = true; schedulerCounts.barrierResets++;
+    try {
+      // Only committed state may seed a rebuild. Never copy s.last from an unpublished transaction.
+      if (s.scheduler.pending && !s.scheduler.nativeAdvanced) {
+        sensors.carryForStage(s.scheduler.pending.events); s.scheduler.pending = null; s.pending = null;
+      }
+      destroySession(`barrier:${reason}`); heldDesc_ = null; lastExtrinsic_ = null; intrinsics_ = null;
+      publication = null; lastPublishedSource = null;
+      if (!computeContextLost() && !drawCtx_?.isContextLost?.()) {
+        try {
+          session_ = createSession({ ...geometry, coords: { origin: origin_, facing: facing_ }, framesUntilRecenter: startupFramesLeft_ });
+        } catch (error) {
+          session_ = null;
+          schedulerCounts.errors++;
+          pushEntry(schedulerFailures, { where: 'scheduler-barrier-create', message: String(error?.message || error),
+            epoch: { ...s.scheduler.epoch }, nativeAdvanced: false, partialDispatchCount: 0 });
+          reportSchedulerError('scheduler-barrier-create', error);
+        }
+      }
+      pushEntry(diag.sessionLog, { event: 'scheduler-barrier', reason });
+    } finally { schedulerRebuilding = false; }
+  };
+  const schedulerFailure = (s, where, error) => {
+    schedulerCounts.errors++;
+    pushEntry(schedulerFailures, { where, message: String(error?.message || error), epoch: { ...s.scheduler.epoch },
+      nativeAdvanced: s.scheduler.nativeAdvanced, partialDispatchCount: activePublication?.dispatches || 0 });
+    schedulerCounts.partialDispatchCount += activePublication?.dispatches || 0;
+    // Report the original fault before rebuilding. The callback can itself change epochs.
+    reportSchedulerError(where, error);
+    if (schedulerCurrent(s)) {
+      // Only events that never entered native can be carried. Settled/uncertain entries cannot be replayed.
+      if (!s.scheduler.nativeAdvanced && s.scheduler.pending) {
+        sensors.carryForStage(s.scheduler.pending.events); s.scheduler.pending = null; s.pending = null;
+      }
+      try { schedulerBarrier(where); }
+      catch (barrierError) { schedulerCounts.errors++; reportSchedulerError('scheduler-barrier', barrierError); }
+    }
+  };
+  const schedulerBusyWatchdog = (s) => {
+    const q = s.scheduler;
+    const state = q.ready ? 'ready' : q.nativeAdvanced ? 'native-advanced' : 'pending';
+    if (q.busyState !== state) { q.busyState = state; q.busyTicks = 0; }
+    if (++q.busyTicks < MAX_STALLED_GPU_TICKS) return false;
+    schedulerCounts.watchdogResets++;
+    schedulerFailure(s, 'scheduler-watchdog', new Error(`[XR] B1prime ${state} stalled for ${MAX_STALLED_GPU_TICKS} GPU ticks`));
+    return true;
+  };
+  const schedulerRetireWatchdog = (s) => {
+    const pendingRetire = s.scheduler.snapshots.stats().pendingRetire
+      + retiredSnapshotPools.reduce((n, pool) => n + pool.stats().pendingRetire, 0);
+    if (schedulerSnapshotSlots < 4 || pendingRetire === 0) {
+      retireStallTicks = 0; retireWatchdogReported = false; return false;
+    }
+    if (retireWatchdogReported || ++retireStallTicks < MAX_STALLED_GPU_TICKS) return false;
+    // A barrier may invalidate native history, but it cannot free an unsignaled GL fence.
+    // Latch the warning until a fence signals to avoid a rebuild loop on permanent GPU stalls.
+    retireWatchdogReported = true; schedulerCounts.watchdogResets++;
+    schedulerFailure(s, 'scheduler-retire-watchdog', new Error(`[XR] B1prime retired snapshots blocked all four slots for ${MAX_STALLED_GPU_TICKS} GPU ticks`));
+    return true;
+  };
+  const schedulerTask = (s) => {
+    const q = s.scheduler, f = q.pending;
+    if (!f || q.ready || !schedulerCurrent(s)) return;
+    try {
+      q.pollsThisTick++;
+      if (!s.pyramid.isReadReady()) { schedulerCounts.waits++; queueSchedulerTask(s); return; }
+      const t0 = performance.now(), view = s.pyramid.readReady(), rows = s.pyramid.lastReadRows;
+      if (!view || view.byteLength > q.atlas.byteLength) throw new Error('[XR] B1prime invalid atlas read');
+      q.atlas.set(view); const atlas = q.atlas.subarray(0, view.byteLength);
+      pushSample(diag.stats.readMs, performance.now() - t0);
+      // Before the first native mutator, including push and callback re-entry from native.
+      q.nativeAdvanced = true; q.queryNeedsFreshState = true;
+      sensors.delivery?.process(f.events);
+      for (const e of f.events) {
+        let accepted;
+        try { accepted = schedulerNative(s, () => pushMotion(s.glue, e)); }
+        catch (error) { sensors.delivery?.uncertain(e); throw error; }
+        if (accepted) {
+          sensors.delivery?.pushed(e);
+          const seq = sensors.delivery?.seqOf(e);
+          if (seq !== null && seq !== undefined) {
+            const receipts = f.acceptedMotionSeqs ||= [];
+            if (receipts.length < MAX_DISCARD_MOTION_SEQS) receipts.push(seq);
+            else { f.acceptedMotionSeqOverflow = (f.acceptedMotionSeqOverflow ?? 0) + 1; schedulerCounts.acceptedMotionSeqOverflow++; }
+          }
+          diag.stats.motionEventsPushed++;
+        }
+        else { sensors.delivery?.drop([e], 'invalid-interval'); diag.stats.motionEventsSkipped++; }
+      }
+      schedulerNative(s, () => s.glue.pushDeviceOrientation(f.timeNanos, Number(f.alpha), Number(f.beta), Number(f.gamma)));
+      const beforeStartup = schedulerNative(s, () => s.glue.getFramesUntilRecenter());
+      const t1 = performance.now();
+      const engineInputTime = f.frameTime ? f.frameTime * 1e9 : f.timeNanos;
+      const videoTimeNanos = f.videoTime * 1e9;
+      const pose = schedulerNative(s, () => s.glue.processFramePyramid(engineInputTime,
+        videoTimeNanos, atlas, s.layout.textureSize, rows));
+      const index = pose.videoFrameIndex;
+      if (!Number.isInteger(index) || index < 0 || q.admissions.has(index)) throw new Error('[XR] B1prime invalid native admission index');
+      // Record native admission before every fallible getter/receipt assembly operation.
+      if (!q.snapshots.retain(f.snapshotKey, 'enginePrevious')) throw new Error('[XR] B1prime incoming snapshot expired');
+      q.admissions.set(index, f); q.lastAdmission = index;
+      const inputTimeNanos = engineInputTime;
+      s.delivery.sourceFrames.set(index, { sourceVideoTimeS: f.videoTime, sourceFrameTimeS: f.frameTime ?? null,
+        sourceTimeNanosInput: inputTimeNanos, sourceTimeNanos: Math.trunc(inputTimeNanos),
+        sourceStageTimeNanos: f.timeNanos, sessionEpoch: q.epoch.sessionEpoch });
+      while (s.delivery.sourceFrames.size > 64) { s.delivery.sourceFrames.delete(s.delivery.sourceFrames.keys().next().value); s.delivery.evicted++; }
+      s.delivery.responses++;
+      const engineReturnedAtMs = performance.now();
+      pushSample(diag.stats.engineMs, engineReturnedAtMs - t1); diag.stats.processedFrames++;
+      const afterStartup = schedulerNative(s, () => s.glue.getFramesUntilRecenter());
+      const hasStep = Object.hasOwn(pose, 'stageMs');
+      if (q.expectNativePriming && pose.repeated === true && !hasStep) {
+        q.expectNativePriming = false;
+        q.ready = { kind: 'nativePriming', incoming: f, admissionFrameIndex: index };
+        return;
+      }
+      if (pose.repeated || !hasStep) throw new Error('[XR] B1prime unexplained native no-step response');
+      q.expectNativePriming = false;
+      const source = q.admissions.get(pose.sourceFrameIndex);
+      if (!source || !q.snapshots.textureForPublication(source.snapshotKey, q.epoch)) throw new Error('[XR] B1prime missing native source snapshot');
+      if (!q.snapshots.retain(source.snapshotKey, 'task')) throw new Error('[XR] B1prime source lease expired');
+      const startupClear = beforeStartup === 1 && afterStartup === 0;
+      if (startupClear) { q.expectNativePriming = true; schedulerCounts.startupDiscardedAdmissions++; }
+      const flat = schedulerNative(s, () => s.glue.getWorldPoints());
+      const points = [];
+      for (let k = 0; k < flat.length; k += 5) points.push({ id: flat[k], confidence: flat[k + 1], position: { x: flat[k + 2], y: flat[k + 3], z: flat[k + 4] } });
+      const timing = { sourceFrameIndex: pose.sourceFrameIndex, sourceVideoTimeS: source.videoTime,
+        sourceFrameTimeS: source.frameTime ?? null, sourceTimeNanosInput: source.frameTime ? source.frameTime * 1e9 : source.timeNanos,
+        sourceTimeNanos: Math.trunc(source.frameTime ? source.frameTime * 1e9 : source.timeNanos),
+        sourceStageTimeNanos: source.timeNanos, sessionEpoch: q.epoch.sessionEpoch, sourceMetadataFound: true,
+        repeated: false, engineReturnedAtMs };
+      s.delivery.sourceTiming = timing;
+      diag.stats.lastSourceFrameIndex = pose.sourceFrameIndex;
+      const lag = index - pose.sourceFrameIndex; diag.stats.responseLag[lag] = (diag.stats.responseLag[lag] || 0) + 1;
+      const descriptor = { position: Array.from(pose.position), rotationWxyz: Array.from(pose.rotationWxyz), intrinsics: Array.from(pose.intrinsics),
+        lighting: pose.lighting ? { exposure: pose.lighting.exposure, temperature: pose.lighting.temperature } : null,
+        status: pose.status, reason: pose.reason, worldPoints: points, detectedImages: structuredClone(pose.detectedImages || []),
+        realityTexture: q.snapshots.textureForPublication(source.snapshotKey, q.epoch), sourceTiming: timing };
+      for (const [key, value] of q.admissions) {
+        if (key !== index || startupClear) { q.snapshots.release(value.snapshotKey, 'enginePrevious'); q.admissions.delete(key); }
+      }
+      if (source !== f) q.snapshots.release(f.snapshotKey, 'task');
+      q.ready = { kind: 'processed', descriptor, sourceKey: source.snapshotKey, startupClear, pose, source };
+      schedulerCounts.processed++;
+    } catch (error) {
+      if (q.nativeAdvanced) sensors.delivery?.drop(f.events, 'scheduler-process-error');
+      schedulerFailure(s, 'scheduler-task', error);
+    }
+  };
+  const schedulerGpu = ({ framework, frameStartResult: frame }) => {
+    const s = session_, q = s?.scheduler;
+    if (!q || runConfig.paused || cameraProcessingDisabled_) { drainRetiredSnapshotPools(); return; }
+    q.pollsThisTick = 0;
+    if (checkContext(s) || drawCtx_?.isContextLost?.()) {
+      schedulerFailure(s, 'scheduler-context', new Error('[XR] B1prime context lost')); return;
+    }
+    try {
+    if (q.pending || q.ready || q.nativeAdvanced || schedulerRebuilding) {
+      if (!frame.repeatFrame) schedulerCounts.droppedBusy++;
+      drainRetiredSnapshotPools();
+      q.snapshots.fenceRetiredAfterRender(); q.snapshots.pollRetired();
+      if (schedulerRetireWatchdog(s) || schedulerBusyWatchdog(s)) return;
+      queueSchedulerTask(s); return;
+    }
+    if (frame.repeatFrame) { drainRetiredSnapshotPools(); q.snapshots.fenceRetiredAfterRender(); q.snapshots.pollRetired();
+      schedulerRetireWatchdog(s); return; }
+    } catch (error) { schedulerFailure(s, 'scheduler-housekeeping', error); return; }
+    try {
+      maybeDispatchConfigChange(framework);
+      if (!schedulerCurrent(s)) return;
+    } catch (error) { schedulerFailure(s, 'scheduler-before-stage', error); return; }
+    if (!schedulerCurrent(s)) return;
+    if (frame.textureWidth !== s.videoWidth || frame.textureHeight !== s.videoHeight) { diag.stats.sizeMismatchFrames++; return; }
+    if (checkContext(s) || drawCtx_?.isContextLost?.()) return;
+    // Match B0's orientation → time → sensor latch, before added GL work.
+    const { alpha, beta, gamma } = lastDevicePose_;
+    const timeNanos = 1e3 * window.performance.now() * 1e3;
+    const events = sensors.takeForStage() || [];
+    const f = { ...frame, alpha, beta, gamma, timeNanos, events };
+    try {
+      q.busyState = null; q.busyTicks = 0;
+      f.latchedOnly = true; q.pending = f;
+      drainRetiredSnapshotPools();
+      imageTargets.pump();
+      if (!schedulerCurrent(s)) return;
+      // Finish bounded target replay while the native FIFO is known empty. Admitting a pixel
+      // here would force another barrier for the next replay item and restart its queue forever.
+      if (diag.imageTargets?.replayPending() > 0) {
+        schedulerCounts.droppedTargetWarmup++; sensors.carryForStage(events); q.pending = null; return;
+      }
+      f.latchedOnly = false;
+      q.snapshots.fenceRetiredAfterRender(); q.snapshots.pollRetired();
+      if (schedulerRetireWatchdog(s)) return;
+      const input = f.frameTime ? f.frameTime * 1e9 : timeNanos;
+      f.snapshotKey = q.snapshots.capture({ sourceDrawTexture: frame.cameraTexture, width: frame.textureWidth, height: frame.textureHeight,
+        meta: { epoch: q.epoch, captureSeq: q.captureSeq++, rotation: frame.orientation,
+          sourceVideoTimeS: frame.videoTime, sourceFrameTimeS: frame.frameTime ?? null,
+          sourceTimeNanosInput: input, sourceTimeNanos: Math.trunc(input), sourceStageTimeNanos: timeNanos, roiRevision: q.epoch.schedulerEpoch } });
+      if (!f.snapshotKey) {
+        schedulerCounts.droppedCapacity++; sensors.carryForStage(events); q.pending = null;
+        if (s.pending === f) s.pending = null;
+        return;
+      }
+      glErrorStreak = 0;
+      q.snapshots.retain(f.snapshotKey, 'task'); q.snapshots.release(f.snapshotKey, 'gpuPending');
+      q.pending = f; stageFrame(s, f); schedulerCounts.admitted++; queueSchedulerTask(s);
+    } catch (error) {
+      if (error?.code === 'preexisting-gl-error' && schedulerCurrent(s) && !f.snapshotKey) {
+        // The flag belongs to earlier draw work. It was consumed by capture's one
+        // preflight getError; this frame has no owned pixels or native admission.
+        schedulerCounts.droppedGlError++;
+        sensors.carryForStage(events); q.pending = null; s.pending = null;
+        // A persistent flag fails every frame: record and report the first of a consecutive run only
+        // (reportOnce also dedups by message); the counter above still counts every dropped frame.
+        if (glErrorStreak++ === 0) {
+          pushEntry(schedulerFailures, { where: 'scheduler-capture-gl-preexisting', message: error.message,
+            epoch: { ...q.epoch }, nativeAdvanced: false, partialDispatchCount: 0 });
+          reportSchedulerError('scheduler-capture-gl-preexisting', error);
+        }
+        return;
+      }
+      q.pending ||= f; schedulerFailure(s, 'scheduler-stage', error);
+    }
+  };
+  const schedulerRepeat = (s, framework) => {
+    if (!s.lastDesc) return null;
+    if (!s.scheduler.snapshots.textureForPublication(s.scheduler.displayKey, s.scheduler.epoch)) {
+      schedulerFailure(s, 'scheduler-repeat-snapshot', new Error('[XR] B1prime committed snapshot unavailable')); return null;
+    }
+    activePublication = { session: s, dispatches: 0 }; s.scheduler.publishing = true;
+    try { return finishResult(framework, resultFromDesc(s.lastDesc), s.lastDesc.sourceTiming, 'callback-repeat'); }
+    catch (error) { schedulerFailure(s, 'scheduler-repeat-publication', error); return null; }
+    finally { s.scheduler.publishing = false; activePublication = null; }
+  };
+  const schedulerCpu = (framework, frameStartResult) => {
+    const s = session_, q = s?.scheduler;
+    if (!q) return !session_ && !computeContextLost() && !drawCtx_?.isContextLost?.()
+      ? inactiveAnswer(framework, frameStartResult) : null;
+    if (runConfig.paused) return null;
+    if (checkContext(s) || drawCtx_?.isContextLost?.()) {
+      schedulerFailure(s, 'scheduler-cpu-context', new Error('[XR] B1prime context lost before publication')); return null;
+    }
+    const ready = q.ready;
+    if (!ready) return schedulerRepeat(s, framework);
+    if (publication) { publication.newEngineResponse = true; publication.engineFresh = ready.kind === 'processed'; }
+    if (ready.kind === 'nativePriming') {
+      if (!q.snapshots.textureForPublication(ready.incoming.snapshotKey, q.epoch)) {
+        schedulerFailure(s, 'scheduler-ack', new Error('[XR] B1prime priming snapshot expired')); return null;
+      }
+      q.snapshots.release(ready.incoming.snapshotKey, 'task');
+      q.ready = null; q.pending = null; s.pending = null; q.nativeAdvanced = false;
+      schedulerCounts.primingAcked++;
+      return schedulerRepeat(s, framework);
+    }
+    q.publishing = true; activePublication = { session: s, dispatches: 0 };
+    try {
+      maybeDispatchConfigChange(framework);
+      const texture = q.snapshots.textureForPublication(ready.sourceKey, q.epoch);
+      if (!texture || !schedulerCurrent(s)) throw new Error('[XR] B1prime stale publication snapshot');
+      ready.descriptor.realityTexture = texture;
+      const result = finishResult(framework, resultFromDesc(ready.descriptor), ready.descriptor.sourceTiming, 'engine-response');
+      if (!schedulerCurrent(s)) throw new Error('[XR] B1prime stale publication commit');
+      q.snapshots.retain(ready.sourceKey, 'display');
+      if (q.displayKey && q.displayKey !== ready.sourceKey) q.snapshots.release(q.displayKey, 'display');
+      q.displayKey = ready.sourceKey; q.snapshots.release(ready.sourceKey, 'task');
+      s.lastDesc = ready.descriptor; s.last = ready.pose; s.lastWorldPoints = ready.descriptor.worldPoints; s.hasResponse = true;
+      q.lastSource = ready.descriptor.sourceTiming.sourceFrameIndex;
+      q.ready = null; q.pending = null; s.pending = null; q.nativeAdvanced = false;
+      q.queryNeedsFreshState = ready.startupClear;
+      diag.stats.freshResponses++; schedulerCounts.publications++;
+      return result;
+    } catch (error) { schedulerFailure(s, 'scheduler-publication', error); return null; }
+    finally { q.publishing = false; activePublication = null; }
+  };
+  const schedulerCommand = (reason, effective, action) => {
+    if (!schedulerEnabled) return action();
+    if (schedulerRebuilding || session_?.scheduler.nativeCallDepth) {
+      const error = new Error('[XR] B1prime mutator busy'); if (session_?.scheduler) session_.scheduler.reentrantError = error; throw error;
+    }
+    if (!session_) return action();
+    const outerPublication = activePublication; activePublication = null;
+    const before = session_, callsBefore = before.scheduler.nativeCalls || 0;
+    try {
+      if (effective) schedulerBarrier(reason);
+      try { return action(); }
+      catch (error) {
+        if (session_ && (effective || before.scheduler.reentrantError || (before.scheduler.nativeCalls || 0) !== callsBefore)) schedulerBarrier(`${reason}-partial-error`);
+        throw error;
+      }
+    } finally { activePublication = outerPublication; }
+  };
+  if (schedulerEnabled) Object.defineProperty(diag, 'scheduler', { enumerable: true, get: () => {
+    const q = session_?.scheduler;
+    return { enabled: schedulerEnabled, mode: schedulerEnabled ? 'gpu-task-owned-v1' : 'legacy-fallback',
+      fallbackReason: schedulerFallbackReason, watchdogTicks: MAX_STALLED_GPU_TICKS,
+      pending: !!q?.pending, ready: !!q?.ready,
+      readyKind: q?.ready?.kind ?? null, pollsThisTick: q?.pollsThisTick ?? 0, taskQueued: !!q?.taskQueued,
+      nativeAdvanced: !!q?.nativeAdvanced, queryBusyReason: schedulerEnabled ? schedulerBusyReason() : null,
+      epoch: q ? { ...q.epoch } : null,
+      counters: { ...schedulerCounts }, lastAdmission: q?.lastAdmission ?? null, lastSource: q?.lastSource ?? null,
+      memory: { controlledBytes: schedulerControlledBytes, peakBytes: schedulerPeakBytes,
+        wasmHeapBytes: engine_?.Module?.HEAPU8?.byteLength ?? null, totalSdkHeapVerified: false, driverBytes: null },
+      snapshots: { ...(q?.snapshots.stats() || {}), uniqueSlots: schedulerSnapshotSlots,
+        activeUniqueSlots: q?.snapshots.stats().uniqueSlots ?? 0,
+        retiredUniqueSlots: retiredSnapshotPools.reduce((n, pool) => n + pool.stats().uniqueSlots, 0),
+        retiredPools: retiredSnapshotPools.length,
+        pendingRetire: (q?.snapshots.stats().pendingRetire ?? 0) + retiredSnapshotPools.reduce((n, pool) => n + pool.stats().pendingRetire, 0),
+        controlledBytes: schedulerSnapshotBytes, peakBytes: schedulerSnapshotPeakBytes,
+        driverBytes: null }, failures: schedulerFailures.map((e) => ({ ...e, epoch: { ...e.epoch } })),
+      discards: schedulerDiscards.map((e) => ({ ...e, epoch: { ...e.epoch },
+        acceptedMotionSeqs: e.acceptedMotionSeqs?.slice() })) };
+  } });
 
   // JS state (SDK factory locals; tracking-controller.ts:256-306).
   let isSimulator_ = false;
@@ -225,14 +875,16 @@ const XrControllerFactory = singleton((runConfig, xrccPromise, logCallback, erro
   // does not leave the world tracking off for good (RM-4d, review m3). Not set for an unsupported capture or a failed build.
   let deferredRebuild_ = null;
   const imageTargets = createImageTargets({
-    options, diag, pushEntry, getComputeCtx: () => computeCtx_, getGlue: () => (session_ ? session_.glue : null),
+    options, diag, pushEntry, getComputeCtx: () => computeCtx_, getGlue: () => (session_ ? (session_.imageGlue || session_.glue) : null),
   });
 
   const maybeDispatchConfigChange = (framework, recenter) => {
     if ((!notifyOthersOfConfigChange_ && !recenter) || !framework) return;
-    framework.dispatchEvent('cameraconfigured', {
+    const callbackSession = session_;
+    schedulerDispatch(framework, 'cameraconfigured', {
       mirroredDisplay: mirroredDisplay_, origin: { position: origin_, rotation: facing_ }, recenter: !!recenter,
     });
+    if (schedulerEnabled && callbackSession !== session_) throw new Error('[XR] B1prime config callback changed epoch');
     notifyOthersOfConfigChange_ = false;
   };
 
@@ -263,6 +915,33 @@ const XrControllerFactory = singleton((runConfig, xrccPromise, logCallback, erro
   const sameCoords = (a, b) => a.origin.x === b.origin.x && a.origin.y === b.origin.y && a.origin.z === b.origin.z
     && a.facing.w === b.facing.w && a.facing.x === b.facing.x && a.facing.y === b.facing.y && a.facing.z === b.facing.z;
 
+  // A-1a: validates options.engineConfig (only `intrinsics` and `accuracy` are accepted; null / undefined values are skipped) and copies
+  // it into the glue constructor config. Returns the applied keys. A malformed value is a `[XR]` error, never silently dropped.
+  const ENGINE_CONFIG_KEYS = ['intrinsics', 'accuracy'];
+  const isPlainObject = (v) => v !== null && typeof v === 'object' && !Array.isArray(v);
+  const applyEngineConfig = (glueConfig, engineConfig) => {
+    if (!isPlainObject(engineConfig)) throw new Error('[XR] SLAM_REFACT_CHUNK_OPTIONS.engineConfig must be an object {intrinsics, accuracy}');
+    const unknown = Object.keys(engineConfig).filter((k) => !ENGINE_CONFIG_KEYS.includes(k));
+    if (unknown.length) throw new Error(`[XR] SLAM_REFACT_CHUNK_OPTIONS.engineConfig: unsupported key(s) ${unknown.join(', ')} (supported: ${ENGINE_CONFIG_KEYS.join(', ')})`);
+    const { intrinsics, accuracy } = engineConfig;
+    const applied = [];
+    if (intrinsics !== undefined && intrinsics !== null) {
+      if (!Array.isArray(intrinsics) || intrinsics.length !== 4 || !intrinsics.every((x) => typeof x === 'number' && Number.isFinite(x))) {
+        throw new Error('[XR] SLAM_REFACT_CHUNK_OPTIONS.engineConfig.intrinsics must be [fx, fy, cx, cy], four finite numbers');
+      }
+      glueConfig.intrinsics = [...intrinsics];
+      applied.push('intrinsics');
+    }
+    if (accuracy !== undefined && accuracy !== null) {
+      if (!isPlainObject(accuracy)) throw new Error('[XR] SLAM_REFACT_CHUNK_OPTIONS.engineConfig.accuracy must be an object');
+      try { glueConfig.accuracy = structuredClone(accuracy); } catch (error) {
+        throw new Error(`[XR] SLAM_REFACT_CHUNK_OPTIONS.engineConfig.accuracy cannot be copied: ${error && error.message || error}`);
+      }
+      applied.push('accuracy');
+    }
+    return applied;
+  };
+
   // coords: the coordinate system the engine starts with. engineInit -> rebuildEngine applies configuredCoordinateSystem
   // (C), so the first attach and a video size change start with `configured_`; an orientation change starts with the JS state
   // (P, l) because the configureXr that follows it sends P. When C differs from P the glue's live system differs from the JS
@@ -275,7 +954,8 @@ const XrControllerFactory = singleton((runConfig, xrccPromise, logCallback, erro
       throw new Error('[XR] slam_refact chunk needs XR8.run({webgl2: true}) (WebGL2 compute context)');
     }
     const { Module } = engine_;
-    const device = window.XR8.XrDevice.deviceEstimate();
+    const device = resolvedIdentity?.selected ?? window.XR8.XrDevice.deviceEstimate();
+    const deviceSource = resolvedIdentity?.selected?.source ?? 'XR8.XrDevice.deviceEstimate';
     const glueConfig = {
       captureWidth: videoWidth, captureHeight: videoHeight, rotationDeg: rotation,
       manufacturer: device.manufacturer || '', model: device.model || '',
@@ -283,12 +963,31 @@ const XrControllerFactory = singleton((runConfig, xrccPromise, logCallback, erro
       leftHandedAxes: leftHandedAxes_, mirroredDisplay: mirroredDisplay_,
     };
     if (framesUntilRecenter !== null) glueConfig.framesUntilRecenter = framesUntilRecenter;
+    // A-1a (opt-in, default OFF): SLAM_REFACT_CHUNK_OPTIONS.engineConfig = {intrinsics: [fx, fy, cx, cy], accuracy: {...}} goes to the
+    // glue constructor unchanged (the engine binding validates the values). Without the option glueConfig is exactly as before.
+    const engineConfigKeys = options.engineConfig === undefined ? null : applyEngineConfig(glueConfig, options.engineConfig);
+    const sentGlueConfig = engineConfigKeys ? structuredClone(glueConfig) : { ...glueConfig };  // diagnostic copy; never passed back to the engine
     // options.createGlue is a test hook (chunk-contract.test.mjs wraps or replaces the engine glue). Whether a replaced glue was
     // used is decided here, for every session, not once at engine load (RM-4c m-F): once true it stays true.
     const createGlue = options.createGlue;
     if (createGlue) engine_.loaded.glueReplaced = true;
     const glue = createGlue ? createGlue(Module, glueConfig) : new Module.SlamRefactGlue(glueConfig);
     let pyramid;
+    const wasRebuilding = schedulerRebuilding;
+    if (schedulerEnabled) schedulerRebuilding = true;
+    const imageGlue = schedulerEnabled ? new Proxy(glue, { get(target, name) {
+      const value = target[name];
+      if (typeof value !== 'function') return value;
+      return (...args) => {
+        const current = session_;
+        if (!current || schedulerRebuilding) return value.apply(target, args);
+        if (current.nativeGlue !== glue) return current.glue[name](...args);
+        if (/^(get|has|is)/.test(String(name))) return current.glue[name](...args);
+        const q = current.scheduler;
+        const effective = !!((q.pending && !q.pending.latchedOnly) || q.ready || q.nativeAdvanced || q.lastAdmission !== null);
+        return schedulerCommand('image-target', effective, () => session_.glue[name](...args));
+      };
+    } }) : glue;
     try {
       // Mirror = chunk state: recenter point (p, f) first, then the current origin / facing (P, l) and cam.
       glue.updateCameraProjectionMatrix({ origin: { ...recenterOrigin_ }, facing: { ...recenterFacing_ }, updateRecenterPoint: true });
@@ -301,25 +1000,64 @@ const XrControllerFactory = singleton((runConfig, xrccPromise, logCallback, erro
       pyramid = new Gr8ComputePyramid(computeCtx, layout, { cameraWidth: videoWidth, cameraHeight: videoHeight, rotation, warn: warnOnce });
       // targets loaded before this glue existed (size / orientation change, or loaded while no session existed); never throws. The ones that
       // are being detected right now go into the engine first (RM-4e, review A-5), so a rebuild does not make them lose and find again.
-      imageTargets.attach(glue, framework_, Object.keys(detectedImageMap_));
+      imageTargets.attach(imageGlue, framework_, Object.keys(detectedImageMap_));
       // gpuCheck compares with SlamRefactGlue.cpuPyramidAtlas, which builds with rotation 0 only: a session with another rotation is not checked
       // (the comparison would report the rotation, not a defect); UNVERIFIED for rotation != 0 (docs/design/pkg-a-landscape-report.md).
       const gpuCheck = options.gpuCheck && rotation === 0
         ? { every: Math.max(1, options.gpuCheck.every | 0 || 10), left: Math.max(0, options.gpuCheck.frames | 0 || 30) } : null;
       const roiCheck = options.roiCheck
         ? { every: Math.max(1, options.roiCheck.every | 0 || 1), left: Math.max(0, options.roiCheck.frames | 0 || 20) } : null;
-      diag.session = { videoWidth, videoHeight, rotation, device: { manufacturer: device.manufacturer, model: device.model },
+      // Old WASM has neither getter. In particular getIntrinsic() is a display projection,
+      // not capture-space K, and a build label/hash alone cannot establish compiled features.
+      const readback = { captureIntrinsics: null, captureIntrinsicsSource: 'unavailable',
+        captureIntrinsicsConvention: 'engine-capture-before-processing',
+        compileFeatures: { loopClose: 'unknown' }, compileFeaturesSource: 'unavailable', errors: [] };
+      try {
+        if (typeof glue.getCaptureIntrinsics === 'function') {
+          readback.captureIntrinsics = { ...glue.getCaptureIntrinsics() };
+          readback.captureIntrinsicsSource = 'SlamRefactGlue.getCaptureIntrinsics';
+        }
+        if (typeof Module.SlamRefactGlue.getCompileFeatures === 'function') {
+          const features = Module.SlamRefactGlue.getCompileFeatures();
+          if (typeof features.loopClose === 'boolean') {
+            readback.compileFeatures.loopClose = features.loopClose;
+            readback.compileFeaturesSource = 'SlamRefactGlue.getCompileFeatures';
+          }
+        }
+      } catch (error) {
+        readback.errors.push(String(error && error.message || error));  // diagnostics must not fail tracking
+      }
+      diag.session = { videoWidth, videoHeight, rotation,
+        device: { manufacturer: sentGlueConfig.manufacturer, model: sentGlueConfig.model, source: deviceSource },
+        glueConfig: sentGlueConfig,
+        ...(engineConfigKeys ? { engineConfig: { keys: engineConfigKeys, transport: ew_ ? 'engine-worker' : 'main-thread' } } : {}),
+        engineManifest: { jsSha256: engine_.loaded.manifest.jsSha256, wasmSha256: engine_.loaded.manifest.wasmSha256,
+          matchesLoadedBytes: engine_.loaded.matchesManifest, glueReplaced: engine_.loaded.glueReplaced },
+        configurationReadback: readback,
         layout: { textureSize: layout.textureSize, rows: layout.rows }, renderer: rendererInfo(computeCtx), readback: pyramid.stats };
       diag.stats.sessionsCreated++;
+      const delivery = deliveryOptions ? { epoch: ++nextSessionEpoch, sourceFrames: new Map(), sourceTiming: null, responses: 0, evicted: 0 } : null;
+      if (delivery) diag.session.sessionEpoch = delivery.epoch;
       pushEntry(diag.sessionLog, { event: 'created', videoWidth, videoHeight, rotation });
-      return { glue, pyramid, layout, videoWidth, videoHeight, pending: null, textures: new Map(),
+      const nativeGlue = glue;
+      const guardedGlue = schedulerEnabled ? new Proxy(glue, { get(target, name) {
+        const value = target[name];
+        return typeof value === 'function' ? (...args) => {
+          const current = session_;
+          return current?.nativeGlue === nativeGlue && current.scheduler
+            ? schedulerNative(current, () => value.apply(target, args)) : value.apply(target, args);
+        } : value;
+      } }) : glue;
+      const result = { glue: guardedGlue, nativeGlue, imageGlue, pyramid, layout, videoWidth, videoHeight, pending: null, textures: new Map(), delivery,
         last: null, lastWorldPoints: [], activeTexture: null, hasResponse: false, gpuCheck, roiCheck, prevAllZeroes: null,
         lastDesc: null, liveStale: !sameCoords(coords, { origin: origin_, facing: facing_ }), contextLost: false };
+      if (schedulerEnabled) result.scheduler = makeScheduler(result);
+      return result;
     } catch (error) {
       if (pyramid) pyramid.dispose();
       glue.delete();
       throw error;
-    }
+    } finally { if (schedulerEnabled) schedulerRebuilding = wasRebuilding; }
   };
 
   const rendererInfo = (gl) => {
@@ -327,13 +1065,22 @@ const XrControllerFactory = singleton((runConfig, xrccPromise, logCallback, erro
     return { renderer: gl.getParameter(dbg ? dbg.UNMASKED_RENDERER_WEBGL : gl.RENDERER), version: gl.getParameter(gl.VERSION) };
   };
 
-  const destroySession = () => {
+  const destroySession = (reason = 'session-discard') => {
+    ewBuildToken_++;  // R1: cancels a Worker-mode build that waits for its layout (no-op otherwise)
     if (!session_) return;
     const s = session_;
+    if (schedulerEnabled) disposeScheduler(s, reason);
     session_ = null;
-    if (s.hasResponse && s.last) {
+    sensors.delivery?.drop(s.pending?.events || [], 'session-discard');
+    if (schedulerEnabled && s.lastDesc) {
+      lastExtrinsic_ = { position: s.lastDesc.position.slice(), rotationWxyz: s.lastDesc.rotationWxyz.slice() };
+    }
+    if (s.hasResponse && s.last && !schedulerEnabled) {
       lastExtrinsic_ = { position: Array.from(s.last.position), rotationWxyz: Array.from(s.last.rotationWxyz) };
     }
+    // Only a committed descriptor may supply the LIMITED answer while an ON
+    // lifecycle has no session. The answer replaces its retired texture with
+    // this callback's live camera texture; scheduler barriers clear heldDesc_.
     if (s.lastDesc) { heldDesc_ = s.lastDesc; heldInactive_ = false; }
     try { startupFramesLeft_ = s.glue.getFramesUntilRecenter(); } catch (error) { pushEntry(diag.warnings, `getFramesUntilRecenter: ${error}`); }
     try { s.pyramid.dispose(); } catch (error) { pushEntry(diag.warnings, `pyramid dispose: ${error}`); }
@@ -366,9 +1113,135 @@ const XrControllerFactory = singleton((runConfig, xrccPromise, logCallback, erro
     s.pending = frame;
   };
 
+  // ---- engine Worker mode (R1, opt-in; ew_ is null otherwise and none of this runs) ----
+  // The frame is read back into a buffer the Worker handed back earlier, transferred with its IMU events and orientation, and the
+  // engine answers later: results are applied here in submission order at the next onProcessCpu (so the pose answer lags the
+  // main-thread mode by the frames in flight). The post-processing of a result is the tail of processStagedFrame below.
+  const applyWorkerResult = (s, r) => {
+    const ctx = s.ewFrames.get(r.seq);
+    s.ewFrames.delete(r.seq);
+    if (r.error) {
+      diag.stats.processErrors++;
+      reportOnce('process', r.error);
+      return;
+    }
+    const { f, allZeroes } = ctx;
+    const pose = r.pose;
+    const engineReturnedAtMs = performance.now();
+    diag.stats.processedFrames++;
+    const stageIndex = pose.videoFrameIndex;
+    noteFrameDone(f);  // measurement option only
+    if (s.delivery) {
+      const d = s.delivery;
+      const inputTimeNanos = f.frameTime ? f.frameTime * 1e9 : f.timeNanos;
+      d.sourceFrames.set(stageIndex, { sourceVideoTimeS: f.videoTime, sourceFrameTimeS: f.frameTime ?? null,
+        sourceTimeNanos: Math.trunc(inputTimeNanos), sourceTimeNanosInput: inputTimeNanos,
+        sourceStageTimeNanos: f.timeNanos, sessionEpoch: d.epoch });
+      while (d.sourceFrames.size > 64) { d.sourceFrames.delete(d.sourceFrames.keys().next().value); d.evicted++; }
+      const source = !pose.repeated || s.hasResponse ? d.sourceFrames.get(pose.sourceFrameIndex) : null;
+      d.sourceTiming = { sourceFrameIndex: pose.sourceFrameIndex, sourceVideoTimeS: null, sourceFrameTimeS: null,
+        sourceTimeNanos: null, sourceTimeNanosInput: null, sourceStageTimeNanos: null,
+        sessionEpoch: d.epoch, ...source, sourceMetadataFound: !!source, repeated: !!pose.repeated, engineReturnedAtMs };
+      d.responses++;
+      if (publication) { publication.newEngineResponse = true; publication.engineFresh = !pose.repeated; }
+    }
+    s.textures.set(stageIndex, f.computeTexture);
+    while (s.textures.size > 32) s.textures.delete(s.textures.keys().next().value);
+    if (!pose.repeated) {
+      s.hasResponse = true;
+      diag.stats.freshResponses++;
+      const lag = stageIndex - pose.sourceFrameIndex;
+      diag.stats.lastSourceFrameIndex = pose.sourceFrameIndex;
+      diag.stats.responseLag[lag] = (diag.stats.responseLag[lag] || 0) + 1;
+      s.activeTexture = s.textures.get(pose.sourceFrameIndex) ?? null;
+      for (const k of s.textures.keys()) if (k < pose.sourceFrameIndex) s.textures.delete(k);
+      if (toCheckAllZeros_ && s.prevAllZeroes !== null) {
+        window._c8.isAllZeroes = s.prevAllZeroes ? 1 : 0;
+        window._c8.wasEverNonZero = !s.prevAllZeroes || window._c8.wasEverNonZero;
+      }
+    }
+    s.prevAllZeroes = allZeroes;
+    s.last = pose;
+    if (!pose.repeated && pose.imageEvents && pose.imageEvents.length) diag.stats.engineImageEventsIgnored += pose.imageEvents.length;
+    const flat = r.world;
+    const points = new Array(flat.length / 5);
+    for (let i = 0, k = 0; i < points.length; i++, k += 5) {
+      points[i] = { id: flat[k], confidence: flat[k + 1], position: { x: flat[k + 2], y: flat[k + 3], z: flat[k + 4] } };
+    }
+    s.lastWorldPoints = points;
+  };
+
+  const drainWorkerResults = (s) => {
+    if (!s.ewFrames) return;
+    for (const r of s.glue.takeResults()) applyWorkerResult(s, r);
+  };
+
+  const processStagedFrameWorker = (s) => {
+    s.ewFrames ??= new Map();
+    drainWorkerResults(s);
+    const f = s.pending;
+    if (!f) return;
+    const g = s.glue;
+    if (g.fatal) throw g.fatal;
+    // The Worker is behind: keep the staged frame (the next stageFrame replaces it and carries its IMU events, droppedStaged), like a
+    // skipped onProcessCpu. Never reached while the Worker keeps up.
+    if (g.inflight >= ew_.maxInFlight) { ew_.stats.backpressureSkips++; return; }
+    s.pending = null;
+    const t0 = performance.now();
+    const size = s.layout.textureSize;
+    const dst = g.acquireAtlas(size * Math.max(s.layout.rows, s.layout.roiAtlasRows | 0) * 4);
+    const atlas = s.pyramid.read(dst);
+    if (!atlas) throw new Error('[XR] slam_refact chunk: no staged pyramid to read');
+    const rows = s.pyramid.lastReadRows;
+    const t1 = performance.now();
+    pushSample(diag.stats.readMs, t1 - t0);
+    const motion = [];
+    const sink = { pushDeviceMotionEvent: (timestampNanos, event) => motion.push([timestampNanos, ew_.plainMotion(event)]) };
+    for (const e of f.events || []) {
+      let accepted;
+      try { accepted = pushMotion(sink, e); }
+      catch (error) { sensors.delivery?.uncertain(e); throw error; }
+      if (accepted) {
+        diag.stats.motionEventsPushed++;
+        sensors.delivery?.pushed(e);
+      } else {
+        diag.stats.motionEventsSkipped++;
+        sensors.delivery?.drop([e], 'invalid-interval');
+        warnOnce('[XR] slam_refact chunk: a DeviceMotion event with an interval outside the 64-bit nanosecond range was skipped (the engine rejects such an event with a JS error; the original throws a RangeError from setEventQueue)');
+      }
+    }
+    const allZeroes = levelIsAllZeroes(atlas, size, s.layout.levels[3]);  // before the transfer detaches the atlas
+    const engineTime = f.frameTime ? f.frameTime * 1e9 : f.timeNanos;  // the engine time argument of the main-thread mode (CHK-1)
+    const videoNs = f.videoTime * 1e9;
+    const seq = g.submitFrame({ motion, orientation: [f.timeNanos, Number(f.alpha), Number(f.beta), Number(f.gamma)],
+      timeNanos: engineTime, videoNs, atlas, size, rows });
+    s.ewFrames.set(seq, { f, allZeroes });
+    pushSample(diag.stats.engineMs, performance.now() - t1);
+  };
+
+  // The pyramid layout of a capture is needed synchronously by createSession; in Worker mode it is fetched from the Worker first
+  // and the session is built when it arrives (a few ms; frames in between get the usual no-session answer). The token cancels a
+  // pending build when the session is destroyed, rebuilt or detached meanwhile. Returns true when the build was deferred.
+  let ewBuildToken_ = 0;
+  const ewDefer = (videoWidth, videoHeight, rotation, run) => {
+    if (!ew_ || ew_.hasLayout(videoWidth, videoHeight, rotation) || unsupportedCapture(videoWidth, videoHeight, rotation)) return false;
+    const token = ++ewBuildToken_;
+    diag.engineWorker.deferredBuilds++;
+    pushEntry(diag.sessionLog, { event: 'layout-pending', videoWidth, videoHeight, rotation });
+    ew_.requestLayout(videoWidth, videoHeight, rotation).then(() => {
+      if (token !== ewBuildToken_) return;
+      try { run(); } catch (error) { session_ = null; errorCallback(error instanceof Error ? error : new Error(String(error))); }
+    }, (error) => {
+      // a dead Worker was already reported by onFatal under the same key; reportOnce keeps it one report
+      if (token === ewBuildToken_) reportOnce('process', error);
+    });
+    return true;
+  };
+
   // c8EmAsm_processStagedFrame: read the staged pyramid, push the IMU staged with it, let the glue stage it and
   // track the previous one.
   const processStagedFrame = (s) => {
+    if (ew_) return processStagedFrameWorker(s);
     const f = s.pending;
     if (!f) return;
     s.pending = null;
@@ -378,10 +1251,15 @@ const XrControllerFactory = singleton((runConfig, xrccPromise, logCallback, erro
     const t1 = performance.now();
     pushSample(diag.stats.readMs, t1 - t0);
     for (const e of f.events || []) {
-      if (pushMotion(s.glue, e)) {
+      let accepted;
+      try { accepted = pushMotion(s.glue, e); }
+      catch (error) { sensors.delivery?.uncertain(e); throw error; }
+      if (accepted) {
         diag.stats.motionEventsPushed++;
+        sensors.delivery?.pushed(e);
       } else {
         diag.stats.motionEventsSkipped++;
+        sensors.delivery?.drop([e], 'invalid-interval');
         warnOnce('[XR] slam_refact chunk: a DeviceMotion event with an interval outside the 64-bit nanosecond range was skipped (the engine rejects such an event with a JS error; the original throws a RangeError from setEventQueue)');
       }
     }
@@ -405,11 +1283,27 @@ const XrControllerFactory = singleton((runConfig, xrccPromise, logCallback, erro
     // timestampNanos (the stage time `timeNanos`). Passing the stage time always made every frame's engine time differ from the original's
     // (CHK-1, spec 07 section 12).
     const pose = s.glue.processFramePyramid(f.frameTime ? f.frameTime * 1e9 : f.timeNanos, f.videoTime * 1e9, atlas, s.layout.textureSize, rows);
-    pushSample(diag.stats.engineMs, performance.now() - t1);
+    const engineReturnedAtMs = performance.now();
+    pushSample(diag.stats.engineMs, engineReturnedAtMs - t1);
     diag.stats.processedFrames++;
     // The glue's own stage index of this frame is the key (RM-4a2: a counter kept here drifted for good after one
     // transient exception); bounded, because a glue that never answers fresh would only add entries.
     const stageIndex = pose.videoFrameIndex;
+    noteFrameDone(f);  // measurement option only
+    if (s.delivery) {
+      const d = s.delivery;
+      const inputTimeNanos = f.frameTime ? f.frameTime * 1e9 : f.timeNanos;
+      d.sourceFrames.set(stageIndex, { sourceVideoTimeS: f.videoTime, sourceFrameTimeS: f.frameTime ?? null,
+        sourceTimeNanos: Math.trunc(inputTimeNanos), sourceTimeNanosInput: inputTimeNanos,
+        sourceStageTimeNanos: f.timeNanos, sessionEpoch: d.epoch });
+      while (d.sourceFrames.size > 64) { d.sourceFrames.delete(d.sourceFrames.keys().next().value); d.evicted++; }
+      const source = !pose.repeated || s.hasResponse ? d.sourceFrames.get(pose.sourceFrameIndex) : null;
+      d.sourceTiming = { sourceFrameIndex: pose.sourceFrameIndex, sourceVideoTimeS: null, sourceFrameTimeS: null,
+        sourceTimeNanos: null, sourceTimeNanosInput: null, sourceStageTimeNanos: null,
+        sessionEpoch: d.epoch, ...source, sourceMetadataFound: !!source, repeated: !!pose.repeated, engineReturnedAtMs };
+      d.responses++;
+      if (publication) { publication.newEngineResponse = true; publication.engineFresh = !pose.repeated; }
+    }
     s.textures.set(stageIndex, f.computeTexture);
     while (s.textures.size > 32) s.textures.delete(s.textures.keys().next().value);
     // checkAllZeroes runs on the pyramid of the frame tracked in this call (the previous staged frame).
@@ -472,6 +1366,8 @@ const XrControllerFactory = singleton((runConfig, xrccPromise, logCallback, erro
   };
 
   const onProcessGpu = ({ framework, frameStartResult }) => {
+    if (schedulerEnabled) return schedulerGpu({ framework, frameStartResult });
+    const frameSeq = frameDoneMarks && !frameStartResult.repeatFrame && !cameraProcessingDisabled_ ? markFrameStart() : -1;  // first work of the frame
     const { computeTexture, textureWidth, textureHeight, orientation, repeatFrame, videoTime, frameTime } = frameStartResult;
     if (repeatFrame || cameraProcessingDisabled_) return;
     maybeDispatchConfigChange(framework);
@@ -485,13 +1381,17 @@ const XrControllerFactory = singleton((runConfig, xrccPromise, logCallback, erro
     const { alpha, beta, gamma } = lastDevicePose_;
     const timeNanos = 1e3 * window.performance.now() * 1e3;
     const events = sensors.takeForStage() || [];
-    if (!session_ || checkContext(session_)) return;
+    if (!session_ || checkContext(session_)) {
+      sensors.delivery?.drop(events, session_ ? 'context-lost' : 'no-session');
+      return;
+    }
     try {
       stageFrame(session_, { computeTexture, textureWidth, textureHeight, orientation, alpha, beta, gamma,
-        videoTime, frameTime, timeNanos, events });
+        videoTime, frameTime, timeNanos, events, ...(frameDoneMarks ? { seq: frameSeq } : {}) });
     } catch (error) {
       // xr.js runs processGpu inside post-render's try block; a throw would skip its frame bookkeeping.
       diag.stats.stageErrors++;
+      sensors.delivery?.drop(events, 'stage-error');
       reportOnce('stage', error);
     }
     imageTargets.pump();  // a pending replay of the loaded targets into the rebuilt glue goes on, one time budget per frame
@@ -515,7 +1415,7 @@ const XrControllerFactory = singleton((runConfig, xrccPromise, logCallback, erro
     };
   };
 
-  const finishResult = (framework, result) => {
+  const finishResult = (framework, result, timing = null, kind = 'held') => {
     intrinsics_ = result.intrinsics;
     if (engineVpsEventsDisabled_) {
       result.rotation = fakeSimulatorExtrinsic_.rotation;
@@ -524,11 +1424,23 @@ const XrControllerFactory = singleton((runConfig, xrccPromise, logCallback, erro
     // Image targets: result.detectedImages was built from the engine's detections (image-targets.js). This diff
     // (image-events.js) is the only dispatcher of imagefound / imageupdated / imagelost; the engine's own imageEvents are
     // counted and dropped in processStagedFrame, so no change fires twice (RM-4b, spec 07 section 4).
-    dispatchImageEvents(detectedImageMap_, result.detectedImages, (name, detail) => framework.dispatchEvent(name, detail));
+    dispatchImageEvents(detectedImageMap_, result.detectedImages, (name, detail) => schedulerDispatch(framework, name, detail));
     if (result.trackingStatus !== trackingStatus_ || result.trackingReason !== trackingReason_) {
       trackingStatus_ = result.trackingStatus;
       trackingReason_ = result.trackingReason;
-      framework.dispatchEvent('trackingstatus', { status: result.trackingStatus, reason: result.trackingReason });
+      schedulerDispatch(framework, 'trackingstatus', { status: result.trackingStatus, reason: result.trackingReason });
+    }
+    if (activePublication && !schedulerCurrent(activePublication.session)) throw new Error('[XR] B1prime stale publication');
+    // Commit only after every fallible callback above succeeds. A source computed during an
+    // earlier failed callback can be published for the first time by a later repeat callback.
+    if (publication) {
+      const sameSource = !!(timing && lastPublishedSource && timing.sessionEpoch === lastPublishedSource.epoch
+        && timing.sourceFrameIndex === lastPublishedSource.index);
+      const isFresh = !!(timing?.sourceMetadataFound && !timing.repeated
+        && timing.sessionEpoch === session_?.delivery?.epoch && !sameSource);
+      Object.assign(publication, timing || {}, { hasPose: true,
+        currentSessionEpoch: session_?.delivery?.epoch ?? null, kind, fresh: isFresh, publicationRepeated: sameSource });
+      if (timing?.sourceMetadataFound) lastPublishedSource = { epoch: timing.sessionEpoch, index: timing.sourceFrameIndex };
     }
     return result;
   };
@@ -546,19 +1458,45 @@ const XrControllerFactory = singleton((runConfig, xrccPromise, logCallback, erro
     return finishResult(framework, {
       ...resultFromDesc(heldDesc_), realityTexture: frameStartResult.cameraTexture,
       trackingStatus: 'LIMITED', trackingReason: 'UNSPECIFIED', worldPoints: [], detectedImages: [],
-    });
+    }, heldDesc_.sourceTiming, 'inactive-held');
   };
 
   // The compute context is lost right now (RM-4c m-E). A rebuilt session needs working GL, a lost one cannot answer.
   const computeContextLost = (gl = computeCtx_) => !!(gl && typeof gl.isContextLost === 'function' && gl.isContextLost());
 
   const onProcessCpu = ({ framework, frameStartResult }) => {
+    if (deliveryOptions) {
+      publication = { hasPose: false, sourceFrameIndex: null, sourceVideoTimeS: null, sourceFrameTimeS: null,
+        sourceTimeNanos: null, sourceTimeNanosInput: null, sourceStageTimeNanos: null,
+        sessionEpoch: null, currentSessionEpoch: session_?.delivery?.epoch ?? null,
+        repeated: null, fresh: false, publicationRepeated: false, newEngineResponse: false, engineFresh: false,
+        sourceMetadataFound: false, kind: 'no-result',
+        callbackVideoTimeS: frameStartResult.videoTime ?? null, callbackFrameTimeS: frameStartResult.frameTime ?? null };
+      responseEntries[responseNext] = publication;
+      responseNext = (responseNext + 1) % deliveryOptions.maxEntries;
+      responseTotal++;
+    }
     const { repeatFrame } = frameStartResult;
     if (cameraProcessingDisabled_) {
       fakeRealityTexture_ = fakeRealityTexture_ || initFakeRealityTexture(drawCtx_);
       return { realityTexture: fakeRealityTexture_ };
     }
     if (runConfig.paused) return null;
+    if (schedulerEnabled) {
+      const before = session_;
+      try {
+        maybeDispatchConfigChange(framework);
+        if (before && before !== session_) return null;
+        if (!session_ && deferredRebuild_ && !computeContextLost(deferredRebuild_.computeCtx || computeCtx_)) {
+          const d = deferredRebuild_; deferredRebuild_ = null; buildSession(d.kind, d);
+        }
+        return schedulerCpu(framework, frameStartResult);
+      } catch (error) {
+        if (before?.scheduler) schedulerFailure(before, 'scheduler-cpu-config', error);
+        else reportSchedulerError('scheduler-cpu-config', error);
+        return null;
+      }
+    }
     maybeDispatchConfigChange(framework);
     // A rebuild that waited for the context to come back (reinitSession) is made now.
     if (!session_ && deferredRebuild_ && !computeContextLost(deferredRebuild_.computeCtx || computeCtx_)) {
@@ -570,17 +1508,25 @@ const XrControllerFactory = singleton((runConfig, xrccPromise, logCallback, erro
     // No session and a lost context (a size change arrived before the context came back): the one report was already made
     // when the session saw the loss; the answer is the same null as with a session, not a frozen LIMITED pose.
     if (!session_) return computeContextLost(deferredRebuild_ && deferredRebuild_.computeCtx || computeCtx_) ? null : inactiveAnswer(framework, frameStartResult);
+    if (publication) publication.currentSessionEpoch = session_.delivery?.epoch ?? null;
     if (checkContext(session_)) return null;
+    const responsesBefore = session_.delivery?.responses;
     if (!repeatFrame) {
       // xr.js runs processCpu inside pre-render's try block; a throw would skip onUpdate and the camera texture
       // upload of this and every later frame. Report the failure and answer "no response" instead.
+      const pendingEvents = session_.pending?.events || [];
+      sensors.delivery?.process(pendingEvents);
       try {
         processStagedFrame(session_);
       } catch (error) {
         diag.stats.processErrors++;
+        sensors.delivery?.drop(pendingEvents, 'process-error');
         reportOnce('process', error);
         return null;
       }
+    } else if (ew_ && session_.ewFrames) {
+      // Worker mode: a repeated callback has no new frame to submit but still takes the results that arrived since.
+      try { drainWorkerResults(session_); } catch (error) { diag.stats.processErrors++; reportOnce('process', error); return null; }
     }
     const s = session_;
     if (!s.hasResponse || !s.activeTexture) {
@@ -592,7 +1538,7 @@ const XrControllerFactory = singleton((runConfig, xrccPromise, logCallback, erro
       // answered like the inactive frames (RM-4c m-B); NORMAL comes with the first fresh response of the new session.
       if (!s.lastDesc && heldInactive_) return inactiveAnswer(framework, frameStartResult);
       diag.stats.gapAnswers++;
-      return finishResult(framework, resultFromDesc(d));
+      return finishResult(framework, resultFromDesc(d), d.sourceTiming, 'held-gap');
     }
     const pose = s.last;
     s.lastDesc = {
@@ -601,8 +1547,11 @@ const XrControllerFactory = singleton((runConfig, xrccPromise, logCallback, erro
       status: pose.status, reason: pose.reason, worldPoints: s.lastWorldPoints,
       detectedImages: pose.detectedImages || [],
       realityTexture: window.XR8.drawTexForComputeTex(s.activeTexture),
+      sourceTiming: s.delivery?.sourceTiming,
     };
-    return finishResult(framework, resultFromDesc(s.lastDesc));
+    const newResponse = s.delivery && s.delivery.responses !== responsesBefore;
+    return finishResult(framework, resultFromDesc(s.lastDesc), s.lastDesc.sourceTiming,
+      newResponse ? 'engine-response' : 'callback-repeat');
   };
 
   const onStart = ({ computeCtx, canvasWidth, canvasHeight }) => {
@@ -628,10 +1577,34 @@ const XrControllerFactory = singleton((runConfig, xrccPromise, logCallback, erro
     if (!cameraProcessingDisabled_) {
       // engineInit: the startup recenter count is 5 on the first run and after a detach (engineCleanup, onSessionDetach); an
       // attach that follows an attach without a detach continues the count like any engineInit again.
-      destroySession();
+      destroySession('session-attach');
       heldInactive_ = false;
       deferredRebuild_ = null;
-      session_ = createSession({ videoWidth, videoHeight, rotation, computeCtx: computeCtx_, coords: configured_, framesUntilRecenter: startupFramesLeft_ });
+      if (schedulerEnabled && !(GLctx && typeof GLctx.copyTexSubImage2D === 'function'
+        && typeof GLctx.fenceSync === 'function' && typeof GLctx.texStorage2D === 'function')) {
+        schedulerFallbackReason = 'WebGL1 draw context has no WebGL2 owned-snapshot copy/fence support';
+        drainRetiredSnapshotPools(true);
+        schedulerEnabled = false;
+        heldDesc_ = null;  // A new legacy session cannot publish the retired ON texture.
+        warnOnce(`[XR] B1prime OFF fallback: ${schedulerFallbackReason}`);
+      }
+      if (schedulerRequested) {
+        try {
+          session_ = createSession({ videoWidth, videoHeight, rotation, computeCtx: computeCtx_, coords: configured_, framesUntilRecenter: startupFramesLeft_ });
+        } catch (error) {
+          // createSession already released its glue/pyramid. Leave no session (inactive answers, no throw out of the
+          // XR8 attach callback), record the failure, and finish the attach below (simulator listeners, flags).
+          // A later size/orientation change, or detach + attach, builds a session again.
+          session_ = null;
+          schedulerCounts.errors++;
+          pushEntry(schedulerFailures, { where: 'scheduler-attach', message: String(error?.message || error),
+            epoch: null, nativeAdvanced: false, partialDispatchCount: 0 });
+          pushEntry(diag.sessionLog, { event: 'scheduler-attach-failed' });
+          reportSchedulerError('scheduler-attach', error);
+        }
+      } else if (!ewDefer(videoWidth, videoHeight, rotation, () => {
+        session_ = createSession({ videoWidth, videoHeight, rotation, computeCtx: computeCtx_, coords: configured_, framesUntilRecenter: startupFramesLeft_ });
+      })) session_ = createSession({ videoWidth, videoHeight, rotation, computeCtx: computeCtx_, coords: configured_, framesUntilRecenter: startupFramesLeft_ });
       inactiveWarned_ = false;
     }
     isSimulator_ = sessionAttributes.isSimulator === true;
@@ -644,7 +1617,8 @@ const XrControllerFactory = singleton((runConfig, xrccPromise, logCallback, erro
   const onSessionDetach = () => {
     cameraProcessingDisabled_ = false;
     cameraSessionAttached_ = false;
-    destroySession();
+    destroySession('stop');
+    if (schedulerEnabled) drainRetiredSnapshotPools(true);
     startupFramesLeft_ = null;  // engineCleanup: the next engineInit starts with a fresh count
     heldInactive_ = false;
     deferredRebuild_ = null;
@@ -685,6 +1659,7 @@ const XrControllerFactory = singleton((runConfig, xrccPromise, logCallback, erro
   };
 
   const onDetach = () => {
+    if (schedulerEnabled) drainRetiredSnapshotPools(true);
     absoluteScale_ = false;
     enableLighting_ = false;
     enableWorldPoints_ = false;
@@ -728,7 +1703,7 @@ const XrControllerFactory = singleton((runConfig, xrccPromise, logCallback, erro
   };
 
   // XrController.configure (SDK `nA`, spec 06 §3.1): same order; a throw leaves the earlier changes.
-  const configure = (args) => {
+  const configureImpl = (args) => {
     if (!args) return;
     // chunk-only refusal (more than 32 targets) before any state changes (RM-4d, review m1)
     if (args.imageTargetData !== undefined) imageTargets.precheck(args.imageTargetData, { cameraProcessingDisabled: cameraProcessingDisabled_ });
@@ -778,7 +1753,7 @@ const XrControllerFactory = singleton((runConfig, xrccPromise, logCallback, erro
   };
 
   // XrController.updateCameraProjectionMatrix (SDK `xA`).
-  const updateCameraProjectionMatrix = ({ cam, origin, facing, updateRecenterPoint = true }) => {
+  const updateCameraProjectionMatrixImpl = ({ cam, origin, facing, updateRecenterPoint = true }) => {
     notifyOthersOfConfigChange_ = true;
     if (cam) Object.assign(cam_, cam);
     if (origin) {
@@ -840,7 +1815,9 @@ const XrControllerFactory = singleton((runConfig, xrccPromise, logCallback, erro
 
   // Builds the session for a size / orientation change (or a postponed one) and brings the live coordinate system to where the
   // original's engineInit would have it. A failed build is reported (errorCallback: a real failure) and leaves no session.
-  const buildSession = (kind, { videoWidth, videoHeight, orientation, computeCtx }) => {
+  const buildSession = (kind, args) => {
+    const { videoWidth, videoHeight, orientation, computeCtx } = args;
+    if (ewDefer(videoWidth, videoHeight, orientation, () => buildSession(kind, args))) return;
     try {
       // engineInit -> rebuildEngine applies the configured coordinate system; an orientation change then sends P (configureXr).
       // The startup recenter count continues where the destroyed glue was (engineInit does not arm it again).
@@ -862,9 +1839,13 @@ const XrControllerFactory = singleton((runConfig, xrccPromise, logCallback, erro
 
   const reinitSession = (kind, args) => {
     const { videoWidth, videoHeight, orientation, computeCtx } = args;
+    if (schedulerEnabled && session_?.scheduler.nativeCallDepth) {
+      const error = new Error('[XR] B1prime lifecycle mutator busy'); session_.scheduler.reentrantError = error; throw error;
+    }
     maybeDispatchConfigChange(framework_);
     if (!cameraSessionAttached_) return;
-    destroySession();
+    if (schedulerEnabled && session_) schedulerCounts.lifecycleResets++;
+    destroySession(kind);
     deferredRebuild_ = null;
     const unsupported = unsupportedCapture(videoWidth, videoHeight, orientation);
     if (unsupported) {
@@ -886,7 +1867,7 @@ const XrControllerFactory = singleton((runConfig, xrccPromise, logCallback, erro
   const onDeviceOrientationChange = (args) => reinitSession('orientation', args);
   const onVideoSizeChange = (args) => reinitSession('videoSize', args);
 
-  const onCanvasSizeChange = ({ canvasWidth, canvasHeight }) => {
+  const onCanvasSizeChangeImpl = ({ canvasWidth, canvasHeight }) => {
     maybeDispatchConfigChange(framework_);
     cam_.pixelRectWidth = canvasWidth;
     cam_.pixelRectHeight = canvasHeight;
@@ -950,7 +1931,7 @@ const XrControllerFactory = singleton((runConfig, xrccPromise, logCallback, erro
   });
 
   // XrController.recenter (SDK `XA`): P = p, l = f, rebuild; no configureXr.
-  const recenter = () => {
+  const recenterImpl = () => {
     origin_ = { ...recenterOrigin_ };
     facing_ = { ...recenterFacing_ };
     // No session (inactive capture, failed rebuild): the original keeps tracking and rebuildEngine restarts at the configured
@@ -968,19 +1949,71 @@ const XrControllerFactory = singleton((runConfig, xrccPromise, logCallback, erro
     maybeDispatchConfigChange(framework_, true);
   };
 
+  const configure = (args) => {
+    if (!schedulerEnabled) return configureImpl(args);
+    if (args?.imageTargetData !== undefined) imageTargets.precheck(args.imageTargetData, { cameraProcessingDisabled: cameraProcessingDisabled_ });
+    // Predict only the JS prefix that the existing validation order can actually reach.
+    // In an active session scale/VPS/world-tracking/wayspot validation throws before later keys.
+    let nextWorld = enableWorldPoints_;
+    if (args?.enableFeatureSet !== undefined) nextWorld = !!args.enableFeatureSet;
+    if (args?.enableWorldPoints !== undefined) nextWorld = !!args.enableWorldPoints;
+    let effective = nextWorld !== enableWorldPoints_;
+    if (!(sessionStarted_ && args?.scale !== undefined)) {
+      const scalars = { enableLighting: enableLighting_, leftHandedAxes: leftHandedAxes_, mirroredDisplay: mirroredDisplay_ };
+      effective ||= Object.keys(scalars).some((k) => args?.[k] !== undefined && !!args[k] !== scalars[k]);
+      if (!(sessionStarted_ && (args?.enableVps !== undefined || args?.disableWorldTracking !== undefined || args?.projectWayspots !== undefined))) {
+        // configureXr is unreachable when an earlier runtime-only validation throws.
+        effective ||= !!(args && session_?.liveStale && scale_);
+        effective ||= args?.imageTargetData !== undefined || (args?.enableDataRecorder !== undefined && !!args.enableDataRecorder !== dataRecorderRequested_);
+      }
+    }
+    return schedulerCommand('configure', effective, () => configureImpl(args));
+  };
+  const updateCameraProjectionMatrix = (args) => {
+    if (!schedulerEnabled) return updateCameraProjectionMatrixImpl(args);
+    const effective = Object.entries(args.cam || {}).some(([k, v]) => cam_[k] !== v)
+      || Object.entries(args.origin || {}).some(([k, v]) => origin_[k] !== v || (args.updateRecenterPoint !== false && recenterOrigin_[k] !== v))
+      || Object.entries(args.facing || {}).some(([k, v]) => facing_[k] !== v || (args.updateRecenterPoint !== false && recenterFacing_[k] !== v));
+    return schedulerCommand('projection', effective || !!session_?.liveStale, () => updateCameraProjectionMatrixImpl(args));
+  };
+  const recenter = () => schedulerCommand('recenter', true, recenterImpl);
+  const onCanvasSizeChange = (args) => {
+    if (!schedulerEnabled) return onCanvasSizeChangeImpl(args);
+    return schedulerCommand('canvas-size', args.canvasWidth !== cam_.pixelRectWidth
+      || args.canvasHeight !== cam_.pixelRectHeight, () => onCanvasSizeChangeImpl(args));
+  };
+
   const hitTestTypeEnum = {
     UNSPECIFIED: 'UNSPECIFIED', FEATURE_POINT: 'FEATURE_POINT', ESTIMATED_SURFACE: 'ESTIMATED_SURFACE', DETECTED_SURFACE: 'DETECTED_SURFACE',
   };
   // XrController.hitTest (SDK `zA` -> c8EmAsm_query): unknown type names stay UNSPECIFIED.
   const hitTest = (x, y, includedTypes = []) => {
-    if (!engine_) return [];
-    if (!session_) return [];
-    return session_.glue.xrHitTest(x, y, includedTypes && includedTypes.length ? includedTypes : []);
+    if (schedulerEnabled) schedulerCounts.hitTests++;
+    const miss = () => { if (schedulerEnabled) schedulerCounts.hitMisses++; return []; };
+    if (!engine_) return miss();
+    if (!session_) return miss();
+    if (schedulerEnabled && (computeContextLost() || drawCtx_?.isContextLost?.())) {
+      schedulerFailure(session_, 'scheduler-query-context', new Error('[XR] B1prime context lost before query')); return miss();
+    }
+    if (schedulerEnabled && schedulerBusyReason()) { schedulerCounts.queryRejected++; return miss(); }
+    if (!schedulerEnabled) return session_.glue.xrHitTest(x, y, includedTypes && includedTypes.length ? includedTypes : []);
+    const s = session_;
+    try {
+      const hits = s.glue.xrHitTest(x, y, includedTypes && includedTypes.length ? includedTypes : []);
+      if (!hits?.length) schedulerCounts.hitMisses++;
+      return hits;
+    } catch (error) { schedulerFailure(s, 'scheduler-query', error); return miss(); }
   };
   hitTest.type = hitTestTypeEnum;
 
   const dispatchToFramework = (name, detail) => { framework_.dispatchEvent(name, detail); };
+  // FX-E3: a message whose data is not an object is ignored (event.data can be null or a string). Opt-in, default OFF:
+  // SLAM_REFACT_CHUNK_OPTIONS.trustedMessageOrigins (array of origin strings) drops messages from other origins and counts them in
+  // diag.trustedMessageOrigins.dropped. Unset = every origin is accepted, as in the original simulator hook.
+  if (trustedMessageOrigins) diag.trustedMessageOrigins = { origins: [...trustedMessageOrigins], dropped: 0 };
   addWindowListener('message', (event) => {
+    if (event.data === null || typeof event.data !== 'object') return;
+    if (trustedMessageOrigins && !trustedMessageOrigins.includes(event.origin)) { diag.trustedMessageOrigins.dropped++; return; }
     if (event.data.deviceOrientation8w) window.dispatchEvent(new CustomEvent('deviceorientation8w', { detail: event.data.deviceOrientation8w }));
     if (event.data.deviceMotion8w) window.dispatchEvent(new CustomEvent('devicemotion8w', { detail: event.data.deviceMotion8w }));
     if (event.data.gps8w) window.dispatchEvent(new CustomEvent('gps8w', { detail: event.data.gps8w }));
@@ -1014,7 +2047,8 @@ const XrControllerFactory = singleton((runConfig, xrccPromise, logCallback, erro
   const stopDatarecorder = () => undefined;
   const getIsDataRecording = () => false;
 
-  return enginePromise.then(() => ({
+  const ready = identityPromise ? Promise.all([enginePromise, identityPromise]) : enginePromise;
+  return ready.then(() => ({
     pipelineModule,
     configure,
     recenter,

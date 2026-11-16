@@ -8,8 +8,128 @@ export const summarize = (values) => {
 };
 
 const CAP = 20000;  // per series, so a long session cannot grow without bound
+export const POSE_LOG_CAP = 40000;  // rows of the opt-in pose log (?record=1): about 20 minutes at 30 Hz
+const NOTE = 'Counters and intervals only. No camera image and no IMU sample. Produced by the user clicking the download button. Interval unit: ms between pipeline onUpdate calls with a reality result (not engine time).';
+const NOTE_RECORD = ' Recording was on (?record=1): poseLog holds one pose row per onUpdate (pose, status, point count, timestamps; no image, no raw IMU) and receipt holds the camera/device/build identification; both stay in memory until this download.';
 
-export function createMetrics(now = () => performance.now()) {
+const num = (v) => (typeof v === 'number' && Number.isFinite(v) ? v : null);
+const xyz = (v) => (v ? { x: num(v.x), y: num(v.y), z: num(v.z) } : null);
+
+// What the pose log numbers mean (read by tools/harness/eval/strict_accuracy.py; nothing here is a calibration or a metric claim).
+export const POSE_LOG_META = Object.freeze({
+  rotation: 'XR8 reality.rotation as an {x, y, z, w} object (quaternion, camera-to-world)',
+  position: 'XR8 world, right-handed, y up; responsive units (origin height = 1 unit unless scale: absolute), NOT metres',
+  tPerfMs: 'performance.now() at the onUpdate callback (page clock, not exposure time)',
+  videoTimeS: 'frameStartResult.videoTime = video.currentTime of the uploaded frame (media clock)',
+  frameTimeS: 'frameStartResult.frameTime = pipeline rAF performance.now()/1e3',
+  sourceFrameIndex: 'chunk index of the camera frame the published pose was computed from (responses lag one frame); null if unknown. Updated only on fresh responses',
+  repeatFrame: 'frameStartResult.repeatFrame: no new camera upload in this callback (NOT the engine pose.repeated flag)',
+  source: 'chunk sourceTiming of this callback (fields of build/xr-accuracy-research-20261030/i2-m0/fields.md): the pose source frame, its staged times and freshness; null when delivery diagnostics are off. Pair source.sourceVideoTimeS with the pose, not videoTimeS',
+  timeVsSource: 'videoTimeS / frameTimeS belong to the frame uploaded in this callback, NOT to sourceFrameIndex: do not pair them as one frame (off by one)',
+});
+
+// The sourceTiming scalars a row keeps (the chunk getter already returns a detached copy; this keeps the row small and fixed).
+const SOURCE_TIMING_KEYS = ['kind', 'hasPose', 'fresh', 'engineFresh', 'newEngineResponse', 'repeated', 'publicationRepeated', 'sourceMetadataFound',
+  'sourceFrameIndex', 'sessionEpoch', 'currentSessionEpoch', 'sourceVideoTimeS', 'sourceFrameTimeS', 'sourceStageTimeNanos', 'sourceTimeNanos',
+  'callbackVideoTimeS', 'callbackFrameTimeS', 'engineReturnedAtMs'];
+export const pickSourceTiming = (st) => {
+  if (!st || typeof st !== 'object') return null;
+  const out = {};
+  for (const k of SOURCE_TIMING_KEYS) { const v = st[k]; out[k] = typeof v === 'number' ? num(v) : typeof v === 'boolean' || typeof v === 'string' ? v : null; }
+  return out;
+};
+
+// Pose log of ?record=1. Rows beyond the cap are not stored but always counted (droppedRows), so a long session is visibly truncated, never silently.
+// overheadMs is the time this recorder itself spent building and storing a row (timed with the same clock as the page), so its cost is on record.
+export function createPoseRecorder(now = () => performance.now(), cap = POSE_LOG_CAP) {
+  const rows = [], overhead = [];
+  let droppedRows = 0;
+  return {
+    // frameStart is xr.js's frameStartResult: videoTime (video.currentTime, s) and frameTime (performance.now()/1e3, s) when the SDK gives them;
+    // repeatFrame marks a callback without a new camera frame. sourceFrameIndex is the chunk's index of the frame the pose was computed from
+    // (window.__slamRefactChunk.stats.lastSourceFrameIndex), so repeated / held poses are told apart from fresh ones offline.
+    add(reality, frameStart, sourceFrameIndex = null, sourceTiming = null) {
+      if (rows.length >= cap) { droppedRows++; return; }
+      const t0 = now();
+      const p = reality.position, q = reality.rotation;
+      rows.push({
+        tPerfMs: t0, videoTimeS: num(frameStart && frameStart.videoTime), frameTimeS: num(frameStart && frameStart.frameTime),
+        repeatFrame: frameStart && typeof frameStart.repeatFrame === 'boolean' ? frameStart.repeatFrame : null, sourceFrameIndex: num(sourceFrameIndex),
+        source: pickSourceTiming(sourceTiming),
+        status: reality.trackingStatus ?? null, reason: reality.trackingReason ?? null,
+        position: xyz(p), rotation: q ? { ...xyz(q), w: num(q.w) } : null,
+        worldPoints: Array.isArray(reality.worldPoints) ? reality.worldPoints.length : 0,
+      });
+      overhead.push(now() - t0);  // one sample per stored row, so it is bounded by cap as well
+    },
+    counts: () => ({ rows: rows.length, droppedRows }),
+    snapshot(nullUpdates = 0) {
+      return { schema: 'slam-refact-xr-poselog-v3', meta: POSE_LOG_META, rows, droppedRows, cap, nullUpdates, overheadMs: summarize(overhead) };
+    },
+  };
+}
+
+const sha256Hex = async (subtle, text) => {
+  const d = await subtle.digest('SHA-256', new TextEncoder().encode(String(text)));
+  return Array.from(new Uint8Array(d), (b) => b.toString(16).padStart(2, '0')).join('');
+};
+const jsonCopy = (v) => (v === undefined ? null : JSON.parse(JSON.stringify(v)));
+const guard = async (fn) => { try { return await fn(); } catch (e) { return { unavailable: String(e && e.message || e) }; } };
+
+// Counts and the p50/p95/p99 of the per-frame timing arrays; the arrays themselves (up to tens of thousands of entries) are not copied.
+const TIMING_KEYS = ['stageMs', 'readMs', 'engineMs'];
+export function summarizeChunkStats(chunk) {
+  if (!chunk || typeof chunk !== 'object') return null;
+  const out = {};
+  for (const [k, v] of Object.entries(chunk.stats || {})) {
+    if (Array.isArray(v)) out[k] = TIMING_KEYS.includes(k) ? summarize(v.filter((x) => typeof x === 'number')) : { n: v.length };
+    else out[k] = jsonCopy(v);
+  }
+  return { stats: out, limits: jsonCopy(chunk.limits), error: jsonCopy(chunk.error), warningsCount: Array.isArray(chunk.warnings) ? chunk.warnings.length : null };
+}
+
+// Identification of what produced a pose log: camera stream, device, build. Every part is read separately and reports why it is missing
+// (unavailable: reason) instead of failing the whole receipt. The raw deviceId/groupId never appear: only their SHA-256.
+export async function buildReceipt(env) {
+  const { track = null, win = {}, nav = {}, scr = {}, canvas = null, fetchFn = null, subtle = null, nowMs = Date.now() } = env;
+  const hash = async (v) => (v == null ? null : subtle ? sha256Hex(subtle, v) : { unavailable: 'crypto.subtle is not available (insecure context)' });
+  const fetchJson = async (url) => {
+    if (!fetchFn) return { unavailable: 'fetch is not available' };
+    return guard(async () => {
+      const r = await fetchFn(url, { cache: 'no-store' });
+      if (!r.ok) return { unavailable: `HTTP ${r.status}` };
+      return r.json();
+    });
+  };
+  const pick = (o, keys) => (o && o.unavailable === undefined ? Object.fromEntries(keys.map((k) => [k, o[k] ?? null])) : o);
+  const camera = track ? await guard(async () => {
+    const { deviceId, groupId, ...settings } = jsonCopy(track.getSettings ? track.getSettings() : {});
+    return { settings, label: track.label ?? null, deviceIdSha256: await hash(deviceId), groupIdSha256: await hash(groupId), readyState: track.readyState ?? null };
+  }) : { unavailable: 'no camera track seen (no hasStream/hasVideo camera status yet)' };
+  const deploy = await fetchJson('../../deploy.json');
+  const manifest = await fetchJson('../../engine/slam-refact-engine/manifest.json');
+  const chunk = win.__slamRefactChunk;
+  const orient = scr.orientation;
+  return {
+    capturedAtMs: nowMs, tPerfMs: typeof win.performance?.now === 'function' ? win.performance.now() : null,
+    camera, cameraResolution: await guard(() => jsonCopy(win.XrCameraResolution)),
+    deploy: pick(deploy, ['schema', 'engine', 'xr_js', 'bundle_sha256']),
+    engineManifest: manifest && manifest.unavailable === undefined ? { schema: manifest.schema ?? null, artifacts: jsonCopy(manifest.artifacts) } : manifest,
+    session: await guard(() => jsonCopy(chunk && chunk.session)),
+    chunkStats: await guard(() => summarizeChunkStats(chunk)),
+    delivery: await guard(() => jsonCopy(chunk && chunk.delivery)),  // full bounded delivery ledger (null when off); read twice per session only
+    userAgent: nav.userAgent ?? null,
+    userAgentData: nav.userAgentData && nav.userAgentData.getHighEntropyValues
+      ? await guard(async () => jsonCopy(await nav.userAgentData.getHighEntropyValues(['model', 'platformVersion']))) : { unavailable: 'navigator.userAgentData is not available' },
+    screen: { orientation: orient ? { type: orient.type, angle: orient.angle } : null, width: scr.width ?? null, height: scr.height ?? null, innerWidth: win.innerWidth ?? null, innerHeight: win.innerHeight ?? null },
+    devicePixelRatio: win.devicePixelRatio ?? null,
+    canvas: canvas ? { width: canvas.width, height: canvas.height } : null,
+  };
+}
+
+export function createMetrics(now = () => performance.now(), options = {}) {
+  const recorder = options.record ? createPoseRecorder(now, options.poseLogCap) : null;
+  let receiptAtStart = null;
   const m = {
     startedAt: null, firstNormalAt: null, lastUpdateAt: null,
     updates: 0, nullUpdates: 0, resets: 0, hitTests: 0, hitMisses: 0, placed: 0,
@@ -18,10 +138,11 @@ export function createMetrics(now = () => performance.now()) {
   const push = (arr, v) => { if (arr.length < CAP) arr.push(v); };
   return {
     start() { m.startedAt = now(); },
-    update(reality, nPoints) {
+    update(reality, nPoints, frameStart, sourceFrameIndex = null, sourceTiming = null) {
       const t = now();
       if (!reality) { m.nullUpdates++; return; }
       m.updates++;
+      if (recorder) recorder.add(reality, frameStart, sourceFrameIndex, sourceTiming);
       if (m.lastUpdateAt != null) push(m.firstNormalAt == null ? m.intervalsPre : m.intervalsPost, t - m.lastUpdateAt);
       m.lastUpdateAt = t;
       if (m.firstNormalAt == null && reality.trackingStatus === 'NORMAL') m.firstNormalAt = t;
@@ -33,10 +154,13 @@ export function createMetrics(now = () => performance.now()) {
     hit(ok) { m.hitTests++; if (!ok) m.hitMisses++; },
     placed() { m.placed++; },
     error() { m.errors++; },
-    snapshot(extra = {}) {
-      return {
+    recording: !!recorder,
+    poseLogCounts: () => (recorder ? recorder.counts() : null),
+    setReceiptAtStart(r) { receiptAtStart = r; },
+    snapshot(extra = {}, receiptAtDownload = null) {
+      const snap = {
         schema: 'slam-refact-phone-metrics-v1',
-        note: 'Counters and intervals only. No camera image and no IMU sample. Produced by the user clicking the download button. Interval unit: ms between pipeline onUpdate calls with a reality result (not engine time).',
+        note: recorder ? NOTE + NOTE_RECORD : NOTE,
         label: 'page-observed (rAF/onUpdate cadence), device and input kind are recorded by the user, not by this page',
         ...extra,
         updates: m.updates, nullUpdates: m.nullUpdates, hitTests: m.hitTests, hitMisses: m.hitMisses, placed: m.placed,
@@ -46,6 +170,8 @@ export function createMetrics(now = () => performance.now()) {
         worldPoints: summarize(m.worldPoints),
         transitions: m.transitions, events: m.events,
       };
+      if (recorder) { snap.poseLog = recorder.snapshot(m.nullUpdates); snap.receipt = { atStart: receiptAtStart, atDownload: receiptAtDownload }; }
+      return snap;
     },
   };
 }
