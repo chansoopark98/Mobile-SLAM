@@ -3,6 +3,7 @@
 // (US-004), lighting (US-005), trackingStatusChanged and the front camera error (US-006).
 //   SLAM_REFACT_WASM_DIR=<abs dir> node --test slam_refact/engine/tests/wasm/xr_api.test.mjs
 import assert from 'node:assert/strict';
+import { readFileSync } from 'node:fs';
 import path from 'node:path';
 import { createRequire } from 'node:module';
 import test from 'node:test';
@@ -457,4 +458,46 @@ test('framesUntilRecenter: counter, accessor and validation', async () => {
     assert.throws(() => new Module.SlamRefactGlue({ ...base, framesUntilRecenter: bad }), /framesUntilRecenter/);
   }
   dflt.delete(); zero.delete(); three.delete();
+});
+
+// FX-D3a: getEffectiveConfig() reads back what the glue runs with; adding it changes no output.
+test('getEffectiveConfig: accuracy, intrinsics override, ignored keys and contractVersion', async () => {
+  const Module = await require(path.join(wasmDir, 'slam_refact_engine.js'))();
+  const base = { captureWidth: W, captureHeight: H, manufacturer: 'Google', model: 'Pixel 7' };
+  const versionH = readFileSync(path.join(repo, 'slam_refact/engine/include/slam_refact/version.h'), 'utf8');
+  const contractVersion = Number(/kContractVersion = (\d+);/.exec(versionH)[1]);
+  assert.equal(Module.SlamRefactGlue.contractVersion, contractVersion);
+
+  const plain = new Module.SlamRefactGlue(base);
+  const p = plain.getEffectiveConfig();
+  assert.equal(p.contractVersion, contractVersion);
+  assert.equal(p.accuracy.enabled, false);
+  assert.deepEqual(p.ignoredKeys, []);
+  assert.equal(p.captureWidth, W);
+  assert.equal(p.captureHeight, H);
+  assert.equal(p.rotationDeg, 0);
+  assert.equal(p.intrinsics.override, false);
+  assert.ok(p.intrinsics.fx > 0 && p.intrinsics.fy > 0, JSON.stringify(p.intrinsics));
+
+  const acc = new Module.SlamRefactGlue({ ...base, accuracy: { enabled: true, metricOutput: true, notAKey: 1 } });
+  const a = acc.getEffectiveConfig();
+  assert.equal(a.accuracy.enabled, true);
+  assert.equal(a.accuracy.metricOutput, true);
+  assert.equal(a.accuracy.localBa, false);
+  assert.deepEqual(a.ignoredKeys, ['accuracy.notAKey']);
+  assert.deepEqual(new Module.SlamRefactGlue({ ...base, notAKey: 2 }).getEffectiveConfig().ignoredKeys, ['notAKey']);
+
+  const K = [201.5, 202.5, 119.5, 159.5];
+  const ov = new Module.SlamRefactGlue({ ...base, intrinsics: K }).getEffectiveConfig().intrinsics;
+  assert.deepEqual([ov.fx, ov.fy, ov.cx, ov.cy], K);
+  assert.equal(ov.override, true);
+
+  // The read-back does not change the output: same frames, same published poses.
+  const other = new Module.SlamRefactGlue(base);
+  const noTiming = ({ stageMs, ...rest }) => rest;  // stageMs = wall-clock stage timings
+  for (let k = 0; k < 6; k++) {
+    plain.getEffectiveConfig();
+    assert.deepEqual(noTiming(step(plain, k)), noTiming(step(other, k)));
+  }
+  plain.delete(); acc.delete(); other.delete();
 });

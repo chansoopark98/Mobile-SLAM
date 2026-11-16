@@ -71,6 +71,13 @@
 // Accuracy mode (contract ACC-1..4): config.accuracy = {enabled, metricOutput, metricWindowS,
 // metricPriorScale, localBa, multiviewTriangulation, baWindow}; config.intrinsics = [fx, fy, cx, cy]
 // overrides the K rule.
+// Config read-back (FX-D3a): getEffectiveConfig() -> {contractVersion, captureWidth, captureHeight,
+// rotationDeg, intrinsics {fx, fy, cx, cy, width, height, override}, accuracy {every
+// AccuracyConfig field}, ignoredKeys ['key' | 'accuracy.key']}; SlamRefactGlue.contractVersion =
+// kContractVersion (version.h).
+// Constructor input errors (FX-D2): a missing / non-positive / non-integer captureWidth or
+// captureHeight, an unsupported rotationDeg, a non-integer int key throw a JS Error (the engine
+// would abort the module); origin: null is "not given", like facing.
 // Times are JS numbers holding integer nanoseconds (exact below 2^53 ns, about 104 days).
 
 #include <emscripten/bind.h>
@@ -84,10 +91,13 @@
 #include <string>
 #include <vector>
 
+#include "engine/device_orientation.h"
 #include "engine/display_intrinsics.h"
 #include "frontend/frontend.h"
+#include "frontend/intrinsics.h"
 #include "frontend/roi_draw.h"
 #include "slam_refact/glue_runner.h"
+#include "slam_refact/version.h"
 
 namespace slam_refact::wasm {
 namespace {
@@ -152,15 +162,69 @@ T Get(const val& obj, const char* key, T def) {
   return v.isUndefined() || v.isNull() ? def : v.as<T>();
 }
 
+// An int key: undefined / null = def, otherwise a finite integral number in the int range (a
+// fractional or out-of-range number would be truncated or wrapped by the int conversion).
+int GetInt(const val& obj, const char* key, int def) {
+  const val v = obj[key];
+  if (v.isUndefined() || v.isNull()) return def;
+  const double d = v.as<double>();
+  if (!std::isfinite(d) || d != std::floor(d) || d < std::numeric_limits<int>::min() ||
+      d > std::numeric_limits<int>::max()) {
+    ThrowJs(std::string(key) + " must be an integer");
+  }
+  return static_cast<int>(d);
+}
+
+// Upper bound of an image target luminance side. The image-target-cli luminance (the size the
+// original loads, tests and web-chunk use) is at most 480x640. 2048 keeps a target at <= 4 MiB and
+// the at most 32 targets of one setImageTargets call at <= 128 MiB of copies, within the 512 MiB
+// MAXIMUM_MEMORY of the module (SlamRefactWasm.cmake) next to its 256 MiB initial heap, so a
+// malformed size is a JS Error instead of an out-of-memory abort.
+constexpr int kMaxImageTargetSide = 2048;
+
+// The config keys the constructor reads (top level and config.accuracy); getEffectiveConfig()
+// reports every other own key as ignored.
+constexpr const char* kConfigKeys[] = {
+    "estimateScale", "disableVio", "captureWidth", "captureHeight", "rotationDeg", "manufacturer",
+    "model", "pyramidModel", "intrinsics", "accuracy", "detectSurfaces", "origin", "facing",
+    "framesUntilRecenter", "leftHandedAxes", "mirroredDisplay"};
+constexpr const char* kAccuracyKeys[] = {
+    "enabled", "metricOutput", "metricWindowS", "metricPriorScale", "metricLowBand",
+    "metricFixedLagS", "localBa", "multiviewTriangulation", "baWindow", "viPrediction",
+    "viVelocityGain"};
+
+template <size_t N>
+void AppendIgnoredKeys(const val& obj, const char* const (&known)[N], const std::string& prefix,
+                       std::vector<std::string>* out) {
+  const val keys = val::global("Object").call<val>("keys", obj);
+  const size_t n = keys["length"].as<size_t>();
+  for (size_t i = 0; i < n; ++i) {
+    const std::string key = keys[i].as<std::string>();
+    bool is_known = false;
+    for (const char* k : known) is_known = is_known || key == k;
+    if (!is_known) out->push_back(prefix + key);
+  }
+}
+
 class SlamRefactGlue {
  public:
   explicit SlamRefactGlue(val cfg) {
+    if (cfg.isUndefined() || cfg.isNull() || cfg.typeOf().as<std::string>() != "object") {
+      ThrowJs("the constructor needs a config object");
+    }
     EngineConfig e;
     e.estimate_scale = Get<bool>(cfg, "estimateScale", false);
     e.disable_vio = Get<bool>(cfg, "disableVio", false);
-    e.capture_width = Get<int>(cfg, "captureWidth", 0);
-    e.capture_height = Get<int>(cfg, "captureHeight", 0);
-    e.rotation_deg = Get<int>(cfg, "rotationDeg", 0);
+    e.capture_width = GetInt(cfg, "captureWidth", 0);
+    e.capture_height = GetInt(cfg, "captureHeight", 0);
+    e.rotation_deg = GetInt(cfg, "rotationDeg", 0);
+    // The engine checks these with SR_CHECK (CheckGeometry, ComputePyramidLayout) = module abort.
+    if (e.capture_width <= 0 || e.capture_height <= 0) {
+      ThrowJs("captureWidth and captureHeight must be positive");
+    }
+    if (!IsSupportedRotation(e.rotation_deg)) {
+      ThrowJs("rotationDeg must be 0, 90, 180, 270, -90, -180 or -270");
+    }
     e.manufacturer = Get<std::string>(cfg, "manufacturer", "");
     e.model = Get<std::string>(cfg, "model", "");
     e.pyramid_model = Get<std::string>(cfg, "pyramidModel", "ieee") == "swiftshader-approx"
@@ -181,8 +245,10 @@ class SlamRefactGlue {
       }
       e.intrinsics_override = in;
     }
+    AppendIgnoredKeys(cfg, kConfigKeys, "", &ignored_keys_);
     const val acc = cfg["accuracy"];
     if (!acc.isUndefined() && !acc.isNull()) {
+      AppendIgnoredKeys(acc, kAccuracyKeys, "accuracy.", &ignored_keys_);
       AccuracyConfig& a = e.accuracy;
       a.enabled = Get<bool>(acc, "enabled", false);
       a.metric_output = Get<bool>(acc, "metricOutput", a.metric_output);
@@ -195,7 +261,7 @@ class SlamRefactGlue {
       }
       a.local_ba = Get<bool>(acc, "localBa", false);
       a.multiview_triangulation = Get<bool>(acc, "multiviewTriangulation", false);
-      a.ba_window = Get<int>(acc, "baWindow", a.ba_window);
+      a.ba_window = GetInt(acc, "baWindow", a.ba_window);
       a.vi_prediction = Get<bool>(acc, "viPrediction", false);
       a.vi_velocity_gain = Get<double>(acc, "viVelocityGain", a.vi_velocity_gain);
       if (!(a.vi_velocity_gain >= 0.0 && a.vi_velocity_gain <= 1.0)) ThrowJs("viVelocityGain must be in [0, 1]");
@@ -208,7 +274,7 @@ class SlamRefactGlue {
     GlueConfig g;
     g.detect_surfaces = Get<bool>(cfg, "detectSurfaces", false);
     const val origin = cfg["origin"];
-    if (!origin.isUndefined()) {
+    if (!origin.isUndefined() && !origin.isNull()) {
       g.origin = Vec3f{FiniteFloat(origin[0], "origin[0]"), FiniteFloat(origin[1], "origin[1]"),
                        FiniteFloat(origin[2], "origin[2]")};
     }
@@ -233,6 +299,75 @@ class SlamRefactGlue {
     capture_width_ = e.capture_width;
     capture_height_ = e.capture_height;
     rotation_deg_ = e.rotation_deg;
+    engine_config_ = e;
+  }
+
+  // FX-D3a: read-back of the configuration this glue runs with (diagnostic, changes nothing).
+  // intrinsics = the processing (level-0) K the engine uses: config.intrinsics as given
+  // (override = true) or the K rule of engine.cc (device table or ACC-4 accuracy focal);
+  // accuracy = every AccuracyConfig field after parsing (defaults for keys not given);
+  // ignoredKeys = own keys of config / config.accuracy the constructor does not read.
+  val GetEffectiveConfig() const {
+    const EngineConfig& e = engine_config_;
+    const frontend::LevelLayout& l0 = layout_.levels[0];
+    const float accuracy_focal =
+        e.accuracy.enabled ? frontend::AccuracyDeviceFocal(e.manufacturer, e.model) : 0.0f;
+    const PinholeIntrinsics k =
+        e.intrinsics_override.has_value()
+            ? *e.intrinsics_override
+            : accuracy_focal > 0.0f
+                  ? frontend::ComputeIntrinsicsSetWithFocal(accuracy_focal, e.capture_width,
+                                                            e.capture_height, l0.w, l0.h)
+                        .processing
+                  : frontend::ComputeIntrinsicsSet(e.manufacturer, e.model, e.capture_width,
+                                                   e.capture_height, l0.w, l0.h)
+                        .processing;
+    val out = val::object();
+    out.set("contractVersion", kContractVersion);
+    out.set("captureWidth", e.capture_width);
+    out.set("captureHeight", e.capture_height);
+    out.set("rotationDeg", e.rotation_deg);
+    val in = val::object();
+    in.set("fx", k.fx);
+    in.set("fy", k.fy);
+    in.set("cx", k.cx);
+    in.set("cy", k.cy);
+    in.set("width", k.width);
+    in.set("height", k.height);
+    in.set("override", e.intrinsics_override.has_value());
+    out.set("intrinsics", in);
+    const AccuracyConfig& a = e.accuracy;
+    val acc = val::object();
+    acc.set("enabled", a.enabled);
+    acc.set("multiviewTriangulation", a.multiview_triangulation);
+    acc.set("localBa", a.local_ba);
+    acc.set("baWindow", a.ba_window);
+    acc.set("baMaxIterations", a.ba_max_iterations);
+    acc.set("baMaxSeconds", a.ba_max_seconds);
+    acc.set("baHuberPx", a.ba_huber_px);
+    acc.set("baCauchy", a.ba_cauchy);
+    acc.set("baOutlierPx", a.ba_outlier_px);
+    acc.set("baTiltSigmaRad", a.ba_tilt_sigma_rad);
+    acc.set("baGroundPoints", a.ba_ground_points);
+    acc.set("baMinParallaxDeg", a.ba_min_parallax_deg);
+    acc.set("metricOutput", a.metric_output);
+    acc.set("viPrediction", a.vi_prediction);
+    acc.set("viVelocityGain", a.vi_velocity_gain);
+    acc.set("metricWindowS", a.metric_window_s);
+    acc.set("metricPriorScale", a.metric_prior_scale);
+    acc.set("metricLowBand", a.metric_low_band);
+    acc.set("metricFixedLagS", a.metric_fixed_lag_s);  // NaN = lag search
+    acc.set("f1GroundPlane", a.f1_ground_plane);
+    acc.set("f2GroundConfirmation", a.f2_ground_confirmation);
+    acc.set("r6SpanVelocity", a.r6_span_velocity);
+    acc.set("r7PoseGraph", a.r7_pose_graph);
+    acc.set("r7pLoopSelect", a.r7p_loop_select);
+    acc.set("v1ExactLimit", a.v1_exact_limit);
+    out.set("accuracy", acc);
+    val ignored = val::array();
+    for (const std::string& key : ignored_keys_) ignored.call<void>("push", key);
+    out.set("ignoredKeys", ignored);
+    return out;
   }
 
   // accelerationIncludingGravity (m/s^2), optional acceleration (hasAcceleration), rotationRate
@@ -296,6 +431,10 @@ class SlamRefactGlue {
   // gray: Uint8Array of width * height bytes (row stride = width).
   val ProcessFrame(double time_ns, double video_time_ns, val gray, int width, int height) {
     if (width <= 0 || height <= 0) ThrowJs("frame width and height must be positive");
+    // The engine's PyramidSource SR_CHECKs gray size == capture size (an abort); throw first.
+    if (width != capture_width_ || height != capture_height_) {
+      ThrowJs("frame width and height must equal captureWidth and captureHeight");
+    }
     const size_t n = static_cast<size_t>(width) * static_cast<size_t>(height);
     if (ByteLength(gray) != n) ThrowJs("gray length differs from width * height");
     pixels_.resize(n);
@@ -683,8 +822,11 @@ class SlamRefactGlue {
     for (size_t i = 0; i < n; ++i) {
       const val t = targets[i];
       if (!t["json"].isString()) ThrowJs("image target json must be a string");
-      const int w = Get<int>(t, "width", 0), h = Get<int>(t, "height", 0);
+      const int w = GetInt(t, "width", 0), h = GetInt(t, "height", 0);
       if (w <= 0 || h <= 0) ThrowJs("image target width and height must be positive");
+      if (w > kMaxImageTargetSide || h > kMaxImageTargetSide) {
+        ThrowJs("image target width and height must be at most " + std::to_string(kMaxImageTargetSide));
+      }
       const size_t bytes = static_cast<size_t>(w) * static_cast<size_t>(h);
       if (t["luminance"].isUndefined() || ByteLength(t["luminance"]) != bytes) {
         ThrowJs("image target luminance length differs from width * height");
@@ -699,9 +841,15 @@ class SlamRefactGlue {
   }
 
   void UnloadImageTargets(val names) {
+    if (!val::global("Array").call<bool>("isArray", names)) {
+      ThrowJs("unloadImageTargets needs an array of names");
+    }
     std::vector<std::string> v;
     const size_t n = names["length"].as<size_t>();
-    for (size_t i = 0; i < n; ++i) v.push_back(names[i].as<std::string>());
+    for (size_t i = 0; i < n; ++i) {
+      if (!names[i].isString()) ThrowJs("unloadImageTargets names must be strings");
+      v.push_back(names[i].as<std::string>());
+    }
     glue_->UnloadImageTargets(v);
   }
 
@@ -826,6 +974,8 @@ class SlamRefactGlue {
   std::unique_ptr<GlueRunner> glue_;
   frontend::PyramidLayout layout_;
   PinholeIntrinsics capture_intrinsics_;
+  EngineConfig engine_config_;
+  std::vector<std::string> ignored_keys_;
   int rotation_deg_ = 0;
   int capture_width_ = 0;
   int capture_height_ = 0;
@@ -856,6 +1006,8 @@ EMSCRIPTEN_BINDINGS(slam_refact_engine) {
       .function("onCameraStatusChange", &SlamRefactGlue::OnCameraStatusChange)
       .function("getIntrinsic", &SlamRefactGlue::GetIntrinsic)
       .function("getCaptureIntrinsics", &SlamRefactGlue::GetCaptureIntrinsics)
+      .function("getEffectiveConfig", &SlamRefactGlue::GetEffectiveConfig)
+      .class_property("contractVersion", &kContractVersion)
       .class_function("getCompileFeatures", &SlamRefactGlue::GetCompileFeatures)
       .function("setImageTargets", &SlamRefactGlue::SetImageTargets)
       .function("unloadImageTargets", &SlamRefactGlue::UnloadImageTargets)
