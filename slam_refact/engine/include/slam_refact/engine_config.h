@@ -89,6 +89,21 @@ struct AccuracyConfig {
   // V1: the vendored pose-estimation Jacobian takes the exact limit of its pseudo-Huber derivative
   // where the original divides by zero (x30 * x31 == 0), instead of becoming +-inf.
   bool v1_exact_limit = false;
+  // XR commercialization candidates (build/xr-commercial-20261116/preregistration.md). Default off;
+  // off leaves the engine output bit-identical. They need `enabled`.
+  // K1: when the original would discard a non-empty map (MapBuilder reset rule: map tracking lost
+  // while the frame tracker keeps succeeding), the map is kept and a keyframe is added at the
+  // current pose instead, so the new view gets map points and the old ones stay available for
+  // relocalization. The first map (empty map) is still created by the reset path, and a camera at
+  // or below the ground plane (pose y < -0.999, where the tracker re-bases its height) still resets.
+  bool k1_keep_map = false;
+  // K1F (refines K1: no effect unless k1_keep_map is on too): the keep-and-extend keyframe is
+  // added as soon as the reset rule of a SMALL map is met (frame tracker succeeded
+  // numConsecutiveFrameTrackingSuccessesToResetBadMap times while map tracking is lost), whatever
+  // the size of the map. The original asks for the larger "good map" count before it discards a
+  // map with more keyframe slots than mapGoodKeyFrameCount; K1 never discards it, and without K1F
+  // every extension after the first would wait for that larger count.
+  bool k1_fast_extend = false;
 };
 
 struct EngineConfig {

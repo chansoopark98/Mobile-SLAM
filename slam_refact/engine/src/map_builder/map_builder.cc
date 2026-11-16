@@ -122,6 +122,32 @@ bool ShouldResetMap(const ResetInputs& in) {
               in.consecutive_frame_tracker_ok);
 }
 
+bool KeepMapInsteadOfReset(size_t keyframe_slots, const c8::HMatrix& pose) {
+  const AccuracyConfig& acc = config::Accuracy();
+  if (!(acc.enabled && acc.k1_keep_map)) {
+    return false;
+  }
+  if (keyframe_slots == 0) {
+    return false;  // the first map is created by the reset path
+  }
+  // MapTracker re-bases the pose height on the frame after a keyframe from the lost state when the
+  // camera is at or below the ground plane (map_tracker.cc, map-initialized event: pose y < -0.999).
+  // A re-based pose cannot be reconciled with the kept map, so that case stays a reset.
+  return !(static_cast<double>(pose(1, 3)) < -0.999);
+}
+
+bool ExtendMapEarly(const ResetInputs& in, const c8::HMatrix& pose) {
+  const AccuracyConfig& acc = config::Accuracy();
+  if (!(acc.enabled && acc.k1_keep_map && acc.k1_fast_extend) || in.keyframe_slots == 0) {
+    return false;
+  }
+  // The reset rule as it applies to a small map (one keyframe slot): same lost-frame count and the
+  // small-map success count; no new constant.
+  ResetInputs small = in;
+  small.keyframe_slots = 1;
+  return ShouldResetMap(small) && KeepMapInsteadOfReset(in.keyframe_slots, pose);
+}
+
 bool AnyGyroAbove(const std::vector<TrackingSensorEvent>& events, float max_deg_s) {
   for (const TrackingSensorEvent& e : events) {
     if (e.kind == ImuEvent::Kind::kGyroscope &&
@@ -473,6 +499,7 @@ void MapBuilder::Update(map::WorldMaps* ctx, const TrackerInput& frm, const MapT
   }
 
   // [A] map reset (936.c:696-731).
+  bool extend_map = false;  // K1 / K1F only; always false with the candidates off
   if (ctx->active().CloudEmpty() && (!seeded_from_depth_kf_ || vps_baseline_mode_) &&
       pending_vps_.empty() && reset_allowed_) {
     ResetInputs in;
@@ -484,7 +511,19 @@ void MapBuilder::Update(map::WorldMaps* ctx, const TrackerInput& frm, const MapT
     in.keyframe_slots = map::KeyframeSlotCount(ctx->active());
     in.consecutive_frame_tracker_ok = trk.consecutive_frame_tracker_ok;
     if (ShouldResetMap(in)) {
-      ResetMap(ctx, out);
+      if (KeepMapInsteadOfReset(in.keyframe_slots, trk.pose)) {
+        // K1: same frame, same keyframe and seeding as the reset below, without discarding the map.
+        // last_reset_frame_ keeps its meaning "frame of the last seeding from a lost state", so the
+        // keyframe timing after it is the one that follows a reset (RelocalizationHold).
+        extend_map = true;
+        last_reset_frame_ = frame_count_;
+      } else {
+        ResetMap(ctx, out);
+      }
+    } else if (ExtendMapEarly(in, trk.pose)) {
+      // K1F: the same extension, before the original would reset a map of this size.
+      extend_map = true;
+      last_reset_frame_ = frame_count_;
     }
   }
   map::WorldMap& wm = ctx->active();
@@ -504,10 +543,17 @@ void MapBuilder::Update(map::WorldMaps* ctx, const TrackerInput& frm, const MapT
       }
     }
     matches = trk.tracked;  // 937
+    if (extend_map) {
+      // K1: the frame is a lost frame (state 0), so trk.tracked can only hold the matches of a
+      // relocalization that the tracker rejected (residual check, map_tracker.cc state-lost). The
+      // original never turns those into observations (no keyframe on a lost frame; the reset frame
+      // skips this block). The extension keyframe gets none either, like the reset keyframe.
+      matches.clear();
+    }
   }
 
   // [C] keyframe decision (936.c:770-958).
-  bool create = force_keyframe_;
+  bool create = force_keyframe_ || extend_map;
   if (!create) {
     const uint32_t tracked = static_cast<uint32_t>(matches.size());
     int n_new;

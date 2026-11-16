@@ -94,7 +94,11 @@ check_mode() {
       ;;
     refact-tools)
       "$python_path" slam_refact/engine/tools/check_vendor.py --data || return "$?"
-      "$python_path" slam_refact/engine/tools/check_std_algos.py
+      local std_status=0
+      "$python_path" slam_refact/engine/tools/check_std_algos.py || std_status=$?
+      # Run the out-and-back tool tests even when the std-algos check fails; either failure fails the tier.
+      "$python_path" -m unittest discover -s slam_refact/tools/harness/tests -p 'test_outback*.py' -v || return "$?"
+      return "$std_status"
       ;;
     rs0-fast|rs0-full)
       # RS-0 parity gate (scripts/dev/rs0-gate.py): parallel replays + replay cache. rs0-full is the merge gate.

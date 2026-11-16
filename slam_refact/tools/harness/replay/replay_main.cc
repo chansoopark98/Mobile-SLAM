@@ -68,8 +68,10 @@ void PushSensor(const SensorRow& row, GlueRunner* glue) {
 
 // SLAM_REFACT_ACCURACY="key=value,..." (accuracy mode, ACC-1): enabled, tri, local_ba, window,
 // iterations, seconds, huber, tilt, imu, acc_noise, acc_walk, the P2 candidates f1, f2, the P3
-// candidates r6, r7 and the P4 candidates r7p (R7 candidate selection by slot, needs r7) and v1
-// (vendored pose-estimation Jacobian limit).
+// candidates r6, r7, the P4 candidates r7p (R7 candidate selection by slot, needs r7) and v1
+// (vendored pose-estimation Jacobian limit) and the XR commercialization candidates k1 (keep a
+// non-empty map and add a keyframe instead of a map reset) and k1f (that keyframe after the
+// small-map success count; needs k1).
 // Unknown keys abort.
 void ApplyAccuracyEnv(EngineConfig* cfg) {
   const char* env = std::getenv("SLAM_REFACT_ACCURACY");
@@ -106,6 +108,8 @@ void ApplyAccuracyEnv(EngineConfig* cfg) {
     else if (k == "r7") a.r7_pose_graph = d != 0.0;
     else if (k == "r7p") a.r7p_loop_select = d != 0.0;
     else if (k == "v1") a.v1_exact_limit = d != 0.0;
+    else if (k == "k1") a.k1_keep_map = d != 0.0;
+    else if (k == "k1f") a.k1_fast_extend = d != 0.0;
     else if (k == "vi") a.vi_prediction = d != 0.0;
     else if (k == "vi_gain") a.vi_velocity_gain = d;
     else if (k == "metric_window") a.metric_window_s = d;
@@ -283,9 +287,12 @@ int Run(int argc, char** argv) {
                  glue_config.detect_surfaces ? "true" : "false",
                  a.f1_ground_plane ? "true" : "false", a.f2_ground_confirmation ? "true" : "false",
                  a.r6_span_velocity ? "true" : "false", a.r7_pose_graph ? "true" : "false",
-                 // P4 keys appear only when set, so an all-off run writes the same bytes as before.
+                 // P4 and later keys appear only when set, so an all-off run writes the same bytes
+                 // as before.
                  (std::string(a.r7p_loop_select ? ",\"r7p_loop_select\":true" : "") +
-                  (a.v1_exact_limit ? ",\"v1_exact_limit\":true" : "")).c_str());
+                  (a.v1_exact_limit ? ",\"v1_exact_limit\":true" : "") +
+                  (a.k1_keep_map ? ",\"k1_keep_map\":true" : "") +
+                  (a.k1_fast_extend ? ",\"k1_fast_extend\":true" : "")).c_str());
     std::fclose(f);
   }
   const auto wall_start = std::chrono::steady_clock::now();

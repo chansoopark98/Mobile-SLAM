@@ -40,6 +40,18 @@ struct ResetInputs {
 // The tracking-statistics part of the reset decision (the map/VPS gates are checked by Update).
 bool ShouldResetMap(const ResetInputs& in);
 
+// Candidate K1 (AccuracyConfig::k1_keep_map; not part of the original): true when a reset that
+// ShouldResetMap asked for is replaced by "keep the map and add a keyframe at the current pose".
+// False with the candidate off, for an empty map (keyframe_slots == 0: the first map is created by
+// the reset path) and when the camera is at or below the ground plane (pose y < -0.999).
+bool KeepMapInsteadOfReset(size_t keyframe_slots, const c8::HMatrix& pose);
+
+// Candidate K1F (AccuracyConfig::k1_fast_extend, needs k1_keep_map): true when the map is not empty
+// and the reset rule of a small map (ShouldResetMap with one keyframe slot) is met while
+// KeepMapInsteadOfReset allows the extension. Update asks this only when ShouldResetMap(in) is
+// false, i.e. before the original would reset a map with more than mapGoodKeyFrameCount slots.
+bool ExtendMapEarly(const ResetInputs& in, const c8::HMatrix& pose);
+
 // ---- 936 [C] keyframe decision (936.c:770-958) --------------------------------------------------
 
 // Gyroscope events (kind 3) with |w| > max_deg_s (strict; deg/s). 936.c:906-913.

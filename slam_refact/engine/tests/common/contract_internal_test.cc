@@ -303,10 +303,12 @@ SR_ACC_FIELD(r6_span_velocity, bool);
 SR_ACC_FIELD(r7_pose_graph, bool);
 SR_ACC_FIELD(r7p_loop_select, bool);
 SR_ACC_FIELD(v1_exact_limit, bool);
+SR_ACC_FIELD(k1_keep_map, bool);
+SR_ACC_FIELD(k1_fast_extend, bool);
 #undef SR_ACC_FIELD
 
 TEST(ContractInternal, AccuracyConfigFieldFingerprint) {
-  EXPECT_EQ(AggregateFieldCount<AccuracyConfig>(), 25u)
+  EXPECT_EQ(AggregateFieldCount<AccuracyConfig>(), 27u)
       << "AccuracyConfig fields changed: update this fingerprint, kContractVersion and "
          "contract-changes.md together";
 }

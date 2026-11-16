@@ -180,7 +180,9 @@ static_assert(std::is_same_v<decltype(&GlueRunner::image_target_geometry),
                              bool (GlueRunner::*)(const std::string&, CurvyGeometryOut*) const>);
 // FX-D1: P2-P4 AccuracyConfig fields (f1_*, f2_*, r6_*, r7_*, r7p_*, v1_*), the MapTracker F1
 // fields of tracking_types.h and accuracy_counters.h recorded after the fact; 10 -> 11.
-static_assert(kContractVersion == 11);
+// XR-K (2026-11-16): AccuracyConfig::k1_keep_map and k1_fast_extend (XR commercialization
+// candidates K1, K1F); 11 -> 12.
+static_assert(kContractVersion == 12);
 
 TEST(ContractPublic, DefaultValuesMatchDesign) {
   const HMatrix4f identity;

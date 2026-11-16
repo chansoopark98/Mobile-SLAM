@@ -56,6 +56,12 @@ sr_add_unit_test(sr_p2_candidate_test
   LIBS sr_map_builder sr_map_tracker sr_config
   LABELS unit)
 
+# XR commercialization candidate K1 (AccuracyConfig::k1_keep_map): keep the map instead of a reset.
+sr_add_unit_test(sr_k1_keep_map_test
+  SOURCES k1_keep_map_test.cc map_builder_test_util.h
+  LIBS sr_map_builder sr_map_tracker sr_config
+  LABELS unit)
+
 # P3 candidate R7: keyframe pose-graph loop closure (map_builder/pose_graph.h). Only with
 # SLAM_REFACT_LOOP_CLOSE (the pose graph is compiled with the loop close sources).
 if(SLAM_REFACT_LOOP_CLOSE)

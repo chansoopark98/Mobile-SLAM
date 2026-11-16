@@ -191,7 +191,7 @@ constexpr const char* kConfigKeys[] = {
 constexpr const char* kAccuracyKeys[] = {
     "enabled", "metricOutput", "metricWindowS", "metricPriorScale", "metricLowBand",
     "metricFixedLagS", "localBa", "multiviewTriangulation", "baWindow", "viPrediction",
-    "viVelocityGain"};
+    "viVelocityGain", "k1KeepMap", "k1FastExtend"};
 
 template <size_t N>
 void AppendIgnoredKeys(const val& obj, const char* const (&known)[N], const std::string& prefix,
@@ -264,6 +264,8 @@ class SlamRefactGlue {
       a.ba_window = GetInt(acc, "baWindow", a.ba_window);
       a.vi_prediction = Get<bool>(acc, "viPrediction", false);
       a.vi_velocity_gain = Get<double>(acc, "viVelocityGain", a.vi_velocity_gain);
+      a.k1_keep_map = Get<bool>(acc, "k1KeepMap", false);
+      a.k1_fast_extend = Get<bool>(acc, "k1FastExtend", false);
       if (!(a.vi_velocity_gain >= 0.0 && a.vi_velocity_gain <= 1.0)) ThrowJs("viVelocityGain must be in [0, 1]");
       if (!(a.metric_window_s >= 1.0 && a.metric_window_s <= 30.0)) ThrowJs("metricWindowS must be in [1, 30]");
       if (!(a.metric_prior_scale > 0.0 && std::isfinite(a.metric_prior_scale))) {
@@ -363,6 +365,8 @@ class SlamRefactGlue {
     acc.set("r7PoseGraph", a.r7_pose_graph);
     acc.set("r7pLoopSelect", a.r7p_loop_select);
     acc.set("v1ExactLimit", a.v1_exact_limit);
+    acc.set("k1KeepMap", a.k1_keep_map);
+    acc.set("k1FastExtend", a.k1_fast_extend);
     out.set("accuracy", acc);
     val ignored = val::array();
     for (const std::string& key : ignored_keys_) ignored.call<void>("push", key);
