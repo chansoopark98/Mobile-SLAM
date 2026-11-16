@@ -32,3 +32,17 @@ test('deploy_xr.py anchors: one meta charset, the exact start-note tag, no <base
 test('camera-resolution.js is still the first script, before xr.js can be loaded', () => {
   assert.ok(html.indexOf('camera-resolution.js') > 0 && html.indexOf('camera-resolution.js') < html.indexOf('app.js'));
 });
+
+test('keepmap wiring: only the opt-in modes get the engine config and the map-lost hint; the hint touches guidance text only; the receipt records the mode', () => {
+  const app = fs.readFileSync(path.join(dir, 'app.js'), 'utf8');
+  assert.match(app, /state\.mapLost = !!ENGINE_OPT\.accuracy && mapLostFilter\.update\(chunk && chunk\.trackerDiag\);/);
+  const code = app.split('\n').filter((l) => !/^\s*\/\//.test(l));
+  const users = code.filter((l) => /mapLost/.test(l));
+  // declaration of state, the filter feed, the renderGuide input, and the filter construction: nothing in pose, object or metrics paths.
+  assert.equal(users.length, 4, users.join('\n'));
+  assert.ok(users.every((l) => /state\.mapLost|mapLost: state\.mapLost|mapLost: false|mapLostFilter|createMapLostFilter/.test(l)));
+  assert.match(app, /engineMode: ENGINE_OPT\.mode, engineModeEffective: effectiveMode\(ENGINE_OPT, engineReadback\), engineAccuracy: ENGINE_OPT\.accuracy/);
+  assert.match(app, /if \(ENGINE_OPT\.error\) showError\('keepmap', ENGINE_OPT\.error\);/);
+  assert.match(app, /\?keepmap=1\|fast 실험용: 지도 유지 엔진 옵션, gate 미통과/);
+  assert.doesNotMatch(app, /parity/);
+});

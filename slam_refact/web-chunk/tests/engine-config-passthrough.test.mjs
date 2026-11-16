@@ -120,7 +120,10 @@ test('A-1a-5: engineWorker requested but unavailable -> main-thread engine recei
   } finally { r.close(); }
 });
 
-test('A-1a-6: no shipped sample or page turns engineConfig on by default', () => {
+// Guard: no shipped sample or page turns engineConfig on by default. The gate of 2026-11-16 REJECTED both keep-map configurations
+// (build/xr-commercial-20261116/verdict-K1-final.json, verdict-K1F-final.json: G1 passed; G2, G3, G4 failed; G5 not measured), so the phone page may set engineConfig.accuracy ONLY from the opt-in
+// ?keepmap= query through samples/phone/product-config.js; the focal override stays behind intrinsicsQuery.override; nothing else, anywhere.
+test('A-1a-6: no shipped sample or page turns engineConfig on by default (only ?keepmap= via product-config.js and ?fx=&cx=&cy= on the phone page)', async () => {
   const hits = [];
   const walk = (dir, root) => {
     for (const e of fs.readdirSync(dir, { withFileTypes: true })) {
@@ -132,15 +135,48 @@ test('A-1a-6: no shipped sample or page turns engineConfig on by default', () =>
   walk(chunkDir, chunkDir);
   const smokeDir = path.resolve(chunkDir, '../web-smoke');
   if (fs.existsSync(smokeDir)) walk(smokeDir, path.resolve(chunkDir, '..'));
-  // The phone page may set engineConfig only for the opt-in diagnostic focal query (?fx=&cx=&cy=); the one assignment
-  // must sit inside `if (intrinsicsQuery.override) {`, which is null when the query is absent.
-  assert.deepEqual(hits.sort(), ['samples/phone/app.js', 'xr-slam.js']);
+  // No threejs / aframe / web-smoke page names engineConfig: the phone app, its config module (comment only) and the chunk itself.
+  assert.deepEqual(hits.sort(), ['samples/phone/app.js', 'samples/phone/product-config.js', 'xr-slam.js']);
   const app = fs.readFileSync(path.join(chunkDir, 'samples/phone/app.js'), 'utf8');
-  const uses = [...app.matchAll(/engineConfig/g)].map((m) => m.index);
+  const lineAt = (i) => app.slice(app.lastIndexOf('\n', i) + 1, app.indexOf('\n', i));
+  const uses = [...app.matchAll(/engineConfig/g)].map((m) => m.index).filter((i) => !/^\s*\/\//.test(lineAt(i)));
+  // The focal override stays behind intrinsicsQuery.override (null when ?fx= is absent).
   const gate = app.indexOf('if (intrinsicsQuery.override) {');
   const gateEnd = app.indexOf('\n}', gate);
-  assert.ok(gate >= 0 && gateEnd > gate, 'phone app.js: the engineConfig assignment is not behind intrinsicsQuery.override');
-  const outside = uses.filter((i) => (i < gate || i > gateEnd) && !/^\s*\/\//.test(app.slice(app.lastIndexOf('\n', i) + 1, i)));
-  assert.deepEqual(outside, [], 'phone app.js: engineConfig used outside the opt-in focal query gate');
+  assert.ok(gate >= 0 && gateEnd > gate, 'phone app.js: the focal engineConfig assignment is not behind intrinsicsQuery.override');
   assert.match(app, /if \(!given\.length\) return \{ override: null, error: null \};/, 'no query must mean no override');
+  // The accuracy assignment sits inside `if (ENGINE_OPT.accuracy) {` (null unless ?keepmap= named a registered configuration) and uses nothing else.
+  const pgate = app.indexOf('if (ENGINE_OPT.accuracy) {');
+  const pgateEnd = app.indexOf('\n}', pgate);
+  assert.ok(pgate >= 0 && pgateEnd > pgate, 'phone app.js: the keepmap engineConfig assignment is not behind ENGINE_OPT.accuracy');
+  assert.match(app, /const ENGINE_OPT = resolveEngineOptions\(window\.location\.search\);/);
+  assert.match(app, /import \{ resolveEngineOptions \} from '\.\/product-config\.js';/);
+  const block = app.slice(pgate, pgateEnd);
+  assert.match(block, /engineConfig: \{ \.\.\.\(prev\.engineConfig \|\| \{\}\), accuracy: ENGINE_OPT\.accuracy \}/);
+  assert.equal([...app.matchAll(/accuracy\s*:/g)].length, 1, 'phone app.js: accuracy may be assigned only once, as ENGINE_OPT.accuracy');
+  const outside = uses.filter((i) => !(i > gate && i < gateEnd) && !(i > pgate && i < pgateEnd));
+  assert.deepEqual(outside, [], 'phone app.js: engineConfig used outside the focal-query gate and the keepmap gate');
+  // product-config.js: the registered configurations are the one place naming the flags; default (no / unknown keepmap) returns none.
+  const { EXPERIMENTAL_ENGINE_CONFIGS: C, resolveEngineOptions: resolve } = await import('../samples/phone/product-config.js');
+  assert.deepEqual(Object.keys(C).sort(), ['1', 'fast']);
+  assert.deepEqual(C['1'], { name: 'K1', accuracy: { enabled: true, k1KeepMap: true } });
+  assert.deepEqual(C.fast, { name: 'K1F', accuracy: { enabled: true, k1KeepMap: true, k1FastExtend: true } });
+  for (const q of ['', '?', '?fx=1&cx=2&cy=3', '?record=1&diag=1', '?parity=1']) assert.deepEqual(resolve(q), { mode: 'default', accuracy: null, error: null }, q);
+  assert.deepEqual(resolve('?keepmap=1'), { mode: 'K1', accuracy: C['1'].accuracy, error: null });
+  assert.deepEqual(resolve('?keepmap=fast&record=1'), { mode: 'K1F', accuracy: C.fast.accuracy, error: null });
+  for (const bad of ['0', 'true', 'FAST', 'constructor', '__proto__', '']) {
+    const r = resolve(`?keepmap=${bad}`);
+    assert.deepEqual([r.mode, r.accuracy], ['default', null], bad);
+    assert.match(r.error, /keepmap 값 '.*'은\(는\) 알 수 없습니다 \(1 또는 fast\)/, bad);
+  }
+  for (const q of ['?keepmap=1&keepmap=fast', '?keepmap=1&keepmap=1', '?keepmap=fast&keepmap=1']) {
+    const r = resolve(q);
+    assert.deepEqual([r.mode, r.accuracy], ['default', null], q);
+    assert.match(r.error, /keepmap 값 '.*'은\(는\) 알 수 없습니다/, q);
+  }
+  assert.notEqual(resolve('?keepmap=1').accuracy, C['1'].accuracy, 'a fresh copy, never the frozen object');
+  const cfg = fs.readFileSync(path.join(chunkDir, 'samples/phone/product-config.js'), 'utf8');
+  assert.match(cfg, /REJECTED/);
+  assert.match(cfg, /verdict-K1-final\.json/);
+  assert.match(cfg, /verdict-K1F-final\.json/);
 });

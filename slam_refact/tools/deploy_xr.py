@@ -44,7 +44,7 @@ CHUNK_FILES = ['xr-slam.js', 'engine-loader.js', 'gr8-compute-pyramid.js', 'gr8-
 ENGINE_FILES = ['manifest.json', 'slam_refact_engine.js', 'slam_refact_engine.wasm']
 THREE_FILES = ['three.module.min.js', 'three.core.min.js']
 AFRAME_FILE = 'aframe-v1.5.0.min.js'
-PHONE_FILES = ['app.js', 'metrics.js', 'targets.js', 'style.css', 'start-flow.js', 'guidance.js', 'hud.js']
+PHONE_FILES = ['app.js', 'metrics.js', 'targets.js', 'style.css', 'start-flow.js', 'guidance.js', 'hud.js', 'product-config.js']
 SAMPLE_PAGES = {'threejs': ['index.html', 'app.js'], 'aframe': ['index.html', 'app.js'], 'common': ['probe.js', 'camera-resolution.js', 'platform.js']}
 PRINT_EXT = ('.pdf', '.png')
 # Mirror of the allowlist in web/server.js (SLAM_REFACT_XR_FILES / SLAM_REFACT_XR_SAMPLE): every served path must be in this set or match this pattern.

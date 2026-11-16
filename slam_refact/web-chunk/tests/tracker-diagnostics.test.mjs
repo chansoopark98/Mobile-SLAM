@@ -254,7 +254,9 @@ test('TD-5: with the engine Worker active trackerDiag stays null and the chunk s
   } finally { r.close(); }
 });
 
-test('TD-6: no shipped sample or page turns trackerDiagnostics on by default', () => {
+// The keepmap opt-in modes (REJECTED by the gate: build/xr-commercial-20261116/verdict-K1-final.json, verdict-K1F-final.json) turn trackerDiagnostics on to read the
+// map-tracker state for the map-lost hint; the default page never does (only record=1&diag=1 does, as before).
+test('TD-6: no shipped sample or page turns trackerDiagnostics on by default (only record=1&diag=1, or inside the keepmap opt-in gate of the phone page)', () => {
   const hits = [];
   const walk = (dir, root) => {
     for (const e of fs.readdirSync(dir, { withFileTypes: true })) {
@@ -268,9 +270,13 @@ test('TD-6: no shipped sample or page turns trackerDiagnostics on by default', (
   if (fs.existsSync(smokeDir)) walk(smokeDir, path.resolve(chunkDir, '..'));
   assert.deepEqual(hits.sort(), ['samples/phone/app.js', 'xr-slam.js']);
   const app = fs.readFileSync(path.join(chunkDir, 'samples/phone/app.js'), 'utf8');
-  // Every non-comment use is the one assignment guarded by TRACKER_DIAG, and TRACKER_DIAG needs both record=1 and diag=1.
+  // Every non-comment use is the assignment guarded by TRACKER_DIAG (needs both record=1 and diag=1) or the one inside `if (ENGINE_OPT.accuracy) {`
+  // (null unless ?keepmap= named a registered configuration).
   const lines = app.split('\n').filter((l) => /trackerDiagnostics/.test(l) && !/^\s*\/\//.test(l));
-  assert.equal(lines.length, 1);
+  assert.equal(lines.length, 2);
   assert.match(lines[0], /^if \(TRACKER_DIAG\) window\.SLAM_REFACT_CHUNK_OPTIONS = /);
+  const pgate = app.indexOf('if (ENGINE_OPT.accuracy) {');
+  const pgateEnd = app.indexOf('\n}', pgate);
+  assert.ok(pgate >= 0 && app.indexOf(lines[1]) > pgate && app.indexOf(lines[1]) < pgateEnd, 'the keepmap-mode trackerDiagnostics is not behind ENGINE_OPT.accuracy');
   assert.match(app, /const TRACKER_DIAG = RECORD && new URLSearchParams\(window\.location\.search\)\.get\('diag'\) === '1';/);
 });

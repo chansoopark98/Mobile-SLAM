@@ -102,6 +102,30 @@ const sha256Hex = async (subtle, text) => {
 const jsonCopy = (v) => (v === undefined ? null : JSON.parse(JSON.stringify(v)));
 const guard = async (fn) => { try { return await fn(); } catch (e) { return { unavailable: String(e && e.message || e) }; } };
 
+// What the engine reports it actually runs with (glue getEffectiveConfig, kept by the chunk at session.configurationReadback.effectiveConfig
+// when the chunk exposes it). sentAccuracy = the accuracy object the page passed (null in default mode): flags has one entry per sent key
+// {sent, effective, ignored}; allProductFlagsActive is true only when every sent flag was read back with the same value and none is in
+// ignoredKeys (k1KeepMapActive is the same question for k1KeepMap alone). An engine build that does not know a key is never reported as running it.
+// Everything else is { available: false, reason }.
+export function readEngineConfigReadback(chunk, sentAccuracy = null) {
+  const eff = chunk && chunk.session && chunk.session.configurationReadback && chunk.session.configurationReadback.effectiveConfig;
+  if (!eff || typeof eff !== 'object') return { available: false, reason: 'the chunk does not expose the engine getEffectiveConfig read-back' };
+  if (eff.available === false) return { available: false, reason: String(eff.reason ?? 'unavailable') };  // engine-worker / engine without getEffectiveConfig
+  const ignoredKeys = Array.isArray(eff.ignoredKeys) ? eff.ignoredKeys.map(String) : null;
+  const k1 = eff.accuracy && typeof eff.accuracy.k1KeepMap === 'boolean' ? eff.accuracy.k1KeepMap : null;
+  const flags = {};
+  for (const [k, sent] of Object.entries(sentAccuracy || {})) {
+    flags[k] = { sent, effective: eff.accuracy && k in eff.accuracy ? eff.accuracy[k] : null, ignored: ignoredKeys === null ? null : ignoredKeys.includes(`accuracy.${k}`) };
+  }
+  const keys = Object.keys(flags);
+  const allProductFlagsActive = keys.length > 0 && ignoredKeys !== null && keys.every((k) => flags[k].effective === flags[k].sent && flags[k].ignored === false);
+  return { available: true, k1KeepMap: k1, ignoredKeys, k1KeepMapActive: k1 === true && ignoredKeys !== null && !ignoredKeys.includes('accuracy.k1KeepMap'), flags, allProductFlagsActive };
+}
+
+// engineModeEffective: the requested mode name only when the read-back shows every sent flag effective and not ignored; 'default' when nothing was
+// sent; otherwise 'requested-not-effective' (also while the read-back is unavailable: never claim a flag the engine did not confirm).
+export const effectiveMode = (opt, readback) => (!opt.accuracy ? 'default' : readback && readback.allProductFlagsActive === true ? opt.mode : 'requested-not-effective');
+
 // Counts and the p50/p95/p99 of the per-frame timing arrays; the arrays themselves (up to tens of thousands of entries) are not copied.
 const TIMING_KEYS = ['stageMs', 'readMs', 'engineMs'];
 export function summarizeChunkStats(chunk) {

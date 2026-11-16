@@ -1077,6 +1077,16 @@ const XrControllerFactory = singleton((runConfig, xrccPromise, logCallback, erro
       } catch (error) {
         readback.errors.push(String(error && error.message || error));  // diagnostics must not fail tracking
       }
+      // What the engine reports it actually runs with (glue getEffectiveConfig: accuracy flags, ignoredKeys), one call per engine construction;
+      // a plain-data copy, so a rebuilt session never shows the previous engine's config. The engine Worker would need a protocol message
+      // for it, so that path says so instead of guessing.
+      try {
+        readback.effectiveConfig = ew_ ? { available: false, reason: 'engine-worker' }
+          : typeof glue.getEffectiveConfig === 'function' ? structuredClone(glue.getEffectiveConfig())
+            : { available: false, reason: 'engine has no getEffectiveConfig' };
+      } catch (error) {
+        readback.effectiveConfig = { available: false, reason: String(error && error.message || error) };
+      }
       diag.session = { videoWidth, videoHeight, rotation,
         device: { manufacturer: sentGlueConfig.manufacturer, model: sentGlueConfig.model, source: deviceSource },
         glueConfig: sentGlueConfig,
