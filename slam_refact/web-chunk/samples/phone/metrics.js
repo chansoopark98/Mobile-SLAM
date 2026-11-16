@@ -11,6 +11,7 @@ const CAP = 20000;  // per series, so a long session cannot grow without bound
 export const POSE_LOG_CAP = 40000;  // rows of the opt-in pose log (?record=1): about 20 minutes at 30 Hz
 const NOTE = 'Counters and intervals only. No camera image and no IMU sample. Produced by the user clicking the download button. Interval unit: ms between pipeline onUpdate calls with a reality result (not engine time).';
 const NOTE_RECORD = ' Recording was on (?record=1): poseLog holds one pose row per onUpdate (pose, status, point count, timestamps; no image, no raw IMU) and receipt holds the camera/device/build identification; both stay in memory until this download.';
+const NOTE_TRACKER = ' Tracker diagnostics were on (&diag=1): each row also holds the engine tracker state of the pose source frame and three numbers derived from the DeviceMotion events of that frame (event count, peak gyro magnitude in deg/s, peak linear-acceleration magnitude in m/s^2); no raw IMU sample is stored.';
 
 const num = (v) => (typeof v === 'number' && Number.isFinite(v) ? v : null);
 const xyz = (v) => (v ? { x: num(v.x), y: num(v.y), z: num(v.z) } : null);
@@ -32,6 +33,22 @@ export const POSE_LOG_META = Object.freeze({
 const SOURCE_TIMING_KEYS = ['kind', 'hasPose', 'fresh', 'engineFresh', 'newEngineResponse', 'repeated', 'publicationRepeated', 'sourceMetadataFound',
   'sourceFrameIndex', 'sessionEpoch', 'currentSessionEpoch', 'sourceVideoTimeS', 'sourceFrameTimeS', 'sourceStageTimeNanos', 'sourceTimeNanos',
   'callbackVideoTimeS', 'callbackFrameTimeS', 'engineReturnedAtMs'];
+// The chunk's diag.trackerDiag scalars a row keeps (&diag=1; fixed key list, so a row cannot grow with the chunk object).
+export const TRACKER_DIAG_KEYS = Object.freeze(['session', 'sourceFrameIndex', 'mapTrackerState', 'frameTrackerOk', 'ok', 'lossState', 'lostFrames', 'frames',
+  'mapReset', 'keyframeCreated', 'numKeyframes', 'groundMatches', 'keypoints', 'pointsTriangulated', 'pointsGround', 'pointsSky', 'pointsDepth', 'pointsCloud',
+  'inputFound', 'motionEvents', 'gyroPeakDegS', 'linAccPeakMs2', 'totalResponses', 'totalMapResets', 'totalKeyframesCreated', 'totalMapTrackerNotOk', 'totalInputMissing']);
+export const pickTrackerDiag = (td) => {
+  if (!td || typeof td !== 'object') return null;
+  const out = {};
+  for (const k of TRACKER_DIAG_KEYS) { const v = td[k]; out[k] = typeof v === 'number' ? num(v) : typeof v === 'boolean' ? v : null; }
+  return out;
+};
+export const POSE_LOG_META_TRACKER = Object.freeze({
+  tracker: 'chunk diag.trackerDiag sampled at this callback, stored once per tracked frame: engine tracker step of (tracker.session, tracker.sourceFrameIndex) (mapTrackerState 1 = map tracked, mapReset = the map was discarded in that frame, keyframeCreated, numKeyframes, points by source) and the DeviceMotion events the engine took for that frame (motionEvents, gyroPeakDegS, linAccPeakMs2). total* are counters since the chunk started: totalResponses rising by more than 1 between two stored values means a response was not sampled',
+  trackerNull: 'tracker is null when this callback brought no new tracked frame (same session and sourceFrameIndex as the last stored value), before the first tracked frame, or when the chunk does not record (engine Worker / frameScheduler path)',
+  trackerSession: 'tracker.session numbers the chunk session; a rebuilt session (rotation, re-attach) restarts sourceFrameIndex at 0, so a frame is identified by the pair',
+});
+
 export const pickSourceTiming = (st) => {
   if (!st || typeof st !== 'object') return null;
   const out = {};
@@ -41,29 +58,38 @@ export const pickSourceTiming = (st) => {
 
 // Pose log of ?record=1. Rows beyond the cap are not stored but always counted (droppedRows), so a long session is visibly truncated, never silently.
 // overheadMs is the time this recorder itself spent building and storing a row (timed with the same clock as the page), so its cost is on record.
-export function createPoseRecorder(now = () => performance.now(), cap = POSE_LOG_CAP) {
+export function createPoseRecorder(now = () => performance.now(), cap = POSE_LOG_CAP, trackerDiag = false) {
   const rows = [], overhead = [];
-  let droppedRows = 0;
+  let droppedRows = 0, lastSession = null, lastSource = null;
+  // One stored copy per tracked frame: a callback that samples the same (session, sourceFrameIndex) again stores null.
+  const newTrackerSample = (td) => {
+    if (!td || typeof td !== 'object' || (td.session === lastSession && td.sourceFrameIndex === lastSource)) return null;
+    lastSession = td.session; lastSource = td.sourceFrameIndex;
+    return pickTrackerDiag(td);
+  };
   return {
     // frameStart is xr.js's frameStartResult: videoTime (video.currentTime, s) and frameTime (performance.now()/1e3, s) when the SDK gives them;
     // repeatFrame marks a callback without a new camera frame. sourceFrameIndex is the chunk's index of the frame the pose was computed from
     // (window.__slamRefactChunk.stats.lastSourceFrameIndex), so repeated / held poses are told apart from fresh ones offline.
-    add(reality, frameStart, sourceFrameIndex = null, sourceTiming = null) {
+    add(reality, frameStart, sourceFrameIndex = null, sourceTiming = null, tracker = null) {
       if (rows.length >= cap) { droppedRows++; return; }
       const t0 = now();
       const p = reality.position, q = reality.rotation;
-      rows.push({
+      const row = {
         tPerfMs: t0, videoTimeS: num(frameStart && frameStart.videoTime), frameTimeS: num(frameStart && frameStart.frameTime),
         repeatFrame: frameStart && typeof frameStart.repeatFrame === 'boolean' ? frameStart.repeatFrame : null, sourceFrameIndex: num(sourceFrameIndex),
         source: pickSourceTiming(sourceTiming),
         status: reality.trackingStatus ?? null, reason: reality.trackingReason ?? null,
         position: xyz(p), rotation: q ? { ...xyz(q), w: num(q.w) } : null,
         worldPoints: Array.isArray(reality.worldPoints) ? reality.worldPoints.length : 0,
-      });
+      };
+      if (trackerDiag) row.tracker = newTrackerSample(tracker);  // &diag=1 only: without it the row is exactly the v3 row
+      rows.push(row);
       overhead.push(now() - t0);  // one sample per stored row, so it is bounded by cap as well
     },
     counts: () => ({ rows: rows.length, droppedRows }),
     snapshot(nullUpdates = 0) {
+      if (trackerDiag) return { schema: 'slam-refact-xr-poselog-v4', meta: { ...POSE_LOG_META, ...POSE_LOG_META_TRACKER }, rows, droppedRows, cap, nullUpdates, overheadMs: summarize(overhead) };
       return { schema: 'slam-refact-xr-poselog-v3', meta: POSE_LOG_META, rows, droppedRows, cap, nullUpdates, overheadMs: summarize(overhead) };
     },
   };
@@ -128,7 +154,8 @@ export async function buildReceipt(env) {
 }
 
 export function createMetrics(now = () => performance.now(), options = {}) {
-  const recorder = options.record ? createPoseRecorder(now, options.poseLogCap) : null;
+  const trackerDiag = !!(options.record && options.trackerDiag);
+  const recorder = options.record ? createPoseRecorder(now, options.poseLogCap, trackerDiag) : null;
   let receiptAtStart = null;
   const m = {
     startedAt: null, firstNormalAt: null, lastUpdateAt: null,
@@ -138,11 +165,11 @@ export function createMetrics(now = () => performance.now(), options = {}) {
   const push = (arr, v) => { if (arr.length < CAP) arr.push(v); };
   return {
     start() { m.startedAt = now(); },
-    update(reality, nPoints, frameStart, sourceFrameIndex = null, sourceTiming = null) {
+    update(reality, nPoints, frameStart, sourceFrameIndex = null, sourceTiming = null, tracker = null) {
       const t = now();
       if (!reality) { m.nullUpdates++; return; }
       m.updates++;
-      if (recorder) recorder.add(reality, frameStart, sourceFrameIndex, sourceTiming);
+      if (recorder) recorder.add(reality, frameStart, sourceFrameIndex, sourceTiming, tracker);
       if (m.lastUpdateAt != null) push(m.firstNormalAt == null ? m.intervalsPre : m.intervalsPost, t - m.lastUpdateAt);
       m.lastUpdateAt = t;
       if (m.firstNormalAt == null && reality.trackingStatus === 'NORMAL') m.firstNormalAt = t;
@@ -160,7 +187,7 @@ export function createMetrics(now = () => performance.now(), options = {}) {
     snapshot(extra = {}, receiptAtDownload = null) {
       const snap = {
         schema: 'slam-refact-phone-metrics-v1',
-        note: recorder ? NOTE + NOTE_RECORD : NOTE,
+        note: recorder ? NOTE + NOTE_RECORD + (trackerDiag ? NOTE_TRACKER : '') : NOTE,
         label: 'page-observed (rAF/onUpdate cadence), device and input kind are recorded by the user, not by this page',
         ...extra,
         updates: m.updates, nullUpdates: m.nullUpdates, hitTests: m.hitTests, hitMisses: m.hitMisses, placed: m.placed,

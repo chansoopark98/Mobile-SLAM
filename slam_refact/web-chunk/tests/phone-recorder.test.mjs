@@ -3,7 +3,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { webcrypto } from 'node:crypto';
-import { createMetrics, createPoseRecorder, pickSourceTiming, buildReceipt, summarizeChunkStats, summarize, POSE_LOG_CAP } from '../samples/phone/metrics.js';
+import { createMetrics, createPoseRecorder, pickSourceTiming, pickTrackerDiag, TRACKER_DIAG_KEYS, buildReceipt, summarizeChunkStats, summarize, POSE_LOG_CAP } from '../samples/phone/metrics.js';
 
 const clock = (step = 0.25) => { let t = 1000; return () => (t += step); };
 const reality = (over = {}) => ({
@@ -213,4 +213,63 @@ test('rows keep the chunk sourceTiming scalars only (fixed keys, wrong types bec
   assert.equal(row.source.engineReturnedAtMs, null);
   assert.equal('extra' in row.source, false);
   assert.equal(pickSourceTiming(null), null);
+});
+
+// ---- &diag=1 tracker diagnostics (A-0e) ----
+const trackerDiag = (over = {}) => ({ session: 1, sourceFrameIndex: 41, mapTrackerState: 1, frameTrackerOk: true, ok: true, lossState: 0, lostFrames: 0, frames: 12,
+  mapReset: false, keyframeCreated: true, numKeyframes: 3, groundMatches: 0, keypoints: 500, pointsTriangulated: 120, pointsGround: 40, pointsSky: 0, pointsDepth: 0, pointsCloud: 0,
+  inputFound: true, motionEvents: 2, gyroPeakDegS: 91.5, linAccPeakMs2: 0.4, totalResponses: 40, totalMapResets: 1, totalKeyframesCreated: 3, totalMapTrackerNotOk: 2, totalInputMissing: 0, ...over });
+
+test('tracker diag off: rows, schema, meta and note are exactly the v3 ones even when a tracker object is passed', () => {
+  const off = createPoseRecorder(clock(), 10);
+  off.add(reality(), { videoTime: 1 }, 41, null, trackerDiag());
+  const s = off.snapshot();
+  assert.equal(s.schema, 'slam-refact-xr-poselog-v3');
+  assert.equal('tracker' in s.rows[0], false);
+  assert.equal('tracker' in s.meta, false);
+  const m = createMetrics(clock(), { record: true });
+  m.update(reality(), 3, { videoTime: 1 }, 41, null, trackerDiag());
+  const snap = m.snapshot();
+  assert.equal(snap.poseLog.schema, 'slam-refact-xr-poselog-v3');
+  assert.equal('tracker' in snap.poseLog.rows[0], false);
+  assert.doesNotMatch(snap.note, /diag=1/);
+  // trackerDiag without record records nothing at all
+  const none = createMetrics(clock(), { record: false, trackerDiag: true });
+  none.update(reality(), 3, { videoTime: 1 }, 41, null, trackerDiag());
+  assert.equal('poseLog' in none.snapshot(), false);
+});
+
+test('tracker diag on: each row keeps the fixed scalar keys, schema v4, meta and note say what they are', () => {
+  const m = createMetrics(clock(), { record: true, trackerDiag: true });
+  m.update(reality(), 3, { videoTime: 1 }, 41, null, trackerDiag({ extra: { big: [1, 2] }, gyroPeakDegS: NaN, mapReset: 'yes' }));
+  m.update(reality(), 3, { videoTime: 2 }, 42, null, null);  // the chunk had no value yet
+  const snap = m.snapshot();
+  assert.equal(snap.poseLog.schema, 'slam-refact-xr-poselog-v4');
+  const [a, b] = snap.poseLog.rows;
+  assert.deepEqual(Object.keys(a), ['tPerfMs', 'videoTimeS', 'frameTimeS', 'repeatFrame', 'sourceFrameIndex', 'source', 'status', 'reason', 'position', 'rotation', 'worldPoints', 'tracker']);
+  assert.deepEqual(Object.keys(a.tracker), [...TRACKER_DIAG_KEYS]);
+  assert.equal(a.tracker.sourceFrameIndex, 41);
+  assert.equal(a.tracker.keyframeCreated, true);
+  assert.equal(a.tracker.totalMapResets, 1);
+  assert.equal(a.tracker.motionEvents, 2);
+  assert.equal(a.tracker.gyroPeakDegS, null, 'a non-finite number becomes null');
+  assert.equal(a.tracker.mapReset, null, 'a wrong type becomes null, never a string');
+  assert.equal('extra' in a.tracker, false);
+  assert.equal(b.tracker, null);
+  assert.match(snap.poseLog.meta.tracker, /stored once per tracked frame/);
+  assert.match(snap.poseLog.meta.trackerNull, /no new tracked frame/);
+  assert.match(snap.poseLog.meta.trackerSession, /restarts sourceFrameIndex/);
+  assert.match(snap.note, /diag=1/);
+  assert.match(snap.note, /no raw IMU sample is stored/);
+  assert.equal(pickTrackerDiag(null), null);
+  assert.equal(pickTrackerDiag('x'), null);
+});
+
+test('tracker diag on: one stored copy per tracked frame; the same frame sampled again is null; a new session with the same index is new', () => {
+  const m = createMetrics(clock(), { record: true, trackerDiag: true });
+  const seq = [trackerDiag({ sourceFrameIndex: 5 }), trackerDiag({ sourceFrameIndex: 5 }), trackerDiag({ sourceFrameIndex: 6, mapReset: true }),
+    null, trackerDiag({ sourceFrameIndex: 6, mapReset: true }), trackerDiag({ session: 2, sourceFrameIndex: 6 }), trackerDiag({ session: 2, sourceFrameIndex: 0 })];
+  for (const td of seq) m.update(reality(), 3, { videoTime: 1 }, 41, null, td);
+  const got = m.snapshot().poseLog.rows.map((r) => (r.tracker ? `${r.tracker.session}:${r.tracker.sourceFrameIndex}` : null));
+  assert.deepEqual(got, ['1:5', null, '1:6', null, null, '2:6', '2:0']);
 });

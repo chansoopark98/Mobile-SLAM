@@ -223,6 +223,55 @@ const XrControllerFactory = singleton((runConfig, xrccPromise, logCallback, erro
     };
   })();
 
+  // A-0e (opt-in, default OFF, SLAM_REFACT_CHUNK_OPTIONS.trackerDiagnostics = {enabled: true}): the engine's own tracker state of every
+  // tracked frame (pose.tracker of the response: map tracker state, map reset, keyframe created, keyframe / point counts) joined with what
+  // the engine was given for that frame (DeviceMotion events pushed with it, their peak gyro / linear-acceleration magnitude - the two
+  // quantities the engine's extreme-motion and keyframe rules compare, map_tracker.cc EventExceedsLimits / map_builder.cc AnyGyroAbove).
+  // diag.trackerDiag is a latest-only scalar copy (like diag.sourceTiming); the page samples it once per callback. Counters (total*) make
+  // a callback that missed a response visible. Nothing is passed to the engine and no engine call is added: the chunk only reads fields
+  // the response already carries. Recorded only by the main-thread frame path (processStagedFrame): the engine Worker and the
+  // frameScheduler path do not record. `session` numbers the chunk session (a rebuilt session restarts sourceFrameIndex at 0).
+  const trackerDiagEnabled = options.trackerDiagnostics?.enabled === true;
+  let trackerDiagLatest = null;
+  const trackerDiagTotals = { totalResponses: 0, totalMapResets: 0, totalKeyframesCreated: 0, totalMapTrackerNotOk: 0, totalInputMissing: 0 };
+  if (trackerDiagEnabled) {
+    Object.defineProperty(diag, 'trackerDiag', { enumerable: true, get: () => (trackerDiagLatest ? { ...trackerDiagLatest, ...trackerDiagTotals } : null) });
+    if (schedulerRequested) warnOnce('[XR] slam_refact chunk: trackerDiagnostics does not record on the frameScheduler path (only the main-thread frame path records)');
+  }
+  const magnitude3 = (v, a, b, c) => (v ? Math.hypot(Number(v[a]), Number(v[b]), Number(v[c])) : null);
+  // The DeviceMotion events the engine took since its last staged frame, as its rules see them (deg/s and m/s^2 magnitudes; a NaN
+  // component gives NaN -> not counted as a peak). One event accepted by the glue is added at a time; the sum is taken when the frame call
+  // returns, so events that stayed in the engine queue because the frame call threw are counted with the frame that gets them.
+  const addTrackerMotion = (s, e) => {
+    const acc = s.trackerMotion ?? (s.trackerMotion = { motionEvents: 0, gyroPeakDegS: null, linAccPeakMs2: null });
+    acc.motionEvents++;
+    const g = magnitude3(e.rotationRate, 'alpha', 'beta', 'gamma'), a = magnitude3(e.acceleration, 'x', 'y', 'z');
+    if (Number.isFinite(g) && (acc.gyroPeakDegS === null || g > acc.gyroPeakDegS)) acc.gyroPeakDegS = g;
+    if (Number.isFinite(a) && (acc.linAccPeakMs2 === null || a > acc.linAccPeakMs2)) acc.linAccPeakMs2 = a;
+  };
+  // stageIndex = the glue's index of the frame staged in this call; the response (pose) is the tracker step of pose.sourceFrameIndex.
+  const noteTrackerDiag = (s, stageIndex, motion, pose) => {
+    const session = s.trackerSession ?? (s.trackerSession = diag.stats.sessionsCreated);
+    if (trackerDiagLatest && trackerDiagLatest.session !== session) trackerDiagLatest = null;  // never show another session's frame as current
+    const inputs = s.trackerInputs ?? (s.trackerInputs = new Map());
+    inputs.set(stageIndex, motion ?? { motionEvents: 0, gyroPeakDegS: null, linAccPeakMs2: null });
+    while (inputs.size > 64) inputs.delete(inputs.keys().next().value);
+    const t = pose.tracker;
+    if (pose.repeated || !t) return;  // no new tracker step in this response
+    const src = t.pointsBySource || {}, inp = inputs.get(pose.sourceFrameIndex) ?? null;
+    trackerDiagTotals.totalResponses++;
+    if (t.mapReset) trackerDiagTotals.totalMapResets++;
+    if (t.keyframeCreated) trackerDiagTotals.totalKeyframesCreated++;
+    if (t.mapTrackerState !== 1) trackerDiagTotals.totalMapTrackerNotOk++;
+    if (!inp) trackerDiagTotals.totalInputMissing++;
+    trackerDiagLatest = { session, sourceFrameIndex: pose.sourceFrameIndex, mapTrackerState: t.mapTrackerState, frameTrackerOk: t.frameTrackerOk, ok: t.ok,
+      lossState: t.lossState, lostFrames: t.lostFrames, frames: t.frames, mapReset: t.mapReset, keyframeCreated: t.keyframeCreated,
+      numKeyframes: t.numKeyframes, groundMatches: t.groundMatches, keypoints: pose.keypoints ?? null,
+      pointsTriangulated: src.triangulated ?? null, pointsGround: src.ground ?? null, pointsSky: src.sky ?? null, pointsDepth: src.depth ?? null, pointsCloud: src.cloud ?? null,
+      inputFound: !!inp, motionEvents: inp ? inp.motionEvents : null, gyroPeakDegS: inp ? inp.gyroPeakDegS : null, linAccPeakMs2: inp ? inp.linAccPeakMs2 : null };
+    for (const k of inputs.keys()) if (k < pose.sourceFrameIndex) inputs.delete(k);
+  };
+
   // xrccPromise is not used: the original only needs XRCC to share its Emscripten GL texture table
   // (scc.GL.textures = xrcc.GL.textures); this chunk uses XR8's computeTexture objects directly.
   let engine_ = null;  // {Module, loaded}; the original's `scc_`
@@ -269,6 +318,7 @@ const XrControllerFactory = singleton((runConfig, xrccPromise, logCallback, erro
   const engineWorkerAsked = options.engineWorker === true || options.engineWorker?.enabled === true
     || (options.engineWorker !== false && options.engineWorker?.enabled !== false
       && (() => { try { return new URLSearchParams(globalThis.location?.search ?? '').get('engineWorker') === '1'; } catch (_) { return false; } })());
+  if (trackerDiagEnabled && engineWorkerAsked) warnOnce('[XR] slam_refact chunk: trackerDiagnostics records only when the engine runs on the main thread; trackerDiag stays null while the engine Worker is active');
   if (engineWorkerAsked) diag.engineWorker = { requested: true, active: false, fallback: null, stats: null, compileFeatures: null,
     maxInFlight: Math.max(1, options.engineWorker?.maxInFlight | 0 || 4), pendingBuilds: 0, deferredBuilds: 0,
     engineMsMeaning: 'main-thread cost of submitting the frame (stats.workerEngineMs is the Worker-side engine time)',
@@ -1257,6 +1307,7 @@ const XrControllerFactory = singleton((runConfig, xrccPromise, logCallback, erro
       if (accepted) {
         diag.stats.motionEventsPushed++;
         sensors.delivery?.pushed(e);
+        if (trackerDiagEnabled) addTrackerMotion(s, e);  // A-0e, opt-in: only events the engine took
       } else {
         diag.stats.motionEventsSkipped++;
         sensors.delivery?.drop([e], 'invalid-interval');
@@ -1284,6 +1335,9 @@ const XrControllerFactory = singleton((runConfig, xrccPromise, logCallback, erro
     // (CHK-1, spec 07 section 12).
     const pose = s.glue.processFramePyramid(f.frameTime ? f.frameTime * 1e9 : f.timeNanos, f.videoTime * 1e9, atlas, s.layout.textureSize, rows);
     const engineReturnedAtMs = performance.now();
+    // A-0e, opt-in: the engine has taken the pushed events with this frame, so the summary is taken here (a later throw must not count them again).
+    const trackerMotion = trackerDiagEnabled ? s.trackerMotion ?? null : null;
+    if (trackerDiagEnabled) s.trackerMotion = null;
     pushSample(diag.stats.engineMs, engineReturnedAtMs - t1);
     diag.stats.processedFrames++;
     // The glue's own stage index of this frame is the key (RM-4a2: a counter kept here drifted for good after one
@@ -1323,6 +1377,7 @@ const XrControllerFactory = singleton((runConfig, xrccPromise, logCallback, erro
     }
     s.prevAllZeroes = allZeroes;
     s.last = pose;
+    if (trackerDiagEnabled) noteTrackerDiag(s, stageIndex, trackerMotion, pose);  // A-0e, opt-in; after the frame's own bookkeeping
     // The engine's own imageEvents (C++ ImageEventTracker) are not dispatched: the JS diff over the built detectedImages is the
     // one event source (image-targets.js header).
     if (!pose.repeated && pose.imageEvents && pose.imageEvents.length) diag.stats.engineImageEventsIgnored += pose.imageEvents.length;
