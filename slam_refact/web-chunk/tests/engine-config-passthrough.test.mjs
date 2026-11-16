@@ -132,5 +132,15 @@ test('A-1a-6: no shipped sample or page turns engineConfig on by default', () =>
   walk(chunkDir, chunkDir);
   const smokeDir = path.resolve(chunkDir, '../web-smoke');
   if (fs.existsSync(smokeDir)) walk(smokeDir, path.resolve(chunkDir, '..'));
-  assert.deepEqual(hits, ['xr-slam.js']);
+  // The phone page may set engineConfig only for the opt-in diagnostic focal query (?fx=&cx=&cy=); the one assignment
+  // must sit inside `if (intrinsicsQuery.override) {`, which is null when the query is absent.
+  assert.deepEqual(hits.sort(), ['samples/phone/app.js', 'xr-slam.js']);
+  const app = fs.readFileSync(path.join(chunkDir, 'samples/phone/app.js'), 'utf8');
+  const uses = [...app.matchAll(/engineConfig/g)].map((m) => m.index);
+  const gate = app.indexOf('if (intrinsicsQuery.override) {');
+  const gateEnd = app.indexOf('\n}', gate);
+  assert.ok(gate >= 0 && gateEnd > gate, 'phone app.js: the engineConfig assignment is not behind intrinsicsQuery.override');
+  const outside = uses.filter((i) => (i < gate || i > gateEnd) && !/^\s*\/\//.test(app.slice(app.lastIndexOf('\n', i) + 1, i)));
+  assert.deepEqual(outside, [], 'phone app.js: engineConfig used outside the opt-in focal query gate');
+  assert.match(app, /if \(!given\.length\) return \{ override: null, error: null \};/, 'no query must mean no override');
 });
