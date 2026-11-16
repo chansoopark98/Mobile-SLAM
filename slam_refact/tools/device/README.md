@@ -31,7 +31,7 @@ python3 slam_refact/tools/device/compare_keepmap_runs.py d1.json k1.json f1.json
 ```
 
 볼 숫자:
-- `map discards`: 지도를 버린 횟수. 기본 모드에서 빠르게 돌 때 생기던 것입니다(2026-11-16 f1 기록: 43초에 8회). K1·K1F에서는 0이어야 합니다.
+- `map discards`: 지도를 버린 횟수. 기본 모드에서 빠르게 돌 때 생기던 것입니다(2026-11-16 f1 기록: 43초에 8회). K1·K1F에서는 0에 가까워야 합니다(첫 지도 생성은 세지 않으며, 카메라가 지면 아래로 추정된 경우에는 K1·K1F도 지도를 버립니다).
 - `extension keyframes`: K1·K1F가 버리는 대신 keyframe을 추가한 횟수. `longest consecutive run`이 1보다 크면 연속 확장이 일어난 것입니다.
 - `map-lost frames`, `lost episodes`: 지도 추적이 끊긴 프레임 수와 길이.
 - `same-view ... median`: 처음 본 방향을 다시 봤을 때의 위치 차이(페이지 상대 단위, 시작 높이가 1.5–2). 물체가 어긋나 보이는 크기입니다.
