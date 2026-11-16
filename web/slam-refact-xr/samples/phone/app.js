@@ -21,6 +21,23 @@ const RECORD = new URLSearchParams(window.location.search).get('record') === '1'
 // diagnostics' own cost can be measured (ABBA). The option is read when the chunk factory is created, i.e. after Start.
 const DELIVERY = RECORD && new URLSearchParams(window.location.search).get('delivery') !== '0';
 if (DELIVERY) window.SLAM_REFACT_CHUNK_OPTIONS = { ...(window.SLAM_REFACT_CHUNK_OPTIONS || {}), deliveryDiagnostics: { enabled: true, maxEntries: 256 } };
+// Diagnostic focal A/B (opt-in, default off): ?fx=&cx=&cy= (capture pixels, all three) passes engineConfig.intrinsics =
+// [fx, fx, cx, cy] through the A-1a chunk option, replacing the engine's device rule. Partial or invalid values start nothing
+// with an override and show an error instead. The values go into the metrics JSON as intrinsicsOverride.
+const intrinsicsQuery = (() => {
+  const q = new URLSearchParams(window.location.search);
+  const given = ['fx', 'cx', 'cy'].filter((k) => q.has(k));
+  if (!given.length) return { override: null, error: null };
+  const [fx, cx, cy] = ['fx', 'cx', 'cy'].map((k) => (q.has(k) && q.get(k).trim() !== '' ? Number(q.get(k)) : NaN));
+  if (given.length !== 3 || ![fx, cx, cy].every(Number.isFinite) || !(fx > 0)) {
+    return { override: null, error: 'fx, cx, cy를 모두 유한한 숫자로 주어야 합니다 (fx > 0). 초점 override 없이 실행합니다.' };
+  }
+  return { override: [fx, fx, cx, cy], error: null };
+})();
+if (intrinsicsQuery.override) {
+  const prev = window.SLAM_REFACT_CHUNK_OPTIONS || {};
+  window.SLAM_REFACT_CHUNK_OPTIONS = { ...prev, engineConfig: { ...(prev.engineConfig || {}), intrinsics: intrinsicsQuery.override } };
+}
 const hud = createHud();
 $('start-note').setAttribute('role', 'status');  // not in the HTML: deploy_xr.py anchors on the exact <p id="start-note"> tag
 const platform = detectPlatform(navigator);
@@ -50,6 +67,7 @@ const showError = (where, message) => {
   ui.errors.textContent = state.errors.join('\n');
 };
 $('error-dismiss').addEventListener('click', () => { state.errors = []; ui.errors.textContent = ''; ui.errorBox.hidden = true; });
+if (intrinsicsQuery.error) showError('초점', intrinsicsQuery.error);
 window.addEventListener('error', (e) => showError('오류', e.message));
 window.addEventListener('unhandledrejection', (e) => showError('오류', String(e.reason && e.reason.message || e.reason)));
 // The chunk reports unsupported cases with console.warn ("[XR] ..."); keep the original behaviour and also show it.
@@ -375,7 +393,7 @@ ui.recenter.addEventListener('click', () => { try { XR8.XrController.recenter();
 // The only place data leaves the page: the user clicks, the browser downloads a small JSON file to the user's own device.
 ui.metrics.addEventListener('click', async () => {
   const receiptNow = RECORD ? await makeReceipt().catch((e) => ({ unavailable: String(e && e.message || e) })) : null;  // receipt again at download: the session may have changed since the start
-  const json = metrics.snapshot({ createdAtMs: Date.now(), userAgent: navigator.userAgent, screen: state.screenOrientation, video: state.videoSize, camera: window.XrCameraResolution || null, finalStatus: state.status, finalReason: state.reason, chunkWarnings: state.chunkWarnings }, receiptNow);
+  const json = metrics.snapshot({ createdAtMs: Date.now(), userAgent: navigator.userAgent, screen: state.screenOrientation, video: state.videoSize, camera: window.XrCameraResolution || null, finalStatus: state.status, finalReason: state.reason, chunkWarnings: state.chunkWarnings, intrinsicsOverride: intrinsicsQuery.override }, receiptNow);
   const url = URL.createObjectURL(new Blob([JSON.stringify(json, null, 1)], { type: 'application/json' }));
   const a = document.createElement('a');
   a.href = url; a.download = `slam-refact-phone-metrics-${new Date().toISOString().replace(/[:.]/g, '-')}.json`;
